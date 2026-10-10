@@ -8,6 +8,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { credentials, paths } from "../../core/platform";
+import { imapFehlerText } from "../mail/imap-fehler";
 import type { PostfachAnbieter, PostfachEinstellung, PostfachStand } from "../../shared/mail-entwurf";
 
 export type { PostfachEinstellung, PostfachStand };
@@ -95,12 +96,13 @@ async function mitVerbindung<T>(e: Pick<PostfachEinstellung, "host" | "port" | "
   }
 }
 
-function lesbar(err: unknown): string {
+function lesbar(err: unknown, host?: string): string {
+  // Nachgebaute Fehler in Tests tragen nur die Meldung.
   const t = err instanceof Error ? err.message : String(err);
-  if (/auth|login|credential|invalid/i.test(t)) return "Anmeldung abgelehnt. Benutzername und Passwort prüfen (bei Gmail und iCloud ein App-Passwort).";
-  if (/ENOTFOUND|getaddrinfo/i.test(t)) return "Server nicht gefunden. Adresse prüfen.";
-  if (/ECONNREFUSED|ETIMEDOUT|timeout/i.test(t)) return "Server nicht erreichbar (Port oder Verschlüsselung prüfen).";
-  return t;
+  if (/auth|login|credential|invalid/i.test(t) && !(err as { authenticationFailed?: boolean })?.authenticationFailed) {
+    return imapFehlerText(Object.assign(new Error(t), { authenticationFailed: true }), host);
+  }
+  return imapFehlerText(err, host);
 }
 
 /**
@@ -125,7 +127,7 @@ export async function postfachEinrichten(
     einstellungSchreiben({ ...e, ordner, geprueft: new Date().toISOString() });
     return { ok: true, stand: postfachStand() };
   } catch (err) {
-    return { ok: false, fehler: lesbar(err) };
+    return { ok: false, fehler: lesbar(err, e.host) };
   }
 }
 
@@ -148,7 +150,7 @@ export async function entwurfAblegen(mime: Buffer, fabrik: ImapFabrik = standard
       fabrik,
     );
   } catch (err) {
-    throw new Error(lesbar(err));
+    throw new Error(lesbar(err, s.host));
   }
 }
 

@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-10-10
-Anzahl Tools: 288
+Anzahl Tools: 289
 
 ## Firmen (24)
 
@@ -2196,6 +2196,19 @@ Teilt Radar-Kandidaten mit der Organisation: sie erscheinen bei allen Mitglieder
 _Parameter:_
 - `discoveryIds: array` (required)
 - `notiz: string` — Optionale Notiz fuer die Mitglieder (max. 500 Zeichen)
+
+## personen-zusammenfuehren (1)
+
+### `person_zusammenfuehrung`
+
+_Datei:_ `services/desktop/src/main/agent/tools/personen-zusammenfuehren.ts`
+
+Doppelte Personen einer Firma (z. B. „Christian“ von der Website und „Christian Krebel“ von LinkedIn). `aktion`:
+- 'abgleichen' mit `companyId`: sofort prüfen. Sichere Fälle (gleiches LinkedIn-/Xing-Profil, Profil-Slug = voller Name, gleiche belegte Adresse) führt der Gateway zusammen; „nur Vorname mit genau einem Gegenstück“ entscheidet ein KI-Urteil. Läuft sonst wöchentlich im Hintergrund.
+- 'liste' mit `companyId`: bisherige Zusammenführungen mit Regel und Grund.
+- 'rueckgaengig' mit `id` aus der Liste: stellt beide Personen exakt wieder her.
+
+_Parameter:_ keine.
 
 ## Producer (Hintergrund-Services) (2)
 

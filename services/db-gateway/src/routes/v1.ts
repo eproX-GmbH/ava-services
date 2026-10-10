@@ -30,6 +30,7 @@ import { companiesCrmRouter } from "./v1/companies-crm";
 import { geoRouter } from "./v1/geo";
 import { discoveryRouter } from "./v1/discovery";
 import { emailPatternsRouter } from "./v1/email-patterns";
+import { kontakteAbgleichRouter } from "./v1/kontakte-abgleich";
 import { registerJobsRouter } from "./v1/register-jobs";
 import { relevanzRouter } from "./v1/relevanz";
 import { alertsNeuheitenRouter } from "./v1/alerts-neuheiten";
@@ -74,6 +75,8 @@ v1.route("/", companiesCrmRouter);
 // §4.1 Company reads (W6-W13).
 // M3 (E-Mail-Muster) — vor dem generischen companiesRouter (Glob).
 v1.route("/", emailPatternsRouter);
+// Doppelte Personen zusammenführen (2026-10-10) — vor dem Glob des companiesRouter.
+v1.route("/", kontakteAbgleichRouter);
 // Relevanz (docs/PLAN_RELEVANZ.md) — eigener Pfad, keine Glob-Kollision.
 v1.route("/", relevanzRouter);
 // Neuheiten fuer den Heartbeat (2026-10-05) — eigener Pfad /alerts/…

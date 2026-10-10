@@ -969,6 +969,20 @@ companiesRouter.openapi(contactsRoute, async (c) => {
       if (feld === "email" && typeof f.value === "string") return passtZurFirma(f.value, website) === true;
       return false;
     });
+    // Mehrere Namen einer Person (nach dem Zusammenfuehren „Christian“ und
+    // „Christian Krebel“): nur die vollste Form ausliefern, damit ein spaeter
+    // erneut gefundener Kurzname die Karte nicht wieder verkuerzt.
+    const namensLaenge = (v: unknown) => (typeof v === "string" ? v.trim().split(/\s+/).length : 0);
+    const vollsterName = new Map<string, number>();
+    for (const f of eigeneFakten) {
+      if (f.entityType === "PERSON" && f.field === "fullName" && f.status === "ACTIVE") {
+        const k = String(f.entityId);
+        vollsterName.set(k, Math.max(vollsterName.get(k) ?? 0, namensLaenge(f.value)));
+      }
+    }
+    const angezeigteFakten = eigeneFakten.filter(
+      (f) => !(f.entityType === "PERSON" && f.field === "fullName" && f.status === "ACTIVE" && namensLaenge(f.value) < (vollsterName.get(String(f.entityId)) ?? 0)),
+    );
 
     return c.json(
       {
@@ -976,7 +990,7 @@ companiesRouter.openapi(contactsRoute, async (c) => {
         companyName: company.name,
         // Website aus dem Firmenprofil, wenn die Kontakt-Datenbank keine hat (AVA leitet daraus die Mail-Domain ab).
         websiteUrl: website,
-        companyFacts: eigeneFakten,
+        companyFacts: angezeigteFakten,
         companyObservations: observations.rows as Array<Record<string, unknown>>,
         companySignals: signals.rows as Array<Record<string, unknown>>,
         employments: employments.rows as Array<Record<string, unknown>>,

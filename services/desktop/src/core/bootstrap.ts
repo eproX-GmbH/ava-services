@@ -12,6 +12,7 @@
 //   ... Hülle registriert IPC / Fenster ...
 //   await core.startBackground();                      // Ollama, Postgres, Producer, Herzschlag, Worker-Modus
 
+import { PersonenAbgleich } from "../main/contacts/personen-abgleich";
 import { lifecycle, notifier, paths, platform, power, windows } from "./platform";
 import { KopfRelais } from "./relais/kopf-relais";
 import { InstanzStore } from "./relais/instanz";
@@ -1323,6 +1324,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   /** W1 — Workflows (docs/PLAN_WORKFLOWS.md). */
   let workflowService: WorkflowService | null = null;
   let emailMuster: EmailMusterSupervisor | null = null;
+  let personenAbgleich: PersonenAbgleich | null = null;
   // v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (PLAN_CHAT_VORSCHLAEGE V1).
   let nutzerstand: NutzerstandService | null = null;
   let chipErzeugung: ChipErzeugung | null = null;
@@ -1812,6 +1814,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     hatApifyZugang: async () => Boolean(await resolveApifyAccess()),
     getWorkflows: () => workflowService,
     getEmailMuster: () => emailMuster,
+    getPersonenAbgleich: () => personenAbgleich,
     getNutzerstand: () => nutzerstand,
     getVorschlaegeSettings: () => vorschlaegeSettings,
     getMithelfen: () => mithelfen,
@@ -3103,6 +3106,35 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     paths().get("userData"),
   );
   emailMuster.start();
+  // Doppelte Kontakte zusammenführen (Gateway: sichere Fälle; hier: KI-Urteil für „nur Vorname“).
+  personenAbgleich = new PersonenAbgleich(
+    {
+      gatewayRequest: (path, opts) => gatewayClient.request(path, opts as never),
+      isSignedIn: () => auth.getStatus().signedIn,
+      isLlmBusy: () => agent.getStatus().inFlightRequestId !== null,
+      log: (m) => console.log(m),
+      audit: ({ summary, metadata }) =>
+        audit({ actorType: "system", actorId: null, category: "import", action: "kontakte.zusammenfuehren", severity: "info", subjectType: null, subjectId: (metadata.companyId as string) ?? null, summary, metadata }),
+      urteil: async (system, user) => {
+        try {
+          const text = await hintergrundUrteil(
+            providers,
+            [
+              { id: `pa-sys-${Date.now()}`, role: "system", content: system, createdAt: Date.now() },
+              { id: `pa-usr-${Date.now()}`, role: "user", content: user, createdAt: Date.now() },
+            ],
+            { channel: "background", quelle: "personen-abgleich", timeoutMs: 30_000 },
+          );
+          return text || null;
+        } catch (err) {
+          console.log(`[personen-abgleich] Urteil nicht moeglich: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }
+      },
+    },
+    paths().get("userData"),
+  );
+  personenAbgleich.start();
   workerModus.anmelden({ name: "E-Mail-Muster", anhalten: () => emailMuster?.stop(), anlaufen: () => emailMuster?.start() });
   lifecycle().onBeforeQuit(() => quitStep("emailMuster.stop", () => emailMuster?.stop()));
   // W4 — Workflow-Trigger alert.created.

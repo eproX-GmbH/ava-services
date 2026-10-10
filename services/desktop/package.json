@@ -34,6 +34,7 @@
     "test:buying-center": "node scripts/test-buying-center.mjs",
     "test:telegram-text": "node scripts/test-telegram-text.mjs",
     "test:mail-entwurf": "node scripts/test-mail-entwurf.mjs",
+    "test:personen-abgleich": "node scripts/test-personen-abgleich.mjs",
     "test:sprachmodus": "node scripts/test-sprachmodus.mjs",
     "test:kontakte-kompakt": "node scripts/test-kontakte-kompakt.mjs",
     "test:kontext-kuerzung": "node scripts/test-kontext-kuerzung.mjs",

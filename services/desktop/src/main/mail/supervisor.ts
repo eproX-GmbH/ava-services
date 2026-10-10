@@ -16,6 +16,7 @@
 //
 // Re-Config (User ändert Account in Settings): stop() → setAccount → start()
 
+import { imapFehlerText } from "./imap-fehler";
 import { EventEmitter } from "node:events";
 import { hasVision } from "@ava/ai-provider";
 import type { LlmProviderManager } from "../agent/providers";
@@ -196,9 +197,7 @@ export class MailSupervisor extends EventEmitter {
       await probe.logout();
       imapOk = true;
     } catch (err) {
-      throw new Error(
-        `IMAP-Verbindung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new Error(`IMAP-Verbindung fehlgeschlagen: ${imapFehlerText(err, account.imap.host)}`);
     } finally {
       // Probe-Client wird in finally aufgegeben — nichts persistent.
       void probeImap;
@@ -350,7 +349,7 @@ export class MailSupervisor extends EventEmitter {
     imap.on("error", (err) => {
       void this.store.updateAccountSyncState({
         lastErrorAt: new Date().toISOString(),
-        lastErrorMessage: err.message,
+        lastErrorMessage: imapFehlerText(err, account.imap.host),
       });
     });
     imap.on("message", (raw) => void this.handleIncoming(raw));

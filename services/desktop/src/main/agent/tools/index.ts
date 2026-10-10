@@ -61,6 +61,7 @@ import { buildGeoTools } from "./geo";
 import { buildDiscoveryTools } from "./discovery";
 import { buildWorkflowTools } from "./workflows";
 import { buildEmailMusterTools } from "./email-muster";
+import { buildPersonenZusammenfuehrenTools } from "./personen-zusammenfuehren";
 import { buildVorschlaegeTools } from "./vorschlaege";
 import { buildRegisterDeltaTools } from "./register-delta";
 import { buildWatchlistTools } from "./watchlist";
@@ -190,6 +191,8 @@ export function buildReadOnlyRegistry(deps: {
   getWorkflows?: () => import("../../workflows").WorkflowService | null;
   /** M4 — lokale E-Mail-Ableitung (lazy, entsteht im App-Boot). */
   getEmailMuster?: () => import("../../contacts/email-muster/supervisor").EmailMusterSupervisor | null;
+  /** Doppelte Kontakte zusammenführen (main/contacts/personen-abgleich.ts). */
+  getPersonenAbgleich?: () => import("../../contacts/personen-abgleich").PersonenAbgleich | null;
   /** v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (lazy, entsteht im Boot). */
   getNutzerstand?: () => import("../../suggestions/nutzerstand").NutzerstandService | null;
   getVorschlaegeSettings?: () => import("../../suggestions/settings").VorschlaegeSettingsStore | null;
@@ -433,6 +436,7 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildEmailMusterTools({ get: () => deps.getEmailMuster?.() ?? null })) registry.register(t);
+  for (const t of buildPersonenZusammenfuehrenTools({ gateway: deps.gateway, get: () => deps.getPersonenAbgleich?.() ?? null })) registry.register(t);
   for (const t of buildRegisterDeltaTools({ get: () => deps.getMithelfen?.() ?? null, queueStatus: () => deps.getRegisterQueueStatus?.() ?? Promise.resolve(null) ,
       browserStand: () => deps.browserStand?.() ?? { zustand: "aus" },
       browserLaden: () => deps.browserLaden?.() ?? Promise.resolve({ zustand: "aus" }),
