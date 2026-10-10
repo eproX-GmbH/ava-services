@@ -323,3 +323,19 @@ Auflösung über Name und Ort ist der heutige Vertrag von `data-care`. Reicht
 das einmal nicht (gleicher Name, gleicher Ort), braucht master-data eine
 ID-Spalte.
 
+
+## 13. Nachtrag 2026-10-10: AVA-Kontext für externe KIs (`ava_kontext`)
+
+Befund aus Tests: ChatGPT (und andere Clients) wissen ab Werk nicht, wofür AVA da ist und wie sie mit den Werkzeugen
+arbeiten sollen. Lösung:
+
+- **Werkzeug `ava_kontext`** (Gateway, ganz oben in der Liste, `readOnlyHint`): Rolle als persönlicher
+  Vertriebsassistent, Verhaltensregeln, Arbeitsweise mit den Werkzeugen, Konto/Organisation
+  (`services/db-gateway/src/lib/mcp-kontext.ts`) plus der persönliche Teil der laufenden AVA über das Relais:
+  Nutzerprofil, Idealkundenprofil, Gemerktes (40 neueste), eigene Skills, verfügbare Fähigkeiten, Lage der Instanz
+  (`services/desktop/src/core/relais/ava-kontext.ts`). Ohne laufende AVA nur der allgemeine Teil mit Hinweis.
+  Die Beschreibung verlangt den Aufruf zuerst und ohne Rückfrage.
+- **Anweisungen beim Verbindungsaufbau** (`initialize.instructions`) enthalten denselben Kontext (Abruf bei der AVA
+  mit 2,5 s Frist), damit Clients, die Server-Anweisungen auswerten, ihn ohne Werkzeugaufruf haben.
+- **Annotationen** an allen Gateway-Werkzeugen: lesende mit `readOnlyHint: true` (kein Bestätigungsdialog in
+  ChatGPT), Aufträge mit `readOnlyHint: false`.

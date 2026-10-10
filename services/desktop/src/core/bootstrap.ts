@@ -31,6 +31,8 @@ import { workerModus } from "../main/worker-modus";
 import { ChromeForTesting } from "../main/chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
 import { ORG_FEATURES } from "../shared/types";
+import { avaKontextText } from "./relais/ava-kontext";
+import { faehigkeitenText, verfuegbareFaehigkeiten } from "../main/suggestions/faehigkeiten";
 import { pruefeModellstufe } from "../main/workflows/modellstufe";
 import { EmailMusterSupervisor } from "../main/contacts/email-muster/supervisor";
 import { streamToText as hintergrundUrteil } from "../main/link-monitor/llm";
@@ -1746,6 +1748,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // also reichen wir Lazy-Getter rein, die zum Tool-Aufruf-Zeitpunkt die
   // aktuelle Instanz auflösen.
   let _skillStoreRef: import("../main/skills").SkillStore | null = null;
+  let kontextSkillsPrefs: SkillsPrefsStore | null = null;
   let _skillsTrustRef: SkillsTrustStore | null = null;
   const skillsUserDir = join(paths().get("userData"), "skills");
 
@@ -2050,6 +2053,39 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // fuer Claude/ChatGPT ueber mcp.ava.bi, solange dieser Kopf laeuft.
   // AVA_MCP_RELAIS=0 schaltet es ab; Organisationsschalter mcp.kopf im Gateway.
   const instanz = new InstanzStore();
+  // Zustandsbericht fuer die Instanzenliste (docs/PLAN_AVA_CLOUD.md §13.1): keine Geheimnisse,
+  // nur was der Nutzer zum Verwalten braucht. botId ist der oeffentliche Teil des Tokens.
+  const mcpRelaisZustand = async (): Promise<Record<string, unknown>> => {
+    const tg = telegramStore.getConfig();
+    const token = await telegramStore.getToken().catch(() => null);
+    const rc = radarSupervisor?.getConfig() as { enabled?: boolean; intervalHours?: number; lastRunAt?: string | number | null; lastOutcome?: string | null } | undefined;
+    const icp = icpStore.get() as { beschreibung?: string; branchen?: string[] };
+    return {
+      telegram: { eingerichtet: Boolean(token), botId: token ? token.split(":")[0] : null, bot: tg.botUsername ?? null, chat: Boolean(tg.chatId), aktiv: tg.enabled === true, eingang: tg.inboundEnabled === true, konflikt: telegramInbound?.konflikt() != null },
+      radar: rc ? { an: rc.enabled === true, intervallStunden: rc.intervalHours ?? null, letzterLauf: rc.lastRunAt ?? null, ergebnis: rc.lastOutcome ?? null } : null,
+      icp: Boolean(icp?.beschreibung?.trim() || (icp?.branchen ?? []).length),
+      modell: providers.getConfig().kind,
+      // Öffentliche Adresse einer bereitgestellten Server-Instanz (ohne Setup-Token).
+      adresse: process.env.AVA_PUBLIC_URL?.trim() || null,
+    };
+  };
+  // Persönlicher Teil des MCP-Werkzeugs ava_kontext (core/relais/ava-kontext.ts).
+  const kontextFuerMcp = () =>
+    avaKontextText({
+      profil: () => userProfile.get(),
+      icp: () => (icpStore.isSet() ? icpStore.get() : null),
+      gedaechtnis: () => generalMemory.list(),
+      skills: () =>
+        (_skillStoreRef?.list() ?? [])
+          .filter((sk) => !sk.disableModelInvocation && (kontextSkillsPrefs?.isEnabled(sk.name) ?? true))
+          .map((sk) => ({ name: sk.name, description: sk.description })),
+      faehigkeiten: () => {
+        const gesperrt = ORG_FEATURES.map((f) => f.key).filter((k) => !featureEnabled(k));
+        return faehigkeitenText(verfuegbareFaehigkeiten(agentRegistry.list().map((t) => t.name), gesperrt));
+      },
+      lage: () => mcpRelaisZustand(),
+      instanzName: () => instanz.get().name,
+    });
   const mcpRelais = new KopfRelais({
     gatewayUrl: GATEWAY_URL,
     getAccessToken: () => auth.getAccessToken(),
@@ -2058,22 +2094,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     version: paths().version(),
     agent,
     instanz,
-    // Zustandsbericht fuer die Instanzenliste (docs/PLAN_AVA_CLOUD.md §13.1): keine Geheimnisse,
-    // nur was der Nutzer zum Verwalten braucht. botId ist der oeffentliche Teil des Tokens.
-    zustand: async () => {
-      const tg = telegramStore.getConfig();
-      const token = await telegramStore.getToken().catch(() => null);
-      const rc = radarSupervisor?.getConfig() as { enabled?: boolean; intervalHours?: number; lastRunAt?: string | number | null; lastOutcome?: string | null } | undefined;
-      const icp = icpStore.get() as { beschreibung?: string; branchen?: string[] };
-      return {
-        telegram: { eingerichtet: Boolean(token), botId: token ? token.split(":")[0] : null, bot: tg.botUsername ?? null, chat: Boolean(tg.chatId), aktiv: tg.enabled === true, eingang: tg.inboundEnabled === true, konflikt: telegramInbound?.konflikt() != null },
-        radar: rc ? { an: rc.enabled === true, intervallStunden: rc.intervalHours ?? null, letzterLauf: rc.lastRunAt ?? null, ergebnis: rc.lastOutcome ?? null } : null,
-        icp: Boolean(icp?.beschreibung?.trim() || (icp?.branchen ?? []).length),
-        modell: providers.getConfig().kind,
-        // Öffentliche Adresse einer bereitgestellten Server-Instanz (ohne Setup-Token).
-        adresse: process.env.AVA_PUBLIC_URL?.trim() || null,
-      };
-    },
+    zustand: mcpRelaisZustand,
+    kontext: kontextFuerMcp,
     audit: (e) => audit({ actorType: "system", actorId: auth.getStatus().actorId ?? null, category: "agent", action: e.action, severity: "info", subjectType: null, subjectId: null, summary: e.summary, metadata: e.metadata }),
   });
   auth.on("status", (st: AuthStatus) => {
@@ -3788,6 +3810,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // hook-up so the orchestrator's availableSkills() filter has the
   // prefs in hand on the first turn.
   const skillsPrefs = new SkillsPrefsStore();
+  kontextSkillsPrefs = skillsPrefs;
   agent.setSkillsPrefs(skillsPrefs);
   if (skillStore) {
     agent.setSkillStore(skillStore);

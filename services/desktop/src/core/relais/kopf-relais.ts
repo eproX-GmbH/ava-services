@@ -43,6 +43,8 @@ export interface KopfRelaisDeps {
   instanz: InstanzStore;
   /** Zustandsbericht für die Instanzenliste (Telegram, Radar, Modell …), ohne Geheimnisse. */
   zustand: () => Promise<Record<string, unknown>>;
+  /** Persönlicher Teil von ava_kontext (Profil, ICP, Gemerktes, Skills, Fähigkeiten, Lage). */
+  kontext?: () => Promise<string>;
 }
 
 /** Eintrag der Instanzenliste, wie der Gateway ihn schickt (§13.1). */
@@ -488,6 +490,11 @@ export class KopfRelais {
     if (name === "ava_fragen") {
       if (!this.avaFragen) return { text: "ava_fragen ist in dieser AVA nicht verfügbar.", isError: true };
       return this.avaFragen.ausfuehren(roh);
+    }
+    // Gateway-Werkzeug ava_kontext holt hier den persönlichen Teil (nicht in der Liste).
+    if (name === "ava_kontext") {
+      if (!this.deps.kontext) return { text: "", isError: true };
+      return { text: await this.deps.kontext() };
     }
     if (name === "werkzeug_suchen") {
       const q = String(roh.q ?? "").trim();
