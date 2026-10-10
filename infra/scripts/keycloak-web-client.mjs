@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Keycloak-Client `ava-web` für die Web-Konsole admin.ava.bi (docs/PLAN_ADMIN_WEB.md §3.1).
+// Keycloak-Client `ava-web` für die Web-Konsole admin.ava.bi (docs/PLAN_ADMIN_WEB.md §3.1)
+// und die App app.ava.bi (docs/PLAN_APP_PWA.md, E2: derselbe Client, weitere Weiterleitung).
 //
 // Vertraulicher Client (Geheimnis bleibt im Server-Teil der Konsole) mit
 // Authorization Code + PKCE S256. Scopes werden vom Desktop-Client gespiegelt,
@@ -8,18 +9,23 @@
 //
 //   KEYCLOAK_ADMIN_URL=https://fly-keycloak-broken-bird-3701.fly.dev \
 //   KEYCLOAK_ADMIN_USER=… KEYCLOAK_ADMIN_PASSWORD=… \
-//   node infra/scripts/keycloak-web-client.mjs [--vercel /Pfad/zu/ava-admin]
+//   node infra/scripts/keycloak-web-client.mjs [--vercel /Pfad/zu/ava-admin] [--vercel /Pfad/zu/ava-app]
 //
-// Idempotent: legt den Client an oder gleicht ihn ab. Mit --vercel wird das
-// Client-Geheimnis direkt per stdin als AUTH_CLIENT_SECRET (production) in das
-// Vercel-Projekt geschrieben; es erscheint nie im Terminal.
+// Idempotent: legt den Client an oder gleicht ihn ab (das Geheimnis bleibt dabei
+// gleich). Je --vercel wird das Client-Geheimnis per stdin als AUTH_CLIENT_SECRET
+// (production) in das Vercel-Projekt geschrieben; es erscheint nie im Terminal.
 
 import { spawnSync } from "node:child_process";
 
 const REALM = "ava";
 const CLIENT_ID = "ava-web";
 const VORLAGE = "ava-desktop";
-const REDIRECTS = ["https://admin.ava.bi/auth/callback", "http://localhost:3000/auth/callback"];
+const REDIRECTS = [
+  "https://admin.ava.bi/auth/callback",
+  "https://app.ava.bi/auth/callback",
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3001/auth/callback",
+];
 
 function env(name) {
   const v = process.env[name]?.trim();
@@ -31,8 +37,7 @@ function env(name) {
 }
 
 const adminUrl = env("KEYCLOAK_ADMIN_URL").replace(/\/$/, "");
-const vercelIdx = process.argv.indexOf("--vercel");
-const vercelDir = vercelIdx > -1 ? process.argv[vercelIdx + 1] : null;
+const vercelDirs = process.argv.flatMap((a, i) => (a === "--vercel" && process.argv[i + 1] ? [process.argv[i + 1]] : []));
 
 async function adminToken() {
   const res = await fetch(`${adminUrl}/realms/master/protocol/openid-connect/token`, {
@@ -75,7 +80,7 @@ async function main() {
     attributes: {
       "pkce.code.challenge.method": "S256",
       "use.refresh.tokens": "true",
-      "post.logout.redirect.uris": "https://admin.ava.bi/abgemeldet##http://localhost:3000/abgemeldet",
+      "post.logout.redirect.uris": "https://admin.ava.bi/abgemeldet##https://app.ava.bi/abgemeldet##http://localhost:3000/abgemeldet##http://localhost:3001/abgemeldet",
     },
   };
 
@@ -108,11 +113,12 @@ async function main() {
 
   const geheimnis = (await api(token, "GET", `/clients/${client.id}/client-secret`))?.value;
   if (!geheimnis) throw new Error("Kein Client-Geheimnis erhalten.");
-  if (vercelDir) {
-    const r = spawnSync("vercel", ["env", "add", "AUTH_CLIENT_SECRET", "production", "--force", "--scope", "quikk"], { cwd: vercelDir, input: geheimnis, encoding: "utf8" });
-    if (r.status !== 0) throw new Error(`vercel env add fehlgeschlagen: ${(r.stderr || r.stdout).slice(-300)}`);
-    console.log("✓ AUTH_CLIENT_SECRET im Vercel-Projekt gesetzt (production). Danach neu ausrollen: vercel deploy --prod");
-  } else {
+  for (const dir of vercelDirs) {
+    const r = spawnSync("vercel", ["env", "add", "AUTH_CLIENT_SECRET", "production", "--force", "--scope", "quikk"], { cwd: dir, input: geheimnis, encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`vercel env add fehlgeschlagen (${dir}): ${(r.stderr || r.stdout).slice(-300)}`);
+    console.log(`✓ AUTH_CLIENT_SECRET gesetzt in ${dir} (production). Danach neu ausrollen.`);
+  }
+  if (!vercelDirs.length) {
     console.log("✓ Client bereit. Geheimnis: Keycloak → Clients → ava-web → Credentials (oder Skript mit --vercel <ava-admin> erneut ausführen).");
   }
 }
