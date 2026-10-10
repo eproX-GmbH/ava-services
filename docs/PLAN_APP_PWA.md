@@ -218,3 +218,16 @@ Datenbankänderung im Gateway (neue Tabelle) und damit eine Freigabe vor dem Dep
 - **iOS-Verhalten** ändert sich von Version zu Version; Tests auf echten Geräten gehören in jede Stufe.
 - **Code-Kopien** aus der Desktop-App (Markdown, WebRTC, Anhänge) laufen auseinander; mittelfristig in ein gemeinsames
   Paket ziehen, wenn beide Oberflächen bleiben.
+
+## 8. Stand
+
+- **2026-10-10, Entscheidungen:** E1–E8 wie empfohlen (Operator).
+- **P0 erledigt (2026-10-10):** Repo `eproX-GmbH/ava-app` (privat, `~/Desktop/Repos/ava-app`), Gerüst aus `ava-admin`
+  (BFF-Anmeldung, Theme, shadcn), App-Hülle mit Seitenleiste (ab `md`) und Tab-Leiste (Chat, Firmen, Meldungen, Mehr)
+  mit Safe Areas, `viewport-fit=cover`, PWA-Manifest, Service Worker (`/sw.js`, ohne Datencache), Symbole aus dem
+  AVA-Logo (192, 512, maskable, Apple 180), Installationshinweis (Android-Angebot, iOS-Anleitung), Startseite mit dem
+  Stand der eigenen AVA (`/v1/instanzen`), „Mehr“ mit Konto, Konsole-Link für Admins, Hell/Dunkel, Abmelden.
+  `Permissions-Policy` erlaubt Mikrofon und Kamera für die eigene Seite. Vercel-Projekt `ava-app` (QUIKK, `fra1`,
+  Git-Anbindung, Produktion „Ready“), Domain `app.ava.bi` angemeldet.
+- **Offen für P0:** DNS `app.ava.bi` (CNAME laut Vercel) und Keycloak-Weiterleitung über
+  `infra/scripts/keycloak-web-client.mjs --vercel <ava-admin> --vercel <ava-app>` (Admin-Zugang des Operators).
