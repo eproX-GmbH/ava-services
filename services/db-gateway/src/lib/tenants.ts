@@ -240,6 +240,19 @@ function neuerInviteToken(): string {
   return randomBytes(18).toString("base64url");
 }
 
+/**
+ * Mitglieder der eigenen Organisation für Admin-Ansichten (Web-Konsole,
+ * docs/PLAN_ADMIN_WEB.md §4.1). Wirft 403 für Nicht-Admins.
+ */
+export async function mitgliederFuerAdmin(pool: pg.Pool, auth: AuthContext): Promise<Array<{ actorId: string; role: string; email: string | null; name: string | null }>> {
+  if (!(await istAdmin(pool, auth.tenantId, auth.actorId))) throw new TenantError(403, "Nur Admins sehen die Instanzen der Organisation.");
+  const r = await pool.query<{ actorId: string; role: string; email: string | null; name: string | null }>(
+    `SELECT "actorId", "role", "email", "name" FROM "TenantMember" WHERE "tenantId" = $1 ORDER BY "name" NULLS LAST, "email"`,
+    [auth.tenantId],
+  );
+  return r.rows;
+}
+
 async function istAdmin(q: Q, tenantId: string, actorId: string): Promise<boolean> {
   const r = await q.query<{ role: string }>(
     `SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`,

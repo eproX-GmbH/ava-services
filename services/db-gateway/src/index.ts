@@ -7,6 +7,9 @@
 import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { kopfRelais } from "./lib/kopf-relais";
+import { mitgliederFuerAdmin } from "./lib/tenants";
+import { TenantError } from "./lib/tenant-error";
+import { MODELL_KATALOG } from "./lib/modell-katalog.generated";
 import { authMiddleware } from "./middleware/auth";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
@@ -124,6 +127,38 @@ app.get("/v1/instanzen", authMiddleware, (c) => {
   const auth = c.get("auth");
   return c.json({ items: kopfRelais.instanzen(auth.actorId) });
 });
+
+// docs/PLAN_ADMIN_WEB.md §3.3 — Instanzen aller Mitglieder für Admins der
+// Organisation. Nur Betriebsdaten (E9): keine Inhalte wie ICP, Telegram, Radar.
+app.get("/v1/tenants/me/instanzen", authMiddleware, async (c) => {
+  const auth = c.get("auth");
+  try {
+    const mitglieder = await mitgliederFuerAdmin(getGatewayPool(), auth);
+    return c.json({
+      items: mitglieder.map((m) => ({
+        actorId: m.actorId,
+        name: m.name,
+        email: m.email,
+        role: m.role,
+        instanzen: kopfRelais.instanzen(m.actorId).map((i) => ({
+          id: i.id,
+          art: i.art,
+          name: i.name,
+          version: i.version,
+          verbunden: i.verbunden,
+          seit: i.seit,
+          zuletzt: i.zuletzt,
+          adresse: typeof i.zustand.adresse === "string" ? i.zustand.adresse : null,
+        })),
+      })),
+    });
+  } catch (err) {
+    if (err instanceof TenantError) return c.json({ error: "forbidden", message: err.message }, err.status);
+    throw err;
+  }
+});
+// Modellkatalog für Vorgaben-Oberflächen ohne lokalen Katalog (Web-Konsole).
+app.get("/v1/modelle", authMiddleware, (c) => c.json({ items: MODELL_KATALOG }));
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "db-gateway listening");

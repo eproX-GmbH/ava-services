@@ -93,6 +93,9 @@ export function extractJoinToken(eingabe: string): string | null {
   const s = eingabe.trim();
   const m = /^ava:\/\/join\/([A-Za-z0-9_-]{8,64})\/?$/.exec(s);
   if (m) return m[1] ?? null;
+  // Einladungslink der Web-Konsole (docs/PLAN_ADMIN_WEB.md): https://admin.ava.bi/beitreten/<token>
+  const w = /^https:\/\/[a-z0-9.-]+\/beitreten\/([A-Za-z0-9_-]{8,64})\/?(?:[?#].*)?$/i.exec(s);
+  if (w) return w[1] ?? null;
   return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null;
 }
 
