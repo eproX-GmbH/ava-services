@@ -99,6 +99,48 @@ function json(text: string): Record<string, unknown> | null {
 const liste = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : []);
 const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
+/** Persoenliche Abschnitte, die je AVA-Instanz liegen (Profil, ICP, Gedaechtnis, Ablaeufe). */
+const PERSOENLICH = ["## Über den Nutzer", "## Idealkundenprofil (ICP)", "## Was AVA sich über den Nutzer gemerkt hat", "## Eigene Abläufe (Skills) des Nutzers"];
+/** Platzhaltertexte der AVA, wenn ein Abschnitt leer ist. */
+const LEER = /^(Noch kein Profil hinterlegt|Noch kein ICP festgelegt)/;
+
+function abschnitte(text: string): Array<{ kopf: string; inhalt: string }> {
+  const teile: Array<{ kopf: string; inhalt: string }> = [];
+  for (const block of text.split(/\n(?=## )/)) {
+    const nl = block.indexOf("\n");
+    const kopf = (nl < 0 ? block : block.slice(0, nl)).trim();
+    teile.push({ kopf, inhalt: nl < 0 ? "" : block.slice(nl + 1).trim() });
+  }
+  return teile;
+}
+
+/**
+ * Die MCP-Ziel-AVA (oft ein Server) hat Profil, ICP oder Gedaechtnis nicht immer selbst;
+ * fehlt ein persoenlicher Abschnitt dort, kommt er von einer anderen verbundenen AVA
+ * (z. B. der Desktop-App), mit Herkunft.
+ */
+export function zusammenfuehren(haupt: string, andere: Array<{ instanz: string; text: string }>): string {
+  const liste = abschnitte(haupt);
+  const leer = (a?: { inhalt: string }) => !a || !a.inhalt.trim() || LEER.test(a.inhalt.trim());
+  for (const kopf of PERSOENLICH) {
+    const i = liste.findIndex((a) => a.kopf === kopf);
+    if (!leer(liste[i])) continue;
+    for (const o of andere) {
+      const fund = abschnitte(o.text).find((a) => a.kopf === kopf);
+      if (leer(fund)) continue;
+      const neu = { kopf, inhalt: `${fund!.inhalt}\n\n(aus ${o.instanz})` };
+      if (i >= 0) liste[i] = neu;
+      else {
+        // Hinter den letzten vorhandenen persoenlichen Abschnitt, sonst vor „Lage“.
+        const lage = liste.findIndex((a) => a.kopf === "## Lage");
+        liste.splice(lage >= 0 ? lage : liste.length, 0, neu);
+      }
+      break;
+    }
+  }
+  return liste.map((a) => (a.inhalt ? `${a.kopf}\n${a.inhalt}` : a.kopf)).join("\n\n");
+}
+
 /** Rueckfall fuer AVA-Versionen ohne ava_kontext: icp_get, profile_get, recall_memory. */
 async function ersatzKontext(actorId: string, wartezeitMs: number): Promise<string | null> {
   const [icpRoh, profilRoh, gedRoh] = await Promise.all([
@@ -114,6 +156,8 @@ async function ersatzKontext(actorId: string, wartezeitMs: number): Promise<stri
     if (liste(profil.industries).length) z.push(`- Branchen: ${liste(profil.industries).join(", ")}`);
     if (liste(profil.geographies).length) z.push(`- Regionen: ${liste(profil.geographies).join(", ")}`);
     if (liste(profil.topics).length) z.push(`- Schwerpunkte: ${liste(profil.topics).join(", ")}`);
+    if (text(profil.tone)) z.push(`- Bevorzugter Ton: ${text(profil.tone)}`);
+    if (text(profil.signalInterests)) z.push(`- Relevant auf LinkedIn (zusätzliche Signale): ${text(profil.signalInterests)}`);
     if (z.length) teile.push("## Über den Nutzer", z.join("\n"));
   }
   const icp = icpRoh.isError ? null : json(icpRoh.text);
@@ -155,8 +199,11 @@ export async function avaKontext(auth: AuthContext, s: KontextSchalter, wartezei
     ].join("\n"),
   ];
   if (verbunden) {
-    const erg = await kopfRelais.aufrufen(auth.actorId, KONTEXT_WERKZEUG, {}, wartezeitMs);
-    if (!erg.isError && erg.text.trim()) teile.push(erg.text.trim());
+    const alle = await kopfRelais.aufrufenAlle(auth.actorId, KONTEXT_WERKZEUG, {}, wartezeitMs);
+    const erg = alle.find((x) => x.mcpZiel) ?? { text: "", isError: true };
+    const andere = alle.filter((x) => !x.mcpZiel && !x.isError && x.text.trim());
+    if (!erg.isError && erg.text.trim()) teile.push(zusammenfuehren(erg.text.trim(), andere));
+    else if (andere.length) teile.push(zusammenfuehren(andere[0]!.text.trim(), andere.slice(1)));
     else {
       // AVA vor v0.1.800 kennt ava_kontext nicht: Profil, ICP und Gemerktes ueber
       // Werkzeuge holen, die jede Version hat.

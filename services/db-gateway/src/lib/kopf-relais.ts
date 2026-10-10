@@ -412,6 +412,25 @@ export class KopfRelais {
   aufrufen(actorId: string, name: string, args: Record<string, unknown>, timeoutMs = AUFRUF_TIMEOUT_MS): Promise<{ text: string; isError?: boolean }> {
     const k = this.mcpKopf(actorId);
     if (!k) return Promise.resolve({ text: "Keine AVA des Nutzers ist gerade verbunden (Desktop-App oder Server laeuft nicht, oder MCP ist dort abgeschaltet).", isError: true });
+    return this.aufrufBei(k, name, args, timeoutMs);
+  }
+
+  /**
+   * Dasselbe Werkzeug bei allen verbundenen AVAs des Nutzers (ava_kontext: Profil und
+   * Gedaechtnis liegen je Instanz, z. B. nur in der Desktop-App, nicht im Server).
+   */
+  async aufrufenAlle(
+    actorId: string,
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs = AUFRUF_TIMEOUT_MS,
+  ): Promise<Array<{ instanz: string; art: InstanzArt; mcpZiel: boolean; text: string; isError?: boolean }>> {
+    const ziel = this.mcpKopf(actorId);
+    const koepfe = [...(this.koepfe.get(actorId)?.values() ?? [])].filter((k) => !k.instanzId.startsWith("unbekannt-"));
+    return Promise.all(koepfe.map(async (k) => ({ instanz: k.name, art: k.art, mcpZiel: k === ziel, ...(await this.aufrufBei(k, name, args, timeoutMs)) })));
+  }
+
+  private aufrufBei(k: KopfVerbindung, name: string, args: Record<string, unknown>, timeoutMs: number): Promise<{ text: string; isError?: boolean }> {
     const id = randomUUID();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

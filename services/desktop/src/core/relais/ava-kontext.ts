@@ -40,6 +40,7 @@ function profilText(p: UserProfile | null): string | null {
   if (p.geographies.length) z.push(`- Regionen: ${p.geographies.join(", ")}`);
   if (p.topics.length) z.push(`- Schwerpunkte: ${p.topics.join(", ")}`);
   if (p.tone) z.push(`- Bevorzugter Ton: ${p.tone}`);
+  if (p.signalInterests?.trim()) z.push(`- Relevant auf LinkedIn (zusätzliche Signale): ${kurz(p.signalInterests, 600)}`);
   return z.length ? z.join("\n") : null;
 }
 
