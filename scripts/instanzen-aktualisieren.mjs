@@ -4,6 +4,7 @@
 //
 //   node scripts/instanzen-aktualisieren.mjs [--version 0.1.797] [--nur zimmer-gmbh,mueller]
 //        [--auch headless-ava] [--org personal] [--trocken]
+//   node scripts/instanzen-aktualisieren.mjs --apps headless-ava   (genau diese Apps, ohne Suche)
 //
 // Vorher einmal: node scripts/instanz-image.mjs --version <v>
 
@@ -18,7 +19,7 @@ try {
   const org = String(a.org || "personal");
   const nur = a.nur ? String(a.nur).split(",").map((s) => appName(s.trim())) : null;
   const auch = a.auch ? String(a.auch).split(",").map((s) => s.trim()) : [];
-  const apps = [
+  const apps = a.apps ? String(a.apps).split(",").map((s) => s.trim()).filter(Boolean) : [
     ...alleApps(org).map((x) => x.name).filter((n) => n.startsWith(APP_PREFIX) && !n.endsWith("-ollama")).filter((n) => !nur || nur.includes(n)),
     ...auch,
   ];
