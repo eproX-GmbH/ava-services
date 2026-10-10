@@ -1,3 +1,4 @@
+import { azureBaseURL } from "../../../shared/azure-openai";
 import type {
   AnthropicTierInfo,
   HostedProviderKind,
@@ -103,6 +104,26 @@ export async function validateApiKey(
       ok: false,
       reason: `Network error: ${err instanceof Error ? err.message : String(err)}`,
     };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Azure OpenAI (v1-API): `GET <endpoint>/openai/v1/models` mit `api-key`.
+ * 401/403 = Schluessel falsch; 404 = Endpunkt ohne v1-API.
+ */
+export async function validateAzureOpenAIKey(endpoint: string, apiKey: string): Promise<KeyValidation> {
+  const trimmed = apiKey.trim();
+  if (!trimmed) return { ok: false, reason: "Empty API key." };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS * 2);
+  try {
+    const res = await probeFetch(`${azureBaseURL(endpoint)}/models`, { method: "GET", headers: { "api-key": trimmed }, signal: ctrl.signal });
+    if (res.status === 404) return { ok: false, reason: "Azure-Endpunkt ohne v1-API gefunden. Endpunkt der Azure-OpenAI-Ressource prüfen." };
+    return await interpret(res, "Azure OpenAI");
+  } catch (err) {
+    return { ok: false, reason: `Azure OpenAI nicht erreichbar: ${err instanceof Error ? err.message : String(err)}` };
   } finally {
     clearTimeout(timer);
   }

@@ -17,6 +17,7 @@ export interface SpracheStand {
   verfuegbar: boolean;
   quelle: "eigen" | "organisation" | null;
   whisperBereit: boolean;
+  hinweis?: string | null;
 }
 
 export interface SpracheIpcDeps {

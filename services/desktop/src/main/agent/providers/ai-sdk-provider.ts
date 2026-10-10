@@ -155,6 +155,8 @@ export interface AiSdkProviderOptions {
   /** O5 — Stellvertreter-Proxy (Organisationsschluessel): baseURL + JWT,
    *  oder null, wenn der eigene Schluessel/Abo genutzt wird. */
   getGatewayProxy?: () => Promise<{ baseURL: string; token: string } | null>;
+  /** Azure OpenAI (eigener Schluessel): lokale Bruecke statt api.openai.com; null = aus. */
+  getAzureBruecke?: () => Promise<{ baseURL: string; apiKey: string } | null>;
 }
 
 export class AiSdkProvider extends EventEmitter implements LlmProvider {
@@ -169,6 +171,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   private readonly unsubscribeOpenAISubscriptionToken?: () => void;
   private readonly getAnthropicAuthMode?: () => "api-key" | "subscription";
   private readonly getGatewayProxy?: () => Promise<{ baseURL: string; token: string } | null>;
+  private readonly getAzureBruecke?: () => Promise<{ baseURL: string; apiKey: string } | null>;
   private readonly getAnthropicSubscriptionToken?: () => Promise<string | null>;
   private readonly hasStoredAnthropicSubscriptionToken?: () => boolean;
   private readonly getOpenAIAuthMode?: () => "api-key" | "subscription";
@@ -185,6 +188,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.supervisor = opts.supervisor;
     this.getAnthropicAuthMode = opts.getAnthropicAuthMode;
     this.getGatewayProxy = opts.getGatewayProxy;
+    this.getAzureBruecke = opts.getAzureBruecke;
     this.getAnthropicSubscriptionToken = opts.getAnthropicSubscriptionToken;
     this.hasStoredAnthropicSubscriptionToken =
       opts.hasStoredAnthropicSubscriptionToken;
@@ -377,10 +381,19 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         );
       }
     }
-    const baseURL =
+    let baseURL =
       this.kind === "ollama"
         ? this.ollamaBaseURL()
         : gatewayProxy?.baseURL;
+    // Azure OpenAI mit eigenem Schluessel: ueber die lokale Bruecke
+    // (Modell → Deployment, Azure-Schluessel), nicht beim ChatGPT-Abo.
+    if (!gatewayProxy && !openaiSubscriptionToken && this.getAzureBruecke) {
+      const br = await this.getAzureBruecke();
+      if (br) {
+        baseURL = br.baseURL;
+        apiKey = br.apiKey;
+      }
+    }
     // O6b — Kanal fuer getrennte Limits (Chat vs. Hintergrund) im Gateway.
     const proxyHeaders = gatewayProxy
       ? { authorization: `Bearer ${gatewayProxy.token}`, "x-ava-llm-channel": req.channel ?? "chat", ...(req.quelle ? { "x-ava-llm-quelle": req.quelle.slice(0, 40) } : {}) }

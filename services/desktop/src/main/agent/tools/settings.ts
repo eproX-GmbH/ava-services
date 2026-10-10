@@ -426,6 +426,69 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     },
   });
 
+  // Azure OpenAI fuer den eigenen OpenAI-Schluessel (shared/azure-openai.ts).
+  const openaiAzure = defineTool({
+    name: "settings_openai_azure",
+    summary: "Azure OpenAI statt OpenAI direkt: Endpunkt und Deployments ansehen, setzen, Verbindung pruefen oder ausschalten.",
+    category: "einstellungen anbieter azure openai microsoft deployment",
+    description:
+      "Der eigene OpenAI-Schluessel kann ein Azure-OpenAI-Schluessel sein. `aktion` 'stand' zeigt Endpunkt, Deployments und ob Azure aktiv ist; " +
+      "'setzen' traegt `endpunkt` (z. B. https://firma.openai.azure.com) und `deployments` ein (Objekt Katalog-Modell-ID → Deployment-Name, " +
+      "'*' = alle uebrigen Modelle; ohne Eintrag nutzt AVA ein gleichnamiges Deployment); 'pruefen' testet den gespeicherten Schluessel gegen den Endpunkt; " +
+      "'aus' schaltet zurueck auf OpenAI direkt. Den Schluessel selbst setzt settings_set_api_key mit provider 'openai'. Mit Azure ist der Sprachmodus nicht verfuegbar.",
+    parameters: {
+      type: "object",
+      required: ["aktion"],
+      properties: {
+        aktion: { type: "string", enum: ["stand", "setzen", "pruefen", "aus"] },
+        endpunkt: { type: "string", description: "https://<ressource>.openai.azure.com" },
+        deployments: { type: "object", description: "Katalog-Modell-ID → Deployment-Name, '*' fuer alle uebrigen", additionalProperties: { type: "string" } },
+      },
+    },
+    schema: yup
+      .object({
+        aktion: yup.string().oneOf(["stand", "setzen", "pruefen", "aus"]).required(),
+        endpunkt: yup.string().trim().max(300).optional(),
+        deployments: yup.object().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { error?: string; aktiv?: boolean; azure?: { endpoint?: string } | null } | ReturnType<typeof userDeclined>) =>
+      !("aktiv" in r) && !("error" in r)
+        ? "abgebrochen"
+        : "error" in r && r.error
+          ? String(r.error)
+          : "aktiv" in r && r.aktiv
+            ? `Azure OpenAI aktiv · ${r.azure?.endpoint ?? ""}`
+            : "azure" in r && r.azure
+              ? "Azure eingetragen, nicht aktiv"
+              : "OpenAI direkt",
+    run: async (args, c) => {
+      const stand = () => ({ azure: providers.getAzureConfig(), aktiv: providers.azureAktiv() });
+      if (args.aktion === "stand") return stand();
+      if (args.aktion === "pruefen") return { ...stand(), pruefung: await providers.azurePruefen() };
+      if (args.aktion === "setzen" && !args.endpunkt) return { error: "Fuer 'setzen' fehlt `endpunkt`." };
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt:
+            args.aktion === "aus"
+              ? "Azure OpenAI ausschalten? Der gespeicherte OpenAI-Schluessel geht dann wieder direkt an OpenAI."
+              : `OpenAI-Aufrufe ueber Azure OpenAI (${args.endpunkt}) laufen lassen? Der gespeicherte OpenAI-Schluessel muss dann der Azure-Schluessel sein.`,
+          confirmValue: "save",
+          options: [
+            { value: "save", label: args.aktion === "aus" ? "Ausschalten" : "Speichern" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "save") return userDeclined();
+      if (args.aktion === "aus") providers.setAzureConfig(null);
+      else providers.setAzureConfig({ endpoint: args.endpunkt!, deployments: (args.deployments ?? {}) as Record<string, string> });
+      return stand();
+    },
+  });
+
   return [
     getProvider,
     setProvider,
@@ -435,5 +498,6 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     publicationAnalysis,
     setKeySource,
     chatgptPlan,
+    openaiAzure,
   ];
 }

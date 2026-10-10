@@ -24,7 +24,11 @@ export function SprachmodusSection() {
         Gesprächsminuten kosten mehr als Chat (grob 0,20–0,40 € je Minute); nach {e.ruheSekunden} Sekunden Stille geht AVA in den Ruhezustand, dann läuft nichts weiter.
       </p>
       {!stand.verfuegbar ? (
-        <p className="muted">Dafür fehlt ein OpenAI-Schlüssel: <Link to="/settings#provider-section">in der Modell-Konfiguration hinterlegen</Link>.</p>
+        stand.hinweis ? (
+          <p className="muted">{stand.hinweis}</p>
+        ) : (
+          <p className="muted">Dafür fehlt ein OpenAI-Schlüssel: <Link to="/settings#provider-section">in der Modell-Konfiguration hinterlegen</Link>.</p>
+        )
       ) : (
         <>
           <label className="alerts-prefs__row">

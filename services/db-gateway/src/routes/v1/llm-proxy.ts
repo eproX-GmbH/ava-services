@@ -11,6 +11,7 @@
 // Token-Zaehler werden aus der Antwort gelesen (LlmUsage). Prompts werden
 // NUR gespeichert, wenn TenantPolicy.promptAudit gesetzt ist.
 
+import { azureBaseURL, azureDeployment } from "../../lib/azure-openai";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import type { Context } from "hono";
@@ -24,7 +25,7 @@ import {
   listProviders,
   setProviderKey,
   deleteProviderKey,
-  getProviderKey,
+  getProviderZugang,
   type ProviderKind,
 } from "../../lib/tenant-providers";
 import { estimateMicroUsd, estimateRealtimeMicroUsd } from "../../lib/llm-pricing";
@@ -76,14 +77,26 @@ llmProxyRouter.openapi(
     method: "put",
     path: "/tenants/me/providers/{kind}",
     tags: ["tenants"],
-    summary: "Organisationsschluessel setzen (Admin). Der Klartext wird verschluesselt abgelegt und nie zurueckgegeben.",
-    request: { params: KindParam, body: { content: { "application/json": { schema: z.object({ apiKey: z.string().min(8).max(4096) }) } } } },
+    summary: "Organisationsschluessel setzen (Admin). Der Klartext wird verschluesselt abgelegt und nie zurueckgegeben. Fuer openai optional Azure OpenAI (azure: {endpoint, deployments} | null).",
+    request: {
+      params: KindParam,
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              apiKey: z.string().min(8).max(4096).optional(),
+              azure: z.object({ endpoint: z.string().min(8).max(300), deployments: z.record(z.string(), z.string().max(64)).optional() }).nullable().optional(),
+            }),
+          },
+        },
+      },
+    },
     responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "gesetzt" } },
   }),
   async (c) => {
     const { kind } = c.req.valid("param");
-    const { apiKey } = c.req.valid("json");
-    const info = await wrap(() => setProviderKey(getGatewayPool(), c.get("auth"), kind, apiKey));
+    const { apiKey, azure } = c.req.valid("json");
+    const info = await wrap(() => setProviderKey(getGatewayPool(), c.get("auth"), kind, apiKey, azure));
     return c.json({ ok: true, ...info });
   },
 );
@@ -186,12 +199,17 @@ async function readBody(c: Context): Promise<Buffer | null> {
   return buf;
 }
 
-async function passthrough(c: Context, kind: ProviderKind, base: string, rest: string, meter: boolean): Promise<Response> {
+async function passthrough(c: Context, kind: ProviderKind, basis: string, rest: string, meter: boolean): Promise<Response> {
+  let base = basis;
   const auth = c.get("auth");
   const pool = getGatewayPool();
   if (!secretsConfigured()) throw new HTTPException(503, { message: "secrets_unconfigured" });
-  const key = await getProviderKey(pool, auth.tenantId, kind);
-  if (!key) throw new HTTPException(404, { message: `provider_not_configured:${kind}` });
+  const zugang = await getProviderZugang(pool, auth.tenantId, kind);
+  if (!zugang) throw new HTTPException(404, { message: `provider_not_configured:${kind}` });
+  const key = zugang.key;
+  // Azure OpenAI als Organisationsschluessel: Ziel ist die Azure-Ressource
+  // (v1-API), das Modell wird unten auf das Deployment uebersetzt.
+  if (zugang.azure) base = azureBaseURL(zugang.azure.endpoint);
 
   // O6b — Kanal des Aufrufs: Desktop-Chat sendet `x-ava-llm-channel: chat`,
   // Producer und aeltere Desktop-Versionen nichts (= background).
@@ -224,6 +242,7 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
     if (!HOP_BY_HOP.has(k.toLowerCase())) headers[k] = v;
   }
   Object.assign(headers, authHeaders(kind, key));
+  if (zugang.azure) headers["api-key"] = key;
   if (kind === "google" && url.searchParams.has("key")) {
     // Google akzeptiert den Schluessel auch als Query-Parameter — Client-
     // Werte dort entfernen, damit nie ein fremder Schluessel durchgeht.
@@ -246,10 +265,18 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
     if (mm) model = mm[1] ?? null;
   }
 
+  // Azure: Katalog-Modell → Deployment (Abrechnung bleibt bei der Katalog-ID bzw.
+  // dem Modell, das Azure in der Antwort meldet).
+  let sendeBody = body;
+  if (zugang.azure && model && requestJson && typeof requestJson === "object") {
+    sendeBody = Buffer.from(JSON.stringify({ ...(requestJson as Record<string, unknown>), model: azureDeployment(zugang.azure, model) }), "utf8");
+    delete headers["content-length"];
+  }
+
   const start = Date.now();
   let upstream: Response;
   try {
-    upstream = await fetch(target, { method: c.req.method, headers, body: body ? new Uint8Array(body) : undefined, redirect: "manual" });
+    upstream = await fetch(target, { method: c.req.method, headers, body: sendeBody ? new Uint8Array(sendeBody) : undefined, redirect: "manual" });
   } catch (err) {
     logger.warn({ kind, err: err instanceof Error ? err.message : String(err) }, "llm-proxy upstream fetch failed");
     throw new HTTPException(502, { message: "upstream_unreachable" });

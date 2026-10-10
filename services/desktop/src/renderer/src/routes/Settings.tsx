@@ -1,3 +1,4 @@
+import { AzureOpenAIKarte } from "./settings/AzureOpenAIKarte";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -3016,6 +3017,8 @@ function ApiKeyCard({
           <p className="provider-key-card__description">
             {PROVIDER_FEATURES[kind]}
           </p>
+
+          {kind === "openai" && <AzureOpenAIKarte />}
 
           <div className="provider-key-card__footer">
             <a

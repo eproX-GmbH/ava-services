@@ -521,6 +521,10 @@ model TenantProvider {
   keyHint       String
   updatedAt     DateTime @default(now())
   updatedBy     String?
+  /// Azure OpenAI (nur kind openai): https://<ressource>.openai.azure.com; NULL = OpenAI direkt.
+  endpoint      String?
+  /// Katalog-Modell-ID → Azure-Deployment ("*" = alle uebrigen).
+  deployments   Json?
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([tenantId, kind])

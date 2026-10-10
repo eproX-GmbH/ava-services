@@ -9,7 +9,7 @@ import type { SpracheEinstellungen, SpracheStimme } from "../../../shared/types"
 interface Ctx {
   get: () => SpracheEinstellungen;
   setzen: (teil: Partial<SpracheEinstellungen>) => SpracheEinstellungen;
-  stand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
+  stand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null; hinweis?: string | null };
 }
 
 export function buildSprachmodusTools(ctx: Ctx): Tool[] {
@@ -39,7 +39,7 @@ export function buildSprachmodusTools(ctx: Ctx): Tool[] {
       const stand = ctx.stand();
       const aenderungen = Object.entries(args).filter(([, v]) => v !== undefined);
       if (aenderungen.length === 0) return { einstellungen: jetzt, ...stand };
-      if (args.aktiv === true && !stand.verfuegbar) return { error: "Kein OpenAI-Schluessel hinterlegt — der Sprachmodus braucht einen (eigener oder Organisation)." };
+      if (args.aktiv === true && !stand.verfuegbar) return { error: stand.hinweis ?? "Kein OpenAI-Schluessel hinterlegt — der Sprachmodus braucht einen (eigener oder Organisation)." };
       const value = await c.ui.confirmAction(
         {
           kind: "additive",

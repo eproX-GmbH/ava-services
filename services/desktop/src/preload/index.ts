@@ -1020,6 +1020,11 @@ const api = {
       kind: HostedProviderKind;
       apiKey: string;
     }): Promise<void> => ipcRenderer.invoke("agent:setApiKey", args),
+    /** Azure OpenAI fuer den eigenen OpenAI-Schluessel; null = OpenAI direkt. */
+    setAzureConfig: (cfg: import("../shared/azure-openai").AzureOpenAIConfig | null): Promise<import("../shared/azure-openai").AzureOpenAIConfig | null> =>
+      ipcRenderer.invoke("agent:setAzureConfig", cfg),
+    /** Gespeicherten Schluessel gegen den Azure-Endpunkt pruefen. */
+    azurePruefen: (): Promise<{ ok: true } | { ok: false; reason: string }> => ipcRenderer.invoke("agent:azurePruefen"),
     /** O5 — Schluesselquelle je Anbieter: eigener Schluessel/Abo oder Organisation. */
     setKeySource: (args: {
       kind: LlmProviderKind;

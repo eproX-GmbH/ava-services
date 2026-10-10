@@ -2,6 +2,7 @@
 // Die Handler sind unverändert; die Abhängigkeiten kommen explizit über `deps`.
 // Spät gesetzte Dienste (vormals `let` in index.ts) werden als Getter übergeben.
 
+import type { AzureOpenAIConfig } from "../../shared/azure-openai";
 import { BrowserWindow, app, ipcMain, protocol, session } from "electron";
 import { LlmProviderManager, MemoryStore } from "../agent";
 import { join } from "node:path";
@@ -107,6 +108,10 @@ export function registerAgentIpc(deps: AgentIpcDeps): void {
   );
 
   // O5 — Schluesselquelle je Anbieter (eigen | organisation).
+  // Azure OpenAI (shared/azure-openai.ts): Endpunkt + Deployments; null = OpenAI direkt.
+  ipcMain.handle("agent:setAzureConfig", (_e, cfg: AzureOpenAIConfig | null) => providers.setAzureConfig(cfg));
+  ipcMain.handle("agent:azurePruefen", () => providers.azurePruefen());
+
   ipcMain.handle(
     "agent:setKeySource",
     (_e, args: { kind: LlmProviderKind; source: "eigen" | "organisation" }): ProviderConfig =>

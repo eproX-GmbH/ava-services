@@ -215,7 +215,7 @@ export function buildReadOnlyRegistry(deps: {
   sprache?: {
     get: () => import("../../../shared/types").SpracheEinstellungen;
     setzen: (teil: Partial<import("../../../shared/types").SpracheEinstellungen>) => import("../../../shared/types").SpracheEinstellungen;
-    stand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
+    stand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null; hinweis?: string | null };
   };
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
   discoveryAudit: (entry: {

@@ -1,3 +1,5 @@
+import { AzureBruecke } from "./azure-bruecke";
+import type { AzureOpenAIConfig } from "../../../shared/azure-openai";
 import { EventEmitter } from "node:events";
 import { getCachedPlanModelle, listePlanModelle, standardPlanModell } from "./openai-subscription-model";
 import type { OpenAISubscriptionRecord } from "./store";
@@ -11,6 +13,7 @@ import { ProviderConfigStore } from "./store";
 import {
   probeAnthropicSubscription,
   validateApiKey,
+  validateAzureOpenAIKey,
   type KeyValidation,
 } from "./validate-key";
 // v0.1.216 — detectAnthropicTier wird nicht mehr aufgerufen, seit
@@ -89,7 +92,23 @@ export class LlmProviderManager extends EventEmitter {
     chatgptPlanErlaubt?: boolean;
     /** docs/PLAN_CHATGPT_ABO_UEBERALL.md: unter Anbieter-Sperre Producer ueber das Abo erlaubt? Fehlt sie, gilt "nein". */
     chatgptPlanProducer?: boolean;
+    /** Der OpenAI-Organisationsschluessel ist ein Azure-OpenAI-Schluessel (Gateway uebersetzt). */
+    openaiAzure?: boolean;
   } = { providers: {}, gatewayUrl: "", getToken: async () => null };
+
+  /**
+   * Azure OpenAI mit dem eigenen Schluessel (shared/azure-openai.ts): lokale
+   * Bruecke, ueber die Chat, Producer, Recherche und Telegram laufen.
+   */
+  readonly azureBruecke = new AzureBruecke({
+    ziel: async () => {
+      const cfg = this.store.getConfig().openaiAzure;
+      if (!cfg) return null;
+      const key = await this.store.getKey("openai");
+      return key ? { cfg, key } : null;
+    },
+    log: (z) => console.warn(z),
+  });
 
   /** Letzte bekannte Kurzfassung der ChatGPT-Verbindung (sync fuer das Bundle). */
   private planZusammenfassung: { flow: "plan"; email: string | null; modell: string | null; planScope: boolean; token: string | null } | null = null;
@@ -121,6 +140,7 @@ export class LlmProviderManager extends EventEmitter {
                 this.isProviderLocked()
                   ? this.keySource(kind) === "organisation"
                   : this.store.hasKey(kind as HostedProviderKind) || this.keySource(kind) === "organisation",
+        ...(kind === "openai" ? { getAzureBruecke: () => (this.azureAktiv() ? this.azureBruecke.zugang() : Promise.resolve(null)) } : {}),
         getGatewayProxy: async () => {
           if (kind === "ollama" || this.keySource(kind) !== "organisation") return null;
           const token = await this.org.getToken();
@@ -250,12 +270,13 @@ export class LlmProviderManager extends EventEmitter {
     apifyEigenerErlaubt?: boolean;
     chatgptPlanErlaubt?: boolean;
     chatgptPlanProducer?: boolean;
+    openaiAzure?: boolean;
   }): void {
     // Die Apify-Vorgabe gehoert zum Vergleich: Wird sie umgestellt, muss die
     // Auswahl neu berechnet werden, auch wenn sich kein Schluessel geaendert hat.
-    const vorher = JSON.stringify([this.org.providers, this.org.apifyEigenerErlaubt !== false, this.org.chatgptPlanErlaubt !== false, this.org.chatgptPlanProducer === true]);
+    const vorher = JSON.stringify([this.org.providers, this.org.apifyEigenerErlaubt !== false, this.org.chatgptPlanErlaubt !== false, this.org.chatgptPlanProducer === true, this.org.openaiAzure === true]);
     this.org = ctx;
-    if (vorher !== JSON.stringify([ctx.providers, ctx.apifyEigenerErlaubt !== false, ctx.chatgptPlanErlaubt !== false, ctx.chatgptPlanProducer === true])) {
+    if (vorher !== JSON.stringify([ctx.providers, ctx.apifyEigenerErlaubt !== false, ctx.chatgptPlanErlaubt !== false, ctx.chatgptPlanProducer === true, ctx.openaiAzure === true])) {
       this.emit("configChanged");
       this.recompute();
     }
@@ -278,7 +299,58 @@ export class LlmProviderManager extends EventEmitter {
     }
     const key = await this.store.getKey("openai");
     if (!key) return null;
+    if (this.azureAktiv()) return { ...(await this.azureBruecke.zugang()), quelle };
     return { apiKey: key, baseURL: "https://api.openai.com/v1", quelle };
+  }
+
+  /** Azure OpenAI mit eigenem Schluessel aktiv (Endpunkt gesetzt, Schluessel da, keine Organisationsquelle)? */
+  azureAktiv(): boolean {
+    return Boolean(this.store.getConfig().openaiAzure) && this.store.hasKey("openai") && !this.isProviderLocked() && this.keySource("openai") === "eigen";
+  }
+
+  /** Gespeicherten OpenAI-Schluessel gegen den Azure-Endpunkt pruefen. */
+  async azurePruefen(): Promise<KeyValidation> {
+    const cfg = this.store.getConfig().openaiAzure;
+    if (!cfg) return { ok: false, reason: "Kein Azure-Endpunkt eingetragen." };
+    const key = await this.store.getKey("openai");
+    if (!key) return { ok: false, reason: "Noch kein Azure-Schlüssel gespeichert." };
+    return validateAzureOpenAIKey(cfg.endpoint, key);
+  }
+
+  /** Laeuft OpenAI gerade ueber Azure (eigener Schluessel oder Organisationsschluessel)? */
+  openaiUeberAzure(): boolean {
+    if (this.azureAktiv()) return true;
+    return this.keySource("openai") === "organisation" && this.org.openaiAzure === true;
+  }
+
+  getAzureConfig(): AzureOpenAIConfig | null {
+    return this.store.getConfig().openaiAzure ?? null;
+  }
+
+  /** Azure-Endpunkt und Deployments setzen (null = wieder OpenAI direkt). */
+  setAzureConfig(cfg: AzureOpenAIConfig | null): AzureOpenAIConfig | null {
+    this.sperrePruefen("das Aendern des OpenAI-Endpunkts");
+    const neu = this.store.setConfig({ openaiAzure: cfg }).openaiAzure ?? null;
+    this.emit("configChanged");
+    this.recompute();
+    return neu;
+  }
+
+  /**
+   * Producer-Umgebung fuer Azure: Werte, die der Azure-Schluessel sind
+   * (OPENAI_API_KEY, RESEARCH_*_API_KEY), durch das Geheimnis der Bruecke
+   * ersetzen und OPENAI_BASE_URL auf die Bruecke setzen. Das AI SDK und das
+   * openai-Paket der Producer lesen OPENAI_BASE_URL selbst.
+   */
+  async azureUmgebung(env: Record<string, string>): Promise<Record<string, string>> {
+    if (!this.azureAktiv()) return env;
+    const key = await this.store.getKey("openai");
+    if (!key) return env;
+    const z = await this.azureBruecke.zugang();
+    const aus: Record<string, string> = {};
+    for (const [k, v] of Object.entries(env)) aus[k] = v === key ? z.apiKey : v;
+    aus.OPENAI_BASE_URL = z.baseURL;
+    return aus;
   }
 
   /** Anbieter, die die Organisation mit Schluessel bereitstellt (Hinweis). */
@@ -752,6 +824,8 @@ export class LlmProviderManager extends EventEmitter {
     kind: HostedProviderKind,
     apiKey: string,
   ): Promise<KeyValidation> {
+    const azure = kind === "openai" ? this.store.getConfig().openaiAzure : null;
+    if (azure) return validateAzureOpenAIKey(azure.endpoint, apiKey);
     return validateApiKey(kind, apiKey);
   }
 

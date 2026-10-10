@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { credentials, paths } from "../../../core/platform";
+import { azureEndpointNormalisieren, deploymentsNormalisieren, type AzureOpenAIConfig } from "../../../shared/azure-openai";
 import type {
   KeySource,
   AnthropicAuthMode,
@@ -273,6 +274,8 @@ export class ProviderConfigStore extends EventEmitter {
     keySource?: Partial<Record<LlmProviderKind, KeySource>>;
     /** Firmenverarbeitung ueber das ChatGPT-Abo (docs/PLAN_CHATGPT_ABO_UEBERALL.md). */
     chatgptPlanProducer?: boolean;
+    /** Azure OpenAI fuer den eigenen OpenAI-Schluessel; null = OpenAI direkt. */
+    openaiAzure?: AzureOpenAIConfig | null;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -323,6 +326,11 @@ export class ProviderConfigStore extends EventEmitter {
     }
     if (partial.chatgptPlanProducer !== undefined) {
       next.chatgptPlanProducer = Boolean(partial.chatgptPlanProducer);
+    }
+    if (partial.openaiAzure !== undefined) {
+      next.openaiAzure = partial.openaiAzure
+        ? { endpoint: azureEndpointNormalisieren(partial.openaiAzure.endpoint), deployments: deploymentsNormalisieren(partial.openaiAzure.deployments) }
+        : null;
     }
     if (partial.dailyTokenLimit !== undefined) {
       next.dailyTokenLimit = normaliseDailyTokenLimit(partial.dailyTokenLimit);
@@ -867,6 +875,24 @@ export class ProviderConfigStore extends EventEmitter {
           if (typeof v === "string" && v.trim()) producerModels[k] = v.trim();
         }
       }
+      const keySource: Partial<Record<LlmProviderKind, KeySource>> = {};
+      if (parsed.keySource && typeof parsed.keySource === "object") {
+        for (const k of ALL_KINDS) {
+          const v = parsed.keySource[k];
+          if (v === "eigen" || v === "organisation") keySource[k] = v;
+        }
+      }
+      let openaiAzure: AzureOpenAIConfig | null = null;
+      if (parsed.openaiAzure && typeof parsed.openaiAzure === "object") {
+        try {
+          openaiAzure = {
+            endpoint: azureEndpointNormalisieren(String(parsed.openaiAzure.endpoint ?? "")),
+            deployments: deploymentsNormalisieren(parsed.openaiAzure.deployments),
+          };
+        } catch (err) {
+          console.warn("[provider-store] openaiAzure verworfen:", err instanceof Error ? err.message : err);
+        }
+      }
       return {
         kind,
         models,
@@ -874,6 +900,9 @@ export class ProviderConfigStore extends EventEmitter {
         openaiAuthMode,
         dailyTokenLimit: normaliseDailyTokenLimit(parsed.dailyTokenLimit),
         producerModels,
+        ...(Object.keys(keySource).length ? { keySource } : {}),
+        ...(typeof parsed.chatgptPlanProducer === "boolean" ? { chatgptPlanProducer: parsed.chatgptPlanProducer } : {}),
+        openaiAzure,
       };
     } catch (err) {
       console.warn("[provider-store] failed to read provider.json:", err);
@@ -909,5 +938,10 @@ function cloneConfig(cfg: ProviderConfig): ProviderConfig {
     openaiAuthMode: cfg.openaiAuthMode ?? "api-key",
     dailyTokenLimit: cfg.dailyTokenLimit ?? null,
     producerModels: { ...(cfg.producerModels ?? {}) },
+    // 2026-10-10 — keySource und chatgptPlanProducer gingen hier vorher
+    // verloren (Auswahl wirkte nur bis zum nächsten Lesen).
+    ...(cfg.keySource ? { keySource: { ...cfg.keySource } } : {}),
+    ...(cfg.chatgptPlanProducer !== undefined ? { chatgptPlanProducer: cfg.chatgptPlanProducer } : {}),
+    openaiAzure: cfg.openaiAzure ? { endpoint: cfg.openaiAzure.endpoint, deployments: { ...cfg.openaiAzure.deployments } } : null,
   };
 }

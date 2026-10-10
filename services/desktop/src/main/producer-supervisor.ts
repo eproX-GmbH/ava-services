@@ -183,6 +183,8 @@ export interface ProducerSupervisorOptions {
    *  values that depend on runtime state (e.g. the structured-content
    *  upstream picker, which reads live reachability). */
   extraEnvAsync?: () => Promise<Record<string, string>>;
+  /** Letzter Schritt vor dem Start: z. B. Azure OpenAI ueber die lokale Bruecke. */
+  envNachbearbeiten?: (env: Record<string, string>) => Promise<Record<string, string>>;
 }
 
 export class ProducerSupervisor extends EventEmitter {
@@ -513,7 +515,8 @@ export class ProducerSupervisor extends EventEmitter {
       return;
     }
 
-    const env = await this.buildEnv();
+    const roh = await this.buildEnv();
+    const env = roh && this.opts.envNachbearbeiten ? ((await this.opts.envNachbearbeiten(roh as Record<string, string>)) as NodeJS.ProcessEnv) : roh;
     if (!env) {
       // Either AMQP URL, DATABASE URL, or LLM provider config is
       // missing — user not signed in, no LLM key, or the user is on

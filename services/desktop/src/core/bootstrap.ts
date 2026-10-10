@@ -695,6 +695,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       amqpUrl: fetchAmqpUrl,
       jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
       llmConfig: () => providers.getProducerLlmEnv(),
+      // Azure OpenAI mit eigenem Schluessel: Producer ueber die lokale Bruecke.
+      envNachbearbeiten: (env) => providers.azureUmgebung(env),
       // ChatGPT-Abo: Producer holen den Token vom Loopback-Dienst des Mains.
       planTokenEndpunkt: () => planTokenServer.endpunkt(),
       // v0.1.144 — surface a precise reason (e.g. "Subscription-OAuth
@@ -1768,8 +1770,13 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       setzen: (teil) => SpracheStore.shared().setzen(teil),
       stand: () => {
         const q = providers.keySource("openai");
-        const hat = q === "organisation" ? Boolean(providers.getOrgProviders().openai) : providers.hasKey("openai") || Boolean(providers.getOrgProviders().openai);
-        return { verfuegbar: hat, quelle: hat ? (q === "organisation" || !providers.hasKey("openai") ? "organisation" : "eigen") : null };
+        const azure = providers.openaiUeberAzure();
+        const hat = !azure && (q === "organisation" ? Boolean(providers.getOrgProviders().openai) : providers.hasKey("openai") || Boolean(providers.getOrgProviders().openai));
+        return {
+          verfuegbar: hat,
+          quelle: hat ? (q === "organisation" || !providers.hasKey("openai") ? "organisation" : "eigen") : null,
+          hinweis: azure ? "Mit Azure OpenAI ist der Sprachmodus nicht verfuegbar; er braucht einen Schluessel direkt bei OpenAI." : null,
+        };
       },
     },
     icp: icpStore,
@@ -3674,9 +3681,10 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   initOrganisation({
     gateway: gatewayClient,
     isSignedIn: () => auth.getStatus().signedIn,
-    onOrgProviders: (provs) => {
+    onOrgProviders: (provs, extra) => {
       providers.setOrgContext({
         providers: provs as Partial<Record<LlmProviderKind | "apify", string>>,
+        openaiAzure: extra.openaiAzure,
         gatewayUrl: APP_CONFIG.gatewayUrl,
         getToken: () => auth.getAccessToken(),
         // Vorgabe der Organisation: Darf der eigene Apify-Token den der
@@ -3946,9 +3954,13 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     const q = providers.keySource("openai");
     const orgHat = Boolean(providers.getOrgProviders().openai);
     const eigenHat = providers.hasKey("openai");
-    const verfuegbar = q === "organisation" ? orgHat : eigenHat || orgHat;
+    // Azure OpenAI: Realtime laeuft dort ueber eigene Endpunkte; der
+    // Sprachmodus spricht OpenAI direkt an und ist dann nicht verfuegbar.
+    const azure = providers.openaiUeberAzure();
+    const verfuegbar = !azure && (q === "organisation" ? orgHat : eigenHat || orgHat);
     const quelle: "eigen" | "organisation" | null = !verfuegbar ? null : q === "organisation" || !eigenHat ? "organisation" : "eigen";
-    return { einstellungen: spracheStore.get(), verfuegbar, quelle, whisperBereit: whisper.getStatus().state === "ready" };
+    const hinweis = azure ? "Mit Azure OpenAI ist der Sprachmodus nicht verfügbar; er braucht einen Schlüssel direkt bei OpenAI." : null;
+    return { einstellungen: spracheStore.get(), verfuegbar, quelle, whisperBereit: whisper.getStatus().state === "ready", hinweis };
   };
   spracheStore.on("changed", () => {
     windows().broadcast("sprache:standChanged", spracheStand());

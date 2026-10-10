@@ -3,6 +3,7 @@
 // Each tsconfig project (node vs web) is sealed off from the other, so
 // any type that crosses the boundary lives here and gets imported via
 // type-only imports on both sides.
+import type { AzureOpenAIConfig } from "./azure-openai";
 
 export interface AppConfig {
   gatewayUrl: string;
@@ -99,6 +100,8 @@ export interface SpracheStand {
   quelle: "eigen" | "organisation" | null;
   /** Lokales Whisper-Modell einsatzbereit (fuer das Aktivierungswort)? */
   whisperBereit: boolean;
+  /** Grund, warum der Sprachmodus trotz Schluessel nicht geht (z. B. Azure OpenAI). */
+  hinweis?: string | null;
 }
 export interface SpracheSitzung {
   clientSecret: string;
@@ -222,7 +225,7 @@ export interface OrgState {
   openRequests: OrgJoinRequest[];
   policy: OrgPolicy;
   /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
-  providers?: Array<{ kind: string; keyHint: string; updatedAt: string }>;
+  providers?: Array<{ kind: string; keyHint: string; updatedAt: string; endpoint?: string | null; deployments?: Record<string, string> | null }>;
   /** O6 — Limit fuer Stellvertreter-Aufrufe (US-Cent, Schaetzwerte). */
   quota?: OrgQuota;
 }
@@ -1105,6 +1108,11 @@ export interface ProviderConfig {
    * hat und lokal keiner hinterlegt ist; sonst eigen.
    */
   keySource?: Partial<Record<LlmProviderKind, KeySource>>;
+  /**
+   * Azure OpenAI statt api.openai.com für den eigenen OpenAI-Schlüssel
+   * (shared/azure-openai.ts). Fehlend/null = OpenAI direkt.
+   */
+  openaiAzure?: AzureOpenAIConfig | null;
 }
 
 /** O5 — Herkunft des Anbieterschluessels. */

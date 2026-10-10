@@ -33,7 +33,7 @@ interface Deps {
   gateway: GatewayClient;
   isSignedIn: () => boolean;
   /** O5 — Organisationsschluessel (Hinweise) an den Provider-Manager melden. */
-  onOrgProviders?: (providers: Record<string, string>) => void;
+  onOrgProviders?: (providers: Record<string, string>, extra: { openaiAzure: boolean }) => void;
   /** O9 — neue, noch nicht gemeldete Radar-Freigaben (Sammel-Meldung). */
   onNeueRadarFreigaben?: (shares: OrgShareRow[]) => void;
 }
@@ -216,7 +216,7 @@ async function pruefeAnfragen(): Promise<void> {
   // O5 — hinterlegte Organisationsschluessel (nur Hinweise) weiterreichen.
   const provs: Record<string, string> = {};
   for (const p of st.providers ?? []) provs[p.kind] = p.keyHint;
-  deps.onOrgProviders?.(provs);
+  deps.onOrgProviders?.(provs, { openaiAzure: Boolean(st.providers?.find((p) => p.kind === "openai")?.endpoint) });
   if (st.kind === "organisation") void pruefeRadarFreigaben();
   if (st.kind !== "organisation" || !(st.myRole === "owner" || st.myRole === "admin")) {
     bekannteAnfragen = null;
