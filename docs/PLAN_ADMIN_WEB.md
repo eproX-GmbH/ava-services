@@ -209,6 +209,30 @@ Reihenfolge: A0 → A1 → A2 → A3 → A4 → A5; A6/A7 nach Bedarf des ersten
 | E9 | Was Admins über Instanzen sehen | nur Betrieb (Art, Version, verbunden, Adresse) | auch Modell, Radar, Telegram |
 | E10 | Abrechnung der Server-Instanz | eigene Position je Instanz im Seat-Plan (`docs/PLAN_ABRECHNUNG_SEATS.md`) | im Seat-Preis enthalten |
 
+### 7.1 Entscheidungen des Operators (2026-10-10)
+
+- **E1: Vercel** (Team QUIKK, Projekt `ava-admin`, Funktionen in `fra1`), bewusst gegen die Empfehlung Fly.
+  Folge: Organisationsschlüssel laufen durch die Server-Funktionen von Vercel; Vercel gehört damit in die
+  Datenfluss-Tabelle der Enterprise-Freigabe (C6).
+- **E3: eigenes Repo `ava-admin`** mit shadcn/ui statt gemeinsamem Paket. Die Org-Oberfläche der Desktop-App
+  wird mittelfristig entfernt; bis dahin gibt es sie doppelt, neue Org-Funktionen entstehen nur noch in der Konsole.
+
+### 7.2 Stand 2026-10-10
+
+- Repo `~/Desktop/Repos/ava-admin` (Next.js 16, App Router, shadcn/ui Radix/Nova, Tailwind 4, react-query, jose).
+  Seiten: Übersicht mit Einladungslink, Mitglieder (Anfragen, Rollen, Entfernen, Verlassen), Funktionen &
+  Vorgaben, Schlüssel, Limits & Verbrauch, Abrechnung (Seats, Nachweise, CSV), Instanzen (Admin), Meine AVA,
+  Beitritt `/beitreten/<token>`; persönlicher Bereich mit „Organisation anlegen“.
+- BFF: `/auth/login|callback|logout|auffrischen`, `/api/gw/[...pfad]` mit Freigabeliste und Ursprungsprüfung,
+  Sitzung als JWE (A256GCM) in geteilten httpOnly-Cookies, 8 h; `proxy.ts` leitet ohne Sitzung zur Anmeldung.
+- Gateway (deployt): `GET /v1/modelle` (Katalog als `lib/modell-katalog.generated.ts` aus
+  `scripts/modell-katalog-export.mjs`), `GET /v1/tenants/me/instanzen` (nur Admins, nur Betriebsdaten).
+  Die App nimmt Einladungslinks `https://…/beitreten/<token>` an (ab dem nächsten Desktop-Release).
+- Vercel: Projekt angelegt, Umgebung gesetzt, Produktion ausgerollt; Domain `admin.ava.bi` angemeldet.
+- Offen: DNS `admin.ava.bi` (CNAME laut Vercel), Keycloak-Client `ava-web` per
+  `infra/scripts/keycloak-web-client.mjs --vercel <ava-admin>` (Admin-Zugang des Operators), danach neu ausrollen.
+  Später: A5 (Setup ohne geheimen Link, Instanz anfordern), Client-Prüfung im Gateway, Org-Seite aus der App entfernen.
+
 ## 8. Risiken
 
 - **Zweite Oberfläche läuft auseinander:** nur mit E3 beherrschbar; neue Org-Funktionen entstehen ab dann im
