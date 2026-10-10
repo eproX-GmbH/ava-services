@@ -191,6 +191,21 @@ export interface UsageRow {
   costCents: number;
   /** Anteil des Chats an costCents (Rest = Hintergrund). */
   chatCents: number;
+  /** Anteil der Chat-Vorschlaege an costCents (Admin-Konsole, 2026-10-10). */
+  vorschlaegeCents: number;
+}
+
+/** Auswertung des gewaehlten Zeitraums fuer die Verbrauchsansicht der Admin-Konsole (2026-10-10). */
+export interface UsageZeitraum {
+  days: number;
+  cents: number;
+  calls: number;
+  /** Aufrufe mit HTTP-Status >= 400 (abgelehnt oder fehlgeschlagen). */
+  fehlerCalls: number;
+  /** Gleich langer Zeitraum direkt davor, zum Vergleich. */
+  vorperiodeCents: number;
+  nachQuelle: Array<{ quelle: string; cents: number; calls: number }>;
+  nachModell: Array<{ model: string; kind: string; cents: number; calls: number; inputTokens: number; outputTokens: number }>;
 }
 
 export interface UsageSummary {
@@ -207,6 +222,7 @@ export interface UsageSummary {
   todayVorschlaegeCents: number;
   /** 2026-09-25 — Hintergrundkosten des Monats nach ausloesender Funktion. */
   monthBackgroundByQuelle: Array<{ quelle: string; cents: number; calls: number }>;
+  zeitraum: UsageZeitraum;
   adminView: boolean;
 }
 
@@ -220,10 +236,11 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
     params.push(auth.actorId);
     filter = ` AND "actorId" = $3`;
   }
-  const r = await pool.query<{ actorId: string; day: Date; calls: string; inputTokens: string; outputTokens: string; cost: string | null; chat: string | null }>(
+  const r = await pool.query<{ actorId: string; day: Date; calls: string; inputTokens: string; outputTokens: string; cost: string | null; chat: string | null; vorschlaege: string | null }>(
     `SELECT "actorId", date_trunc('day', "createdAt") AS day, COUNT(*)::text AS calls,
             SUM("inputTokens")::text AS "inputTokens", SUM("outputTokens")::text AS "outputTokens", SUM("costMicroUsd")::text AS cost,
-            SUM(CASE WHEN "channel" = 'chat' THEN "costMicroUsd" ELSE 0 END)::text AS chat
+            SUM(CASE WHEN "channel" = 'chat' THEN "costMicroUsd" ELSE 0 END)::text AS chat,
+            SUM(CASE WHEN "channel" = 'vorschlaege' THEN "costMicroUsd" ELSE 0 END)::text AS vorschlaege
      FROM "LlmUsage" WHERE "tenantId" = $1 AND "createdAt" >= $2${filter}
      GROUP BY "actorId", day ORDER BY day DESC, "actorId"`,
     params,
@@ -236,7 +253,49 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
     outputTokens: Number(x.outputTokens),
     costCents: Math.round(Number(x.cost ?? "0") / 10_000),
     chatCents: Math.round(Number(x.chat ?? "0") / 10_000),
+    vorschlaegeCents: Math.round(Number(x.vorschlaege ?? "0") / 10_000),
   }));
+
+  // Zeitraum: Summen, Vorperiode, Hintergrund nach Quelle, Kosten nach Modell.
+  const tageZeitraum = Math.max(1, Math.min(days, 90));
+  const vorher = new Date(seit.getTime() - tageZeitraum * 86_400_000);
+  const zFilter = admin ? "" : ` AND "actorId" = $3`;
+  const zParams = admin ? [auth.tenantId, seit] : [auth.tenantId, seit, auth.actorId];
+  const [summe, vorperiode, zQuelle, zModell] = await Promise.all([
+    pool.query<{ cost: string | null; calls: string; fehler: string }>(
+      `SELECT SUM("costMicroUsd")::text AS cost, COUNT(*)::text AS calls, COUNT(*) FILTER (WHERE "status" >= 400)::text AS fehler
+         FROM "LlmUsage" WHERE "tenantId" = $1 AND "createdAt" >= $2${zFilter}`,
+      zParams,
+    ),
+    pool.query<{ cost: string | null }>(
+      `SELECT SUM("costMicroUsd")::text AS cost FROM "LlmUsage"
+        WHERE "tenantId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3${admin ? "" : ` AND "actorId" = $4`}`,
+      admin ? [auth.tenantId, vorher, seit] : [auth.tenantId, vorher, seit, auth.actorId],
+    ),
+    pool.query<{ quelle: string | null; cost: string | null; calls: string }>(
+      `SELECT "quelle", SUM("costMicroUsd")::text AS cost, COUNT(*)::text AS calls
+         FROM "LlmUsage" WHERE "tenantId" = $1 AND "createdAt" >= $2${zFilter} AND "channel" = 'background'
+        GROUP BY "quelle" ORDER BY SUM("costMicroUsd") DESC NULLS LAST LIMIT 20`,
+      zParams,
+    ),
+    pool.query<{ model: string | null; kind: string; cost: string | null; calls: string; inputTokens: string; outputTokens: string }>(
+      `SELECT "model", "kind", SUM("costMicroUsd")::text AS cost, COUNT(*)::text AS calls,
+              SUM("inputTokens")::text AS "inputTokens", SUM("outputTokens")::text AS "outputTokens"
+         FROM "LlmUsage" WHERE "tenantId" = $1 AND "createdAt" >= $2${zFilter}
+        GROUP BY "model", "kind" ORDER BY SUM("costMicroUsd") DESC NULLS LAST LIMIT 20`,
+      zParams,
+    ),
+  ]);
+  const cent = (v: string | null | undefined) => Math.round(Number(v ?? "0") / 10_000);
+  const zeitraum: UsageZeitraum = {
+    days: tageZeitraum,
+    cents: cent(summe.rows[0]?.cost),
+    calls: Number(summe.rows[0]?.calls ?? 0),
+    fehlerCalls: Number(summe.rows[0]?.fehler ?? 0),
+    vorperiodeCents: cent(vorperiode.rows[0]?.cost),
+    nachQuelle: zQuelle.rows.map((q) => ({ quelle: q.quelle ?? "ohne Angabe", cents: cent(q.cost), calls: Number(q.calls) })),
+    nachModell: zModell.rows.map((m) => ({ model: m.model ?? "unbekannt", kind: m.kind, cents: cent(m.cost), calls: Number(m.calls), inputTokens: Number(m.inputTokens ?? 0), outputTokens: Number(m.outputTokens ?? 0) })),
+  };
 
   const kanalSumme = async (where: string, p: unknown[]): Promise<{ gesamt: number; chat: number; vorschlaege: number }> => {
     const s = await pool.query<{ sum: string | null; chat: string | null; vorschlaege: string | null }>(
@@ -275,6 +334,7 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
     todayBackgroundCents: heute.gesamt - heute.chat - heute.vorschlaege,
     todayVorschlaegeCents: heute.vorschlaege,
     monthBackgroundByQuelle: nachQuelle.rows.map((r) => ({ quelle: r.quelle ?? "ohne Angabe", cents: Math.round(Number(r.cost ?? "0") / 10_000), calls: Number(r.calls) })),
+    zeitraum,
     adminView: admin,
   };
 }
