@@ -1,3 +1,4 @@
+import { firmenWebsite, passtZurFirma } from "../../lib/firmen-domain";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
@@ -857,6 +858,9 @@ companiesRouter.openapi(contactLinkedinRoute, async (c) => {
   );
 });
 
+/** Personen-Fakten, die firmenuebergreifend gelten (wer jemand ist, nicht wo erreichbar). */
+const PERSON_IDENTITAET = new Set(["fullName", "firstName", "lastName", "linkedinUrl", "xingUrl"]);
+
 // ---- GET /v1/companies/:companyId/contacts ---------------------------------
 
 const contactsRoute = createRoute({
@@ -952,12 +956,27 @@ companiesRouter.openapi(contactsRoute, async (c) => {
       /* Compliance-Tabellen optional */
     }
 
+    // Befund 2026-10-10: Die Personen-Fakten anderer Firmen kamen vollstaendig mit
+    // (joyce@quikk.de von QUIKK stand bei Strategic IT und wurde dort Beleg fuer
+    // ein Adressmuster). Aus anderen Firmen nur noch die Identitaet (Name, Profile);
+    // E-Mail, Telefon, Position usw. nur, wenn sie zu DIESER Firma gespeichert sind,
+    // eine E-Mail ausserdem, wenn ihre Domain zur Website dieser Firma passt.
+    const website = await firmenWebsite(companyId, company.websiteUrl);
+    const eigeneFakten = (facts.rows as Array<Record<string, unknown>>).filter((f) => {
+      if (f.entityType !== "PERSON" || f.companyId === companyId) return true;
+      const feld = String(f.field ?? "");
+      if (PERSON_IDENTITAET.has(feld)) return true;
+      if (feld === "email" && typeof f.value === "string") return passtZurFirma(f.value, website) === true;
+      return false;
+    });
+
     return c.json(
       {
         id: company.id,
         companyName: company.name,
-        websiteUrl: company.websiteUrl,
-        companyFacts: facts.rows as Array<Record<string, unknown>>,
+        // Website aus dem Firmenprofil, wenn die Kontakt-Datenbank keine hat (AVA leitet daraus die Mail-Domain ab).
+        websiteUrl: website,
+        companyFacts: eigeneFakten,
         companyObservations: observations.rows as Array<Record<string, unknown>>,
         companySignals: signals.rows as Array<Record<string, unknown>>,
         employments: employments.rows as Array<Record<string, unknown>>,

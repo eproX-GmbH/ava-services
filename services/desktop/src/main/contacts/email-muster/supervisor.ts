@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { domainVon, erkenneMuster, type MusterBeleg } from "./pattern";
+import { firmenDomain } from "./domain";
 import { beurteileMuster, bildeAdresseAllgemein, ordneFirmenadressen, type Urteil, type Zuordnung } from "./zuordnung";
 import { VERLAUF_MAX, type EmailMusterConfig, type VerlaufEintrag, type Vorschau } from "../../../shared/email-muster-types";
 export type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
@@ -167,9 +168,10 @@ export class EmailMusterSupervisor {
    * pruefen. Nichts wird gespeichert; Funktionsadressen sind keine Personen.
    */
   async pruefeLokalteile(companyId: string, lokalteile: string[]): Promise<{ domain: string | null; ergebnisse: Array<{ email: string; ergebnis: PruefErgebnis; antwort: string | null }>; hinweis?: string }> {
-    const { websiteUrl, personen } = await this.kontakte(companyId);
-    const domain = this.domainAus(websiteUrl, personen);
-    if (!domain) return { domain: null, ergebnisse: [], hinweis: "Keine Domain bekannt (weder Website noch Personen-E-Mails). Erst die Website der Firma ermitteln." };
+    const { name, websiteUrl, personen, firmenEmails } = await this.kontakte(companyId);
+    const fd = await this.firmenDomainVon({ name, websiteUrl, firmenEmails, personen }, false);
+    const domain = fd?.domain ?? null;
+    if (!domain) return { domain: null, ergebnisse: [], hinweis: "Keine Domain der Firma bekannt (weder Website noch Firmenadresse). Erst die Website der Firma ermitteln." };
     const adressen = [...new Set(lokalteile.map((l) => l.trim().toLowerCase()).filter((l) => /^[a-z0-9._+-]{1,40}$/.test(l)))].slice(0, 10).map((l) => `${l}@${domain}`);
     if (adressen.length === 0) return { domain, ergebnisse: [], hinweis: "Keine gueltigen Lokalteile." };
     const r = await pruefeAdressen(domain, adressen, { catchAllProbe: zufallsAdresse(domain), log: this.deps.log });
@@ -222,27 +224,17 @@ export class EmailMusterSupervisor {
     };
   }
 
-  private domainAus(websiteUrl: string | null, personen: PersonInfo[]): string | null {
-    let web: string | null = null;
-    if (websiteUrl) {
-      try {
-        web = new URL(websiteUrl.startsWith("http") ? websiteUrl : `https://${websiteUrl}`).hostname.replace(/^www\./, "").toLowerCase();
-      } catch {
-        web = null;
-      }
-    }
-    const zaehler = new Map<string, number>();
-    for (const p of personen) for (const e of p.emails) zaehler.set(domainVon(e), (zaehler.get(domainVon(e)) ?? 0) + 1);
-    const haeufigste = [...zaehler.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-    if (web && (zaehler.has(web) || !haeufigste)) return web;
-    return haeufigste ?? web;
+  /** Domain der Firma (domain.ts): Website, Firmenadresse oder bestätigter Alias; nie die Adresse einer anderen Firma. */
+  private firmenDomainVon(k: { name: string; websiteUrl: string | null; firmenEmails: string[]; personen: PersonInfo[] }, mitUrteil: boolean) {
+    return firmenDomain({ firmenname: k.name, websiteUrl: k.websiteUrl, firmenEmails: k.firmenEmails, personen: k.personen, urteil: mitUrteil ? (this.deps.urteil ?? null) : null });
   }
 
   /** Trockenlauf ohne Netzverkehr (Chat-Tool, Einstellungen). Zuordnung nur deterministisch, kein KI-Urteil. */
   async vorschau(companyId: string): Promise<Vorschau> {
     const { name, websiteUrl, personen, firmenEmails } = await this.kontakte(companyId);
-    const domain = this.domainAus(websiteUrl, personen);
-    if (!domain) return { companyId, domain: null, befund: null, kandidaten: [], personenMitMail: 0, personenOhneMail: personen.length, hinweis: "Keine Domain bekannt (weder Website noch E-Mails)." };
+    const fd = await this.firmenDomainVon({ name, websiteUrl, firmenEmails, personen }, false);
+    const domain = fd?.domain ?? null;
+    if (!domain) return { companyId, domain: null, befund: null, kandidaten: [], personenMitMail: 0, personenOhneMail: personen.length, hinweis: "Keine Domain der Firma bekannt (weder Website noch Firmenadresse)." };
     const z = this.getConfig().zuordnungAktiv !== false ? await ordneFirmenadressen({ firmenEmails: firmenEmails.filter((e) => domainVon(e) === domain), personen: personen.filter((p) => p.emails.length === 0), firmenname: name, urteil: null }) : null;
     const zugeordnet = new Map((z?.zuordnungen ?? []).map((x) => [x.personId, x.email]));
     const belege: MusterBeleg[] = personen.flatMap((p) => [...p.emails, ...(zugeordnet.has(p.personId) ? [zugeordnet.get(p.personId)!] : [])].map((email) => ({ fullName: p.fullName, email })));
@@ -321,8 +313,10 @@ export class EmailMusterSupervisor {
     const { personen, firmenEmails } = k;
     const name = k.name;
     if (personen.length === 0) return null;
-    const domain = this.domainAus(k.websiteUrl, personen);
-    if (!domain) return null;
+    const fd = await this.firmenDomainVon(k, true);
+    if (!fd) return null;
+    const domain = fd.domain;
+    const domainQuelle = fd.quelle;
     const netzOk = cfg.netz?.erreichbar === true;
     const ungeprueft = cfg.ungeprueftAnzeigen !== false;
     const jetzt = () => new Date().toISOString();
@@ -360,7 +354,7 @@ export class EmailMusterSupervisor {
         continue;
       }
       try {
-        await derived({ personId: p.personId, email: z.email, muster: "zuordnung", beleg: z.email, baseline: z.email, herkunft: "zuordnung", art, hinweis: z.begruendung.slice(0, 300), mx: r?.mx ?? null, checkedAt: eintrag.at, smtpCode: r?.code ?? undefined });
+        await derived({ personId: p.personId, email: z.email, muster: "zuordnung", beleg: z.email, baseline: z.email, herkunft: "zuordnung", art, domainQuelle, hinweis: z.begruendung.slice(0, 300), mx: r?.mx ?? null, checkedAt: eintrag.at, smtpCode: r?.code ?? undefined });
         eintrag.gespeichert = true;
         zugeordnet++;
         cfg.stats.zugeordnet = (cfg.stats.zugeordnet ?? 0) + 1;
@@ -473,6 +467,7 @@ export class EmailMusterSupervisor {
             musterQuelle,
             herkunft: "muster",
             art,
+            domainQuelle,
             belegAnzahl: musterBelege.length,
             mx: r?.mx ?? null,
             checkedAt: eintrag.at,

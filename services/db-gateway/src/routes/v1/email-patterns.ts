@@ -6,6 +6,7 @@
 //   POST /email-patterns/feedback          Bounce (deaktivieren) / Antwort (bestaetigen)
 // Die Ableitung und die SMTP-Pruefung laufen lokal auf dem Geraet des Nutzers.
 
+import { firmenWebsite, passtZurFirma } from "../../lib/firmen-domain";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
@@ -171,6 +172,8 @@ const derivedRoute = createRoute({
             hinweis: z.string().max(300).optional(),
             /** Anzahl personengebundener Belege fuer das Muster (Konfidenz bei catchall). */
             belegAnzahl: z.number().int().min(0).optional(),
+            /** Woher die Domain stammt (2026-10-10): website, firmenmail oder alias (Name/KI-Urteil). */
+            domainQuelle: z.enum(["website", "firmenmail", "alias"]).optional(),
           }),
         },
       },
@@ -189,6 +192,13 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
   const domain = email.split("@")[1] ?? "";
   if (domain !== (b.beleg.split("@")[1] ?? "").toLowerCase()) throw new HTTPException(400, { message: "domain_mismatch" });
   const pool = getProducerPool("company-contact");
+  // Die Domain muss zur Firma gehoeren (Befund 2026-10-10: quikk.de bei Strategic IT).
+  // Massstab ist die Website; eine abweichende Domain nur, wenn die AVA sie als Alias
+  // der Firma bestaetigt hat (Name passt oder KI-Urteil, mindestens zwei Personen).
+  const firma = await pool.query<{ websiteUrl: string | null }>(`SELECT "websiteUrl" FROM "Company" WHERE id = $1 LIMIT 1`, [companyId]);
+  const passt = passtZurFirma(email, await firmenWebsite(companyId, firma.rows[0]?.websiteUrl));
+  if (passt === false && b.domainQuelle !== "alias") throw new HTTPException(422, { message: "domain_nicht_firma" });
+  if (passt === null && !b.domainQuelle) throw new HTTPException(422, { message: "domain_unbestaetigt" });
   // Plausibilitaet: Person gehoert zur Firma.
   const emp = await pool.query(`SELECT 1 FROM "Employment" WHERE "personId" = $1 AND "companyId" = $2 LIMIT 1`, [b.personId, companyId]);
   if (!emp.rows[0]) throw new HTTPException(404, { message: "person_not_in_company" });

@@ -55,5 +55,29 @@ const S = await load("../src/main/contacts/email-muster/smtp-verify.ts");
 console.log("SMTP-Hilfen");
 check(/^ava-[a-z0-9]{10,}@example\.de$/.test(S.zufallsAdresse("example.de")), "Zufallsadresse fuer Catch-all-Test");
 
+console.log("Firmendomain (Befund 2026-10-10: quikk.de bei Strategic IT)");
+const D = await load("../src/main/contacts/email-muster/domain.ts");
+check(D.registrierbar("https://www.strategic-it.de/kontakt") === "strategic-it.de" && D.registrierbar("mail.firma.co.uk") === "firma.co.uk", "registrierbare Domain aus URL und Host");
+check(D.passtZumNamen("strategic-it.de", "Strategic IT GmbH") && D.passtZumNamen("mueller-bau.de", "Müller Bau KG"), "Domain passt zum Firmennamen");
+check(!D.passtZumNamen("quikk.de", "Strategic IT GmbH") && !D.passtZumNamen("it.de", "Strategic IT GmbH"), "fremde und zu kurze Domains passen nicht");
+const strategic = await D.firmenDomain({ firmenname: "Strategic IT GmbH", websiteUrl: "https://www.strategic-it.de", firmenEmails: [], personen: [{ personId: "joyce", emails: ["joyce@quikk.de"] }] });
+check(strategic?.domain === "strategic-it.de" && strategic.quelle === "website", "eine fremde Personenadresse ändert die Firmendomain nicht");
+const ohneWeb = await D.firmenDomain({ firmenname: "Strategic IT GmbH", websiteUrl: null, firmenEmails: [], personen: [{ personId: "joyce", emails: ["joyce@quikk.de"] }] });
+check(ohneWeb === null, "ohne Website: eine einzelne Personenadresse ist keine Firmendomain");
+let gefragt = 0;
+const nein = async () => { gefragt++; return '{"gehoert": false, "begruendung": "Schwesterfirma"}'; };
+const zwei = await D.firmenDomain({ firmenname: "Strategic IT GmbH", websiteUrl: null, firmenEmails: [], personen: [{ personId: "a", emails: ["a@quikk.de"] }, { personId: "b", emails: ["b@quikk.de"] }], urteil: nein });
+check(zwei === null && gefragt === 1, "zwei Personen an fremder Domain: KI-Urteil fragt, „nein“ → keine Domain");
+const gruppe = await D.firmenDomain({ firmenname: "Hettich Holding GmbH", websiteUrl: "https://www.hettich-holding.de", firmenEmails: [], personen: [{ personId: "a", emails: ["a.b@hettich.com"] }, { personId: "b", emails: ["c.d@hettich.com"] }] });
+check(gruppe?.domain === "hettich.com" && gruppe.quelle === "alias", "Gruppendomain mit passendem Namen und zwei Personen wird Alias");
+const ja = async () => '{"gehoert": true, "begruendung": "Marke der Firma"}';
+const marke = await D.firmenDomain({ firmenname: "Alpha Beta GmbH", websiteUrl: "https://alpha-beta.de", firmenEmails: [], personen: [{ personId: "a", emails: ["a@markenname.de"] }, { personId: "b", emails: ["b@markenname.de"] }], urteil: ja });
+check(marke?.domain === "markenname.de" && marke.begruendung.includes("Marke"), "KI-Urteil „ja“ macht eine Markendomain zum Alias");
+const firmenmail = await D.firmenDomain({ firmenname: "Beispiel GmbH", websiteUrl: null, firmenEmails: ["info@beispiel-gmbh.de"], personen: [] });
+check(firmenmail?.domain === "beispiel-gmbh.de" && firmenmail.quelle === "firmenmail", "ohne Website: Firmenadresse (info@) bestimmt die Domain");
+const kaputt = async () => "kein json";
+const k = await D.firmenDomain({ firmenname: "Alpha Beta GmbH", websiteUrl: null, firmenEmails: [], personen: [{ personId: "a", emails: ["a@zzz.de"] }, { personId: "b", emails: ["b@zzz.de"] }], urteil: kaputt });
+check(k === null, "unlesbares KI-Urteil gilt als „nein“");
+
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
 console.log("\nE-Mail-Muster-Tests ok");
