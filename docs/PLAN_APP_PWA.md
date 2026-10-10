@@ -229,5 +229,19 @@ Datenbankänderung im Gateway (neue Tabelle) und damit eine Freigabe vor dem Dep
   Stand der eigenen AVA (`/v1/instanzen`), „Mehr“ mit Konto, Konsole-Link für Admins, Hell/Dunkel, Abmelden.
   `Permissions-Policy` erlaubt Mikrofon und Kamera für die eigene Seite. Vercel-Projekt `ava-app` (QUIKK, `fra1`,
   Git-Anbindung, Produktion „Ready“), Domain `app.ava.bi` angemeldet.
-- **Offen für P0:** DNS `app.ava.bi` (CNAME laut Vercel) und Keycloak-Weiterleitung über
-  `infra/scripts/keycloak-web-client.mjs --vercel <ava-admin> --vercel <ava-app>` (Admin-Zugang des Operators).
+- **P0 abgeschlossen:** DNS und Keycloak-Weiterleitung vom Operator gesetzt.
+- **P1–P8 umgesetzt (2026-10-10, AVA v0.1.801/802, ava-app `ec0ae66`):**
+  - AVA: `core/relais/app-kanal.ts` (Anfragen, Warteschlange 3/10 Min., Frames als `app-frame`, Quelle `app`),
+    Anhänge in Teilen (`main/app/anhang.ts`), Diktat (`main/app/transkription.ts`, Whisper sonst OpenAI),
+    Sprache (GPT Live per SDP über den Kopf, Realtime als Rückfall, Einschalten aus der App ab v0.1.802),
+    Meldungen, Web-Push.
+  - Gateway: `routes/app.ts` (`/v1/app/anfrage/:art`, SSE `/v1/app/strom` mit Ringpuffer 500 Frames/10 Min. und
+    Last-Event-ID), `lib/app-strom.ts`, Kopfwahl Server vor Desktop, Versionsschranke `APP_KANAL_AB` = 0.1.801
+    (ältere AVA → sofort „nicht verfügbar“).
+  - App: Gesprächsliste, Chat (Strom, Rückfragen, Vorschläge, Abbrechen, Warteschlange), Anhänge (Bilder verkleinert,
+    Dateien in 600-KB-Teilen), Diktat, Sprachblase, Firmensuche und Firmenseite (Übersicht, Geschäftsführung,
+    Finanzen, Kontakte, Kunden, „Mit AVA besprechen“), Meldungen, Push-Einstellung, Offline-Hinweis.
+  - **Abweichung P7:** VAPID-Schlüssel und Push-Abos liegen in der AVA selbst (Schlüssel verschlüsselt,
+    Abos in `userData/push/abos.json`), keine Gateway-Tabelle. Die AVA sendet direkt an den Push-Dienst.
+- **Offen:** Gateway-Deploy mit der Versionsschranke (Commit `165f3866`); Ende-zu-Ende-Test mit AVA ≥ v0.1.802
+  (Chat, Dateien, Diktat, Sprache, Push auf iOS/Android).
