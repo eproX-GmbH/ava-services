@@ -116,4 +116,11 @@ export interface Conversation {
    * ask_user_choice/ask_user_text dorthin delegiert statt zu werfen.
    */
   remoteAsk?: import("./ui-bridge").RemoteAskHandler;
+  /**
+   * MCP-Relais (docs/PLAN_AVA_CLOUD.md §11.3): Konversation kommt von Claude/
+   * ChatGPT über ava_fragen. Die Vollmacht-Stufe ist dann fest „none“, egal
+   * was am Eingabefeld der App eingestellt ist; jede Freigabe geht an den
+   * Menschen hinter dem aufrufenden Agenten.
+   */
+  ohneVollmacht?: boolean;
 }

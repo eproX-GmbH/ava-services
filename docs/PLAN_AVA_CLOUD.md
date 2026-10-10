@@ -840,5 +840,19 @@ Zahl, liefert mit `q: '*'` einen Überblick je Bereich, filtert Chat-only-
 Werkzeuge heraus und verweist bei Dopplungen auf das Gateway-Werkzeug
 (`lieber`).
 
-Offen: `ava_fragen` (Agent als Werkzeug, §11.3 Nr. 3), MCP Apps für Ansichten.
+**`ava_fragen` (v0.1.794, 2026-10-10):** AVAs eigener Agent als ein Werkzeug
+(`core/relais/ava-fragen.ts`). Läuft über denselben Weg wie Telegram
+(`startAutonomousConversation`) mit Herkunft „mcp“; die Konversation trägt
+`ohneVollmacht`, damit gilt Vollmacht „none“ unabhängig vom Schalter am
+Eingabefeld. Rückfragen und Freigaben werden gesammelt und mit Token
+zurückgegeben (`status: "rueckfrage"`); der Aufrufer setzt mit `gespraech` und
+`antworten` fort, die Antworten gehen auch im Klartext an das Modell. Lange
+Züge geben nach 95 s `status: "laeuft"` zurück, ein Aufruf mit derselben
+`gespraech` ohne Nachricht holt das Ergebnis ab (Frist 15 Minuten). Ist AVA
+mit etwas anderem beschäftigt, kommt eine klare Meldung; nichts wird still
+eingereiht. Die Konversationen erscheinen in der Chat-Liste der App.
+Test: `pnpm test:ava-fragen` (15 Prüfungen gegen einen nachgebauten
+Orchestrator).
+
+Offen: MCP Apps für Ansichten.
 

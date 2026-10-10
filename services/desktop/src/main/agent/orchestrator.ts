@@ -732,7 +732,7 @@ export class AgentOrchestrator extends EventEmitter {
      */
     remoteAsk?: RemoteAskHandler;
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
-    source?: "telegram" | "mail" | "aufgabe";
+    source?: "telegram" | "mail" | "aufgabe" | "mcp";
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -777,7 +777,7 @@ export class AgentOrchestrator extends EventEmitter {
      */
     remoteAsk?: RemoteAskHandler;
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
-    source?: "telegram" | "mail" | "aufgabe";
+    source?: "telegram" | "mail" | "aufgabe" | "mcp";
   }> = [];
 
   private runAutonomousNow(input: {
@@ -800,7 +800,7 @@ export class AgentOrchestrator extends EventEmitter {
      */
     remoteAsk?: RemoteAskHandler;
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
-    source?: "telegram" | "mail" | "aufgabe";
+    source?: "telegram" | "mail" | "aufgabe" | "mcp";
   }): { conversationId: string; requestId: string } {
     const conversationId = input.conversationId ?? randomUUID();
     const existing = this.conversations.get(conversationId);
@@ -818,6 +818,7 @@ export class AgentOrchestrator extends EventEmitter {
     // zwischen zwei Telegram-Nachrichten ändern).
     if (input.remoteAsk) convo.remoteAsk = input.remoteAsk;
     else delete convo.remoteAsk;
+    if (input.source === "mcp") convo.ohneVollmacht = true;
     // v0.1.468 — Vollmacht ist jetzt GLOBAL (getAutonomyLevel), kein
     // Kanal-Feld mehr an der Konversation.
     this.conversations.set(conversationId, convo);
@@ -1736,6 +1737,7 @@ export class AgentOrchestrator extends EventEmitter {
    * bleibt bewusst gesperrt (PLAN_VOLLMACHT.md §2).
    */
   private effectiveAutonomyLevel(conversation: Conversation | undefined): AutonomyLevel {
+    if (conversation?.ohneVollmacht) return "none";
     const level = this.getAutonomyLevel?.() ?? "none";
     if (level === "mutating" && conversation?.sourceMailId) return "additive";
     return level;

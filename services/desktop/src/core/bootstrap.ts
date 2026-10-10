@@ -2034,6 +2034,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     istAngemeldet: () => auth.getStatus().signedIn,
     registry: agentRegistry,
     version: paths().version(),
+    agent,
     audit: (e) => audit({ actorType: "system", actorId: auth.getStatus().actorId ?? null, category: "agent", action: e.action, severity: "info", subjectType: null, subjectId: null, summary: e.summary, metadata: e.metadata }),
   });
   auth.on("status", (st: AuthStatus) => {

@@ -26,6 +26,7 @@ import type { ToolRegistry } from "../../main/agent/tool-registry";
 import type { Tool, ToolContext } from "../../main/agent/types";
 import type { AgentChoiceOption } from "../../shared/types";
 import { UiBridge, type RemoteAskHandler } from "../../main/agent/ui-bridge";
+import { AvaFragen, type AvaAgent } from "./ava-fragen";
 
 export interface KopfRelaisDeps {
   gatewayUrl: string;
@@ -35,6 +36,8 @@ export interface KopfRelaisDeps {
   version: string;
   audit?: (eintrag: { action: string; summary: string; metadata: Record<string, unknown> }) => void;
   log?: (zeile: string) => void;
+  /** AVAs Orchestrator für ava_fragen; fehlt er, wird das Werkzeug nicht angeboten. */
+  agent?: AvaAgent;
 }
 
 /**
@@ -161,7 +164,11 @@ export class KopfRelais {
   private timer: NodeJS.Timeout | null = null;
   private readonly offen = new Set<AbortController>();
 
-  constructor(private readonly deps: KopfRelaisDeps) {}
+  private readonly avaFragen: AvaFragen | null;
+
+  constructor(private readonly deps: KopfRelaisDeps) {
+    this.avaFragen = deps.agent ? new AvaFragen(deps.agent) : null;
+  }
 
   start(): void {
     if (this.laeuft) return;
@@ -308,6 +315,7 @@ export class KopfRelais {
         },
       },
     ];
+    if (this.avaFragen) liste.unshift({ name: "ava_fragen", description: AvaFragen.BESCHREIBUNG, inputSchema: AvaFragen.SCHEMA });
     for (const name of KERNMENGE) {
       const t = this.deps.registry.get(name);
       if (!t) continue;
@@ -379,6 +387,10 @@ export class KopfRelais {
   }
 
   async ausfuehren(name: string, roh: Record<string, unknown>): Promise<{ text: string; isError?: boolean; rueckfrage?: boolean }> {
+    if (name === "ava_fragen") {
+      if (!this.avaFragen) return { text: "ava_fragen ist in dieser AVA nicht verfügbar.", isError: true };
+      return this.avaFragen.ausfuehren(roh);
+    }
     if (name === "werkzeug_suchen") {
       const q = String(roh.q ?? "").trim();
       if (!q) return { text: "q fehlt.", isError: true };
