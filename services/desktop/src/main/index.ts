@@ -420,7 +420,7 @@ app.whenReady().then(async () => {
   registerKontoIpc({ auth });
   registerRelevanzIpc({ crmManager, gatewayClient });
   registerSystemIpc({ alerts, APP_CONFIG, audit, auth, eigenerBrowser: core.eigenerBrowser, gatewayClient, pendingWakeAcks, statusWatcher });
-  registerMailEntwurfIpc({ attachments: core.attachments ?? null });
+  registerMailEntwurfIpc({ attachments: core.attachments ?? null, festeAnhaenge: core.festeAnhaenge ?? null });
   registerWissenIpc({ knowledge, knowledgeStore });
   registerVerlaufIpc({ audit, auditStore, auth, broadcastDailyLimitStatus, computeDailyLimitStatus, providers, selfCorrectionsStore, usageStore });
   registerBeobachtungIpc({ audit, broadcastWatchesChanged, linkMonitorSupervisor: core.linkMonitorSupervisor, publicationStore, watchStore });

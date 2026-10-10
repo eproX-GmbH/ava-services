@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { MailEntwurfEinstellungen, MailEntwurfPostfachEingabe } from "../shared/mail-entwurf";
 import type {
   AgentChoiceAnswer,
   RelevanzWert,
@@ -1305,12 +1306,26 @@ const api = {
   // Mail-Entwürfe im Mail-Programm öffnen (docs/PLAN_MAIL_ENTWURF.md). `raw` ist der
   // Inhalt des ```mail-entwurf-Blocks; main prüft ihn selbst.
   mailEntwurf: {
-    stand: (): Promise<{ ziel: string; weg: string; programm: string | null }> => ipcRenderer.invoke("mail-entwurf:stand"),
-    oeffnen: (input: { raw: string; weg?: string; conversationId?: string }): Promise<{ weg: string; programm: string | null; anhaengeFehlen: boolean; fehler?: string }> =>
+    stand: (hatAnhaenge = false): Promise<{
+      ziel: string;
+      weg: string;
+      programm: string | null;
+      postfach: { absender: string; ordner: string | null } | null;
+      festeAnhaenge: Array<{ id: string; name: string; immer: boolean }>;
+    }> => ipcRenderer.invoke("mail-entwurf:stand", { hatAnhaenge }),
+    oeffnen: (input: { raw: string; weg?: string; conversationId?: string }): Promise<{ weg: string; programm: string | null; anhaengeFehlen: boolean; ordner?: string; fehler?: string }> =>
       ipcRenderer.invoke("mail-entwurf:oeffnen", input),
     anhaengeZeigen: (input: { raw: string; conversationId?: string }): Promise<{ ok: true; anzahl: number } | { ok: false; fehler: string }> =>
       ipcRenderer.invoke("mail-entwurf:anhaenge-zeigen", input),
     zielSetzen: (ziel: string): Promise<string> => ipcRenderer.invoke("mail-entwurf:ziel-setzen", ziel),
+    einstellungen: (): Promise<MailEntwurfEinstellungen> => ipcRenderer.invoke("mail-entwurf:einstellungen"),
+    postfachEinrichten: (einstellung: MailEntwurfPostfachEingabe, passwort: string): Promise<{ ok: true } | { ok: false; fehler: string }> =>
+      ipcRenderer.invoke("mail-entwurf:postfach-einrichten", { einstellung, passwort }),
+    postfachEntfernen: (): Promise<{ ok: true }> => ipcRenderer.invoke("mail-entwurf:postfach-entfernen"),
+    festHinzufuegen: (input: { name: string; mimeType: string; bytes: Uint8Array; immer?: boolean; beschreibung?: string }): Promise<{ ok: true } | { ok: false; fehler: string }> =>
+      ipcRenderer.invoke("mail-entwurf:fest-hinzufuegen", input),
+    festAendern: (input: { id: string; immer?: boolean; beschreibung?: string | null }): Promise<unknown> => ipcRenderer.invoke("mail-entwurf:fest-aendern", input),
+    festEntfernen: (id: string): Promise<boolean> => ipcRenderer.invoke("mail-entwurf:fest-entfernen", id),
   },
 
   // v0.1.101 — generic shell.openExternal bridge for plain external

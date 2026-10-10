@@ -27,6 +27,8 @@ const ARTEN: Record<string, number> = {
   gespraech_loeschen: 15_000,
   bild: 30_000,
   mail_eml: 30_000,
+  mail_postfach: 45_000,
+  mail_stand: 10_000,
   anhang_teil: 30_000,
   anhang_fertig: 90_000,
   transkribieren: 120_000,

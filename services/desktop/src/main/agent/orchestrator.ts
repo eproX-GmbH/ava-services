@@ -113,6 +113,8 @@ export interface AgentOrchestratorOptions {
   profileStore?: { get: () => import("../../shared/types").UserProfile };
   /** ICP-Kurztext fuer den System-Prompt (null = keins gesetzt). */
   getIcpText?: () => string | null;
+  /** Feste Anhänge für Mail-Entwürfe (Handles fix-…), Lese-Kontext. */
+  getFesteAnhaengeText?: () => string | null;
   /**
    * v0.1.161 — General-memory store. When set, the orchestrator injects
    * the most recent N entries into the system prompt under
@@ -219,6 +221,7 @@ export class AgentOrchestrator extends EventEmitter {
     | { get: () => import("../../shared/types").UserProfile }
     | undefined;
   private readonly getIcpText: (() => string | null) | undefined;
+  private readonly getFesteAnhaengeText: (() => string | null) | undefined;
   // v0.1.161 — see AgentOrchestratorOptions.generalMemoryStore.
   private readonly generalMemoryStore:
     | { list: () => import("./general-memory").GeneralMemoryEntry[] }
@@ -285,6 +288,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.runtimeRecover = opts.runtimeRecover;
     this.profileStore = opts.profileStore;
     this.getIcpText = opts.getIcpText;
+    this.getFesteAnhaengeText = opts.getFesteAnhaengeText;
     this.generalMemoryStore = opts.generalMemoryStore;
     this.skillStore = opts.skillStore;
     this.vorschlaegeNachTurn = opts.vorschlaegeNachTurn;
@@ -1218,6 +1222,7 @@ export class AgentOrchestrator extends EventEmitter {
               // ICP als passiver Lese-Kontext in jedem Turn (Chat,
               // Telegram, Triage) — Radar/Match nutzen den Store direkt.
               icpText: this.getIcpText?.() ?? null,
+              festeAnhaengeText: this.getFesteAnhaengeText?.() ?? null,
               availableToolNames,
               // v0.1.299 — Auto-Triage-Modus aktiviert ein zusätzliches
               // Verhaltens-Block im System-Prompt (kein ask_user_*,

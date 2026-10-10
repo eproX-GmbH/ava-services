@@ -690,7 +690,13 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
 
-Unter jedem ```mail-entwurf steht ein Knopf, der den Entwurf im Mail-Programm des Nutzers oeffnet. `aktion` 'stand' zeigt die Einstellung, 'setzen' aendert sie mit `ziel`: 'auto' (Standard: Outlook bekommt eine .eml mit Anhaengen, andere Programme einen mailto:-Link, ohne Programm Webmail), 'programm' (immer mailto:, ohne Anhaenge), 'eml' (immer .eml-Datei mit Anhaengen), 'gmail', 'outlook-web' (Microsoft 365), 'outlook-live' (outlook.com). Gilt fuer die Desktop-App; in der AVA-App waehlt jedes Geraet selbst.
+Unter jedem ```mail-entwurf steht ein Knopf, der den Entwurf öffnet. `aktion`:
+- 'stand': Ziel, Entwurfs-Postfach und feste Anhänge anzeigen.
+- 'setzen' mit `ziel`: 'auto' (Standard: Outlook → .eml mit Anhängen; mit Anhängen und Entwurfs-Postfach → Entwürfe-Ordner; sonst mailto:), 'programm' (mailto:, ohne Anhänge), 'eml', 'postfach' (immer in den Entwürfe-Ordner), 'gmail', 'outlook-web', 'outlook-live'.
+- 'anhang_uebernehmen' mit `datei` (Chat-Upload: Handle att-… oder Dateiname), optional `immer` (an jede Outreach-Mail) und `beschreibung`: macht daraus einen festen Anhang (Handle fix-…), der dauerhaft bleibt. Gleicher Dateiname ersetzt die alte Fassung.
+- 'anhang_aendern' mit `id` (fix-…) und `immer` und/oder `beschreibung`; 'anhang_entfernen' mit `id`.
+- 'postfach_entfernen': Verbindung zum Entwurfs-Postfach löschen.
+Das Entwurfs-Postfach (Zugangsdaten) richtet der Nutzer in den Einstellungen unter „Mail-Entwürfe“ ein, nie im Chat.
 
 _Parameter:_ keine.
 

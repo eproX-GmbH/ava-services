@@ -34,7 +34,9 @@ import { ORG_FEATURES } from "../shared/types";
 import { avaKontextText } from "./relais/ava-kontext";
 import { AppKanal } from "./relais/app-kanal";
 import { bildVerkleinern } from "../main/app/bild";
-import { anhaengeLaden, emlBauen } from "../main/mail-entwurf/eml";
+import { anhaengeLaden, emlBauen, entwurfInsPostfach } from "../main/mail-entwurf/eml";
+import { FesteAnhaenge } from "../main/mail-entwurf/feste-anhaenge";
+import { postfachStand } from "../main/mail-entwurf/postfach";
 import { emlDateiname, mailEntwurfLesen } from "../shared/mail-entwurf";
 import { anhangAufbereiten } from "../main/app/anhang";
 import { transkribieren } from "../main/app/transkription";
@@ -1015,6 +1017,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // store itself.
   // 2026-09-30: Ablage auf Platte, Handles ueberleben Neustarts (D1).
   const attachments = new AttachmentStore(join(paths().get("userData"), "anhaenge"));
+  // Feste Anhänge für Mail-Entwürfe (docs/PLAN_MAIL_ENTWURF.md E8), dauerhaft.
+  const festeAnhaenge = new FesteAnhaenge(join(paths().get("userData"), "mail-anhaenge"));
 
   // Heartbeat alerts (Phase 8.f1 → 8.f5).
   //
@@ -1837,6 +1841,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     refreshPolicy: () => checkTenantChange("Vorgaben per Chat geaendert").then(() => getOrgPolicy()),
     getTenantCompanyIds: () => collectTenantCompanyIds(gatewayClient, 250),
     getPublicationMode: () => publicationStore.getMode(),
+    festeAnhaenge,
     setPublicationMode: (mode: "lazy" | "eager") => publicationStore.setMode(mode),
     discoveryAudit: ({ action, severity, summary, metadata }) => {
       audit({
@@ -1986,6 +1991,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     profileStore: userProfile,
     // ICP als passiver Lese-Kontext in jedem Agenten-Turn.
     getIcpText: () => (icpStore.isSet() ? icpStore.renderText() : null),
+    getFesteAnhaengeText: () => festeAnhaenge.promptText(),
     // v0.1.161 — fold the long-term memory entries into the system
     // prompt on every turn. Previously the agent could only reach them
     // via `recall_memory`-tool-use; the auto-inject closes the failure
@@ -4024,12 +4030,21 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       mailEml: async (roh) => {
         const r = mailEntwurfLesen(roh);
         if ("fehler" in r) throw new Error(r.fehler);
-        const a = anhaengeLaden(attachments, r.entwurf);
+        const a = anhaengeLaden({ chat: attachments, fest: festeAnhaenge }, r.entwurf);
         if ("fehler" in a) throw new Error(a.fehler);
         const base64 = (await emlBauen(r.entwurf, a.anhaenge)).toString("base64");
         // Das Relais trägt höchstens 6 MB je Nachricht.
         if (base64.length > 4_500_000) throw new Error("Die Anhänge sind zu groß für die App. Bitte den Entwurf in der Desktop-App öffnen.");
         return { base64, dateiname: emlDateiname(r.entwurf) };
+      },
+      mailPostfach: async (roh) => {
+        const r = mailEntwurfLesen(roh);
+        if ("fehler" in r) throw new Error(r.fehler);
+        return entwurfInsPostfach(r.entwurf, { chat: attachments, fest: festeAnhaenge });
+      },
+      mailStand: () => {
+        const p = postfachStand();
+        return { postfach: p.eingerichtet, ordner: p.eingerichtet ? p.ordner : null, festeAnhaenge: festeAnhaenge.liste().map((a) => ({ id: a.id, name: a.name, immer: a.immer })) };
       },
       transkribieren: (wav) =>
         transkribieren(
@@ -4588,6 +4603,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     alerts,
     apifyZugangInfo,
     attachments,
+    festeAnhaenge,
     audit,
     auditStore,
     auth,

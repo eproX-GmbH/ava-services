@@ -7,17 +7,17 @@ import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs
 import { basename, join } from "node:path";
 import { app, shell } from "electron";
 import { paths } from "../../core/platform";
-import type { AttachmentStore } from "../agent/attachment-store";
-import { emlDateiname, mailtoUrl, programmIstOutlook, webmailUrl, type MailEntwurf, type MailEntwurfZiel } from "../../shared/mail-entwurf";
-import { anhaengeLaden, emlBauen } from "./eml";
+import { autoWeg, emlDateiname, mailtoUrl, programmIstOutlook, webmailUrl, type MailEntwurf, type MailEntwurfZiel } from "../../shared/mail-entwurf";
+import { anhaengeLaden, emlBauen, entwurfInsPostfach, type AnhangQuellen } from "./eml";
 import { mailEntwurfZiel } from "./einstellung";
+import { postfachStand } from "./postfach";
 
 export interface MailProgramm {
   name: string;
   pfad: string | null;
 }
 
-export type OeffnenWeg = "eml" | "mailto" | "gmail" | "outlook-web" | "outlook-live";
+export type OeffnenWeg = "eml" | "mailto" | "postfach" | "gmail" | "outlook-web" | "outlook-live";
 
 export interface OeffnenErgebnis {
   /** Was tatsächlich geöffnet wurde; "keins" = kein Mail-Programm, der Renderer bietet Webmail an. */
@@ -25,6 +25,8 @@ export interface OeffnenErgebnis {
   programm: string | null;
   /** mailto:/Webmail tragen keine Anhänge; der Renderer bietet dann die .eml oder den Ordner an. */
   anhaengeFehlen: boolean;
+  /** Bei „postfach“: Ordner, in dem der Entwurf liegt. */
+  ordner?: string;
   fehler?: string;
 }
 
@@ -46,13 +48,12 @@ export async function mailProgramm(): Promise<MailProgramm | null> {
   return { name: name.replace(/\.app$/i, ""), pfad };
 }
 
-/** Was der Knopf bei „automatisch“ tut. */
-export async function empfohlenerWeg(ziel: MailEntwurfZiel = mailEntwurfZiel()): Promise<{ weg: OeffnenWeg | "keins"; programm: string | null }> {
+/** Was der Knopf bei „automatisch“ tut (shared autoWeg); `hatAnhaenge` je Entwurf. */
+export async function empfohlenerWeg(ziel: MailEntwurfZiel = mailEntwurfZiel(), hatAnhaenge = false): Promise<{ weg: OeffnenWeg | "keins"; programm: string | null }> {
   if (ziel !== "auto" && ziel !== "programm") return { weg: ziel, programm: null };
   const p = await mailProgramm();
-  if (!p) return { weg: "keins", programm: null };
-  if (ziel === "auto" && programmIstOutlook(p.name)) return { weg: "eml", programm: p.name };
-  return { weg: "mailto", programm: p.name };
+  if (ziel === "programm") return p ? { weg: "mailto", programm: p.name } : { weg: "keins", programm: null };
+  return { weg: autoWeg(p?.name ?? null, postfachStand().eingerichtet, hatAnhaenge), programm: p?.name ?? null };
 }
 
 const ordner = () => join(paths().get("userData"), "mail-entwuerfe");
@@ -96,16 +97,20 @@ async function emlOeffnen(datei: string, programm: MailProgramm | null): Promise
 export async function mailEntwurfOeffnen(
   e: MailEntwurf,
   weg: MailEntwurfZiel | undefined,
-  deps: { attachments?: AttachmentStore | null; conversationId?: string },
+  deps: { quellen: AnhangQuellen; conversationId?: string },
 ): Promise<OeffnenErgebnis> {
   const programm = await mailProgramm();
   const ziel = weg ?? mailEntwurfZiel();
-  const gewaehlt = ziel === "auto" || ziel === "programm" ? (await empfohlenerWeg(ziel)).weg : ziel;
   const hatAnhaenge = e.anhaenge.length > 0;
+  const gewaehlt = ziel === "auto" || ziel === "programm" ? (await empfohlenerWeg(ziel, hatAnhaenge)).weg : ziel;
   try {
     if (gewaehlt === "keins") return { weg: "keins", programm: null, anhaengeFehlen: hatAnhaenge };
+    if (gewaehlt === "postfach") {
+      const r = await entwurfInsPostfach(e, deps.quellen, deps.conversationId);
+      return { weg: "postfach", programm: programm?.name ?? null, anhaengeFehlen: false, ordner: r.ordner };
+    }
     if (gewaehlt === "eml") {
-      const r = anhaengeLaden(deps.attachments, e, deps.conversationId);
+      const r = anhaengeLaden(deps.quellen, e, deps.conversationId);
       if ("fehler" in r) return { weg: "eml", programm: programm?.name ?? null, anhaengeFehlen: hatAnhaenge, fehler: r.fehler };
       const datei = join(neuerOrdner(), emlDateiname(e));
       writeFileSync(datei, await emlBauen(e, r.anhaenge));
@@ -124,8 +129,8 @@ export async function mailEntwurfOeffnen(
 }
 
 /** Anhänge in einen Ordner legen und zeigen, damit der Nutzer sie in die Mail zieht. */
-export function anhaengeZeigen(e: MailEntwurf, deps: { attachments?: AttachmentStore | null; conversationId?: string }): { ok: true; anzahl: number } | { ok: false; fehler: string } {
-  const r = anhaengeLaden(deps.attachments, e, deps.conversationId);
+export function anhaengeZeigen(e: MailEntwurf, deps: { quellen: AnhangQuellen; conversationId?: string }): { ok: true; anzahl: number } | { ok: false; fehler: string } {
+  const r = anhaengeLaden(deps.quellen, e, deps.conversationId);
   if ("fehler" in r) return { ok: false, fehler: r.fehler };
   if (r.anhaenge.length === 0) return { ok: false, fehler: "Der Entwurf hat keine Anhänge." };
   const dir = neuerOrdner();

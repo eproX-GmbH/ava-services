@@ -40,6 +40,8 @@ export interface PromptSkillContext {
    *  System-Prompt, damit der Agent Idealkunden-Bezug OHNE
    *  Tool-Roundtrip hat. null/leer = kein Block. */
   icpText?: string | null;
+  /** Feste Anhänge für Mail-Entwürfe (FesteAnhaenge.promptText()); null = kein Block. */
+  festeAnhaengeText?: string | null;
   /**
    * v0.1.241 — Names of the tools that are ACTUALLY available to the
    * LLM this turn (core + lazy-loaded + skill + slash). When provided,
@@ -730,6 +732,16 @@ export function buildSystemPrompt(
   // Fragen wie "passt Firma X zu mir?" ohne icp_get-Roundtrip.
   // Aenderungen weiterhin NUR ueber icp_set.
   const icpText = (skillContext?.icpText ?? "").trim();
+  // Feste Anhänge (docs/PLAN_MAIL_ENTWURF.md E8): Handles für `anhaenge` im ```mail-entwurf.
+  const festText = (skillContext?.festeAnhaengeText ?? "").trim();
+  const festBlock = festText
+    ? [
+        "Feste Anhänge für Mail-Entwürfe (Handle: Name). In `anhaenge` eines ```mail-entwurf das Handle eintragen, wenn die Datei",
+        "zur Mail passt; die mit „immer“ gehören an jede Outreach-Mail. Ändern über settings_mail_entwurf.",
+        ...festText.slice(0, 1500).split("\n").map((l) => `  ${l}`),
+        "",
+      ].join("\n")
+    : "";
   const icpBlock = icpText
     ? [
         "Idealkundenprofil (ICP) des Nutzers — Lese-Kontext, Aenderungen nur via `icp_set`:",
@@ -911,6 +923,7 @@ export function buildSystemPrompt(
     BUYING_CENTER_INSTRUCTIONS,
     profileBlock,
     icpBlock,
+    festBlock,
     statusBlock,
     rememberedBlock,
     nudgeBlock,

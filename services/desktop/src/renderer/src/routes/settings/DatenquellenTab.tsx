@@ -1,6 +1,7 @@
 import { LinkedInSection, CrmSection } from "../Settings";
 import { MailAccountSection } from "./MailAccountSection";
 import { ApifySection } from "./ApifySection";
+import { MailEntwurfSection } from "./MailEntwurfSection";
 import { useFeature } from "../../store/policy";
 
 // v0.1.273 — Datenquellen-Tab.
@@ -27,6 +28,8 @@ export function DatenquellenTab() {
       {(kontakte || watchlist || radar) && <ApifySection />}
       <CrmSection />
       {mail && <MailAccountSection />}
+      {/* Mail-Entwürfe gelten auch ohne AVAs eigenes Postfach. */}
+      <MailEntwurfSection />
     </>
   );
 }

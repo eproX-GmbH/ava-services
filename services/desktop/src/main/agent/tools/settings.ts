@@ -5,6 +5,9 @@ import type { Tool } from "../types";
 import type { ChatgptPlanStand } from "../../../shared/types";
 import { MAIL_ENTWURF_ZIELE, ZIEL_TEXT, type MailEntwurfZiel } from "../../../shared/mail-entwurf";
 import { mailEntwurfZiel, mailEntwurfZielSetzen } from "../../mail-entwurf/einstellung";
+import type { FesteAnhaenge } from "../../mail-entwurf/feste-anhaenge";
+import { postfachEntfernen, postfachStand } from "../../mail-entwurf/postfach";
+import type { AttachmentStore } from "../attachment-store";
 import type {
   HostedProviderKind,
   LlmProviderKind,
@@ -96,6 +99,10 @@ export interface SettingsToolDeps {
   /** v0.1.491 — Publikations-Analysemodus (lazy/eager) per Chat. */
   getPublicationMode?: () => "lazy" | "eager";
   setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
+  /** Feste Anhänge für Mail-Entwürfe (docs/PLAN_MAIL_ENTWURF.md E8). */
+  festeAnhaenge?: FesteAnhaenge;
+  /** Chat-Uploads, aus denen feste Anhänge übernommen werden. */
+  chatAnhaenge?: AttachmentStore;
 }
 
 export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
@@ -491,51 +498,101 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     },
   });
 
-  // Mail-Entwuerfe im Mail-Programm oeffnen (docs/PLAN_MAIL_ENTWURF.md E3).
+  // Mail-Entwuerfe (docs/PLAN_MAIL_ENTWURF.md): Ziel des Knopfs, feste Anhaenge,
+  // Stand des Entwurfs-Postfachs. Das Postfach-Passwort gibt es nur in den Einstellungen.
+  const AKTIONEN = ["stand", "setzen", "anhang_uebernehmen", "anhang_aendern", "anhang_entfernen", "postfach_entfernen"] as const;
   const mailEntwurf = defineTool({
     name: "settings_mail_entwurf",
-    summary: "Wohin der Knopf an Mail-Entwürfen öffnet: automatisch, Mail-Programm, Outlook-Datei, Gmail, Outlook im Web.",
-    category: "einstellungen mail entwurf outlook gmail mailto mail-programm",
+    summary: "Mail-Entwürfe: wohin der Knopf öffnet, feste Anhänge (Firmenprofil, Referenzen) und das Entwurfs-Postfach.",
+    category: "einstellungen mail entwurf outlook gmail mailto mail-programm anhang anhaenge firmenprofil postfach entwuerfe imap",
     description:
-      "Unter jedem ```mail-entwurf steht ein Knopf, der den Entwurf im Mail-Programm des Nutzers oeffnet. `aktion` 'stand' zeigt die Einstellung, " +
-      "'setzen' aendert sie mit `ziel`: 'auto' (Standard: Outlook bekommt eine .eml mit Anhaengen, andere Programme einen mailto:-Link, ohne Programm Webmail), " +
-      "'programm' (immer mailto:, ohne Anhaenge), 'eml' (immer .eml-Datei mit Anhaengen), 'gmail', 'outlook-web' (Microsoft 365), 'outlook-live' (outlook.com). " +
-      "Gilt fuer die Desktop-App; in der AVA-App waehlt jedes Geraet selbst.",
+      "Unter jedem ```mail-entwurf steht ein Knopf, der den Entwurf öffnet. `aktion`:\n" +
+      "- 'stand': Ziel, Entwurfs-Postfach und feste Anhänge anzeigen.\n" +
+      "- 'setzen' mit `ziel`: 'auto' (Standard: Outlook → .eml mit Anhängen; mit Anhängen und Entwurfs-Postfach → Entwürfe-Ordner; sonst mailto:), " +
+      "'programm' (mailto:, ohne Anhänge), 'eml', 'postfach' (immer in den Entwürfe-Ordner), 'gmail', 'outlook-web', 'outlook-live'.\n" +
+      "- 'anhang_uebernehmen' mit `datei` (Chat-Upload: Handle att-… oder Dateiname), optional `immer` (an jede Outreach-Mail) und `beschreibung`: " +
+      "macht daraus einen festen Anhang (Handle fix-…), der dauerhaft bleibt. Gleicher Dateiname ersetzt die alte Fassung.\n" +
+      "- 'anhang_aendern' mit `id` (fix-…) und `immer` und/oder `beschreibung`; 'anhang_entfernen' mit `id`.\n" +
+      "- 'postfach_entfernen': Verbindung zum Entwurfs-Postfach löschen.\n" +
+      "Das Entwurfs-Postfach (Zugangsdaten) richtet der Nutzer in den Einstellungen unter „Mail-Entwürfe“ ein, nie im Chat.",
     parameters: {
       type: "object",
       required: ["aktion"],
       properties: {
-        aktion: { type: "string", enum: ["stand", "setzen"] },
+        aktion: { type: "string", enum: [...AKTIONEN] },
         ziel: { type: "string", enum: [...MAIL_ENTWURF_ZIELE] },
+        datei: { type: "string", description: "Chat-Upload (att-… oder Dateiname) für anhang_uebernehmen" },
+        id: { type: "string", description: "fester Anhang (fix-…)" },
+        immer: { type: "boolean" },
+        beschreibung: { type: "string", description: "wofür die Datei gedacht ist, z. B. „Firmenprofil für Erstkontakt“" },
       },
     },
     schema: yup
       .object({
-        aktion: yup.string().oneOf(["stand", "setzen"]).required(),
+        aktion: yup.string().oneOf([...AKTIONEN]).required(),
         ziel: yup.string().oneOf([...MAIL_ENTWURF_ZIELE]).optional(),
+        datei: yup.string().trim().max(200).optional(),
+        id: yup.string().trim().max(40).optional(),
+        immer: yup.boolean().optional(),
+        beschreibung: yup.string().trim().max(200).optional(),
       })
       .noUnknown(true),
-    preview: (r: { ziel?: string; error?: string } | ReturnType<typeof userDeclined>) =>
-      "ziel" in r && r.ziel ? `Mail-Entwürfe: ${ZIEL_TEXT[r.ziel as MailEntwurfZiel] ?? r.ziel}` : "error" in r && r.error ? String(r.error) : "abgebrochen",
+    preview: (r: { ziel?: string; error?: string; text?: string } | ReturnType<typeof userDeclined>) =>
+      "error" in r && r.error ? String(r.error) : "text" in r && r.text ? String(r.text) : "ziel" in r && r.ziel ? `Mail-Entwürfe: ${ZIEL_TEXT[r.ziel as MailEntwurfZiel] ?? r.ziel}` : "abgebrochen",
     run: async (args, c) => {
-      if (args.aktion === "stand") return { ziel: mailEntwurfZiel(), text: ZIEL_TEXT[mailEntwurfZiel()] };
-      if (!args.ziel) return { error: "Fuer 'setzen' fehlt `ziel`." };
-      const ziel = args.ziel as MailEntwurfZiel;
-      const value = await c.ui.confirmAction(
-        {
-          kind: "mutating",
-          prompt: `Mail-Entwürfe künftig öffnen in: ${ZIEL_TEXT[ziel]}?`,
-          confirmValue: "save",
-          options: [
-            { value: "save", label: "Speichern" },
-            { value: "cancel", label: "Abbrechen" },
-          ],
-        },
-        c.signal,
-      );
-      if (value !== "save") return userDeclined();
-      mailEntwurfZielSetzen(ziel);
-      return { ziel, text: ZIEL_TEXT[ziel] };
+      const fest = deps.festeAnhaenge;
+      const stand = () => {
+        const p = postfachStand();
+        return {
+          ziel: mailEntwurfZiel(),
+          zielText: ZIEL_TEXT[mailEntwurfZiel()],
+          postfach: p.eingerichtet ? { absender: p.absender, server: p.host, ordner: p.ordner } : "nicht eingerichtet (Einstellungen → Mail-Entwürfe)",
+          festeAnhaenge: (fest?.liste() ?? []).map((a) => ({ id: a.id, name: a.name, immer: a.immer, beschreibung: a.beschreibung, kb: Math.round(a.sizeBytes / 1024) })),
+        };
+      };
+      if (args.aktion === "stand") return stand();
+      const bestaetigen = async (prompt: string, label: string) =>
+        (await c.ui.confirmAction(
+          { kind: "mutating", prompt, confirmValue: "save", options: [{ value: "save", label }, { value: "cancel", label: "Abbrechen" }] },
+          c.signal,
+        )) === "save";
+
+      if (args.aktion === "setzen") {
+        if (!args.ziel) return { error: "Fuer 'setzen' fehlt `ziel`." };
+        const ziel = args.ziel as MailEntwurfZiel;
+        if (ziel === "postfach" && !postfachStand().eingerichtet) return { error: "Erst ein Entwurfs-Postfach in den Einstellungen unter „Mail-Entwürfe“ einrichten." };
+        if (!(await bestaetigen(`Mail-Entwürfe künftig öffnen in: ${ZIEL_TEXT[ziel]}?`, "Speichern"))) return userDeclined();
+        mailEntwurfZielSetzen(ziel);
+        return { ziel, text: `Mail-Entwürfe: ${ZIEL_TEXT[ziel]}` };
+      }
+      if (args.aktion === "postfach_entfernen") {
+        if (!postfachStand().eingerichtet) return { text: "Es ist kein Entwurfs-Postfach eingerichtet." };
+        if (!(await bestaetigen("Verbindung zum Entwurfs-Postfach löschen (Zugangsdaten werden entfernt)?", "Löschen"))) return userDeclined();
+        postfachEntfernen();
+        if (mailEntwurfZiel() === "postfach") mailEntwurfZielSetzen("auto");
+        return { text: "Entwurfs-Postfach entfernt." };
+      }
+      if (!fest) return { error: "Feste Anhänge sind hier nicht verfügbar." };
+      if (args.aktion === "anhang_uebernehmen") {
+        if (!args.datei) return { error: "`datei` fehlt (Handle att-… oder Dateiname eines Chat-Uploads)." };
+        if (!deps.chatAnhaenge) return { error: "Chat-Uploads sind hier nicht verfügbar." };
+        const r = deps.chatAnhaenge.aufloesen(c.conversationId, args.datei);
+        if ("fehler" in r) return { error: r.fehler, kandidaten: r.kandidaten };
+        if (!(await bestaetigen(`„${r.datei.filename}“ als festen Anhang für Mail-Entwürfe speichern${args.immer ? " (an jede Outreach-Mail)" : ""}?`, "Speichern"))) return userDeclined();
+        try {
+          const a = fest.hinzufuegen({ name: r.datei.filename, mimeType: r.datei.mimeType, bytes: r.datei.bytes, immer: args.immer, beschreibung: args.beschreibung });
+          return { text: `Fester Anhang ${a.name} (${a.id})`, anhang: a };
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      if (!args.id) return { error: "`id` (fix-…) fehlt." };
+      if (args.aktion === "anhang_entfernen") {
+        if (!(await bestaetigen(`Festen Anhang ${args.id} entfernen?`, "Entfernen"))) return userDeclined();
+        return fest.entfernen(args.id) ? { text: `${args.id} entfernt.` } : { error: `Kein fester Anhang ${args.id}.` };
+      }
+      const a = fest.aendern(args.id, { ...(args.immer !== undefined ? { immer: args.immer } : {}), ...(args.beschreibung !== undefined ? { beschreibung: args.beschreibung } : {}) });
+      return a ? { text: `${a.name}: ${a.immer ? "an jede Outreach-Mail" : "nur bei Bedarf"}`, anhang: a } : { error: `Kein fester Anhang ${args.id}.` };
     },
   });
 

@@ -48,6 +48,17 @@ Anhänge. Der Nutzer drückt nur noch auf Senden. Ohne Mail-Programm öffnet sic
 - **E4 App (app.ava.bi):** Der Browser kennt das Standardprogramm nicht. Standard ist `mailto:` (öffnet am Handy die
   Mail-App), dazu Gmail, Outlook im Web und „Als Outlook-Entwurf (.eml)“. Die `.eml` baut die AVA
   (App-Anfrage `mail_eml`, mit Anhängen bis 4,5 MB wegen der Relais-Grenze) und die App lädt sie herunter.
+- **E7 Entwurfs-Postfach (Stufe 3, Entscheidung Operator 2026-10-10: „darum kümmern“):** eigene Verbindung „nur für
+  Entwürfe“ per IMAP mit Passwort bzw. App-Passwort, Vorlagen für IONOS, STRATO, GMX, WEB.DE, Telekom, Gmail, iCloud,
+  andere. AVA legt die fertige Mail (mit Absender, ohne X-Unsent) per APPEND mit `\Draft` in den Entwürfe-Ordner
+  (RFC 6154 `\Drafts`, sonst übliche Namen) und liest nichts. Gespeichert wird erst nach erfolgreicher Anmeldung;
+  Passwort verschlüsselt (`credentials()`), Einrichtung nur in den Einstellungen, nie im Chat. Microsoft 365 /
+  Outlook.com erlauben kein Passwort-IMAP mehr → Hinweis auf die .eml. Automatische Wahl (`autoWeg`): Outlook → .eml;
+  mit Anhängen und Postfach → Postfach; sonst mailto:; ohne Mail-Programm → Postfach, sonst Webmail.
+- **E8 Feste Anhänge:** dauerhafte Ablage `userData/mail-anhaenge` (höchstens 10 Dateien je 10 MB, gleicher Name ersetzt
+  die alte Fassung), Handles `fix-…`, je Datei Beschreibung und „an jede Outreach-Mail“. Stehen als Lese-Kontext im
+  System-Prompt, damit AVA sie passend in `anhaenge` einträgt. Verwaltung in den Einstellungen und per
+  `settings_mail_entwurf` (aus einem Chat-Upload übernehmen, ändern, entfernen).
 - **E5 Andere Kanäle:** Telegram bekommt den Entwurf als lesbaren Text (An, Betreff, Text). Der Sprachmodus liest
   keinen Block vor, sondern sagt, an wen der Entwurf geht.
 
@@ -57,9 +68,12 @@ Anhänge. Der Nutzer drückt nur noch auf Senden. Ohne Mail-Programm öffnet sic
   Werkzeug, Prompt und Skill, Telegram/Sprache.
 - **Stufe 2 (umgesetzt v0.1.805):** `.eml` mit Anhängen, automatische Wahl bei Outlook, „Anhänge im Ordner zeigen“,
   App-Anfrage `mail_eml`.
-- **Stufe 3 (offen):** Entwurf direkt im Postfach des Nutzers: zweite Postfach-Verbindung „nur für Entwürfe“ (IMAP
-  APPEND mit `\Draft` in den Entwürfe-Ordner; IONOS, GMX, Strato, Gmail mit App-Passwort), später Anmeldung über
-  Microsoft (Graph) und Google (Gmail-API) für Microsoft 365 und Google Workspace.
+- **Stufe 3 (umgesetzt v0.1.806):** Entwurfs-Postfach (E7) und feste Anhänge (E8); Desktop: Einstellungen →
+  Datenquellen → Mail-Entwürfe, Menüpunkt „Entwürfe-Ordner“ an der Karte; App: „In meine Entwürfe legen“ über die
+  App-Anfragen `mail_postfach` und `mail_stand` (Gateway-Deploy nötig).
+- **Später:** Anmeldung über Microsoft (Graph `createMessage`) und Google (Gmail-API `drafts.create`) für
+  Microsoft 365 und Google Workspace ohne App-Passwort; Einrichtung des Entwurfs-Postfachs für Server-Instanzen
+  (heute nur in der Desktop-App).
 
 ## 6. Zu testen (echte Programme)
 
@@ -71,5 +85,5 @@ Anhänge. Der Nutzer drückt nur noch auf Senden. Ohne Mail-Programm öffnet sic
 
 ## 7. Offen
 
-- Feste Anhänge (Firmenprofil-PDF, Referenzen) einmal in AVA hinterlegen, statt sie je Chat hochzuladen.
-- Stufe 3.
+- IMAP-Ablage gegen echte Postfächer testen (IONOS, Gmail mit App-Passwort, GMX).
+- Microsoft/Google per Anmeldung (siehe „Später“).

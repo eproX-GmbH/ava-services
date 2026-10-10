@@ -16,12 +16,13 @@ export interface MailEntwurf {
 }
 
 /** Wohin der Knopf den Entwurf schickt. „auto“: Desktop wählt nach dem Standardprogramm. */
-export type MailEntwurfZiel = "auto" | "programm" | "eml" | "gmail" | "outlook-web" | "outlook-live";
-export const MAIL_ENTWURF_ZIELE: readonly MailEntwurfZiel[] = ["auto", "programm", "eml", "gmail", "outlook-web", "outlook-live"];
+export type MailEntwurfZiel = "auto" | "programm" | "eml" | "postfach" | "gmail" | "outlook-web" | "outlook-live";
+export const MAIL_ENTWURF_ZIELE: readonly MailEntwurfZiel[] = ["auto", "programm", "eml", "postfach", "gmail", "outlook-web", "outlook-live"];
 export const ZIEL_TEXT: Record<MailEntwurfZiel, string> = {
   auto: "automatisch",
   programm: "Mail-Programm",
   eml: "Outlook-Entwurf (.eml)",
+  postfach: "Entwürfe-Ordner im eigenen Postfach",
   gmail: "Gmail",
   "outlook-web": "Outlook im Web (Microsoft 365)",
   "outlook-live": "Outlook.com",
@@ -125,6 +126,20 @@ export function webmailUrl(e: MailEntwurf, ziel: "gmail" | "outlook-web" | "outl
   return `${basis}?${p.toString().replace(/\+/g, "%20")}`;
 }
 
+/** Feste Anhänge (Firmenprofil, Referenzen) tragen dieses Präfix statt att-. */
+export const FEST_PRAEFIX = "fix-";
+
+/**
+ * Automatische Wahl (docs/PLAN_MAIL_ENTWURF.md E2/E7): Outlook bekommt die .eml;
+ * mit Anhängen und eingerichtetem Entwurfs-Postfach geht der Entwurf dorthin,
+ * sonst mailto:; ohne Mail-Programm das Postfach, sonst „keins“ (Webmail-Auswahl).
+ */
+export function autoWeg(programm: string | null, postfachEingerichtet: boolean, hatAnhaenge: boolean): "eml" | "postfach" | "mailto" | "keins" {
+  if (programm && programmIstOutlook(programm)) return "eml";
+  if (postfachEingerichtet && (hatAnhaenge || !programm)) return "postfach";
+  return programm ? "mailto" : "keins";
+}
+
 /** Outlook wertet X-Unsent aus und öffnet die .eml als Entwurf; andere Programme zeigen sie als empfangene Mail. */
 export const programmIstOutlook = (name: string | null | undefined) => !!name && /outlook/i.test(name);
 
@@ -147,4 +162,58 @@ export function mailEntwuerfeErsetzen(md: string, ersatz: (e: MailEntwurf | null
     const r = mailEntwurfLesen(raw);
     return ersatz("entwurf" in r ? r.entwurf : null, raw);
   });
+}
+
+// ---- Einstellungen (Stufe 3, feste Anhänge) ----------------------------------------
+
+export interface PostfachAnbieter {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  /** Hinweis für die Anmeldung (App-Passwort usw.). */
+  hinweis?: string;
+  /** Mit Passwort nicht möglich (nur Anmeldung über den Anbieter). */
+  gesperrt?: boolean;
+}
+
+export interface PostfachEinstellung {
+  anbieter: string;
+  host: string;
+  port: number;
+  /** TLS ab Verbindungsbeginn (993); false = STARTTLS (143). */
+  secure: boolean;
+  benutzer: string;
+  /** Absenderadresse im Entwurf, meist gleich dem Benutzernamen. */
+  absender: string;
+  /** Anzeigename im Absender. */
+  name: string | null;
+  /** Zuletzt gefundener Entwürfe-Ordner. */
+  ordner: string | null;
+  geprueft: string | null;
+}
+
+/** Was nach außen geht: ohne Passwort. */
+export type PostfachStand = (PostfachEinstellung & { eingerichtet: true }) | { eingerichtet: false };
+
+export interface FesterAnhang {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** An jeden Outreach-Entwurf anhängen. */
+  immer: boolean;
+  /** Wofür die Datei gedacht ist (hilft AVA bei der Auswahl). */
+  beschreibung: string | null;
+  angelegt: string;
+}
+
+/** Eingabe beim Einrichten des Entwurfs-Postfachs (ohne Passwort). */
+export type MailEntwurfPostfachEingabe = Omit<PostfachEinstellung, "ordner" | "geprueft">;
+
+export interface MailEntwurfEinstellungen {
+  ziel: MailEntwurfZiel;
+  postfach: PostfachStand;
+  anbieter: PostfachAnbieter[];
+  festeAnhaenge: FesterAnhang[];
 }

@@ -50,6 +50,10 @@ export type AppEreignis =
 export interface AppKanalExtras {
   /** Mail-Entwurf als .eml mit Anhängen (docs/PLAN_MAIL_ENTWURF.md E4); `entwurf` = Inhalt des Blocks. */
   mailEml?: (entwurf: unknown) => Promise<{ base64: string; dateiname: string }>;
+  /** Stufe 3: Entwurf in den Entwürfe-Ordner des eigenen Postfachs legen. */
+  mailPostfach?: (entwurf: unknown) => Promise<{ ordner: string; anhaenge: number }>;
+  /** Ob ein Entwurfs-Postfach eingerichtet ist und welche festen Anhänge es gibt. */
+  mailStand?: () => { postfach: boolean; ordner: string | null; festeAnhaenge: Array<{ id: string; name: string; immer: boolean }> };
   /** Bild aus dem Verlauf auf höchstens `kante` Pixel verkleinern (Server: Original). */
   bild?: (bild: AgentMessageImage, kante: number) => AgentMessageImage;
   anhang?: (input: { filename: string; bytes: Uint8Array; conversationId?: string }) => Promise<unknown>;
@@ -242,6 +246,16 @@ export class AppKanal {
         return this.gespraech(String(daten.conversationId ?? ""));
       case "bild":
         return this.bild(daten);
+      case "mail_stand":
+        return this.extra("mailStand")();
+      case "mail_postfach": {
+        const ablegen = this.extra("mailPostfach");
+        try {
+          return await ablegen(daten.entwurf);
+        } catch (err) {
+          throw new AppFehler("ungueltig", err instanceof Error ? err.message : String(err));
+        }
+      }
       case "mail_eml": {
         const bauen = this.extra("mailEml");
         try {

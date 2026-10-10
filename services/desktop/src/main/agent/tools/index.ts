@@ -28,6 +28,7 @@ import { buildTransactionTools } from "./transactions";
 import { buildEvaluationTools } from "./evaluations";
 import { buildUiTools } from "./ui";
 import { buildSettingsTools } from "./settings";
+import type { FesteAnhaenge } from "../../mail-entwurf/feste-anhaenge";
 import { buildMemoryTools } from "./memory";
 import { buildImportTools } from "./imports";
 import { buildAlertsTools } from "./alerts";
@@ -206,6 +207,10 @@ export function buildReadOnlyRegistry(deps: {
   /** T5 — Firmen des Tenants fuer firmenuebergreifende Abfragen. */
   getTenantCompanyIds: () => Promise<string[]>;
   getPublicationMode?: () => "lazy" | "eager";
+  /** Feste Anhänge für Mail-Entwürfe (docs/PLAN_MAIL_ENTWURF.md E8). */
+  festeAnhaenge?: FesteAnhaenge;
+  /** Chat-Uploads, aus denen feste Anhänge übernommen werden. */
+  chatAnhaenge?: AttachmentStore;
   setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
@@ -302,6 +307,8 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildSettingsTools({
     providers: deps.providers,
     getPublicationMode: deps.getPublicationMode,
+    festeAnhaenge: deps.festeAnhaenge,
+    chatAnhaenge: deps.attachments,
     setPublicationMode: deps.setPublicationMode,
   }))
     registry.register(t);

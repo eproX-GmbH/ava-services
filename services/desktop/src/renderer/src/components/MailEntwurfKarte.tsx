@@ -10,7 +10,7 @@ import { ChevronDownIcon, CopyIcon, MailIcon, PaperclipIcon } from "./icons";
 type Ergebnis = Awaited<ReturnType<typeof window.api.mailEntwurf.oeffnen>>;
 
 const WEG_TEXT: Record<string, string> = { gmail: "Gmail", "outlook-web": "Outlook im Web", "outlook-live": "Outlook.com" };
-const ANDERE: MailEntwurfZiel[] = ["programm", "eml", "gmail", "outlook-web", "outlook-live"];
+const ANDERE: MailEntwurfZiel[] = ["programm", "eml", "postfach", "gmail", "outlook-web", "outlook-live"];
 
 async function kopieren(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -29,7 +29,8 @@ async function kopieren(text: string): Promise<void> {
 
 export function MailEntwurfKarte({ raw }: { raw: string }) {
   const r = mailEntwurfLesen(raw);
-  const stand = useQuery({ queryKey: ["mail-entwurf-stand"], queryFn: () => window.api.mailEntwurf.stand(), staleTime: 60_000 });
+  const hatAnhaenge = "entwurf" in r && r.entwurf.anhaenge.length > 0;
+  const stand = useQuery({ queryKey: ["mail-entwurf-stand", hatAnhaenge], queryFn: () => window.api.mailEntwurf.stand(hatAnhaenge), staleTime: 60_000 });
   const [laeuft, setLaeuft] = useState(false);
   const [ergebnis, setErgebnis] = useState<Ergebnis | null>(null);
   const [meldung, setMeldung] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export function MailEntwurfKarte({ raw }: { raw: string }) {
       const x = await window.api.mailEntwurf.oeffnen({ raw, weg });
       setErgebnis(x);
       if (x.fehler) setMeldung(x.fehler);
+      else if (x.weg === "postfach") setMeldung(`Der Entwurf liegt in deinem Postfach im Ordner „${x.ordner ?? "Entwürfe"}“ – dort öffnen und senden.`);
     } catch (err) {
       setMeldung(err instanceof Error ? err.message : String(err));
     } finally {
@@ -90,9 +92,13 @@ export function MailEntwurfKarte({ raw }: { raw: string }) {
   const hauptText =
     s?.weg === "eml" || s?.weg === "mailto"
       ? `In ${s.programm ?? "Mail-Programm"} öffnen`
-      : s && WEG_TEXT[s.weg]
-        ? `In ${WEG_TEXT[s.weg]} öffnen`
-        : "Im Mail-Programm öffnen";
+      : s?.weg === "postfach"
+        ? "In meine Entwürfe legen"
+        : s && WEG_TEXT[s.weg]
+          ? `In ${WEG_TEXT[s.weg]} öffnen`
+          : "Im Mail-Programm öffnen";
+  const festName = new Map((s?.festeAnhaenge ?? []).map((a) => [a.id, a.name]));
+  const andere = ANDERE.filter((z) => z !== "postfach" || s?.postfach);
 
   return (
     <div className="mail-entwurf">
@@ -117,7 +123,7 @@ export function MailEntwurfKarte({ raw }: { raw: string }) {
         <ul className="mail-entwurf__anhaenge">
           {e.anhaenge.map((a) => (
             <li key={a}>
-              <PaperclipIcon width={13} height={13} /> {a}
+              <PaperclipIcon width={13} height={13} /> {festName.get(a) ?? a}
             </li>
           ))}
         </ul>
@@ -147,9 +153,9 @@ export function MailEntwurfKarte({ raw }: { raw: string }) {
           </button>
           {menue && (
             <div className="mail-entwurf__liste" role="menu">
-              {ANDERE.map((z) => (
+              {andere.map((z) => (
                 <button key={z} type="button" role="menuitem" onClick={() => void oeffnen(z)}>
-                  {z === "programm" ? `${s?.programm ?? "Mail-Programm"} (ohne Anhänge)` : ZIEL_TEXT[z]}
+                  {z === "programm" ? `${s?.programm ?? "Mail-Programm"} (ohne Anhänge)` : z === "postfach" ? `Entwürfe-Ordner (${s?.postfach?.absender ?? "Postfach"})` : ZIEL_TEXT[z]}
                 </button>
               ))}
             </div>
@@ -161,6 +167,11 @@ export function MailEntwurfKarte({ raw }: { raw: string }) {
       {ergebnis?.anhaengeFehlen && !ergebnis.fehler && (
         <div className="mail-entwurf__hinweis">
           <span>Dieser Weg kann keine Anhänge mitgeben.</span>
+          {s?.postfach && (
+            <button type="button" className="btn small" onClick={() => void oeffnen("postfach")}>
+              In meine Entwürfe legen
+            </button>
+          )}
           <button type="button" className="btn small" onClick={() => void oeffnen("eml")}>
             Mit Anhängen als Datei öffnen
           </button>
