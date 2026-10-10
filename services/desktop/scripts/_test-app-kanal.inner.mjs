@@ -11,6 +11,7 @@ const load = async (p) => {
 const { AppKanal } = await load("../src/core/relais/app-kanal.ts");
 const { AttachmentStore } = await load("../src/main/agent/attachment-store.ts");
 const { anhangAufbereiten } = await load("../src/main/app/anhang.ts");
+const { bildVerkleinern } = await load("../src/main/app/bild.ts");
 const XLSX = (await import("xlsx")).default ?? (await import("xlsx"));
 
 let fehler = 0;
@@ -28,6 +29,7 @@ class FakeAgent extends EventEmitter {
 const agent = new FakeAgent();
 const frames = [];
 let uploadBytes = null;
+const bildKanten = [];
 const kanal = new AppKanal({
   agent,
   gespraeche: {
@@ -42,7 +44,10 @@ const kanal = new AppKanal({
   },
   senden: (f) => frames.push(f),
   instanzName: () => "Test-AVA",
-  extras: { anhang: async (i) => { uploadBytes = i.bytes; return { id: "att-1", marker: "[attachment]" }; } },
+  extras: {
+    anhang: async (i) => { uploadBytes = i.bytes; return { id: "att-1", marker: "[attachment]" }; },
+    bild: (b, kante) => { bildKanten.push(kante); return bildVerkleinern(b, kante); },
+  },
 });
 
 agent.emit("stream", { kind: "token", requestId: "x", conversationId: "c", messageId: "m", delta: "a" });
@@ -81,6 +86,18 @@ const g = await kanal.anfrage("gespraech", { conversationId: "c1" });
 ok(g.nachrichten.length === 3 && !g.nachrichten.some((n) => n.rolle === "tool"), "Gespräch ohne Werkzeug-Rohdaten");
 ok(!JSON.stringify(g).includes("AAAA") && g.nachrichten[0].bilder[0].filename === "x.png", "Bilddaten werden nicht übertragen");
 ok(g.nachrichten[1].werkzeuge[0] === "company_search", "Werkzeugnamen bleiben sichtbar");
+
+// Bilder einzeln nachladen (ohne Electron: Original)
+const b1 = await kanal.anfrage("bild", { conversationId: "c1", messageId: "1", index: 0 });
+ok(b1.base64 === "AAAA" && b1.mimeType === "image/png" && bildKanten[0] === 800, "Bild nachladen: Vorschau-Kante 800, ohne Electron das Original");
+await kanal.anfrage("bild", { conversationId: "c1", messageId: "1", index: 0, gross: true });
+ok(bildKanten[1] === 2048, "Großansicht fragt mit Kante 2048");
+let ng = null;
+try { await kanal.anfrage("bild", { conversationId: "c1", messageId: "1", index: 3 }); } catch (e) { ng = e.code; }
+ok(ng === "nicht_gefunden", "unbekanntes Bild → nicht_gefunden");
+let zg = null;
+try { bildVerkleinern({ base64: "A".repeat(5_000_000), mimeType: "image/png" }, 800); } catch (e) { zg = e.message; }
+ok(zg?.includes("zu groß"), "zu großes Original ohne Electron → Fehler statt Relais-Abbruch");
 
 const daten = Buffer.from("Hallo Welt, das ist ein Test.".repeat(50));
 const t1 = daten.subarray(0, 700).toString("base64");

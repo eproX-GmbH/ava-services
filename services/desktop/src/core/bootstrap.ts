@@ -33,6 +33,7 @@ import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as wr
 import { ORG_FEATURES } from "../shared/types";
 import { avaKontextText } from "./relais/ava-kontext";
 import { AppKanal } from "./relais/app-kanal";
+import { bildVerkleinern } from "../main/app/bild";
 import { anhangAufbereiten } from "../main/app/anhang";
 import { transkribieren } from "../main/app/transkription";
 import { WebPushKanal } from "../main/push/web-push-kanal";
@@ -4017,6 +4018,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     log: (z) => writeLineSync("INFO ", z),
     extras: {
       anhang: (input) => anhangAufbereiten(attachments, input),
+      bild: (b, kante) => bildVerkleinern(b, kante),
       transkribieren: (wav) =>
         transkribieren(
           {

@@ -360,12 +360,13 @@ export class KopfRelais {
       const k = m.get(instanzId);
       if (k) return k;
     }
+    // Vorrang: AVA mit App-Kanal, dann Server vor Desktop, dann die länger verbundene.
+    // Ein zu alter Server soll eine aktuelle Desktop-AVA nicht verdecken.
+    const rang = (k: KopfVerbindung) => (versionMindestens(k.version, APP_KANAL_AB) ? 10 : 0) + (k.art === "server" ? 2 : 1);
     let best: KopfVerbindung | null = null;
     for (const k of m.values()) {
       if (k.instanzId.startsWith("unbekannt-")) continue;
-      const p = k.art === "server" ? 2 : 1;
-      const pb = best ? (best.art === "server" ? 2 : 1) : -1;
-      if (!best || p > pb || (p === pb && k.seit < best.seit)) best = k;
+      if (!best || rang(k) > rang(best) || (rang(k) === rang(best) && k.seit < best.seit)) best = k;
     }
     return best;
   }

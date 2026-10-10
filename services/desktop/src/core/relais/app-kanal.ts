@@ -48,6 +48,8 @@ export type AppEreignis =
 
 /** Optionale Fähigkeiten (P3–P7); fehlt eine, antwortet der Kanal „nicht verfügbar“. */
 export interface AppKanalExtras {
+  /** Bild aus dem Verlauf auf höchstens `kante` Pixel verkleinern (Server: Original). */
+  bild?: (bild: AgentMessageImage, kante: number) => AgentMessageImage;
   anhang?: (input: { filename: string; bytes: Uint8Array; conversationId?: string }) => Promise<unknown>;
   transkribieren?: (wav: Uint8Array) => Promise<unknown>;
   sprache?: {
@@ -236,6 +238,8 @@ export class AppKanal {
         };
       case "gespraech":
         return this.gespraech(String(daten.conversationId ?? ""));
+      case "bild":
+        return this.bild(daten);
       case "gespraech_loeschen": {
         const id = String(daten.conversationId ?? "");
         if (this.deps.agent.getStatus().inFlightConversationId === id) throw new AppFehler("beschaeftigt", "Das Gespräch läuft gerade.");
@@ -337,6 +341,24 @@ export class AppKanal {
   }
 
   /** Gesprächsverlauf für die Anzeige: Nutzer- und AVA-Nachrichten, Werkzeugnamen, keine Bilddaten. */
+  /** Ein Bild aus dem Verlauf (die Liste trägt nur Name und Typ). */
+  private bild(daten: Record<string, unknown>) {
+    const conversationId = String(daten.conversationId ?? "");
+    const messageId = String(daten.messageId ?? "");
+    const index = Number(daten.index ?? 0);
+    if (!conversationId || !messageId || !Number.isInteger(index) || index < 0) throw new AppFehler("ungueltig", "conversationId, messageId und index nötig.");
+    const nachricht = this.deps.gespraeche.load(conversationId).find((m) => m.id === messageId);
+    const bild = nachricht?.images?.[index];
+    if (!bild) throw new AppFehler("nicht_gefunden", "Das Bild gibt es nicht (mehr).");
+    try {
+      const b = this.extra("bild")(bild, daten.gross === true ? 2048 : 800);
+      return { base64: b.base64, mimeType: b.mimeType, filename: b.filename ?? null };
+    } catch (err) {
+      if (err instanceof AppFehler) throw err;
+      throw new AppFehler("zu_gross", err instanceof Error ? err.message : String(err));
+    }
+  }
+
   private gespraech(id: string) {
     if (!id) throw new AppFehler("ungueltig", "conversationId fehlt.");
     const alle = this.deps.gespraeche.load(id);

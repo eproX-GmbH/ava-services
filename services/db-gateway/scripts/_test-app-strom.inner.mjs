@@ -53,6 +53,18 @@ const f = await kopfRelais.appAnfrage("nutzer-1", "kaputt", {});
 ok(f.isError && JSON.parse(f.text).code === "beschaeftigt", "Fehler des Kopfs kommt mit Code zurück");
 ok((await kopfRelais.appAnfrage("nutzer-2", "stand", {})) === null, "fremder Nutzer: keine AVA");
 
+// Zu alter Server verdeckt keinen aktuellen Desktop; ohne passenden Kopf: sofort "zu alt".
+const alt = new WebSocket(`ws://127.0.0.1:${port}/kopf-relais?access_token=gut`);
+await new Promise((r) => alt.on("open", r));
+alt.send(JSON.stringify({ typ: "hallo", version: "0.1.797", instanz: { id: "instanz-alt", art: "server", name: "Alter Server" }, werkzeuge: [], zustand: {} }));
+await new Promise((r) => setTimeout(r, 100));
+const r2 = await kopfRelais.appAnfrage("nutzer-1", "stand", {});
+ok(r2 && !r2.isError && r2.instanz.name === "Test-Server", "aktuelle AVA hat Vorrang vor einem zu alten Server");
+const r3 = await kopfRelais.appAnfrage("nutzer-1", "stand", {}, { instanzId: "instanz-alt" });
+ok(r3.isError && JSON.parse(r3.text).code === "nicht_verfuegbar", "ausdrücklich gewählter alter Kopf: sofort nicht_verfuegbar");
+alt.close();
+await new Promise((r) => setTimeout(r, 100));
+
 // Strom: Abonnent, Frames, Abo-Meldung an den Kopf
 const empfangen = [];
 const ab = strom.abonnieren("nutzer-1", null, (e) => empfangen.push(e));
