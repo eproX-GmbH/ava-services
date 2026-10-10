@@ -909,3 +909,30 @@ Whisper-Modelle. Das Ziel legt den Umzug ab, startet neu, löscht vor dem Öffne
 der Stores sein altes Datenverzeichnis (bis auf die instanzgebundenen Teile)
 und spielt den Umzug ein. Auslöser: Desktop-Einstellungen, Setup-Seite,
 Chat-Werkzeug (destruktiv, immer mit Bestätigung).
+
+### 13.4 Stand (v0.1.795, 2026-10-10)
+
+- **U1 Instanzen:** `core/relais/instanz.ts` (instanz.json: ID, Name, MCP an/aus),
+  Gateway-Relais mit mehreren Instanzen je Konto (dieselbe ID ersetzt ihre alte
+  Verbindung, Nachricht `hallo` mit Instanz und Zustand, `zustand` alle fünf
+  Minuten und nach Änderungen, `instanzen` an alle), `GET /v1/instanzen`,
+  MCP-Ziel Server vor Desktop, MCP je Instanz abschaltbar. Anzeige: Einstellungen
+  → Konto → „Deine AVAs“, Setup-Seite, Chat-Werkzeuge `ava_instanzen` und
+  `ava_instanz_einstellen`.
+- **U2 Telegram je Instanz:** Setup-Abschnitt (Token, Chat verknüpfen,
+  Schalter, Test, entfernen) über dieselben Werkzeuge wie der Chat; Prüfung,
+  dass der Bot nicht schon an einer anderen Instanz hängt; der Eingang erkennt
+  409 („anderer Abholer“), meldet es im Audit und in der Instanzenliste.
+- **U4 Umzug:** `core/umzug/` (Paket, Datenbank-Abzüge, Übertragung,
+  Einspielen beim Start). Ziel holt, Quelle kann bitten; X25519 + HKDF +
+  AES-256-GCM je Teil (768 KB), Fenster 8, SHA-256 über das Ganze. Alle acht
+  PGlite-Stores melden sich für `dumpDataDir` an. Instanzgebunden bleiben:
+  Anmeldung, Instanz-ID, Telegram, Abo-Anmeldungen OpenAI/Anthropic,
+  Worker-Token, Logs, Browser-Caches. Der alte Stand liegt danach unter
+  `.umzug-alt/`. Auslöser: Knöpfe in „Deine AVAs“ (App und Setup-Seite),
+  Chat-Werkzeug `ava_umzug` (destruktiv, immer Bestätigung). Server-Neustart
+  mit Exit-Code 75, damit Fly und Docker sicher neu starten.
+- Tests: `pnpm test:umzug` (zwei Prozesse, zwei Schlüssel, echte PGlite,
+  14 Prüfungen, fand und behob den Verlust des Ziel-Abos), `pnpm test:server`
+  um die Instanzenliste erweitert.
+

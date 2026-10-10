@@ -56,6 +56,7 @@
     "test:chart": "node scripts/test-chart-spec.mjs",
     "test:workflows": "node scripts/test-workflows.mjs",
     "test:ava-fragen": "node scripts/test-ava-fragen.mjs",
+    "test:umzug": "node scripts/test-umzug.mjs",
     "audit:bundle": "node scripts/check-bundle-secrets.mjs",
     "preview": "electron-vite preview",
     "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",

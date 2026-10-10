@@ -152,13 +152,72 @@ async function chatgptAbschnitt(t: string): Promise<string> {
   return kopf + schritt2 + "<p><small>Plan-Nutzung gibt es mit ChatGPT Plus oder Pro; Chat, Hintergrund-KI und Producer laufen dann über das Abo.</small></p>";
 }
 
+async function telegramAbschnitt(t: string): Promise<string> {
+  const c = core;
+  if (!c) return "";
+  const cfg = c.telegramStore.getConfig();
+  const token = await c.telegramStore.getToken().catch(() => null);
+  const eigeneBotId = token ? token.split(":")[0] : null;
+  // Derselbe Bot an einer anderen Instanz? (Instanzenliste vom Gateway, §13.2)
+  const andere = c.mcpRelais
+    .instanzen()
+    .filter((i) => i.id !== c.instanz.get().id && (i.zustand?.telegram as { botId?: string } | undefined)?.botId === eigeneBotId && eigeneBotId);
+  const warnung = andere.length
+    ? `<p class="fehler">Dieser Bot hängt auch an ${andere.map((i) => esc(i.name)).join(", ")}. Telegram lässt je Bot nur einen Abholer zu; für diesen Server einen eigenen Bot bei @BotFather anlegen.</p>`
+    : "";
+  if (!token) {
+    return `<p>Für den Server einen <strong>eigenen</strong> Bot anlegen (nicht den der Desktop-App): in Telegram <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> öffnen, <code style="font-size:.9rem">/newbot</code>, Namen vergeben, den Token hier einfügen.</p>
+<form method="post" action="/setup/telegram/token?t=${esc(t)}"><label>Bot-Token <input name="token" type="password" autocomplete="off" required placeholder="123456789:AA…"></label><button type="submit">Bot speichern</button></form>`;
+  }
+  const bot = cfg.botUsername ? `@${esc(cfg.botUsername)}` : "Bot";
+  if (!cfg.chatId) {
+    return `${warnung}<p>${bot} ist gespeichert. Schreib dem Bot in Telegram <code style="font-size:.9rem">/start</code> und verknüpfe dann den Chat:</p>
+<form method="post" action="/setup/telegram/chat?t=${esc(t)}"><button type="submit">Chat verknüpfen</button></form>
+<form method="post" action="/setup/telegram/trennen?t=${esc(t)}"><button type="submit">Bot entfernen</button></form>`;
+  }
+  return `${warnung}<p class="ok">${bot} verbunden, Chat verknüpft. Meldungen ${cfg.enabled ? "an" : "aus"}, Nachrichten an AVA ${cfg.inboundEnabled ? "an" : "aus"} (Schwelle ${esc(cfg.severityThreshold)}${cfg.respectQuietHours ? ", Ruhezeiten wie eingestellt" : ""}).</p>
+<form method="post" action="/setup/telegram/schalten?t=${esc(t)}">
+  <label><input type="checkbox" name="enabled" ${cfg.enabled ? "checked" : ""} style="width:auto"> Meldungen aufs Handy</label><br>
+  <label><input type="checkbox" name="inbound" ${cfg.inboundEnabled ? "checked" : ""} style="width:auto"> Nachrichten an AVA (Chat über Telegram)</label><br>
+  <button type="submit">Übernehmen</button>
+</form>
+<form method="post" action="/setup/telegram/test?t=${esc(t)}"><button type="submit">Testnachricht senden</button></form>
+<form method="post" action="/setup/telegram/trennen?t=${esc(t)}"><button type="submit">Bot entfernen</button></form>`;
+}
+
+function instanzenAbschnitt(t = ""): string {
+  const c = core;
+  if (!c) return "";
+  const l = c.mcpRelais.instanzen();
+  if (l.length === 0) return "<p><small>Nicht mit dem Gateway verbunden; die Liste erscheint nach der Anmeldung.</small></p>";
+  const eigen = c.instanz.get().id;
+  const umzugLaeuft = ["wartet", "sendet", "empfaengt"].includes(c.umzug.getStand().phase);
+  const zeilen = l
+    .map((i) => {
+      const tg = i.zustand?.telegram as { bot?: string | null; eingerichtet?: boolean } | undefined;
+      const rd = i.zustand?.radar as { an?: boolean } | undefined;
+      const umzugKnopf =
+        i.id !== eigen && i.verbunden && !umzugLaeuft
+          ? `<form method="post" action="/setup/umzug/holen?t=${esc(t)}&id=${encodeURIComponent(i.id)}" onsubmit="return confirm('Kompletten Stand von ${esc(i.name)} auf diesen Server holen? Der Server wird überschrieben und startet neu; der bisherige Stand bleibt als Sicherung. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben.')"><button type="submit">Hierher holen</button></form>
+<form method="post" action="/setup/umzug/senden?t=${esc(t)}&id=${encodeURIComponent(i.id)}" onsubmit="return confirm('Kompletten Stand dieses Servers an ${esc(i.name)} senden? ${esc(i.name)} wird überschrieben und startet neu.')"><button type="submit">Dorthin senden</button></form>`
+          : "";
+      return `<tr><td>${esc(i.name)}${i.id === eigen ? " <small>(dieser)</small>" : ""}<br><small>${i.art} · v${esc(i.version)} · ${i.verbunden ? "verbunden" : "offline"}</small></td><td>${tg?.eingerichtet ? (tg.bot ? "@" + esc(tg.bot) : "Bot") : "–"}</td><td>${rd ? (rd.an ? "an" : "aus") : "–"}</td><td>${i.mcpZiel ? "beantwortet" : "–"}</td><td>${umzugKnopf}</td></tr>`;
+    })
+    .join("");
+  const st = c.umzug.getStand();
+  const umzugZeile = st.phase !== "bereit" ? `<p class="${st.phase === "fehler" ? "fehler" : "ok"}">Umzug ${st.rolle === "ziel" ? "von" : "an"} ${esc(st.gegenueber ?? "?")}: ${esc(st.meldung ?? "")}${st.bytes ? ` (${Math.round(st.bytes / 1048576)} MB)` : ""}</p>` : "";
+  return `${umzugZeile}<table><tr><th>Instanz</th><th>Telegram</th><th>Radar</th><th>MCP</th><th>Umzug</th></tr>${zeilen}</table><p><small>Umzug überträgt alles, was AVA lokal hält, und überschreibt das Ziel. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben je Instanz.</small></p>`;
+}
+
 async function setupSeite(t: string): Promise<string> {
   const meldung = setupMeldung ? `<p class="${setupMeldung.art}">${esc(setupMeldung.text)}</p>` : "";
   setupMeldung = null;
   return html(`<h1>AVA Server ${esc(paths().version())}</h1>${meldung}
 <h2>1. Anmeldung</h2>${anmeldungAbschnitt()}
 <h2>2. Modellzugang: API-Schlüssel</h2>${modellAbschnitt(t)}
-<h2>3. Modellzugang: ChatGPT-Abo</h2>${await chatgptAbschnitt(t)}`);
+<h2>3. Modellzugang: ChatGPT-Abo</h2>${await chatgptAbschnitt(t)}
+<h2>4. Telegram</h2>${await telegramAbschnitt(t)}
+<h2>5. Deine AVAs</h2>${instanzenAbschnitt(t)}`);
 }
 
 // ---- HTTP ---------------------------------------------------------------------
@@ -248,6 +307,13 @@ async function setupPost(url: URL, req: IncomingMessage, res: ServerResponse): P
         text: `ChatGPT verbunden${r.email ? ` als ${r.email}` : ""}${r.planScope ? "" : " (ohne Plan-Nutzung: nur Plus/Pro teilen den Plan)"}.`,
       };
       writeLineSync("INFO ", `[setup] ChatGPT-Abo über die Setup-Seite verbunden (planScope=${r.planScope})`);
+    } else if (url.pathname === "/setup/umzug/holen" || url.pathname === "/setup/umzug/senden") {
+      const id = url.searchParams.get("id") ?? "";
+      const r = url.pathname.endsWith("holen") ? c.umzug.holen(id) : c.umzug.senden(id);
+      setupMeldung = r.ok ? { art: "ok", text: "Umzug gestartet. Diese Seite zeigt den Fortschritt; das Ziel startet am Ende neu." } : { art: "fehler", text: r.grund ?? "Umzug nicht gestartet." };
+      writeLineSync("INFO ", `[setup] Umzug ${url.pathname.endsWith("holen") ? "holen von" : "senden an"} ${id}: ${r.ok ? "gestartet" : r.grund}`);
+    } else if (url.pathname.startsWith("/setup/telegram/")) {
+      setupMeldung = await telegramAktion(c, url.pathname.slice("/setup/telegram/".length), form);
     } else {
       res.writeHead(404);
       res.end();
@@ -257,6 +323,47 @@ async function setupPost(url: URL, req: IncomingMessage, res: ServerResponse): P
     setupMeldung = { art: "fehler", text: err instanceof Error ? err.message : String(err) };
   }
   weiter(res, t);
+}
+
+/** Telegram-Schritte der Setup-Seite; nutzt dieselben Werkzeuge wie der Chat (Self-Service-Regel). */
+async function telegramAktion(c: Core, aktion: string, form: URLSearchParams): Promise<{ art: "ok" | "fehler"; text: string }> {
+  const tool = async (name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
+    const r = await c.mcpRelais.ausfuehren(name, args);
+    const d = JSON.parse(r.text) as { ergebnis?: Record<string, unknown>; fehler?: string };
+    if (r.isError || d.fehler) throw new Error(d.fehler ?? r.text);
+    return d.ergebnis ?? {};
+  };
+  if (aktion === "token") {
+    const token = (form.get("token") ?? "").trim();
+    if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) return { art: "fehler", text: "Das sieht nicht nach einem Bot-Token aus (Form 123456789:AA…)." };
+    if (!platform().credentials.isEncryptionAvailable()) return { art: "fehler", text: "AVA_SECRETS_KEY fehlt; der Token wird nicht unverschlüsselt gespeichert." };
+    const andere = c.mcpRelais.instanzen().filter((i) => i.id !== c.instanz.get().id && (i.zustand?.telegram as { botId?: string } | undefined)?.botId === token.split(":")[0]);
+    if (andere.length) return { art: "fehler", text: `Dieser Bot hängt schon an ${andere.map((i) => i.name).join(", ")}. Für den Server einen eigenen Bot anlegen.` };
+    const e = await tool("telegram_connect_save_token", { token });
+    if (e.ok === false) return { art: "fehler", text: String(e.error ?? "Token nicht gültig.") };
+    writeLineSync("INFO ", "[setup] Telegram-Bot gespeichert");
+    return { art: "ok", text: `Bot @${String(e.botUsername ?? "?")} gespeichert. Jetzt in Telegram /start an den Bot schicken und „Chat verknüpfen“ drücken.` };
+  }
+  if (aktion === "chat") {
+    const e = await tool("telegram_link_chat");
+    if (e.ok === false) return { art: "fehler", text: String(e.error ?? "Keine Nachricht gefunden; erst /start an den Bot schicken.") };
+    c.telegramStore.setConfig({ enabled: true, inboundEnabled: true });
+    writeLineSync("INFO ", "[setup] Telegram-Chat verknuepft, Meldungen und Eingang an");
+    return { art: "ok", text: "Chat verknüpft. Meldungen und Nachrichten an AVA sind an." };
+  }
+  if (aktion === "schalten") {
+    c.telegramStore.setConfig({ enabled: form.get("enabled") === "on", inboundEnabled: form.get("inbound") === "on" });
+    return { art: "ok", text: "Telegram-Einstellungen übernommen." };
+  }
+  if (aktion === "test") {
+    const e = await tool("telegram_send_message", { text: `Test von ${c.instanz.get().name}: Telegram ist verbunden.` });
+    return e.ok === false ? { art: "fehler", text: String(e.error ?? "Senden fehlgeschlagen.") } : { art: "ok", text: "Testnachricht gesendet." };
+  }
+  if (aktion === "trennen") {
+    await c.telegramStore.clear();
+    return { art: "ok", text: "Bot entfernt." };
+  }
+  return { art: "fehler", text: "Unbekannte Telegram-Aktion." };
 }
 
 function starteHttp(): void {

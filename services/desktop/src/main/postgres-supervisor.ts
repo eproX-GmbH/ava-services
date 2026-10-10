@@ -1,3 +1,4 @@
+import { registriereDatenbank } from "../core/umzug/datenbanken";
 import { createServer, type Server, type Socket } from "node:net";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
@@ -247,6 +248,7 @@ export class PostgresSupervisor extends EventEmitter {
             const dir = join(dataRoot, dbName);
             mkdirSync(dir, { recursive: true });
             db = new PGlite(dir);
+            registriereDatenbank(dir, db);
             // PGlite exposes `waitReady` as a thenable that resolves
             // once the WASM module + persistence layer are warm.
             await db.waitReady;

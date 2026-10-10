@@ -119,6 +119,11 @@ app.get("/v1/kopf-relais/wer", authMiddleware, (c) => {
   const auth = c.get("auth");
   return c.json({ actorId: auth.actorId, tenantId: auth.tenantId });
 });
+// docs/PLAN_AVA_CLOUD.md §13.1 — die AVAs (Desktop/Server) des angemeldeten Nutzers.
+app.get("/v1/instanzen", authMiddleware, (c) => {
+  const auth = c.get("auth");
+  return c.json({ items: kopfRelais.instanzen(auth.actorId) });
+});
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "db-gateway listening");

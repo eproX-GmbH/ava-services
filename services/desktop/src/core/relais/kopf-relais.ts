@@ -27,6 +27,7 @@ import type { Tool, ToolContext } from "../../main/agent/types";
 import type { AgentChoiceOption } from "../../shared/types";
 import { UiBridge, type RemoteAskHandler } from "../../main/agent/ui-bridge";
 import { AvaFragen, type AvaAgent } from "./ava-fragen";
+import type { InstanzStore } from "./instanz";
 
 export interface KopfRelaisDeps {
   gatewayUrl: string;
@@ -38,7 +39,27 @@ export interface KopfRelaisDeps {
   log?: (zeile: string) => void;
   /** AVAs Orchestrator für ava_fragen; fehlt er, wird das Werkzeug nicht angeboten. */
   agent?: AvaAgent;
+  /** Instanz dieser AVA (§13.1): ID, Art, Name, MCP an/aus. */
+  instanz: InstanzStore;
+  /** Zustandsbericht für die Instanzenliste (Telegram, Radar, Modell …), ohne Geheimnisse. */
+  zustand: () => Promise<Record<string, unknown>>;
 }
+
+/** Eintrag der Instanzenliste, wie der Gateway ihn schickt (§13.1). */
+export interface RelaisInstanz {
+  id: string;
+  art: "desktop" | "server";
+  name: string;
+  version: string;
+  verbunden: boolean;
+  seit: string;
+  zuletzt: string;
+  mcpZiel: boolean;
+  zustand: Record<string, unknown>;
+}
+
+/** Nachricht einer anderen Instanz desselben Kontos (Umzug, §13.3). */
+export type InstanzNachrichtHandler = (von: string, nachricht: Record<string, unknown>) => void;
 
 /**
  * Werkzeuge, die direkt in der MCP-Liste stehen. Ausgewählt nach dem, was der
@@ -98,6 +119,7 @@ const MAX_ERGEBNIS_ZEICHEN = 30_000;
 const AUFRUF_TIMEOUT_MS = 110_000;
 const RECONNECT_MIN_MS = 5_000;
 const RECONNECT_MAX_MS = 60_000;
+const ZUSTAND_MS = 5 * 60_000;
 
 class RueckfrageNoetig extends Error {
   constructor(
@@ -165,9 +187,58 @@ export class KopfRelais {
   private readonly offen = new Set<AbortController>();
 
   private readonly avaFragen: AvaFragen | null;
+  private liste: RelaisInstanz[] = [];
+  private zustandTimer: NodeJS.Timeout | null = null;
+  private readonly handler = new Set<InstanzNachrichtHandler>();
 
   constructor(private readonly deps: KopfRelaisDeps) {
     this.avaFragen = deps.agent ? new AvaFragen(deps.agent) : null;
+  }
+
+  /** Letzte vom Gateway gemeldete Instanzenliste dieses Kontos (leer, solange nicht verbunden). */
+  instanzen(): RelaisInstanz[] {
+    return this.liste;
+  }
+
+  /** Eigene Instanz-ID. */
+  instanzId(): string {
+    return this.deps.instanz.get().id;
+  }
+
+  /** Nachrichten anderer Instanzen empfangen (Umzug). Liefert eine Abmeldefunktion. */
+  aufNachricht(h: InstanzNachrichtHandler): () => void {
+    this.handler.add(h);
+    return () => this.handler.delete(h);
+  }
+
+  /** Einer anderen Instanz desselben Kontos eine Nachricht schicken; false, wenn das Relais nicht verbunden ist. */
+  an(ziel: string, nachricht: Record<string, unknown>): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    try {
+      this.ws.send(JSON.stringify({ typ: "an", ziel, nachricht }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Zustand sofort melden (nach einer Änderung an Telegram, Radar, MCP-Schalter …). */
+  zustandMelden(): void {
+    const ws = this.ws;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    void this.zustandMitMcp()
+      .then((zustand) => ws.send(JSON.stringify({ typ: "zustand", zustand })))
+      .catch(() => undefined);
+  }
+
+  private async zustandMitMcp(): Promise<Record<string, unknown>> {
+    let z: Record<string, unknown> = {};
+    try {
+      z = await this.deps.zustand();
+    } catch (err) {
+      z = { fehler: err instanceof Error ? err.message : String(err) };
+    }
+    return { ...z, mcp: this.deps.instanz.get().mcp };
   }
 
   start(): void {
@@ -180,6 +251,8 @@ export class KopfRelais {
     this.laeuft = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    if (this.zustandTimer) clearInterval(this.zustandTimer);
+    this.zustandTimer = null;
     for (const c of this.offen) c.abort();
     try {
       this.ws?.close(1000, "AVA beendet");
@@ -242,14 +315,25 @@ export class KopfRelais {
     ws.addEventListener("open", () => {
       this.reconnectMs = RECONNECT_MIN_MS;
       const werkzeuge = this.manifest();
-      ws.send(JSON.stringify({ typ: "hallo", version: this.deps.version, werkzeuge }));
-      this.log(`verbunden, ${werkzeuge.length} Werkzeuge gemeldet`);
+      const inst = this.deps.instanz.get();
+      void this.zustandMitMcp().then((zustand) => {
+        try {
+          ws.send(JSON.stringify({ typ: "hallo", version: this.deps.version, instanz: { id: inst.id, art: inst.art, name: inst.name }, werkzeuge, zustand }));
+          this.log(`verbunden als ${inst.name} (${inst.art}), ${werkzeuge.length} Werkzeuge gemeldet`);
+        } catch {
+          /* close folgt */
+        }
+      });
+      if (this.zustandTimer) clearInterval(this.zustandTimer);
+      this.zustandTimer = setInterval(() => this.zustandMelden(), ZUSTAND_MS);
+      this.zustandTimer.unref?.();
     });
     ws.addEventListener("message", (ev) => {
       void this.nachricht(ws, typeof ev.data === "string" ? ev.data : String(ev.data));
     });
     ws.addEventListener("close", (ev) => {
       if (this.ws === ws) this.ws = null;
+      this.liste = [];
       this.log(`getrennt (${ev.code}${ev.reason ? ` ${ev.reason}` : ""})`);
       // 4002: ein anderer Kopf desselben Kontos ist schon verbunden (z. B. der
       // Server, während die Desktop-App läuft); nur selten erneut versuchen.
@@ -262,10 +346,24 @@ export class KopfRelais {
   }
 
   private async nachricht(ws: WebSocket, roh: string): Promise<void> {
-    let n: { typ?: string; id?: string; name?: string; args?: unknown };
+    let n: { typ?: string; id?: string; name?: string; args?: unknown; liste?: unknown; von?: unknown; nachricht?: unknown };
     try {
       n = JSON.parse(roh);
     } catch {
+      return;
+    }
+    if (n.typ === "instanzen" && Array.isArray(n.liste)) {
+      this.liste = n.liste as RelaisInstanz[];
+      return;
+    }
+    if (n.typ === "von" && typeof n.von === "string" && n.nachricht && typeof n.nachricht === "object") {
+      for (const h of this.handler) {
+        try {
+          h(n.von, n.nachricht as Record<string, unknown>);
+        } catch (err) {
+          this.log(`Nachricht von ${n.von} nicht verarbeitet: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       return;
     }
     if (n.typ !== "aufruf" || typeof n.id !== "string" || typeof n.name !== "string") return;

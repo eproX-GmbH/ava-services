@@ -9,6 +9,7 @@
 //
 // Datenpfad: <userData>/pglite/self-corrections/. Retention 90 Tage.
 
+import { registriereDatenbank } from "../../core/umzug/datenbanken";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -77,6 +78,7 @@ export class SelfCorrectionsStore extends EventEmitter {
         PGlite: new (path: string) => PGliteInstance;
       };
       this.pglite = new mod.PGlite(this.dataRoot);
+      registriereDatenbank(this.dataRoot, this.pglite);
       await this.applySchema();
     })();
     try {

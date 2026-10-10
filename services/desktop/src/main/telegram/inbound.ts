@@ -116,6 +116,8 @@ export class TelegramInbound {
   private readonly getWorkflows?: TelegramInboundDeps["getWorkflows"];
 
   private running = false;
+  /** 409 von Telegram: Ein anderer Abholer (andere AVA-Instanz mit demselben Bot, Webhook) holt die Nachrichten (§13.2). */
+  private konfliktSeit: number | null = null;
   private loopHandle: Promise<void> | null = null;
   private lastHandledAt = 0;
   /** v0.1.420 — laufender Gesprächsfaden (wie ein normaler AVA-Chat). */
@@ -152,6 +154,14 @@ export class TelegramInbound {
     this.loopHandle = this.loop();
   }
 
+  /** Seit wann ein anderer Abholer den Bot belegt; null = kein Konflikt. */
+  konflikt(): number | null {
+    return this.konfliktSeit;
+  }
+
+  /** Meldet Beginn/Ende eines Abhol-Konflikts (fuer die Instanzenliste). */
+  onKonflikt: ((aktiv: boolean) => void) | null = null;
+
   stop(): void {
     if (!this.running) return;
     this.running = false;
@@ -177,6 +187,10 @@ export class TelegramInbound {
           cfg.lastUpdateId !== null ? cfg.lastUpdateId + 1 : undefined;
         const updates = await getUpdates(token, offset, LONG_POLL_SECONDS);
         if (!this.running) break;
+        if (this.konfliktSeit !== null) {
+          this.konfliktSeit = null;
+          this.onKonflikt?.(false);
+        }
 
         for (const u of updates) {
           // Offset IMMER fortschreiben — auch für verworfene Nachrichten,
@@ -229,6 +243,18 @@ export class TelegramInbound {
       } catch (err) {
         if (!this.running) break;
         const msg = err instanceof Error ? redactToken(err.message) : String(err);
+        if ((err as { status?: number }).status === 409) {
+          // Telegram laesst je Bot nur EINEN Abholer zu. Meist laeuft derselbe Bot in
+          // einer zweiten AVA (Desktop und Server); seltener ist ein Webhook gesetzt.
+          if (this.konfliktSeit === null) {
+            this.konfliktSeit = Date.now();
+            console.warn("[telegram] Eingang: Ein anderer Abholer nutzt diesen Bot (409). Fuer jede AVA-Instanz einen eigenen Bot anlegen.");
+            this.onAudit?.({ severity: "warning", summary: "Telegram-Bot wird von einer anderen Stelle abgeholt (409)", metadata: {} });
+            this.onKonflikt?.(true);
+          }
+          await sleep(5 * 60_000);
+          continue;
+        }
         console.warn("[telegram] Eingang-Schleife:", msg);
         await sleep(ERROR_BACKOFF_MS);
       }

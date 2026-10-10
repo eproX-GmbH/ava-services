@@ -12,6 +12,7 @@
 // L2 introduces every table; future phases can run their own ALTER
 // TABLE IF NOT EXISTS in init() when they need to extend.
 
+import { registriereDatenbank } from "../../core/umzug/datenbanken";
 import { paths } from "../../core/platform";
 import { mkdirSync } from "node:fs";
 import { join, sep } from "node:path";
@@ -55,6 +56,7 @@ async function loadPGlite(): Promise<PGliteInstance> {
     PGlite: new (path: string) => PGliteInstance;
   };
   const db = new mod.PGlite(dbDir());
+  registriereDatenbank(dbDir(), db);
   await db.waitReady;
   return db;
 }

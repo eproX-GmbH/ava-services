@@ -10,6 +10,7 @@
 //
 // Muster 1:1 von main/scheduler/store.ts übernommen.
 
+import { registriereDatenbank } from "../../core/umzug/datenbanken";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -107,6 +108,7 @@ export class LinkMonitorStore extends EventEmitter {
         PGlite: new (path: string) => PGliteInstance;
       };
       this.pglite = new mod.PGlite(this.dataRoot);
+      registriereDatenbank(this.dataRoot, this.pglite);
       await this.applySchema();
     })();
     try {

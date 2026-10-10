@@ -14,6 +14,10 @@
 
 import { lifecycle, notifier, paths, platform, power, windows } from "./platform";
 import { KopfRelais } from "./relais/kopf-relais";
+import { InstanzStore } from "./relais/instanz";
+import { Umzug, wendeUmzugAn } from "./umzug/umzug";
+import { buildUmzugTools } from "../main/agent/tools/umzug";
+import { buildInstanzenTools } from "../main/agent/tools/instanzen";
 import { PlanTokenServer } from "../main/auth/plan-token-server";
 import { meldeAbgeleiteteAdressen } from "../main/contacts/email-muster/rueckmeldung";
 import { radarActivity } from "../main/discovery/activity";
@@ -204,6 +208,14 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   const GATEWAY_URL = APP_CONFIG.gatewayUrl;
   const AUTH_ISSUER = APP_CONFIG.authIssuer;
   const AUTH_CLIENT_ID = APP_CONFIG.authClientId;
+
+  // docs/PLAN_AVA_CLOUD.md §13.3 — Empfangenen Umzug einspielen, bevor irgendein
+  // Store sein Verzeichnis oeffnet. Fehler verhindern den Start nicht.
+  try {
+    await wendeUmzugAn((z) => writeLineSync("INFO ", z));
+  } catch (err) {
+    writeLineSync("ERROR", `[umzug] Einspielen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // v0.1.409 — Ausstehenden „Werksreset außer Modelle" GANZ FRÜH ausführen —
   // beim Modul-Load, BEVOR die Store-Singletons (memory, usage, …) unten
@@ -2028,6 +2040,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // MCP-Relais (docs/PLAN_AVA_CLOUD.md §11): dieselben Werkzeuge wie im Chat
   // fuer Claude/ChatGPT ueber mcp.ava.bi, solange dieser Kopf laeuft.
   // AVA_MCP_RELAIS=0 schaltet es ab; Organisationsschalter mcp.kopf im Gateway.
+  const instanz = new InstanzStore();
   const mcpRelais = new KopfRelais({
     gatewayUrl: GATEWAY_URL,
     getAccessToken: () => auth.getAccessToken(),
@@ -2035,12 +2048,32 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     registry: agentRegistry,
     version: paths().version(),
     agent,
+    instanz,
+    // Zustandsbericht fuer die Instanzenliste (docs/PLAN_AVA_CLOUD.md §13.1): keine Geheimnisse,
+    // nur was der Nutzer zum Verwalten braucht. botId ist der oeffentliche Teil des Tokens.
+    zustand: async () => {
+      const tg = telegramStore.getConfig();
+      const token = await telegramStore.getToken().catch(() => null);
+      const rc = radarSupervisor?.getConfig() as { enabled?: boolean; intervalHours?: number; lastRunAt?: string | number | null; lastOutcome?: string | null } | undefined;
+      const icp = icpStore.get() as { beschreibung?: string; branchen?: string[] };
+      return {
+        telegram: { eingerichtet: Boolean(token), botId: token ? token.split(":")[0] : null, bot: tg.botUsername ?? null, chat: Boolean(tg.chatId), aktiv: tg.enabled === true, eingang: tg.inboundEnabled === true, konflikt: telegramInbound?.konflikt() != null },
+        radar: rc ? { an: rc.enabled === true, intervallStunden: rc.intervalHours ?? null, letzterLauf: rc.lastRunAt ?? null, ergebnis: rc.lastOutcome ?? null } : null,
+        icp: Boolean(icp?.beschreibung?.trim() || (icp?.branchen ?? []).length),
+        modell: providers.getConfig().kind,
+      };
+    },
     audit: (e) => audit({ actorType: "system", actorId: auth.getStatus().actorId ?? null, category: "agent", action: e.action, severity: "info", subjectType: null, subjectId: null, summary: e.summary, metadata: e.metadata }),
   });
   auth.on("status", (st: AuthStatus) => {
     if (st.signedIn && process.env.AVA_MCP_RELAIS !== "0") mcpRelais.start();
   });
   lifecycle().onBeforeQuit(() => quitStep("mcpRelais.stop", () => mcpRelais.stop()));
+  for (const t of buildInstanzenTools({ instanz, liste: () => mcpRelais.instanzen(), relaisVerbunden: () => mcpRelais.stand().verbunden, zustandMelden: () => mcpRelais.zustandMelden() })) agentRegistry.register(t);
+  telegramStore.on("changed", () => mcpRelais.zustandMelden());
+  const umzug = new Umzug(mcpRelais, (z) => writeLineSync("INFO ", z));
+  umzug.aufStand((st) => windows().broadcast("umzug:stand", st));
+  for (const t of buildUmzugTools({ umzug, liste: () => mcpRelais.instanzen(), eigeneId: () => instanz.get().id })) agentRegistry.register(t);
 
   telegramInbound = new TelegramInbound({
     store: telegramStore,
@@ -2078,6 +2111,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       });
     },
   });
+  telegramInbound.onKonflikt = () => mcpRelais.zustandMelden();
   if (featureEnabled("telegram")) telegramInbound.sync();
   else console.log("[telegram] nicht gestartet — Organisationsvorgabe: Telegram aus");
   lifecycle().onBeforeQuit(() => quitStep("telegramInbound.stop", () => telegramInbound?.stop()));
@@ -4486,6 +4520,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     watchlistStore: { get current() { return watchlistStore; } },
     watchlistSupervisor: { get current() { return watchlistSupervisor; } },
     mcpRelais,
+    instanz,
+    umzug,
     startBackground,
   };
 }

@@ -6,6 +6,7 @@
 //
 // Single-writer im main-process; Renderer liest via IPC-Snapshots.
 
+import { registriereDatenbank } from "../../core/umzug/datenbanken";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -82,6 +83,7 @@ export class ScheduledJobsStore extends EventEmitter {
         PGlite: new (path: string) => PGliteInstance;
       };
       this.pglite = new mod.PGlite(this.dataRoot);
+      registriereDatenbank(this.dataRoot, this.pglite);
       await this.applySchema();
     })();
     try {

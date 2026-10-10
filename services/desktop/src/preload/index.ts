@@ -1790,6 +1790,20 @@ const api = {
       ipcRenderer.invoke("suggestions:setSettings", patch),
   },
   // Eigener Browser fuer die Hintergrundverarbeitung (Chrome for Testing).
+  instanz: {
+    get: (): Promise<{ id: string; name: string; mcp: boolean; art: "desktop" | "server" }> => ipcRenderer.invoke("instanz:get"),
+    set: (patch: { name?: string; mcp?: boolean }): Promise<{ id: string; name: string; mcp: boolean; art: "desktop" | "server" }> => ipcRenderer.invoke("instanz:set", patch),
+  },
+  umzug: {
+    stand: (): Promise<import("../shared/types").UmzugStand> => ipcRenderer.invoke("umzug:stand"),
+    holen: (quelle: string): Promise<{ ok: boolean; grund?: string }> => ipcRenderer.invoke("umzug:holen", quelle),
+    senden: (ziel: string): Promise<{ ok: boolean; grund?: string }> => ipcRenderer.invoke("umzug:senden", ziel),
+    onStand: (cb: (s: import("../shared/types").UmzugStand) => void): (() => void) => {
+      const h = (_e: unknown, s: import("../shared/types").UmzugStand) => cb(s);
+      ipcRenderer.on("umzug:stand", h);
+      return () => ipcRenderer.removeListener("umzug:stand", h);
+    },
+  },
   browser: {
     stand: (): Promise<import("../shared/types").BrowserStand> => ipcRenderer.invoke("browser:stand"),
     onStand: (cb: (s: import("../shared/types").BrowserStand) => void): (() => void) => {

@@ -14,6 +14,7 @@
 // Single-writer: nur main-process ruft start()/record(). Renderer
 // liest über IPC-Snapshots.
 
+import { registriereDatenbank } from "../../core/umzug/datenbanken";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -137,6 +138,7 @@ export class MailStore extends EventEmitter {
         PGlite: new (path: string) => PGliteInstance;
       };
       this.pglite = new mod.PGlite(this.dataRoot);
+      registriereDatenbank(this.dataRoot, this.pglite);
       await this.applySchema();
     })();
     try {

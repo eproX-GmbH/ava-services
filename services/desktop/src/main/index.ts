@@ -13,6 +13,7 @@ import { registerSpracheIpc } from "./ipc/sprache";
 import { registerRechercheIpc } from "./ipc/recherche";
 import { registerSkillsIpc } from "./ipc/skills";
 import { registerAgentIpc } from "./ipc/agent";
+import { registerInstanzIpc } from "./ipc/instanz";
 import { registerCrmIpc } from "./ipc/crm";
 import { registerStammdatenIpc } from "./ipc/stammdaten";
 import { registerVorschlaegeIpc } from "./ipc/vorschlaege";
@@ -425,6 +426,7 @@ app.whenReady().then(async () => {
   registerStimmeIpc({ whisper });
   registerMeldungenIpc({ alertPrefs, alerts, broadcastAlertsChanged, freshness, freshnessPrefs, heartbeat, interest, notifications, userProfile });
   registerAgentIpc({ agent, attachments, audit, auth, autonomyStore, generalMemory, memory, memoryProbe, providerConfigStore, providers });
+  registerInstanzIpc({ instanz: c.instanz, zustandMelden: () => c.mcpRelais.zustandMelden(), umzug: c.umzug });
 
   createMainWindow();
 

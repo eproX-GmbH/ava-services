@@ -3189,3 +3189,18 @@ export interface BcInteraktionenErgebnis {
   /** Das Muster "immer dieselben zwei" als Klartext, sonst null. */
   gespraechsmuster: string | null;
 }
+
+// ---- Umzug zwischen AVA-Instanzen (docs/PLAN_AVA_CLOUD.md §13.3) -------------
+
+export type UmzugPhase = "bereit" | "wartet" | "sendet" | "empfaengt" | "fertig" | "fehler";
+
+export interface UmzugStand {
+  phase: UmzugPhase;
+  rolle: "quelle" | "ziel" | null;
+  gegenueber: string | null;
+  umzugId: string | null;
+  teile: number;
+  bytes: number;
+  meldung: string | null;
+  seit: string | null;
+}

@@ -1,0 +1,31 @@
+// Umzug-Test, Teil A (Quelle): Daten anlegen, Paket schreiben.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { credentials, paths } = await load("../src/core/platform.ts");
+const { paketEintraege } = await load("../src/core/umzug/paket.ts");
+const { registriereDatenbank } = await load("../src/core/umzug/datenbanken.ts");
+const { PGlite } = await import("@electric-sql/pglite");
+
+const d = paths().get("userData");
+const w = (rel, inhalt) => { mkdirSync(join(d, rel, ".."), { recursive: true }); writeFileSync(join(d, rel), inhalt); };
+w("agent/icp.json", JSON.stringify({ beschreibung: "Mittelstand OWL", branchen: ["Maschinenbau"] }));
+w("agent/memory/c1.jsonl", '{"rolle":"user","text":"hallo"}\n');
+w("agent/openai.enc", credentials().encryptString("sk-test-quelle"));
+w("agent/openai-subscription.enc", credentials().encryptString("abo-der-quelle"));
+w("crm/hubspot.json", JSON.stringify({ provider: "hubspot", encryptedTokens: credentials().encryptString('{"access":"tok"}').toString("base64") }));
+w("telegram/bot-token.enc", credentials().encryptString("111:quelle"));
+w("instanz.json", JSON.stringify({ id: "quelle-instanz-id", name: "Quelle", mcp: true }));
+w("Cache/data_0", "browsercache");
+w("workflows/wf_1.json", JSON.stringify({ id: "wf_1", name: "Test" }));
+const dbDir = join(d, "pglite", "mail");
+mkdirSync(dbDir, { recursive: true });
+const db = new PGlite(dbDir);
+await db.exec("create table m(id int, betreff text); insert into m values (1,'Hallo aus der Quelle');");
+registriereDatenbank(dbDir, db);
+const statistik = { dateien: 0, geheimnisse: 0, datenbanken: 0, bytes: 0 };
+const teile = [];
+for await (const e of paketEintraege(d, statistik)) teile.push(e);
+writeFileSync(process.env.UMZUG_PAKET, Buffer.concat(teile));
+await db.close();
+console.log("  Quelle:", JSON.stringify(statistik));

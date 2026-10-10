@@ -182,6 +182,27 @@ async function infrastruktur() {
   return verbunden;
 }
 
+async function instanzen() {
+  abschnitt("1b. Deine AVAs (Instanzen, §13.1)");
+  const r = await fetch(`${GATEWAY}/v1/instanzen`, { headers: { authorization: `Bearer ${TOKEN}` } });
+  if (!r.ok) return melde("instanzen", "Instanzenliste", "fehler", `HTTP ${r.status}`);
+  const { items } = await r.json();
+  melde("instanzen", "Instanzenliste", items.length ? "ok" : "warn", `${items.length} Instanz(en)`);
+  const bots = new Map();
+  for (const i of items) {
+    const z = i.zustand ?? {};
+    const tg = z.telegram ?? {};
+    if (tg.botId) bots.set(tg.botId, [...(bots.get(tg.botId) ?? []), i.name]);
+    melde(
+      "instanzen",
+      `${i.name} (${i.art})`,
+      i.verbunden ? "info" : "warn",
+      `${i.verbunden ? "verbunden" : "offline"}, v${i.version}, Telegram ${tg.eingerichtet ? (tg.bot ? "@" + tg.bot : "Bot") + (tg.chat ? "" : " ohne Chat") + (tg.konflikt ? " KONFLIKT" : "") : "–"}, Radar ${z.radar ? (z.radar.an ? "an" : "aus") : "–"}, ICP ${z.icp ? "ja" : "nein"}${i.mcpZiel ? ", beantwortet MCP" : ""}`,
+    );
+  }
+  for (const [bot, namen] of bots) if (namen.length > 1) melde("instanzen", "Telegram-Bot doppelt", "fehler", `Bot ${bot} an ${namen.join(", ")}`);
+}
+
 async function gatewayLesen() {
   abschnitt("2. Lesen über den Gateway (geht auch ohne laufende AVA)");
   const s = await werkzeug("firma_suchen", { q: "Strategic IT Herford", limit: 3 });
@@ -307,6 +328,7 @@ try {
 }
 console.log(`AVA-Server-Testlauf ${new Date().toLocaleString("de-DE")}\nServer ${SERVER}, MCP ${MCP}`);
 const verbunden = await infrastruktur();
+await instanzen();
 await gatewayLesen();
 if (verbunden) {
   await hintergrund();
@@ -323,5 +345,4 @@ if (zaehle("fehler")) {
   console.log("\nZu beheben:");
   for (const e of ergebnisse.filter((x) => x.stufe === "fehler")) console.log(`  ✘ ${e.name}: ${e.text}`);
 }
-void GATEWAY;
 process.exit(zaehle("fehler") ? 1 : 0);

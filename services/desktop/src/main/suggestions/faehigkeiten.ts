@@ -52,6 +52,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "einstellungen", text: "KI-Anbieter, Schluessel, Modell, Token-Limit einstellen", tools: ["settings_*"], verwaltung: true },
   { id: "organisation", text: "Organisation verwalten: Mitglieder, Vorgaben, Anbieter-Sperre, Limits, Verbrauch, Abrechnung", tools: ["org_*"], verwaltung: true },
   { id: "konto", text: "Kontoinformationen", tools: ["account_info"], verwaltung: true },
+  { id: "instanzen", text: "AVA auf Desktop und Server: welche Instanz laeuft, welcher Telegram-Bot und welches Radar wo, welche Instanz MCP beantwortet; Name und MCP-Schalter dieser Instanz; kompletten Stand zwischen Desktop und Server umziehen", tools: ["ava_instanz*", "ava_umzug"], verwaltung: true },
   { id: "stammdaten", text: "Stammdaten mitpflegen: Register-Jobs auf diesem Rechner abarbeiten (Status, ein-/ausschalten)", tools: ["register_delta_*"], feature: "stammdaten.mithelfen", verwaltung: true },
   { id: "system", text: "Producer-Status und -Logs, Erreichbarkeit, Browser der Hintergrundverarbeitung, Updates, Selbstkorrektur, Tool-Suche", tools: ["producers_*", "reachability_*", "browser_status", "updater_*", "report_self_correction", "tool_search", "tool_load", "vorschlaege_status", "vorschlaege_config"], verwaltung: true },
 ];

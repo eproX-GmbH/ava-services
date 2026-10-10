@@ -105,9 +105,11 @@ export function createNodePlatform(): Platform {
     },
     lifecycle: {
       relaunch: () => {
-        console.log("[platform] Neustart angefordert: Prozess endet, die Hülle startet ihn neu");
+        // Code 75 (EX_TEMPFAIL): Docker (restart unless-stopped) und Fly
+        // (restart on-failure) starten den Prozess dann sicher neu.
+        console.log("[platform] Neustart angefordert: Prozess endet mit 75, die Hülle startet ihn neu");
         beenden();
-        process.exit(0);
+        process.exit(75);
       },
       exit: (code) => {
         beenden();
