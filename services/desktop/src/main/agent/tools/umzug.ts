@@ -19,10 +19,11 @@ export function buildUmzugTools(deps: { umzug: Umzug; liste: () => RelaisInstanz
     summary: "Kompletten AVA-Stand zwischen Desktop und Server uebertragen (Ziel wird ueberschrieben, mit Bestaetigung); ohne Argumente: Stand.",
     category: "instanzen umzug server desktop uebertragen import export betrieb",
     description:
-      "Uebertraegt ALLES, was AVA lokal haelt (Gedaechtnis, Chats, Profil, ICP, Radar, Alarme, Workflows, Skills, Mail-Speicher, Audit, " +
-      "LinkedIn-Archiv, Screenshots, API-Schluessel), von einer AVA-Instanz auf eine andere desselben Kontos. Das Ziel wird vollstaendig " +
-      "ueberschrieben und startet neu; sein vorheriger Stand bleibt dort unter .umzug-alt. Nicht uebertragen werden: Anmeldung, Instanz-ID, " +
-      "Telegram-Bot, ChatGPT-/Claude-Abo-Anmeldung, Browser-Sitzungen. richtung 'holen' = diese Instanz holt den Stand von `instanz`; " +
+      "Uebertraegt, was AVA lokal haelt (Gedaechtnis, Chats, Profil, ICP, Radar, Alarme, Workflows, Skills, Mail-Speicher, Audit, " +
+      "Watchlist, API-Schluessel), von einer AVA-Instanz auf eine andere desselben Kontos. Das Ziel wird ueberschrieben und startet neu; " +
+      "sein vorheriger Stand bleibt dort unter .umzug-alt. Nicht uebertragen und auf dem Ziel unveraendert: Anmeldung, Instanz-ID, " +
+      "Telegram-Bot, ChatGPT-/Claude-Abo-Anmeldung, LinkedIn-Beobachter (Archiv, Sitzung, Einstellungen), Screenshots, Producer-Logs, " +
+      "Browser-Sitzungen. richtung 'holen' = diese Instanz holt den Stand von `instanz`; " +
       "'senden' = diese Instanz schickt ihren Stand an `instanz`. `instanz` = Name, ID oder 'server'/'desktop' (siehe ava_instanzen). " +
       "Ohne Argumente: aktueller Stand eines laufenden Umzugs.",
     parameters: {

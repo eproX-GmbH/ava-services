@@ -17,6 +17,7 @@ w("telegram/bot-token.enc", credentials().encryptString("222:ziel"));
 w("agent/openai-subscription.enc", credentials().encryptString("abo-des-ziels"));
 w("agent/alt-nur-ziel.json", "{}");
 w("auth.bin", credentials().encryptString("refresh-des-ziels"));
+w("linkedin/media/ziel.jpg", "linkedin-bild-des-ziels");
 
 const umzugId = "test-umzug";
 const staging = join(d, ".umzug-eingang", umzugId);
@@ -44,6 +45,11 @@ ok(credentials().decryptString(lies("agent/openai-subscription.enc")) === "abo-d
 ok(!existsSync(join(d, "agent/alt-nur-ziel.json")), "alter Stand des Ziels ersetzt");
 ok(!existsSync(join(d, "Cache")), "Browser-Cache zieht nicht mit");
 ok(existsSync(join(d, "umzug-letzter.json")), "Umzug protokolliert");
+ok(!existsSync(join(d, "linkedin/media/bild.jpg")), "LinkedIn-Archiv der Quelle zieht nicht mit");
+ok(existsSync(join(d, "linkedin/media/ziel.jpg")), "LinkedIn-Archiv des Ziels bleibt");
+ok(existsSync(join(d, "linkedin/watchlist-config.json")), "Watchlist-Einstellung zieht mit");
+ok(!existsSync(join(d, "screenshots")), "Screenshots ziehen nicht mit");
+ok(!existsSync(join(d, "producer-logs")), "Producer-Logs ziehen nicht mit");
 const db = new PGlite(join(d, "pglite", "mail"));
 const r = await db.query("select betreff from m where id = 1");
 await db.close();

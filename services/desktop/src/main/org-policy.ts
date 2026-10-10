@@ -6,7 +6,7 @@
 // Scheduler starten VOR dem ersten whoami). Persoenliche Tenants haben
 // keine Vorgaben → alles erlaubt.
 
-import { paths, windows } from "../core/platform";
+import { paths, platform, windows } from "../core/platform";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { OrgPolicy, OrgFeatureKey } from "../shared/types";
@@ -74,6 +74,11 @@ export function getOrgPolicy(): OrgPolicy {
 }
 
 export function featureEnabled(key: OrgFeatureKey): boolean {
+  // Der LinkedIn-Beobachter braucht ein Browserfenster mit der LinkedIn-Anmeldung
+  // der Person; auf dem Server ist er nie verfuegbar (docs/PLAN_AVA_CLOUD.md §13,
+  // Vorgabe des Operators 2026-10-10). Watchlist und Personen-Radar laufen ueber
+  // Apify ohne Anmeldung und bleiben erlaubt.
+  if (key === "linkedin.beobachter" && platform().kind !== "electron") return false;
   lade();
   return aktuell.features[key] !== false;
 }
@@ -112,6 +117,7 @@ export function onOrgPolicyChange(l: Listener): () => void {
 export function featureOfTool(name: string): OrgFeatureKey | undefined {
   if (name.startsWith("mail_")) return "mail";
   if (name.startsWith("personen_radar_")) return "linkedin.radar";
+  if (name.startsWith("linkedin_watchlist_")) return "linkedin.watchlist";
   if (name.startsWith("linkedin_") || name === "company_linkedin_signals") return "linkedin.beobachter";
   if (name === "contact_linkedin_lookup" || name === "company_contacts") return "kontakte";
   if (name.startsWith("register_delta_")) return "stammdaten.mithelfen";

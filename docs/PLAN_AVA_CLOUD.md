@@ -900,7 +900,7 @@ denselben Bot auf zwei Instanzen.
 Kopf zu Kopf über das Relais, Ende-zu-Ende verschlüsselt (X25519 + AES-256-GCM;
 der Gateway sieht nur Chiffrat). Übertragen wird alles, was AVA lokal hält:
 JSON-Stores, Gedächtnis, Chats, Workflows, Skills, ICP, Radar, Alarme,
-eingebettete Datenbanken (per `dumpDataDir`), LinkedIn-Archiv, Screenshots,
+eingebettete Datenbanken (per `dumpDataDir`), Watchlist und Personen-Radar,
 Schlüssel (auf der Quelle entschlüsselt, auf dem Ziel mit dessen Ablage neu
 verschlüsselt). Instanzgebunden und deshalb **nicht** übertragen: Anmeldung,
 Instanz-ID, Telegram-Bot (Entscheidung 1), ChatGPT-Abo (dynamische Client-ID je
@@ -935,4 +935,12 @@ Chat-Werkzeug (destruktiv, immer mit Bestätigung).
 - Tests: `pnpm test:umzug` (zwei Prozesse, zwei Schlüssel, echte PGlite,
   14 Prüfungen, fand und behob den Verlust des Ziel-Abos), `pnpm test:server`
   um die Instanzenliste erweitert.
+
+**Nachtrag 2026-10-10 (Vorgabe des Operators):** LinkedIn-Archiv (Datenbank,
+Bilder, Läufe, Sitzung, Beobachter-Einstellungen), Screenshots und Producer-Logs
+ziehen nicht um und bleiben auf dem Ziel unverändert. Der LinkedIn-Beobachter
+mit Anmeldung ist auf dem Server immer aus: `featureEnabled("linkedin.beobachter")`
+liefert außerhalb von Electron fest `false` (Werkzeuge gesperrt, Zeitplan aus,
+Nutzerstand „nicht verfügbar“). Nebenbei korrigiert: `linkedin_watchlist_*`
+hing am Schalter des Beobachters statt an `linkedin.watchlist`. (v0.1.796)
 

@@ -17,6 +17,10 @@ w("crm/hubspot.json", JSON.stringify({ provider: "hubspot", encryptedTokens: cre
 w("telegram/bot-token.enc", credentials().encryptString("111:quelle"));
 w("instanz.json", JSON.stringify({ id: "quelle-instanz-id", name: "Quelle", mcp: true }));
 w("Cache/data_0", "browsercache");
+w("linkedin/media/bild.jpg", "linkedin-bild-der-quelle");
+w("linkedin/watchlist-config.json", JSON.stringify({ aktiv: true }));
+w("screenshots/structured-content/a.png", "screenshot");
+w("producer-logs/website.log", "log");
 w("workflows/wf_1.json", JSON.stringify({ id: "wf_1", name: "Test" }));
 const dbDir = join(d, "pglite", "mail");
 mkdirSync(dbDir, { recursive: true });

@@ -59,6 +59,8 @@ export const NICHT_UMZIEHEN = new Set([
   "logs",
   "chrome-for-testing",
   "producer-logs",
+  // Bewusst nicht übertragen (Vorgabe 2026-10-10): Screenshots der Verarbeitung
+  "screenshots",
   "worker-modus-start.flag",
   "auto-neustarts.json",
   "tenant-switch.json",
@@ -70,11 +72,23 @@ export const NICHT_UMZIEHEN = new Set([
   "umzug-letzter.json",
 ]);
 
-/** Einzelne Dateien in Unterordnern, die instanzgebunden sind. */
+/**
+ * Dateien und Ordner in Unterordnern, die nicht umziehen und auf dem Ziel
+ * erhalten bleiben (Präfix-Treffer: ein Ordner schließt seinen Inhalt ein).
+ */
 export const NICHT_UMZIEHEN_PFADE = new Set([
-  ["agent", "openai-subscription.enc"].join("/"),
-  ["agent", "anthropic-subscription.enc"].join("/"),
-  ["register-delta", "worker.token"].join("/"),
+  "agent/openai-subscription.enc",
+  "agent/anthropic-subscription.enc",
+  "register-delta/worker.token",
+  // LinkedIn-Beobachter mit Anmeldung der Person: Archiv (Datenbank, Bilder,
+  // Läufe), Sitzung und Einstellungen bleiben auf ihrer Instanz; auf dem Server
+  // gibt es den Beobachter nicht. Watchlist und Personen-Radar ziehen mit.
+  "linkedin/db",
+  "linkedin/media",
+  "linkedin/runs",
+  "linkedin/session.enc",
+  "linkedin/session.meta.json",
+  "linkedin/settings.json",
 ]);
 
 export interface PaketKopf {
@@ -93,7 +107,7 @@ function relPosix(basis: string, pfad: string): string {
 function istAusgeschlossen(rel: string): boolean {
   const erstes = rel.split("/")[0] ?? rel;
   if (NICHT_UMZIEHEN.has(erstes)) return true;
-  if (NICHT_UMZIEHEN_PFADE.has(rel)) return true;
+  for (const p of NICHT_UMZIEHEN_PFADE) if (rel === p || rel.startsWith(`${p}/`)) return true;
   // Chrome-Profile der Producer und temporäre Dateien
   if (/(^|\/)ava-chrome-[^/]*($|\/)/.test(rel)) return true;
   return false;
