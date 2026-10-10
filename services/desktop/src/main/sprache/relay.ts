@@ -8,6 +8,7 @@
 // ohne dass etwas davon ein zweites Mal gebaut wird.
 
 import type { AgentOrchestrator } from "../agent/orchestrator";
+import { mailEntwuerfeErsetzen } from "../../shared/mail-entwurf";
 import type { AgentStreamFrame, SpracheBlock, SpracheErgebnis, SpracheRueckfrage, SpracheSchritt, SpracheFortschritt } from "../../shared/types";
 
 const CHART_RE = /```chart\s*\n([\s\S]*?)\n```/g;
@@ -15,7 +16,10 @@ const BC_RE = /```buying-center\s*\n([\s\S]*?)\n```/g;
 
 /** Markdown-Links, Bilder und company:-Verweise zu blossem Text; Zaeune raus. */
 export function textFuerSprache(md: string): string {
-  return md
+  // Mail-Entwurf nicht vorlesen, nur sagen, dass er im Chat liegt.
+  return mailEntwuerfeErsetzen(md, (e) =>
+    e ? `Den Mail-Entwurf${e.an.length ? ` an ${e.an.join(", ")}` : ""}${e.betreff ? ` mit dem Betreff „${e.betreff}“` : ""} findest du im Chat; von dort öffnest du ihn im Mail-Programm.` : "",
+  )
     .replace(CHART_RE, "")
     .replace(BC_RE, "")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")

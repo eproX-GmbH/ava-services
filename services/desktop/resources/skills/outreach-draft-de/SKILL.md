@@ -93,22 +93,27 @@ Marketing-Adjektive wie „innovativ" oder „führend".
 
 ## Ausgabe-Format (exakt)
 
+Zuerst eine Zeile, an wen der Entwurf geht, dann der Entwurf als
+`mail-entwurf`-Block (gültiges JSON, Umbrüche im Text als `\n`), danach
+der Bezugspunkt. Die App zeigt unter dem Block einen Knopf, der die Mail
+fertig im Mail-Programm des Nutzers öffnet.
+
+Entwurf für <Vorname Nachname>, <Rolle> bei [<Firmenname>](company:${company-id}):
+
+```mail-entwurf
+{"an": ["<E-Mail des Ansprechpartners>"], "cc": [], "betreff": "<Betreff>", "text": "<Anrede>,\n\n<Body>\n\nMit freundlichen Grüßen\n<Absendername>", "anhaenge": []}
 ```
-**Empfänger:** <Vorname Nachname>, <Rolle> bei [<Firmenname>](company:${company-id})
-
-**Betreff:** <Betreff>
-
-**Mail:**
-
-<Body>
-
-Mit freundlichen Grüßen
-<Absendername>
 
 **Bezugspunkt:** <ein Satz, der genau benennt, worauf sich der Entwurf
 stützt, inkl. Datum oder Quelle, z. B. „Jahresabschluss-Veröffentlichung
 vom 12.03.2026">
-```
+
+- `an`: die E-Mail-Adresse des Ansprechpartners aus `company_contacts`.
+  Gibt es keine, bleibt die Liste leer (`"an": []`); sag das in der Zeile
+  davor. Erfinde nie eine Adresse.
+- `text` ist Klartext ohne Markdown (keine Sternchen, keine Links).
+- `anhaenge` bleibt leer, außer der Nutzer hat Dateien hochgeladen und
+  will sie mitschicken (Handle `att-…`).
 
 ### Absendername auflösen
 

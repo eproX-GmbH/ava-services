@@ -42,6 +42,8 @@ const AUSNAHMEN = new Map([
   ["linkedin/runs.ts", "Typ BrowserWindow (LinkedIn-Modul)"],
   ["linkedin/scraper-window.ts", "verstecktes Scraper-Fenster (LinkedIn-Modul)"],
   ["linkedin/scraper.ts", "Fenster, net.fetch (LinkedIn-Modul)"],
+  ["app/bild.ts", "nativeImage zum Verkleinern von Verlaufsbildern; im Server fehlt es, das Modul schickt dann das Original"],
+  ["mail-entwurf/oeffnen.ts", "Standard-Mailprogramm (app.getApplicationInfoForProtocol) und shell; nur über die Desktop-IPC erreichbar"],
 ]);
 
 function walk(dir, out = []) {

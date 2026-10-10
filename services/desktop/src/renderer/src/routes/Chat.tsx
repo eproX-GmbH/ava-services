@@ -32,6 +32,8 @@ import { onChatSearchPick } from "../components/ChatSearchModal";
 import { ChartBlock } from "../components/ChartBlock";
 import { BuyingCenterBlock } from "../components/BuyingCenterBlock";
 import { chartFenceState } from "../lib/chart-spec";
+import { MAIL_ENTWURF_FENCE_RE, MAIL_ENTWURF_OPEN_RE } from "../../../shared/mail-entwurf";
+import { MailEntwurfKarte } from "../components/MailEntwurfKarte";
 import { useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useVoiceRecorder } from "../lib/recordVoice";
@@ -3319,7 +3321,36 @@ const CHART_OPEN_RE = /```chart\b/;
 const BC_FENCE_RE = /```buying-center\s*\n([\s\S]*?)\n```/g;
 const BC_OPEN_RE = /```buying-center\b/;
 
+// Mail-Entwurf (docs/PLAN_MAIL_ENTWURF.md): aeusserster Durchgang, Karte mit
+// „Im Mail-Programm oeffnen“; Text davor/danach laeuft durch Buying Center und Charts.
 function renderChatContent(text: string): ReactNode {
+  if (!text) return null;
+  if (!MAIL_ENTWURF_OPEN_RE.test(text)) return renderBcUndCharts(text);
+  const nodes: ReactNode[] = [];
+  let segKey = 0;
+  let cursor = 0;
+  const re = new RegExp(MAIL_ENTWURF_FENCE_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const davor = text.slice(cursor, m.index);
+    if (davor) nodes.push(<span key={`mailseg-${segKey++}`}>{renderBcUndCharts(davor)}</span>);
+    nodes.push(<MailEntwurfKarte key={`mail-${segKey++}`} raw={m[1] ?? ""} />);
+    cursor = m.index + m[0].length;
+  }
+  const rest = text.slice(cursor);
+  if (rest) {
+    if (chartFenceStateFuer(rest, MAIL_ENTWURF_OPEN_RE) === "open") {
+      const head = rest.slice(0, rest.search(MAIL_ENTWURF_OPEN_RE));
+      if (head) nodes.push(<span key={`mailseg-${segKey++}`}>{renderBcUndCharts(head)}</span>);
+      nodes.push(<div key={`mailph-${segKey++}`} className="chart-placeholder">Mail-Entwurf wird geschrieben…</div>);
+    } else {
+      nodes.push(<span key={`mailseg-${segKey++}`}>{renderBcUndCharts(rest)}</span>);
+    }
+  }
+  return nodes;
+}
+
+function renderBcUndCharts(text: string): ReactNode {
   if (!text) return null;
   const nodes: ReactNode[] = [];
   let segKey = 0;
@@ -3582,6 +3613,9 @@ const MARKDOWN_COMPONENTS: Components = {
     if (className === "language-chart") {
       const raw = String(children ?? "").replace(/\n$/, "");
       return <ChartBlock raw={raw} />;
+    }
+    if (className === "language-mail-entwurf") {
+      return <MailEntwurfKarte raw={String(children ?? "").replace(/\n$/, "")} />;
     }
     // Default behaviour — inline `code` or fenced block. react-markdown
     // hands us the inner text; styling is in styles.css.

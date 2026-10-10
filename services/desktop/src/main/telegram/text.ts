@@ -1,6 +1,8 @@
 // Telegram ist eine Textnachricht: Was Markdown ist, wird Text.
 // Rein, ohne Electron — damit scripts/test-telegram-text.mjs es prueft.
 
+import { mailEntwurfAlsText, mailEntwuerfeErsetzen } from "../../shared/mail-entwurf";
+
 /** v0.1.522 — Meldungs-Beschreibungen sind Markdown (Meldungs-Seite);
  *  Telegram bekommt lesbaren Text: Links als "Label: URL", Listen mit
  *  Punkt, Fettung entfernt.
@@ -11,7 +13,8 @@
  *  Meldungen) — der Prompt bittet zusaetzlich um kurzen, formatfreien
  *  Text, aber ein Modell haelt sich nicht immer daran. */
 export function markdownZuText(md: string): string {
-  return md
+  // Mail-Entwurf (docs/PLAN_MAIL_ENTWURF.md): kein Knopf auf dem Handy, also lesbar als An/Betreff/Text.
+  return mailEntwuerfeErsetzen(md, (e, raw) => (e ? `E-Mail-Entwurf\n${mailEntwurfAlsText(e)}` : raw))
     .replace(/```[a-z]*\n?([\s\S]*?)```/g, (_, c: string) => c.trim()) // Codezaeune: Inhalt behalten
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, "$1") // Ueberschriften → Zeile

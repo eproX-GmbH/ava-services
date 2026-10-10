@@ -1302,6 +1302,17 @@ const api = {
     },
   },
 
+  // Mail-Entwürfe im Mail-Programm öffnen (docs/PLAN_MAIL_ENTWURF.md). `raw` ist der
+  // Inhalt des ```mail-entwurf-Blocks; main prüft ihn selbst.
+  mailEntwurf: {
+    stand: (): Promise<{ ziel: string; weg: string; programm: string | null }> => ipcRenderer.invoke("mail-entwurf:stand"),
+    oeffnen: (input: { raw: string; weg?: string; conversationId?: string }): Promise<{ weg: string; programm: string | null; anhaengeFehlen: boolean; fehler?: string }> =>
+      ipcRenderer.invoke("mail-entwurf:oeffnen", input),
+    anhaengeZeigen: (input: { raw: string; conversationId?: string }): Promise<{ ok: true; anzahl: number } | { ok: false; fehler: string }> =>
+      ipcRenderer.invoke("mail-entwurf:anhaenge-zeigen", input),
+    zielSetzen: (ziel: string): Promise<string> => ipcRenderer.invoke("mail-entwurf:ziel-setzen", ziel),
+  },
+
   // v0.1.101 — generic shell.openExternal bridge for plain external
   // links (Enterprise contact page, etc.). Constrained to http/https
   // schemes main-side so the renderer can't shell out to arbitrary

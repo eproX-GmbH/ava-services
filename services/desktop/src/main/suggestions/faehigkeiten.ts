@@ -49,7 +49,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "lokales_modell", text: "Lokales KI-Modell (Ollama) laden, Status, neu starten", tools: ["ollama_*"] },
   { id: "sprache", text: "Spracheingabe: Whisper-Modell installieren", tools: ["voice_*"] },
   // ---- Verwaltung: nie auf der Startseite ----
-  { id: "einstellungen", text: "KI-Anbieter, Schluessel, Modell, Token-Limit einstellen; OpenAI ueber Azure OpenAI (Endpunkt, Deployments)", tools: ["settings_*"], verwaltung: true },
+  { id: "einstellungen", text: "KI-Anbieter, Schluessel, Modell, Token-Limit einstellen; OpenAI ueber Azure OpenAI (Endpunkt, Deployments); festlegen, wo Mail-Entwuerfe geoeffnet werden (Mail-Programm, Outlook, Gmail, Outlook im Web)", tools: ["settings_*"], verwaltung: true },
   { id: "organisation", text: "Organisation verwalten: Mitglieder, Vorgaben, Anbieter-Sperre, Limits, Verbrauch, Abrechnung", tools: ["org_*"], verwaltung: true },
   { id: "konto", text: "Kontoinformationen", tools: ["account_info"], verwaltung: true },
   { id: "instanzen", text: "AVA auf Desktop und Server: welche Instanz laeuft, welcher Telegram-Bot und welches Radar wo, welche Instanz MCP beantwortet; Name und MCP-Schalter dieser Instanz; kompletten Stand zwischen Desktop und Server umziehen", tools: ["ava_instanz*", "ava_umzug"], verwaltung: true },

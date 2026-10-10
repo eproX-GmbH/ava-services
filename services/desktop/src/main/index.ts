@@ -20,6 +20,7 @@ import { registerVorschlaegeIpc } from "./ipc/vorschlaege";
 import { registerKontoIpc } from "./ipc/konto";
 import { registerLaufzeitIpc } from "./ipc/laufzeit";
 import { registerSystemIpc } from "./ipc/system";
+import { registerMailEntwurfIpc } from "./ipc/mail-entwurf";
 import { registerRelevanzIpc } from "./ipc/relevanz";
 import { registerAblaeufeIpc } from "./ipc/ablaeufe";
 import { registerWissenIpc } from "./ipc/wissen";
@@ -419,6 +420,7 @@ app.whenReady().then(async () => {
   registerKontoIpc({ auth });
   registerRelevanzIpc({ crmManager, gatewayClient });
   registerSystemIpc({ alerts, APP_CONFIG, audit, auth, eigenerBrowser: core.eigenerBrowser, gatewayClient, pendingWakeAcks, statusWatcher });
+  registerMailEntwurfIpc({ attachments: core.attachments ?? null });
   registerWissenIpc({ knowledge, knowledgeStore });
   registerVerlaufIpc({ audit, auditStore, auth, broadcastDailyLimitStatus, computeDailyLimitStatus, providers, selfCorrectionsStore, usageStore });
   registerBeobachtungIpc({ audit, broadcastWatchesChanged, linkMonitorSupervisor: core.linkMonitorSupervisor, publicationStore, watchStore });

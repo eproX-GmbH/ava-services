@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-09
-Anzahl Tools: 283
+Stand: 2026-10-10
+Anzahl Tools: 288
 
 ## Firmen (24)
 
@@ -651,7 +651,7 @@ _Parameter:_
 - `content: string` (required) — The fact to remember, written as a self-contained sentence. Future-you will read this without conversation context, so don't say "the company we just discussed" — name it.
 - `tags: array` — Optional short tags for grouping (e.g. "preference", "company:acme"). Lowercase, no spaces.
 
-## Einstellungen (8)
+## Einstellungen (10)
 
 ### `publication_analysis_config`
 
@@ -683,6 +683,22 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
 
 Read the active LLM provider configuration plus per-provider key presence. Use this BEFORE proposing a switch so you can confirm what's currently set and which providers are usable.
+
+_Parameter:_ keine.
+
+### `settings_mail_entwurf`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+Unter jedem ```mail-entwurf steht ein Knopf, der den Entwurf im Mail-Programm des Nutzers oeffnet. `aktion` 'stand' zeigt die Einstellung, 'setzen' aendert sie mit `ziel`: 'auto' (Standard: Outlook bekommt eine .eml mit Anhaengen, andere Programme einen mailto:-Link, ohne Programm Webmail), 'programm' (immer mailto:, ohne Anhaenge), 'eml' (immer .eml-Datei mit Anhaengen), 'gmail', 'outlook-web' (Microsoft 365), 'outlook-live' (outlook.com). Gilt fuer die Desktop-App; in der AVA-App waehlt jedes Geraet selbst.
+
+_Parameter:_ keine.
+
+### `settings_openai_azure`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+Der eigene OpenAI-Schluessel kann ein Azure-OpenAI-Schluessel sein. `aktion` 'stand' zeigt Endpunkt, Deployments und ob Azure aktiv ist; 'setzen' traegt `endpunkt` (z. B. https://firma.openai.azure.com) und `deployments` ein (Objekt Katalog-Modell-ID → Deployment-Name, '*' = alle uebrigen Modelle; ohne Eintrag nutzt AVA ein gleichnamiges Deployment); 'pruefen' testet den gespeicherten Schluessel gegen den Endpunkt; 'aus' schaltet zurueck auf OpenAI direkt. Den Schluessel selbst setzt settings_set_api_key mit provider 'openai'. Mit Azure ist der Sprachmodus nicht verfuegbar.
 
 _Parameter:_ keine.
 
@@ -1494,6 +1510,26 @@ Speichert das Idealkundenprofil (Patch — nur uebergebene Felder aendern sich).
 
 _Parameter:_ keine.
 
+## instanzen (2)
+
+### `ava_instanz_einstellen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/instanzen.ts`
+
+Aendert die Einstellungen DIESER Instanz: name = Anzeigename in der Instanzenliste; mcp = ob diese Instanz MCP-Aufrufe aus Claude/ChatGPT beantwortet (sonst uebernimmt eine andere verbundene Instanz; Server vor Desktop). Ohne Argumente: aktuelle Werte.
+
+_Parameter:_
+- `name: string`
+- `mcp: boolean`
+
+### `ava_instanzen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/instanzen.ts`
+
+Zeigt alle AVAs dieses Kontos (Desktop-App, Server), ob sie gerade verbunden sind, Version, welcher Telegram-Bot an welcher Instanz haengt (je Bot nur eine Instanz), ob dort das Firmen-Radar laeuft und was es zuletzt getan hat, welches Modell aktiv ist, ob ein Idealkundenprofil vorhanden ist und welche Instanz die MCP-Aufrufe aus Claude/ChatGPT beantwortet. Markiert, welche Instanz diese hier ist. Nur lesend.
+
+_Parameter:_ keine.
+
 ## link-monitor (7)
 
 ### `link_monitor_list`
@@ -2060,7 +2096,8 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 
-Liefert den Datensatz einer Periode (YYYY-MM): Positionen je Tier, Seats mit Name/E-Mail, Tier, erstem und letztem Stichtag und Anzahl Stichtage, Pruefsumme. Ohne Periode: Liste aller Datensaetze. CSV-Export ueber die Seite 'Organisation' (#/organisation). Read-only, Admin.
+Liefert den Datensatz einer Periode (YYYY-MM): Positionen je Tier, Seats mit Name/E-Mail, Tier, erstem und letztem Stichtag und Anzahl Stichtage, Pruefsumme. Ohne Periode: Liste aller Datensaetze. CSV-Export in der AVA Konsole (https:                                               
+    parameters: { type:
 
 _Parameter:_
 - `periode: string` — YYYY-MM, z. B. 2026-09
@@ -2078,7 +2115,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 
-Liefert die Organisation des angemeldeten Kontos (oder 'persoenlicher Bereich'), die eigene Rolle (owner/admin/member), Mitgliederzahl, die Vorgaben (Funktionen, Anbieter-Sperre, Modelle, Prompt-Audit) und fuer Admins den Einladungslink ava://join/<token>. Read-only. Organisation anlegen, per Link beitreten oder verlassen laeuft ueber die Seite 'Organisation' (#/organisation), weil AVA dabei neu startet.
+Liefert die Organisation des angemeldeten Kontos (oder 'persoenlicher Bereich'), die eigene Rolle (owner/admin/member), Mitgliederzahl, die Vorgaben (Funktionen, Anbieter-Sperre, Modelle, Prompt-Audit) und fuer Admins den Einladungslink https://admin.ava.bi/beitreten/<token>. Read-only. Organisation anlegen, beitreten, verlassen, Organisationsschluessel und Abrechnung laufen ueber die AVA Konsole (https://admin.ava.bi); die Desktop-App hat dafuer keine Seite.
 
 _Parameter:_ keine.
 
@@ -2109,7 +2146,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 
-Entfernt ein Mitglied; es faellt auf seinen persoenlichen Bereich zurueck, seine AVA startet beim naechsten Abgleich neu. Der letzte Owner kann nicht entfernt werden. actorId aus org_members. Fragt vor der Ausfuehrung nach. Fuer den eigenen Austritt die Seite 'Organisation' nutzen.
+Entfernt ein Mitglied; es faellt auf seinen persoenlichen Bereich zurueck, seine AVA startet beim naechsten Abgleich neu. Der letzte Owner kann nicht entfernt werden. actorId aus org_members. Fragt vor der Ausfuehrung nach. Fuer den eigenen Austritt die AVA Konsole (https://admin.ava.bi/mitglieder) nutzen.
 
 _Parameter:_
 - `actorId: string` (required) — Nutzer-ID aus org_members
@@ -2497,6 +2534,16 @@ _Parameter:_
 _Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
 
 Read the current Telegram configuration: whether a bot token is stored, whether a chat is linked, whether delivery is enabled, and the severity threshold. Never returns the token itself.
+
+_Parameter:_ keine.
+
+## umzug (1)
+
+### `ava_umzug`
+
+_Datei:_ `services/desktop/src/main/agent/tools/umzug.ts`
+
+Uebertraegt, was AVA lokal haelt (Gedaechtnis, Chats, Profil, ICP, Radar, Alarme, Workflows, Skills, Mail-Speicher, Audit, Watchlist, API-Schluessel), von einer AVA-Instanz auf eine andere desselben Kontos. Das Ziel wird ueberschrieben und startet neu; sein vorheriger Stand bleibt dort unter .umzug-alt. Nicht uebertragen und auf dem Ziel unveraendert: Anmeldung, Instanz-ID, Telegram-Bot, ChatGPT-/Claude-Abo-Anmeldung, LinkedIn-Beobachter (Archiv, Sitzung, Einstellungen), Screenshots, Producer-Logs, Browser-Sitzungen. richtung 'holen' = diese Instanz holt den Stand von `instanz`; 'senden' = diese Instanz schickt ihren Stand an `instanz`. `instanz` = Name, ID oder 'server'/'desktop' (siehe ava_instanzen). Ohne Argumente: aktueller Stand eines laufenden Umzugs.
 
 _Parameter:_ keine.
 

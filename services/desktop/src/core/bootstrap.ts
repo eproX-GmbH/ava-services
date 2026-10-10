@@ -34,6 +34,8 @@ import { ORG_FEATURES } from "../shared/types";
 import { avaKontextText } from "./relais/ava-kontext";
 import { AppKanal } from "./relais/app-kanal";
 import { bildVerkleinern } from "../main/app/bild";
+import { anhaengeLaden, emlBauen } from "../main/mail-entwurf/eml";
+import { emlDateiname, mailEntwurfLesen } from "../shared/mail-entwurf";
 import { anhangAufbereiten } from "../main/app/anhang";
 import { transkribieren } from "../main/app/transkription";
 import { WebPushKanal } from "../main/push/web-push-kanal";
@@ -4019,6 +4021,16 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     extras: {
       anhang: (input) => anhangAufbereiten(attachments, input),
       bild: (b, kante) => bildVerkleinern(b, kante),
+      mailEml: async (roh) => {
+        const r = mailEntwurfLesen(roh);
+        if ("fehler" in r) throw new Error(r.fehler);
+        const a = anhaengeLaden(attachments, r.entwurf);
+        if ("fehler" in a) throw new Error(a.fehler);
+        const base64 = (await emlBauen(r.entwurf, a.anhaenge)).toString("base64");
+        // Das Relais trägt höchstens 6 MB je Nachricht.
+        if (base64.length > 4_500_000) throw new Error("Die Anhänge sind zu groß für die App. Bitte den Entwurf in der Desktop-App öffnen.");
+        return { base64, dateiname: emlDateiname(r.entwurf) };
+      },
       transkribieren: (wav) =>
         transkribieren(
           {

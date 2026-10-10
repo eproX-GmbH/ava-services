@@ -48,6 +48,8 @@ export type AppEreignis =
 
 /** Optionale Fähigkeiten (P3–P7); fehlt eine, antwortet der Kanal „nicht verfügbar“. */
 export interface AppKanalExtras {
+  /** Mail-Entwurf als .eml mit Anhängen (docs/PLAN_MAIL_ENTWURF.md E4); `entwurf` = Inhalt des Blocks. */
+  mailEml?: (entwurf: unknown) => Promise<{ base64: string; dateiname: string }>;
   /** Bild aus dem Verlauf auf höchstens `kante` Pixel verkleinern (Server: Original). */
   bild?: (bild: AgentMessageImage, kante: number) => AgentMessageImage;
   anhang?: (input: { filename: string; bytes: Uint8Array; conversationId?: string }) => Promise<unknown>;
@@ -240,6 +242,14 @@ export class AppKanal {
         return this.gespraech(String(daten.conversationId ?? ""));
       case "bild":
         return this.bild(daten);
+      case "mail_eml": {
+        const bauen = this.extra("mailEml");
+        try {
+          return await bauen(daten.entwurf);
+        } catch (err) {
+          throw new AppFehler("ungueltig", err instanceof Error ? err.message : String(err));
+        }
+      }
       case "gespraech_loeschen": {
         const id = String(daten.conversationId ?? "");
         if (this.deps.agent.getStatus().inFlightConversationId === id) throw new AppFehler("beschaeftigt", "Das Gespräch läuft gerade.");

@@ -3,6 +3,8 @@ import { defineTool, userDeclined } from "../define-tool";
 import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
 import type { ChatgptPlanStand } from "../../../shared/types";
+import { MAIL_ENTWURF_ZIELE, ZIEL_TEXT, type MailEntwurfZiel } from "../../../shared/mail-entwurf";
+import { mailEntwurfZiel, mailEntwurfZielSetzen } from "../../mail-entwurf/einstellung";
 import type {
   HostedProviderKind,
   LlmProviderKind,
@@ -489,9 +491,58 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     },
   });
 
+  // Mail-Entwuerfe im Mail-Programm oeffnen (docs/PLAN_MAIL_ENTWURF.md E3).
+  const mailEntwurf = defineTool({
+    name: "settings_mail_entwurf",
+    summary: "Wohin der Knopf an Mail-Entwürfen öffnet: automatisch, Mail-Programm, Outlook-Datei, Gmail, Outlook im Web.",
+    category: "einstellungen mail entwurf outlook gmail mailto mail-programm",
+    description:
+      "Unter jedem ```mail-entwurf steht ein Knopf, der den Entwurf im Mail-Programm des Nutzers oeffnet. `aktion` 'stand' zeigt die Einstellung, " +
+      "'setzen' aendert sie mit `ziel`: 'auto' (Standard: Outlook bekommt eine .eml mit Anhaengen, andere Programme einen mailto:-Link, ohne Programm Webmail), " +
+      "'programm' (immer mailto:, ohne Anhaenge), 'eml' (immer .eml-Datei mit Anhaengen), 'gmail', 'outlook-web' (Microsoft 365), 'outlook-live' (outlook.com). " +
+      "Gilt fuer die Desktop-App; in der AVA-App waehlt jedes Geraet selbst.",
+    parameters: {
+      type: "object",
+      required: ["aktion"],
+      properties: {
+        aktion: { type: "string", enum: ["stand", "setzen"] },
+        ziel: { type: "string", enum: [...MAIL_ENTWURF_ZIELE] },
+      },
+    },
+    schema: yup
+      .object({
+        aktion: yup.string().oneOf(["stand", "setzen"]).required(),
+        ziel: yup.string().oneOf([...MAIL_ENTWURF_ZIELE]).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { ziel?: string; error?: string } | ReturnType<typeof userDeclined>) =>
+      "ziel" in r && r.ziel ? `Mail-Entwürfe: ${ZIEL_TEXT[r.ziel as MailEntwurfZiel] ?? r.ziel}` : "error" in r && r.error ? String(r.error) : "abgebrochen",
+    run: async (args, c) => {
+      if (args.aktion === "stand") return { ziel: mailEntwurfZiel(), text: ZIEL_TEXT[mailEntwurfZiel()] };
+      if (!args.ziel) return { error: "Fuer 'setzen' fehlt `ziel`." };
+      const ziel = args.ziel as MailEntwurfZiel;
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Mail-Entwürfe künftig öffnen in: ${ZIEL_TEXT[ziel]}?`,
+          confirmValue: "save",
+          options: [
+            { value: "save", label: "Speichern" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "save") return userDeclined();
+      mailEntwurfZielSetzen(ziel);
+      return { ziel, text: ZIEL_TEXT[ziel] };
+    },
+  });
+
   return [
     getProvider,
     setProvider,
+    mailEntwurf,
     setKey,
     clearKey,
     setDailyTokenLimit,
