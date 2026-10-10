@@ -856,3 +856,56 @@ Orchestrator).
 
 Offen: MCP Apps für Ansichten.
 
+
+## 13. Mehrere AVAs je Nutzer: Instanzen, Telegram je Instanz, Umzug (2026-10-10)
+
+Anlass: Testlauf `pnpm test:server` gegen headless-ava. Infrastruktur,
+Gateway-Lesen, Freigabe-Schleife, Verarbeitung und `ava_fragen` grün; rot nur,
+was lokal in der Desktop-App liegt: Telegram (Bot, Chat), Idealkundenprofil,
+Radar-Automatik. Nebenbefund: Das Radar am Desktop ist zwar an, setzt aber
+jeden Lauf aus („2930 offene Kandidaten, Deckel 300“); es lief also nirgends.
+
+Entscheidungen des Operators (2026-10-10):
+
+1. **Telegram:** eigener Bot je Instanz (Telegram lässt je Bot nur einen
+   Abholer zu). Zentral sichtbar und verwaltbar, welche Instanz welchen Bot hat.
+2. **Radar:** darf auf Desktop und Server parallel laufen (Kandidaten liegen
+   zentral, Domain = ID entdoppelt). Zentral sichtbar, wo es läuft.
+3. **Umzug:** Import in beide Richtungen für alles Lokale; das Ziel wird
+   vollständig überschrieben. Damit lässt sich das Betriebsmodell jederzeit
+   wechseln.
+
+### 13.1 Instanzen (U1)
+
+Jeder Kopf hat eine feste Instanz-ID (`instanz.json` im Datenverzeichnis), eine
+Art (desktop | server) und einen Namen. Das Relais lässt mehrere Köpfe je Konto
+zu und kennt von jedem einen Zustandsbericht (Version, Telegram-Bot, Radar,
+Modell, ICP vorhanden, MCP an/aus), den der Kopf beim Verbinden und alle fünf
+Minuten schickt. `GET /v1/instanzen` liefert die Liste; Desktop
+(Einstellungen → Verbindungen), Setup-Seite des Servers und das Chat-Werkzeug
+`ava_instanzen` zeigen sie. MCP-Aufrufe gehen an eine Instanz: Server vor
+Desktop, abschaltbar je Instanz (`ava_instanz_einstellen`). Kein Datenbankzugriff;
+der Gateway hält die Liste im Speicher, Köpfe melden sich nach einem Neustart
+binnen Sekunden wieder.
+
+### 13.2 Telegram je Instanz (U2)
+
+Setup-Seite des Servers bekommt einen Telegram-Abschnitt (Bot-Token, Chat
+verknüpfen, Zustellung an). Der Eingang erkennt die Telegram-Meldung 409
+(„ein anderer Abholer“) und zeigt sie als Konflikt; die Instanzenliste markiert
+denselben Bot auf zwei Instanzen.
+
+### 13.3 Umzug (U4)
+
+Kopf zu Kopf über das Relais, Ende-zu-Ende verschlüsselt (X25519 + AES-256-GCM;
+der Gateway sieht nur Chiffrat). Übertragen wird alles, was AVA lokal hält:
+JSON-Stores, Gedächtnis, Chats, Workflows, Skills, ICP, Radar, Alarme,
+eingebettete Datenbanken (per `dumpDataDir`), LinkedIn-Archiv, Screenshots,
+Schlüssel (auf der Quelle entschlüsselt, auf dem Ziel mit dessen Ablage neu
+verschlüsselt). Instanzgebunden und deshalb **nicht** übertragen: Anmeldung,
+Instanz-ID, Telegram-Bot (Entscheidung 1), ChatGPT-Abo (dynamische Client-ID je
+Installation, rollierendes Refresh-Token), Browser-Sitzungen und Caches,
+Whisper-Modelle. Das Ziel legt den Umzug ab, startet neu, löscht vor dem Öffnen
+der Stores sein altes Datenverzeichnis (bis auf die instanzgebundenen Teile)
+und spielt den Umzug ein. Auslöser: Desktop-Einstellungen, Setup-Seite,
+Chat-Werkzeug (destruktiv, immer mit Bestätigung).
