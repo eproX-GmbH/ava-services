@@ -8,7 +8,7 @@
 //
 // Vorher einmal: node scripts/instanz-image.mjs --version <v>
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { alleApps, APP_PREFIX, appName, args, desktopVersion, fly, imageRef } from "./lib/instanz-fly.mjs";
@@ -33,6 +33,7 @@ try {
     try {
       const dir = mkdtempSync(join(tmpdir(), "ava-instanz-"));
       const toml = join(dir, "fly.toml");
+      writeFileSync(toml, ""); // fly config save schreibt nur in eine vorhandene Datei
       fly(["config", "save", "-a", app, "-c", toml, "-y"], { still: true });
       fly(["deploy", dir, "-c", toml, "-a", app, "--image", imageRef(version), "--now", "--yes"]);
     } catch (err) {

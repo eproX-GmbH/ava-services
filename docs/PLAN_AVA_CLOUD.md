@@ -985,8 +985,16 @@ Kopf 4 GB shared-cpu-2x ~22 $ + Volume 10 GB ~1,50 $ + eigener Sidecar 2 GB ~11 
 mit geteiltem Sidecar ≈ 24 $. Router und Image-App fallen einmal an. Ob der geteilte Sidecar mehrere Kunden trägt,
 zeigt erst Last; Embeddings sind kurz und gut stapelbar, Chat und Producer laufen über die Schlüssel des Kunden.
 
-### 14.5 Offen
+### 14.5 Stand 2026-10-10
 
-- Router und Wildcard-Zertifikat anlegen (Operator-DNS), erste Kunden-Instanz.
+- `ava-router` live (2 Maschinen à 256 MB), Wildcard-Zertifikat `*.ava.bi` ausgestellt (Let's Encrypt, DNS beim Operator).
+- Image `registry.fly.io/ava-server-image:v0.1.797` (1,0 GB) gebaut; headless-ava damit per `instanzen-aktualisieren --apps headless-ava`
+  aktualisiert (Konfiguration blieb erhalten) und über `https://headless-ava.ava.bi` erreichbar (`ROUTER_ZUORDNUNG`).
+  `<slug>.ava.bi/healthz` geht an die Instanz; der Router beantwortet `/healthz` nur ohne Kunden-Host.
+- Testlauf danach unverändert: 16 ok, offen nur Telegram-Bot, ICP und Radar der Operator-Instanz (Umzug + zweiter Bot).
+
+### 14.6 Offen
+
+- Erste Kunden-Instanz (`instanz-anlegen`), sobald Name und Konto feststehen.
 - Keine automatische Nachführung: nach jedem Release `instanzen-aktualisieren` (bewusst manuell, damit ein kaputtes Release nicht alle Kunden trifft; erst `--nur` an einer Instanz).
 - Abrechnung der Server-Instanz (Seat-Plan, `docs/PLAN_ABRECHNUNG_SEATS.md`) und Sicherung der Volumes (Fly-Snapshots 5 Tage) sind nicht Teil dieser Stufe.

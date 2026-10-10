@@ -54,7 +54,9 @@ const seite = (titel, text) =>
   `main{max-width:32rem}h1{font-size:1.4rem;margin:0 0 .5rem}a{color:#00897a}</style></head><body><main><h1>${titel}</h1><p>${text}</p></main></body></html>`;
 
 createServer(async (req, res) => {
-  if (req.url === "/healthz") {
+  const app = zielApp(req.headers.host);
+  // Eigener Gesundheitscheck nur ohne Kunden-Host; <slug>.ava.bi/healthz geht an die Instanz.
+  if (req.url === "/healthz" && !app) {
     res.writeHead(200, { "content-type": "text/plain" }).end("ok");
     return;
   }
@@ -63,7 +65,6 @@ createServer(async (req, res) => {
     res.writeHead(503, { "content-type": "text/html; charset=utf-8" }).end(seite("AVA startet gerade", "Diese AVA ist gerade nicht erreichbar. Bitte in einer Minute erneut versuchen."));
     return;
   }
-  const app = zielApp(req.headers.host);
   if (!app || !(await appLaeuft(app))) {
     res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(seite("Keine AVA unter dieser Adresse", `Unter dieser Adresse läuft keine AVA. Zur Startseite: <a href="https://${DOMAIN}">${DOMAIN}</a>.`));
     return;

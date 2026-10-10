@@ -11,7 +11,7 @@ primary_region = "fra"
   ROUTER_DOMAIN = "ava.bi"
   ROUTER_APP_PREFIX = "ava-i-"
   # Ausnahmen von der Namensregel (Subdomain=App), z. B. die erste Instanz des Operators.
-  ROUTER_ZUORDNUNG = ""
+  ROUTER_ZUORDNUNG = "headless-ava=headless-ava"
 
 [http_service]
   internal_port = 8080
