@@ -27,6 +27,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import { bootstrapCore, type Core } from "../core/bootstrap";
+import { GEBUNDENES_KONTO } from "../core/konto-bindung";
 import { lifecycle, paths, platform } from "../core/platform";
 import { initFileLogger, quitStep, writeLineSync } from "../main/file-logger";
 import { beendeVerwaisteBrowser } from "../main/browser-sweep";
@@ -110,10 +111,11 @@ table{border-collapse:collapse}td,th{text-align:left;padding:.25rem .8rem .25rem
 function anmeldungAbschnitt(): string {
   const st = core?.auth.getStatus();
   if (st?.signedIn) return `<p class="ok">Angemeldet als ${esc(st.email ?? st.name ?? st.actorId ?? "unbekannt")}.</p>`;
+  const bindung = GEBUNDENES_KONTO ? `<p><small>Diese AVA ist für <strong>${esc(GEBUNDENES_KONTO)}</strong> eingerichtet; nur dieses Konto kann sich anmelden.</small></p>` : "";
   if (lage.code) {
     const c = lage.code;
     const link = c.verificationUriComplete ?? c.verificationUri;
-    return `<p>Öffne <a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.verificationUri)}</a> und gib diesen Code ein:</p><p><span class="code">${esc(c.userCode)}</span></p><p><small>Gültig bis ${new Date(c.expiresAt).toLocaleTimeString("de-DE")}; danach erscheint hier ein neuer Code.</small></p>`;
+    return `${bindung}${lage.fehler && GEBUNDENES_KONTO ? `<p class="fehler">${esc(lage.fehler)}</p>` : ""}<p>Öffne <a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.verificationUri)}</a> und gib diesen Code ein:</p><p><span class="code">${esc(c.userCode)}</span></p><p><small>Gültig bis ${new Date(c.expiresAt).toLocaleTimeString("de-DE")}; danach erscheint hier ein neuer Code.</small></p>`;
   }
   return `<p>Phase: ${esc(lage.phase)}${lage.fehler ? `<br><small>${esc(lage.fehler)}</small>` : ""}</p><p><small>Seite neu laden, sobald der Anmelde-Code bereitsteht.</small></p>`;
 }
@@ -232,6 +234,7 @@ async function statusJson(): Promise<Record<string, unknown>> {
     seit: lage.seit,
     angemeldet: st?.signedIn ?? false,
     konto: st?.email ?? st?.actorId ?? null,
+    gebundenAn: GEBUNDENES_KONTO,
     producer: c ? c.producers.map((p) => ({ name: p.getStatus().name, state: p.getStatus().state, meldung: p.getStatus().errorMessage ?? null })) : [],
     ollama: c?.ollama.getStatus().state ?? null,
     postgres: c?.postgres.getStatus().state ?? null,
@@ -418,7 +421,8 @@ function starteHttp(): void {
   server.on("error", (err) => console.error("[server] HTTP-Fehler:", err));
   server.listen(port, bind, () => {
     console.log(`[server] http://${bind}:${port}  (/healthz /readyz /status /setup)`);
-    console.log(`[server] Setup-Seite: http://127.0.0.1:${port}/setup?t=${setupToken}`);
+    const oeffentlich = process.env.AVA_PUBLIC_URL?.replace(/\/$/, "");
+    console.log(`[server] Setup-Seite: ${oeffentlich ?? `http://127.0.0.1:${port}`}/setup?t=${setupToken}`);
   });
   server.unref();
 }

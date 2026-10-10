@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../../api/gateway";
+import { ExternalLink } from "../../components/ExternalLink";
 
 interface Instanz {
   id: string;
@@ -19,6 +20,7 @@ interface Instanz {
     mcp?: boolean;
     modell?: string;
     icp?: boolean;
+    adresse?: string | null;
     telegram?: { eingerichtet?: boolean; botId?: string | null; bot?: string | null; chat?: boolean; aktiv?: boolean; konflikt?: boolean } | null;
     radar?: { an?: boolean; intervallStunden?: number | null; letzterLauf?: string | number | null; ergebnis?: string | null } | null;
   };
@@ -116,7 +118,14 @@ export function InstanzenSection() {
                   {i.name}
                   {eigen.data?.id === i.id && <span className="pill pill--active" style={{ marginLeft: 6 }}>diese</span>}
                   <div className="muted small">
-                    {i.art === "server" ? "Server" : "Desktop"} · v{i.version} · {i.verbunden ? `verbunden seit ${zeit(i.seit)}` : `offline seit ${zeit(i.zuletzt)}`}
+                    {i.art === "server" ? "Server" : "Desktop"}
+                    {i.zustand.adresse && (
+                      <>
+                        {" · "}
+                        <ExternalLink href={i.zustand.adresse}>{i.zustand.adresse.replace(/^https?:\/\//, "")}</ExternalLink>
+                      </>
+                    )}
+                    {" · "}v{i.version} · {i.verbunden ? `verbunden seit ${zeit(i.seit)}` : `offline seit ${zeit(i.zuletzt)}`}
                   </div>
                 </td>
                 <td>{telegramText(i, doppelt)}</td>

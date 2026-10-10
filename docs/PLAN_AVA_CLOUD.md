@@ -944,3 +944,49 @@ liefert außerhalb von Electron fest `false` (Werkzeuge gesperrt, Zeitplan aus,
 Nutzerstand „nicht verfügbar“). Nebenbei korrigiert: `linkedin_watchlist_*`
 hing am Schalter des Beobachters statt an `linkedin.watchlist`. (v0.1.796)
 
+
+## 14. Eine Server-Instanz je Kunde: Bereitstellung unter `<kunde>.ava.bi` (2026-10-10)
+
+Entscheidungen (Operator, 2026-10-10): **eine Instanz je Nutzer**, Adressen über **Wildcard + Router**,
+Embeddings-Sidecar **je Kunde eigener** (Leistung), „geteilt“ als Option für kleine Kunden.
+Eine Ebene: weitere Personen derselben Firma bekommen `zimmer-gmbh-max.ava.bi`, nicht `max.zimmer-gmbh.ava.bi`
+(das Wildcard-Zertifikat deckt nur eine Ebene).
+
+### 14.1 Bausteine
+
+| Baustein | Wo | Zweck |
+| --- | --- | --- |
+| Kontobindung | `services/desktop/src/server/main.ts` (`AVA_KONTO`) | Instanz gehört genau einem Konto (E-Mail oder Konto-ID). Meldet sich ein anderes an, wird es sofort abgemeldet; die Setup-Seite nennt das gebundene Konto. Gilt auch für eine wiederhergestellte Sitzung beim Start. Ohne `AVA_KONTO` (eigene Instanz des Operators) gehört sie dem ersten Konto. |
+| Router `ava-router` | `infra/fly-router/` | Antwortet auf `<slug>.ava.bi` nur mit `fly-replay: app=ava-i-<slug>`; der Fly-Proxy spielt die Anfrage bei der Kunden-App ab. Prüft per privatem DNS (`<app>.internal`), ob die App läuft, sonst 404-Seite. Ausnahmen per `ROUTER_ZUORDNUNG` (z. B. `joyce=headless-ava`). 256 MB, ~2 $/Monat. |
+| Image-App `ava-server-image` | `scripts/instanz-image.mjs` | Baut das Server-Image je Release einmal (`--build-only --push --image-label v<version>`); Instanzen rollen nur noch aus, kein Build je Kunde. |
+| Anlegen | `scripts/instanz-anlegen.mjs` | `--name <slug> --konto <email> [--ollama eigen|geteilt] [--groesse 4gb|8gb]`: Sidecar `ava-i-<slug>-ollama` (2 GB, 5-GB-Volume) bzw. `ava-ollama`, App `ava-i-<slug>`, Secrets (`AVA_SECRETS_KEY`, `AVA_SETUP_TOKEN`, `AVA_KONTO`, `AVA_INSTANZ_NAME`, `AVA_PUBLIC_URL`) per stdin, Ausrollen aus dem Image. Setup-Adresse und Schlüssel landen in `~/.ava-instanzen/<slug>.json` (0600, nie im Repo). `--fortsetzen` nach Abbruch behält Schlüssel und Token. |
+| Aktualisieren | `scripts/instanzen-aktualisieren.mjs` | Alle `ava-i-*` (ohne Sidecars) nacheinander auf `--version`; jede behält ihre Konfiguration (`fly config save`). `--nur`, `--auch headless-ava`, `--trocken`. |
+| Entfernen | `scripts/instanz-entfernen.mjs` | Löscht App, Volume und eigenen Sidecar; nur mit `--bestaetigen <slug>`. Vorher bei Bedarf Umzug auf den Desktop des Kunden. |
+| Adresse in „Deine AVAs“ | Kopf meldet `zustand.adresse` (= `AVA_PUBLIC_URL`, ohne Token) | Der Kunde sieht in der Desktop-App, unter welcher Adresse seine Server-AVA läuft. |
+
+### 14.2 Einmalige Einrichtung (Operator)
+
+1. `fly apps create ava-router` · `fly deploy infra/fly-router` · `fly ips allocate-v4 --shared -a ava-router` · `fly ips allocate-v6 -a ava-router`
+2. `fly certs add "*.ava.bi" -a ava-router` und die angezeigten Einträge beim DNS-Anbieter setzen:
+   `*.ava.bi CNAME ava-router.fly.dev` plus `_acme-challenge.ava.bi CNAME …` (für das Wildcard-Zertifikat).
+   Bestehende Namen (`mcp`, `auth`, …) haben eigene Einträge und bleiben unberührt; sie stehen zusätzlich auf der Sperrliste der Skripte.
+3. Je Release: `node scripts/instanz-image.mjs` und `node scripts/instanzen-aktualisieren.mjs` (Instanzen ziehen nicht automatisch nach).
+
+### 14.3 Ablauf je Kunde
+
+1. Kunde hat ein AVA-Konto (Keycloak, normaler Weg).
+2. `node scripts/instanz-anlegen.mjs --name zimmer-gmbh --konto person@zimmer.de`
+3. Setup-Adresse an den Kunden: Anmeldung per Gerätecode bestätigen (nur mit dem gebundenen Konto), Schlüssel oder ChatGPT-Abo, optional eigener Telegram-Bot.
+4. In Claude/ChatGPT `https://mcp.ava.bi` verbinden; die Instanz beantwortet die Aufrufe (Server vor Desktop, §13.1). Hat der Kunde schon eine Desktop-AVA: „Dorthin senden“ (§13.3).
+
+### 14.4 Kosten je Kunde (Fly, fra, Okt. 2026)
+
+Kopf 4 GB shared-cpu-2x ~22 $ + Volume 10 GB ~1,50 $ + eigener Sidecar 2 GB ~11 $ + 5 GB ~0,75 $ ≈ **35 $/Monat**;
+mit geteiltem Sidecar ≈ 24 $. Router und Image-App fallen einmal an. Ob der geteilte Sidecar mehrere Kunden trägt,
+zeigt erst Last; Embeddings sind kurz und gut stapelbar, Chat und Producer laufen über die Schlüssel des Kunden.
+
+### 14.5 Offen
+
+- Router und Wildcard-Zertifikat anlegen (Operator-DNS), erste Kunden-Instanz.
+- Keine automatische Nachführung: nach jedem Release `instanzen-aktualisieren` (bewusst manuell, damit ein kaputtes Release nicht alle Kunden trifft; erst `--nur` an einer Instanz).
+- Abrechnung der Server-Instanz (Seat-Plan, `docs/PLAN_ABRECHNUNG_SEATS.md`) und Sicherung der Volumes (Fly-Snapshots 5 Tage) sind nicht Teil dieser Stufe.

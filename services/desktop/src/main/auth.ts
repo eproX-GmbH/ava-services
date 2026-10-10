@@ -149,6 +149,13 @@ export class Auth extends EventEmitter {
   // because no renderer code legitimately needs it.
   private idToken: string | null = null;
 
+  /** Kontobindung (docs/PLAN_AVA_CLOUD.md §14): Begründung, wenn ein Konto hier nicht angemeldet sein darf. */
+  private kontoPruefer: ((k: { email: string | null; actorId: string | null }) => string | null) | null = null;
+
+  setKontoBindung(pruefer: (k: { email: string | null; actorId: string | null }) => string | null): void {
+    this.kontoPruefer = pruefer;
+  }
+
   constructor(
     private readonly issuer: string,
     private readonly clientId: string,
@@ -748,6 +755,16 @@ export class Auth extends EventEmitter {
         : typeof claims["preferred_username"] === "string"
           ? (claims["preferred_username"] as string)
           : null;
+
+    // Kontobindung: fremdes Konto gar nicht erst annehmen (kein Status-Ereignis,
+    // kein gespeichertes Token); bei der Wiederherstellung verwirft
+    // tryRestoreSession das Token wegen AuthRejectedError.
+    const abweisung = this.kontoPruefer?.({ email, actorId }) ?? null;
+    if (abweisung) {
+      this.idToken = null;
+      console.warn(`auth: Konto ${email ?? actorId} abgewiesen (Kontobindung)`);
+      throw new AuthRejectedError(abweisung, 403);
+    }
 
     // v0.1.535 — Token VOR dem Status-Ereignis merken: der Status-Handler
     // (Identitaets-Sperre) exportiert es in den Ziel-Space; vorher war

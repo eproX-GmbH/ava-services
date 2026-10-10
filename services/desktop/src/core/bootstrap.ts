@@ -16,6 +16,7 @@ import { lifecycle, notifier, paths, platform, power, windows } from "./platform
 import { KopfRelais } from "./relais/kopf-relais";
 import { InstanzStore } from "./relais/instanz";
 import { Umzug, wendeUmzugAn } from "./umzug/umzug";
+import { GEBUNDENES_KONTO, kontoAbweisung } from "./konto-bindung";
 import { buildUmzugTools } from "../main/agent/tools/umzug";
 import { buildInstanzenTools } from "../main/agent/tools/instanzen";
 import { PlanTokenServer } from "../main/auth/plan-token-server";
@@ -232,6 +233,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
 
 
   const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID, GATEWAY_URL);
+  if (GEBUNDENES_KONTO) auth.setKontoBindung(kontoAbweisung);
 
   // v0.1.52 — external-service reachability monitor. Probes
   // unternehmensregister.de every 60s. Used to (a) broadcast a banner
@@ -2061,6 +2063,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         radar: rc ? { an: rc.enabled === true, intervallStunden: rc.intervalHours ?? null, letzterLauf: rc.lastRunAt ?? null, ergebnis: rc.lastOutcome ?? null } : null,
         icp: Boolean(icp?.beschreibung?.trim() || (icp?.branchen ?? []).length),
         modell: providers.getConfig().kind,
+        // Öffentliche Adresse einer bereitgestellten Server-Instanz (ohne Setup-Token).
+        adresse: process.env.AVA_PUBLIC_URL?.trim() || null,
       };
     },
     audit: (e) => audit({ actorType: "system", actorId: auth.getStatus().actorId ?? null, category: "agent", action: e.action, severity: "info", subjectType: null, subjectId: null, summary: e.summary, metadata: e.metadata }),
