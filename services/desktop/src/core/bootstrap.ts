@@ -4027,6 +4027,10 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         ),
       sprache: {
         stand: () => spracheStand(),
+        einschalten: () => {
+          if (!spracheStore.get().aktiv) spracheStore.setzen({ aktiv: true });
+          return spracheStand();
+        },
         sitzung: async () => {
           const st = spracheStand();
           if (!st.einstellungen.aktiv) throw new Error("Der Sprachmodus ist ausgeschaltet (in den Einstellungen oder per Chat einschalten).");

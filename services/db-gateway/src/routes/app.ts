@@ -29,6 +29,7 @@ const ARTEN: Record<string, number> = {
   anhang_fertig: 90_000,
   transkribieren: 120_000,
   sprache_stand: 10_000,
+  sprache_einschalten: 10_000,
   sprache_sitzung: 30_000,
   sprache_live: 30_000,
   sprache_auftrag: 20_000,

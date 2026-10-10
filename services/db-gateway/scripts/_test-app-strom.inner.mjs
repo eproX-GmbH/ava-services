@@ -36,7 +36,7 @@ const port = server.address().port;
 const kopf = new WebSocket(`ws://127.0.0.1:${port}/kopf-relais?access_token=gut`);
 const beimKopf = [];
 await new Promise((r) => kopf.on("open", r));
-kopf.send(JSON.stringify({ typ: "hallo", version: "test", instanz: { id: "instanz-server-1", art: "server", name: "Test-Server" }, werkzeuge: [], zustand: {} }));
+kopf.send(JSON.stringify({ typ: "hallo", version: "0.1.801", instanz: { id: "instanz-server-1", art: "server", name: "Test-Server" }, werkzeuge: [], zustand: {} }));
 kopf.on("message", (roh) => {
   const n = JSON.parse(String(roh));
   beimKopf.push(n);

@@ -52,6 +52,8 @@ export interface AppKanalExtras {
   transkribieren?: (wav: Uint8Array) => Promise<unknown>;
   sprache?: {
     stand: () => unknown;
+    /** Sprachmodus einschalten (die App öffnet die Sprachblase). */
+    einschalten: () => unknown;
     sitzung: () => Promise<unknown>;
     live: (sdpOffer: string) => Promise<unknown>;
     auftrag: (input: { conversationId: string; text: string; images?: AgentMessageImage[] }) => unknown;
@@ -270,6 +272,8 @@ export class AppKanal {
       // ---- P6 Sprache
       case "sprache_stand":
         return this.extra("sprache").stand();
+      case "sprache_einschalten":
+        return this.extra("sprache").einschalten();
       case "sprache_sitzung":
         return this.extra("sprache").sitzung();
       case "sprache_live":

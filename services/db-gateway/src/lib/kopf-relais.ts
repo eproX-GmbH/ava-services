@@ -34,6 +34,20 @@ export interface KopfWerkzeug {
 
 export type InstanzArt = "desktop" | "server";
 
+/** Erste AVA-Version mit App-Kanal (docs/PLAN_APP_PWA.md). */
+const APP_KANAL_AB = "0.1.801";
+
+/** "0.1.801" ≥ "0.1.800"; unbekannte Versionen gelten als neu genug. */
+function versionMindestens(v: string, min: string): boolean {
+  const a = v.replace(/^v/, "").split(".").map((x) => Number.parseInt(x, 10));
+  const b = min.split(".").map((x) => Number.parseInt(x, 10));
+  if (a.some((x) => Number.isNaN(x))) return true;
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return true;
+}
+
 export interface InstanzInfo {
   id: string;
   art: InstanzArt;
@@ -366,6 +380,10 @@ export class KopfRelais {
     const k = this.appKopf(actorId, opts.instanzId);
     if (!k) return Promise.resolve(null);
     const instanz = { id: k.instanzId, name: k.name, art: k.art };
+    // AVA-Versionen vor dem App-Kanal antworten auf "app" nicht: sofort sagen, statt zu warten.
+    if (!versionMindestens(k.version, APP_KANAL_AB)) {
+      return Promise.resolve({ instanz, text: JSON.stringify({ code: "nicht_verfuegbar", message: `Deine AVA (${k.name}, v${k.version}) ist zu alt für die App. Bitte auf v${APP_KANAL_AB} oder neuer aktualisieren.` }), isError: true });
+    }
     const timeoutMs = opts.timeoutMs ?? 20_000;
     const id = randomUUID();
     return new Promise((resolve) => {
