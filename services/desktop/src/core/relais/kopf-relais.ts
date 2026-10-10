@@ -21,6 +21,7 @@
 // Deterministisch, ohne hängende Zustände, und destruktive Aktionen kommen nie
 // ohne diesen Umweg durch (Vollmacht-Stufe des Kanals ist „none“).
 
+import { AppFehler, type AppFrame, type AppKanal } from "./app-kanal";
 import { createHash } from "node:crypto";
 import type { ToolRegistry } from "../../main/agent/tool-registry";
 import type { Tool, ToolContext } from "../../main/agent/types";
@@ -182,6 +183,23 @@ function zusammenfassung(tool: Tool): string {
 }
 
 export class KopfRelais {
+  private appKanal: AppKanal | null = null;
+
+  /** App-Kanal anschließen (docs/PLAN_APP_PWA.md); ohne ihn antwortet die AVA „nicht verfügbar“. */
+  setAppKanal(kanal: AppKanal): void {
+    this.appKanal = kanal;
+  }
+
+  /** Frame an die App (über den Gateway); verworfen, wenn das Relais nicht offen ist. */
+  appSenden(frame: AppFrame): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    try {
+      this.ws.send(JSON.stringify({ typ: "app-frame", frame }));
+    } catch {
+      /* naechster Frame oder Neuverbindung */
+    }
+  }
+
   private ws: WebSocket | null = null;
   private laeuft = false;
   private reconnectMs = RECONNECT_MIN_MS;
@@ -365,6 +383,29 @@ export class KopfRelais {
         } catch (err) {
           this.log(`Nachricht von ${n.von} nicht verarbeitet: ${err instanceof Error ? err.message : String(err)}`);
         }
+      }
+      return;
+    }
+    // App-Kanal (docs/PLAN_APP_PWA.md §3.2): Anfragen der AVA-App.
+    if (n.typ === "app" && typeof n.id === "string") {
+      const roh = n as { art?: unknown; daten?: unknown };
+      const art = typeof roh.art === "string" ? roh.art : "";
+      const daten = roh.daten && typeof roh.daten === "object" ? (roh.daten as Record<string, unknown>) : {};
+      let antwort: { typ: "ergebnis"; id: string; text: string; isError?: boolean };
+      if (!this.appKanal) {
+        antwort = { typ: "ergebnis", id: n.id, text: JSON.stringify({ code: "nicht_verfuegbar", message: "Diese AVA unterstützt die App noch nicht (Update nötig)." }), isError: true };
+      } else {
+        try {
+          antwort = { typ: "ergebnis", id: n.id, text: JSON.stringify(await this.appKanal.anfrage(art, daten)) };
+        } catch (err) {
+          const code = err instanceof AppFehler ? err.code : "fehler";
+          antwort = { typ: "ergebnis", id: n.id, text: JSON.stringify({ code, message: err instanceof Error ? err.message : String(err) }), isError: true };
+        }
+      }
+      try {
+        ws.send(JSON.stringify(antwort));
+      } catch (err) {
+        this.log(`App-Antwort nicht gesendet: ${err instanceof Error ? err.message : String(err)}`);
       }
       return;
     }

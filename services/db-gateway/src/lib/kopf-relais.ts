@@ -209,6 +209,12 @@ export class KopfRelais {
       this.verteileListe(k.actorId);
       return;
     }
+    // App-Kanal (docs/PLAN_APP_PWA.md §3.2): gestreamte Frames an die Apps des Nutzers.
+    if (n.typ === "app-frame") {
+      const frame = (n as { frame?: unknown }).frame;
+      if (frame && typeof frame === "object") this.appFrameHandler?.(k.actorId, k.instanzId, frame);
+      return;
+    }
     if (n.typ === "zustand") {
       this.zustandSetzen(k, n.zustand);
       this.verteileListe(k.actorId);
@@ -320,6 +326,62 @@ export class KopfRelais {
   stand(actorId: string): { verbunden: boolean; instanz?: string; version?: string; werkzeuge?: number } {
     const k = this.mcpKopf(actorId);
     return k ? { verbunden: true, instanz: k.name, version: k.version, werkzeuge: k.werkzeuge.length } : { verbunden: false };
+  }
+
+  private appFrameHandler: ((actorId: string, instanzId: string, frame: unknown) => void) | null = null;
+
+  /** Empfaenger fuer App-Frames (lib/app-strom.ts). */
+  onAppFrame(cb: (actorId: string, instanzId: string, frame: unknown) => void): void {
+    this.appFrameHandler = cb;
+  }
+
+  /**
+   * Instanz fuer die App (E4): die gewuenschte, wenn verbunden; sonst Server vor
+   * Desktop, dann die aelteste Verbindung. Der MCP-Schalter gilt hier nicht.
+   */
+  private appKopf(actorId: string, instanzId?: string | null): KopfVerbindung | null {
+    const m = this.koepfe.get(actorId);
+    if (!m) return null;
+    if (instanzId) {
+      const k = m.get(instanzId);
+      if (k) return k;
+    }
+    let best: KopfVerbindung | null = null;
+    for (const k of m.values()) {
+      if (k.instanzId.startsWith("unbekannt-")) continue;
+      const p = k.art === "server" ? 2 : 1;
+      const pb = best ? (best.art === "server" ? 2 : 1) : -1;
+      if (!best || p > pb || (p === pb && k.seit < best.seit)) best = k;
+    }
+    return best;
+  }
+
+  /** Anfrage der App an die AVA des Nutzers (typ "app"); null = keine AVA verbunden. */
+  appAnfrage(
+    actorId: string,
+    art: string,
+    daten: Record<string, unknown>,
+    opts: { instanzId?: string | null; timeoutMs?: number } = {},
+  ): Promise<{ instanz: { id: string; name: string; art: InstanzArt }; text: string; isError?: boolean } | null> {
+    const k = this.appKopf(actorId, opts.instanzId);
+    if (!k) return Promise.resolve(null);
+    const instanz = { id: k.instanzId, name: k.name, art: k.art };
+    const timeoutMs = opts.timeoutMs ?? 20_000;
+    const id = randomUUID();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        k.offen.delete(id);
+        resolve({ instanz, text: JSON.stringify({ code: "zeitueberschreitung", message: `Deine AVA hat nicht innerhalb von ${Math.round(timeoutMs / 1000)} s geantwortet.` }), isError: true });
+      }, timeoutMs);
+      k.offen.set(id, { resolve: (r) => resolve({ instanz, ...r }), timer });
+      try {
+        k.ws.send(JSON.stringify({ typ: "app", id, art, daten }));
+      } catch (err) {
+        clearTimeout(timer);
+        k.offen.delete(id);
+        resolve({ instanz, text: JSON.stringify({ code: "senden", message: err instanceof Error ? err.message : String(err) }), isError: true });
+      }
+    });
   }
 
   aufrufen(actorId: string, name: string, args: Record<string, unknown>, timeoutMs = AUFRUF_TIMEOUT_MS): Promise<{ text: string; isError?: boolean }> {

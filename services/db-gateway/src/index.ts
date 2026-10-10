@@ -33,6 +33,7 @@ import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
 import { mcpOauthRouter } from "./routes/mcp-oauth";
 import { makeMcpRouter } from "./routes/mcp";
+import { appRouter } from "./routes/app";
 import { instanzRouter } from "./lib/instanz-router";
 
 const env = loadEnv();
@@ -105,6 +106,8 @@ app.route("/internal", internalQuotaRouter);
 app.route("/internal", internalRegisterJobsRouter);
 
 // Versioned API.
+// App-Kanal (docs/PLAN_APP_PWA.md): vor /v1, eigene Auth je Route.
+app.route("/", appRouter);
 app.route("/v1", v1);
 // docs/PLAN_MCP_OEFFNUNG.md: OAuth-Discovery/Registrierung (oeffentlich) und
 // der MCP-Endpunkt (Bearer wie /v1); die Werkzeuge rufen /v1 im Prozess auf.

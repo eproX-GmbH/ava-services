@@ -12,6 +12,7 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "test:namen": "node scripts/test-namen.mjs",
+    "test:app-strom": "node scripts/test-app-strom.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:teilen-knopf": "node scripts/test-teilen-knopf.mjs",
     "test:buying-center": "node scripts/test-buying-center.mjs",

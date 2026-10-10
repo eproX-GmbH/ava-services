@@ -32,6 +32,12 @@ import { ChromeForTesting } from "../main/chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
 import { ORG_FEATURES } from "../shared/types";
 import { avaKontextText } from "./relais/ava-kontext";
+import { AppKanal } from "./relais/app-kanal";
+import { anhangAufbereiten } from "../main/app/anhang";
+import { transkribieren } from "../main/app/transkription";
+import { WebPushKanal } from "../main/push/web-push-kanal";
+import { praegeSitzung } from "../main/sprache/session";
+import { liveSitzungStarten } from "../main/sprache/live";
 import { faehigkeitenText, verfuegbareFaehigkeiten } from "../main/suggestions/faehigkeiten";
 import { pruefeModellstufe } from "../main/workflows/modellstufe";
 import { EmailMusterSupervisor } from "../main/contacts/email-muster/supervisor";
@@ -1056,6 +1062,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     },
   });
   notifications.addChannel(telegramChannel);
+  // Web-Push an die AVA-App (docs/PLAN_APP_PWA.md §3.4): Abos und VAPID-Schluessel lokal.
+  const webPushKanal = new WebPushKanal({ prefs: () => alertPrefs.get(), log: (z) => writeLineSync("INFO ", z) });
+  notifications.addChannel(webPushKanal);
   telegramStore.on("changed", () => {
     void broadcastTelegramChanged();
     telegramInbound?.sync();
@@ -1638,8 +1647,11 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     alertPrefs,
   });
 
+  // App-Kanal (docs/PLAN_APP_PWA.md); wird nach dem Sprachmodus angelegt.
+  let appKanalRef: AppKanal | null = null;
   function broadcastAlertsChanged(): void {
     windows().broadcast("alerts:changed");
+    appKanalRef?.meldungenGeaendert();
   }
 
   // Freshness scheduler (Phase 8.r1 — dry-run).
@@ -3969,8 +3981,14 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   const spracheStore = SpracheStore.shared();
   const spracheRelay = new SpracheRelay(
     agent,
-    (e) => windows().broadcast("sprache:ergebnis", e),
-    (f) => windows().broadcast("sprache:fortschritt", f),
+    (e) => {
+      windows().broadcast("sprache:ergebnis", e);
+      appKanalRef?.spracheSenden("ergebnis", e);
+    },
+    (f) => {
+      windows().broadcast("sprache:fortschritt", f);
+      appKanalRef?.spracheSenden("fortschritt", f);
+    },
     (name) => agentRegistry.get(name)?.summary ?? name,
   );
   const spracheStand = () => {
@@ -3988,6 +4006,79 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   spracheStore.on("changed", () => {
     windows().broadcast("sprache:standChanged", spracheStand());
   });
+
+  // App-Kanal (docs/PLAN_APP_PWA.md §3.2/§3.3): die AVA-App als zweite Oberflaeche
+  // ueber das Relais, mit Anhaengen, Diktat, Sprache, Meldungen und Push.
+  appKanalRef = new AppKanal({
+    agent,
+    gespraeche: memory,
+    senden: (f) => mcpRelais.appSenden(f),
+    instanzName: () => instanz.get().name,
+    log: (z) => writeLineSync("INFO ", z),
+    extras: {
+      anhang: (input) => anhangAufbereiten(attachments, input),
+      transkribieren: (wav) =>
+        transkribieren(
+          {
+            whisper: { bereit: () => whisper.getStatus().state === "ready", transkribieren: (w) => whisper.transcribe(w) },
+            openaiZugang: () => providers.openaiZugang(),
+          },
+          wav,
+        ),
+      sprache: {
+        stand: () => spracheStand(),
+        sitzung: async () => {
+          const st = spracheStand();
+          if (!st.einstellungen.aktiv) throw new Error("Der Sprachmodus ist ausgeschaltet (in den Einstellungen oder per Chat einschalten).");
+          if (!st.verfuegbar) throw new Error(st.hinweis ?? "Kein OpenAI-Schlüssel hinterlegt.");
+          const prof = userProfile.get() as { name?: string | null; firstName?: string | null };
+          return praegeSitzung({ providers, stimme: st.einstellungen.stimme, nutzerName: prof.firstName ?? prof.name ?? null, actorId: auth.getStatus().actorId ?? null });
+        },
+        live: async (sdpOffer) => {
+          const st = spracheStand();
+          if (!st.einstellungen.aktiv) throw new Error("Der Sprachmodus ist ausgeschaltet (in den Einstellungen oder per Chat einschalten).");
+          if (!st.verfuegbar) throw new Error(st.hinweis ?? "Kein OpenAI-Schlüssel hinterlegt.");
+          const prof = userProfile.get() as { name?: string | null; firstName?: string | null };
+          return liveSitzungStarten({ providers, sdpOffer, stimme: st.einstellungen.stimme, nutzerName: prof.firstName ?? prof.name ?? null, actorId: auth.getStatus().actorId ?? null });
+        },
+        auftrag: (input) => spracheRelay.auftrag(input),
+        rueckfrage: (choiceId, wert) => spracheRelay.rueckfrage(choiceId, wert),
+        abbrechen: () => spracheRelay.abbrechen(),
+        verbrauch: async (v) => {
+          if (providers.keySource("openai") !== "organisation") return { gemeldet: false };
+          await gatewayClient.request("/v1/llm-usage", { method: "POST", body: { provider: "openai", model: v.model, channel: "chat", latencyMs: v.latencyMs ?? 0, usage: v.usage, ...(typeof v.sekunden === "number" ? { sekunden: v.sekunden } : {}) } });
+          return { gemeldet: true };
+        },
+      },
+      meldungen: {
+        liste: (limit) => alerts.list().slice(0, limit),
+        ungelesen: () => alerts.unreadCount(),
+        gesehen: (id) => {
+          const r = alerts.markSeen(id);
+          windows().broadcast("alerts:changed");
+          return r;
+        },
+        verwerfen: (id) => {
+          const r = alerts.dismiss(id);
+          windows().broadcast("alerts:changed");
+          return r;
+        },
+        alleGesehen: () => {
+          const r = alerts.markAllSeen();
+          windows().broadcast("alerts:changed");
+          return r;
+        },
+      },
+      push: {
+        schluessel: () => webPushKanal.oeffentlicherSchluessel(),
+        abonnieren: (abo, geraet) => webPushKanal.abonnieren(abo, geraet),
+        abbestellen: (endpoint) => webPushKanal.abbestellen(endpoint),
+        hatAbo: (endpoint) => webPushKanal.hatAbo(endpoint),
+        test: () => webPushKanal.test(),
+      },
+    },
+  });
+  mcpRelais.setAppKanal(appKanalRef);
 
 
 

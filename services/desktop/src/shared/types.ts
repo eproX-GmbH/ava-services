@@ -769,7 +769,7 @@ export interface AgentMessage {
   images?: AgentMessageImage[];
   /** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Zug kam gesprochen bzw. ueber den Relay.
    *  "aufgabe": Notiz des Aufgaben-Waechters (docs/PLAN_HINTERGRUNDAUFGABEN.md). */
-  quelle?: "sprache" | "aufgabe";
+  quelle?: "sprache" | "aufgabe" | "app";
   /** Verbrauch der ganzen Anfrage (alle Schritte), an der letzten Antwort. */
   usage?: AgentTurnUsage;
 }
@@ -830,8 +830,8 @@ export interface AgentSendInput {
    *  eingehängt. Werden in den ersten user-AgentMessage des Turns
    *  übernommen. Nur sinnvoll bei Vision-Modellen. */
   images?: AgentMessageImage[];
-  /** Sprachmodus: Zug stammt aus dem Relay; wird an der Nachricht markiert. */
-  quelle?: "sprache";
+  /** Sprachmodus: Zug stammt aus dem Relay; "app": aus der AVA-App (docs/PLAN_APP_PWA.md). */
+  quelle?: "sprache" | "app";
 }
 
 export interface AgentSendResult {
@@ -935,7 +935,7 @@ export type AgentStreamFrame =
   /** v0.1.578 — Nutzer-Nachricht, die NICHT aus dem App-Chat kam (Telegram,
    *  Mail): der Renderer haengt sie als Nutzer-Blase an, wenn die
    *  Konversation gerade offen ist, und frischt die Liste auf. */
-  | { kind: "user-message"; requestId: string; conversationId: string; messageId: string; content: string; source: "telegram" | "mail" | "aufgabe" | "mcp" }
+  | { kind: "user-message"; requestId: string; conversationId: string; messageId: string; content: string; source: "telegram" | "mail" | "aufgabe" | "mcp" | "app" }
   /** v0.1.649 (Chat-Vorschlaege V4) — 0 bis 3 Anstoesse nach einem Turn, haengen
    *  unter der Assistenten-Nachricht messageId; verschwinden beim naechsten Turn. */
   | { kind: "suggestions"; requestId: string; conversationId: string; messageId: string; chips: import("./nutzerstand-types").Chip[] }

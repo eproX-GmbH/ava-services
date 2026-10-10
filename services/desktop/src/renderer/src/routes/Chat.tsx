@@ -122,7 +122,7 @@ interface UiMessage {
    *  Lokal-only — bei Conversation-Reload nicht persistiert. */
   images?: Array<{ base64: string; mimeType: string; filename?: string }>;
   /** Sprachmodus: Zug wurde gesprochen bzw. kam ueber den Relay. */
-  quelle?: "sprache" | "aufgabe";
+  quelle?: "sprache" | "aufgabe" | "app";
   /** Verbrauch der ganzen Anfrage, an der letzten Antwort (dauerhaft). */
   usage?: import("../../../shared/types").AgentTurnUsage;
   pending?: boolean;
