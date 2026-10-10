@@ -4,6 +4,7 @@
 // the producers each have their own per-service Postgres on :5434 and would
 // otherwise inherit the gateway's URL via dev.sh's `set -a; source` and
 // silently connect to the wrong DB (dotenv won't override exported vars).
+import { aktualisieren, flyAppVon, neuesteVersion, updateEingerichtet, updateStand, versionNeuer } from "./lib/instanz-update";
 import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { kopfRelais } from "./lib/kopf-relais";
@@ -140,22 +141,30 @@ app.get("/v1/tenants/me/instanzen", authMiddleware, async (c) => {
   const auth = c.get("auth");
   try {
     const mitglieder = await mitgliederFuerAdmin(getGatewayPool(), auth);
+    const neueste = await neuesteVersion();
     return c.json({
+      // §14.5: neueste gebaute Server-Version (null = Aktualisieren nicht eingerichtet)
+      neuesteVersion: neueste,
       items: mitglieder.map((m) => ({
         actorId: m.actorId,
         name: m.name,
         email: m.email,
         role: m.role,
-        instanzen: kopfRelais.instanzen(m.actorId).map((i) => ({
-          id: i.id,
-          art: i.art,
-          name: i.name,
-          version: i.version,
-          verbunden: i.verbunden,
-          seit: i.seit,
-          zuletzt: i.zuletzt,
-          adresse: typeof i.zustand.adresse === "string" ? i.zustand.adresse : null,
-        })),
+        instanzen: kopfRelais.instanzen(m.actorId).map((i) => {
+          const app = i.art === "server" ? flyAppVon(i.flyApp, i.name) : null;
+          return {
+            id: i.id,
+            art: i.art,
+            name: i.name,
+            version: i.version,
+            verbunden: i.verbunden,
+            seit: i.seit,
+            zuletzt: i.zuletzt,
+            adresse: typeof i.zustand.adresse === "string" ? i.zustand.adresse : null,
+            aktualisierbar: !!app && !!neueste && versionNeuer(neueste, i.version),
+            update: updateStand(app),
+          };
+        }),
       })),
     });
   } catch (err) {
@@ -163,6 +172,32 @@ app.get("/v1/tenants/me/instanzen", authMiddleware, async (c) => {
     throw err;
   }
 });
+// docs/PLAN_AVA_CLOUD.md §14.5 — Server-Instanz eines Mitglieds auf die neueste
+// gebaute Version bringen (nur Admins; der Gateway tauscht das Image über Fly).
+app.post("/v1/tenants/me/instanzen/:id/aktualisieren", authMiddleware, async (c) => {
+  const auth = c.get("auth");
+  try {
+    const mitglieder = await mitgliederFuerAdmin(getGatewayPool(), auth);
+    let treffer: { m: (typeof mitglieder)[number]; i: ReturnType<typeof kopfRelais.instanzen>[number] } | null = null;
+    for (const m of mitglieder) {
+      const i = kopfRelais.instanzen(m.actorId).find((x) => x.id === c.req.param("id"));
+      if (i) treffer = { m, i };
+    }
+    if (!treffer || treffer.i.art !== "server") return c.json({ error: "not_found", message: "Server-Instanz nicht gefunden (sie muss sich zuletzt mit dem Gateway verbunden haben)." }, 404);
+    if (!updateEingerichtet()) return c.json({ error: "not_configured", message: "Aktualisieren ist am Gateway nicht eingerichtet." }, 501);
+    const app = flyAppVon(treffer.i.flyApp, treffer.i.name);
+    if (!app) return c.json({ error: "forbidden", message: "Diese Instanz kann nicht über die Konsole aktualisiert werden." }, 403);
+    const ziel = await neuesteVersion();
+    if (!ziel || !versionNeuer(ziel, treffer.i.version)) return c.json({ error: "conflict", message: "Es gibt keine neuere Version für diese Instanz." }, 409);
+    const stand = await aktualisieren(app, treffer.i.version, ziel, [treffer.m.email, treffer.m.actorId]);
+    logger.info({ actorId: auth.actorId, app, von: treffer.i.version, ziel }, "[instanz-update] gestartet");
+    return c.json({ update: stand }, 202);
+  } catch (err) {
+    if (err instanceof TenantError) return c.json({ error: "forbidden", message: err.message }, err.status);
+    return c.json({ error: "update_failed", message: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
 // Modellkatalog für Vorgaben-Oberflächen ohne lokalen Katalog (Web-Konsole).
 app.get("/v1/modelle", authMiddleware, (c) => c.json({ items: MODELL_KATALOG }));
 

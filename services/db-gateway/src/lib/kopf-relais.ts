@@ -12,7 +12,7 @@
 // alte Verbindung (Wiederverbinden).
 //
 // Nachrichten (JSON):
-//   Kopf → Gateway:  { typ: "hallo", version, instanz: { id, art, name }, werkzeuge, zustand }
+//   Kopf → Gateway:  { typ: "hallo", version, instanz: { id, art, name, flyApp? }, werkzeuge, zustand }
 //                    { typ: "zustand", zustand }
 //                    { typ: "ergebnis", id, text, isError? }
 //                    { typ: "an", ziel: <instanzId>, nachricht }
@@ -60,6 +60,8 @@ export interface InstanzInfo {
   mcpZiel: boolean;
   /** Vom Kopf gemeldeter Zustand (Telegram, Radar, Modell, …); frei strukturiert. */
   zustand: Record<string, unknown>;
+  /** Server: gemeldete Fly-App (FLY_APP_NAME), ungeprüft; siehe lib/instanz-update.ts. */
+  flyApp: string | null;
 }
 
 interface KopfVerbindung {
@@ -70,6 +72,7 @@ interface KopfVerbindung {
   art: InstanzArt;
   name: string;
   version: string;
+  flyApp: string | null;
   werkzeuge: KopfWerkzeug[];
   zustand: Record<string, unknown>;
   seit: number;
@@ -155,6 +158,7 @@ export class KopfRelais {
       art: "desktop",
       name: "AVA",
       version: "?",
+      flyApp: null,
       werkzeuge: [],
       zustand: {},
       seit: Date.now(),
@@ -185,7 +189,7 @@ export class KopfRelais {
   }
 
   private nachricht(k: KopfVerbindung, roh: string): void {
-    let n: { typ?: string; id?: string; text?: string; isError?: boolean; version?: string; werkzeuge?: unknown; zustand?: unknown; instanz?: { id?: unknown; art?: unknown; name?: unknown }; ziel?: unknown; nachricht?: unknown };
+    let n: { typ?: string; id?: string; text?: string; isError?: boolean; version?: string; werkzeuge?: unknown; zustand?: unknown; instanz?: { id?: unknown; art?: unknown; name?: unknown; flyApp?: unknown }; ziel?: unknown; nachricht?: unknown };
     try {
       n = JSON.parse(roh);
     } catch {
@@ -218,6 +222,7 @@ export class KopfRelais {
         .slice(0, MAX_WERKZEUGE)
         .map((w) => ({ name: w.name.slice(0, 80), description: w.description.slice(0, 4000), inputSchema: (w.inputSchema && typeof w.inputSchema === "object" ? w.inputSchema : { type: "object" }) as Record<string, unknown> }));
       k.version = typeof n.version === "string" ? n.version.slice(0, 40) : "?";
+      k.flyApp = k.art === "server" && typeof n.instanz?.flyApp === "string" ? n.instanz.flyApp.trim().toLowerCase().slice(0, 63) || null : null;
       this.zustandSetzen(k, n.zustand);
       logger.info({ actorId: k.actorId, instanz: k.instanzId, art: k.art, version: k.version, werkzeuge: k.werkzeuge.length }, "[kopf-relais] Instanz verbunden");
       this.verteileListe(k.actorId);
@@ -300,6 +305,7 @@ export class KopfRelais {
       zuletzt: new Date(k.zuletzt).toISOString(),
       mcpZiel: ziel === k,
       zustand: k.zustand,
+      flyApp: k.flyApp,
     };
   }
 

@@ -338,7 +338,7 @@ export class KopfRelais {
       const inst = this.deps.instanz.get();
       void this.zustandMitMcp().then((zustand) => {
         try {
-          ws.send(JSON.stringify({ typ: "hallo", version: this.deps.version, instanz: { id: inst.id, art: inst.art, name: inst.name }, werkzeuge, zustand }));
+          ws.send(JSON.stringify({ typ: "hallo", version: this.deps.version, instanz: { id: inst.id, art: inst.art, name: inst.name, ...(inst.art === "server" && process.env.FLY_APP_NAME ? { flyApp: process.env.FLY_APP_NAME } : {}) }, werkzeuge, zustand }));
           this.log(`verbunden als ${inst.name} (${inst.art}), ${werkzeuge.length} Werkzeuge gemeldet`);
         } catch {
           /* close folgt */

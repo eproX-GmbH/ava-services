@@ -993,8 +993,22 @@ zeigt erst Last; Embeddings sind kurz und gut stapelbar, Chat und Producer laufe
   `<slug>.ava.bi/healthz` geht an die Instanz; der Router beantwortet `/healthz` nur ohne Kunden-Host.
 - Testlauf danach unverändert: 16 ok, offen nur Telegram-Bot, ICP und Radar der Operator-Instanz (Umzug + zweiter Bot).
 
+### 14.7 Aktualisieren aus der Admin-Konsole
+
+- admin.ava.bi → Instanzen: An jeder Server-Instanz steht „Auf vX aktualisieren“, sobald in `ava-server-image` eine neuere
+  Version liegt (Gateway liest die Tags der Registry, 5 Min. gemerkt). Bestätigungsdialog, danach Fortschritt in der Zeile.
+- Gateway (`lib/instanz-update.ts`, `POST /v1/tenants/me/instanzen/:id/aktualisieren`, nur Admins der Organisation) tauscht
+  über die Fly-Maschinen-API nur `config.image`; Volumes, Umgebung und Secrets bleiben. Gestartete Maschinen werden bis
+  „started“ abgewartet.
+- Welche App: die AVA meldet `FLY_APP_NAME` im `hallo` (ab v0.1.804), ältere Versionen über den Standardnamen
+  „Server <app>“. Zugelassen sind nur Apps nach der Namensregel `ava-i-<slug>` (ohne `-ollama`) oder aus
+  `ROUTER_ZUORDNUNG`; ist auf der Maschine `AVA_KONTO` gesetzt, muss es zum Mitglied passen.
+- Einrichtung (Operator, einmalig): `fly secrets set -a ava-db-gateway FLY_API_TOKEN=$(fly tokens create org -o personal -x 8760h)`.
+  Ohne das Secret zeigt die Konsole keinen Knopf.
+
 ### 14.6 Offen
 
 - Erste Kunden-Instanz (`instanz-anlegen`), sobald Name und Konto feststehen.
-- Keine automatische Nachführung: nach jedem Release `instanzen-aktualisieren` (bewusst manuell, damit ein kaputtes Release nicht alle Kunden trifft; erst `--nur` an einer Instanz).
+- Keine automatische Nachführung (Entscheidung Operator 2026-10-10: nur ein Knopf, siehe §14.7). Das Image einer neuen
+  Version baut weiter `node scripts/instanz-image.mjs --version <v>`; erst danach bietet die Konsole sie an.
 - Abrechnung der Server-Instanz (Seat-Plan, `docs/PLAN_ABRECHNUNG_SEATS.md`) und Sicherung der Volumes (Fly-Snapshots 5 Tage) sind nicht Teil dieser Stufe.
