@@ -1,8 +1,8 @@
 // O2 (docs/PLAN_ORGANISATIONEN.md) — Organisationen im Hauptprozess.
 //
-//   - Einladungslink `ava://join/<token>`: ankommende URL an den Renderer
-//     reichen (Seite „Organisation" zeigt die Beitritts-Rueckfrage); kommt
-//     der Link vor dem Fenster an, wird er bis zum ersten Abruf gepuffert.
+//   - Einladungslink `ava://join/<token>`: oeffnet die Beitrittsseite der
+//     Web-Konsole (https://admin.ava.bi/beitreten/<token>); die Desktop-App
+//     hat keine eigene Organisationsseite mehr (docs/PLAN_ADMIN_WEB.md).
 //   - Tenant-Wechsel-Erkennung: /v1/whoami regelmaessig und auf Anforderung
 //     pruefen. Aendert sich die Tenant-ID bei gleichem Konto (Beitritt
 //     freigegeben, entfernt, Organisation angelegt/verlassen), Identitaet
@@ -12,7 +12,8 @@
 //     neue Beitrittsanfragen offen sind (Meldungs-Feed ist firmengebunden
 //     und passt hier nicht).
 
-import { lifecycle, notifier, paths, windows } from "../core/platform";
+import { lifecycle, notifier, opener, paths, windows } from "../core/platform";
+import { KONSOLE_URL } from "../shared/config";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readIdentity, updateIdentityTenant } from "./account-space";
@@ -38,7 +39,6 @@ interface Deps {
 }
 
 let deps: Deps | null = null;
-let pendingJoinToken: string | null = null;
 let timer: NodeJS.Timeout | null = null;
 let relaunchAngestossen = false;
 let bekannteAnfragen: Set<string> | null = null;
@@ -66,27 +66,18 @@ function broadcast(channel: string, payload: unknown): void {
   windows().broadcast(channel, payload);
 }
 
-function focusApp(): void {
-  windows().focusMain();
-}
-
-/** Von billing.ts (Protokoll-Bruecke) aufgerufen: ava://join/<token>. */
+/**
+ * Von billing.ts (Protokoll-Bruecke) aufgerufen: ava://join/<token>. Die
+ * Organisationsverwaltung liegt in der Web-Konsole (docs/PLAN_ADMIN_WEB.md);
+ * der Beitritt wird dort angefragt.
+ */
 export function handleJoinUrl(parsed: URL): void {
   const token = parsed.pathname.replace(/^\/+/, "").split("/")[0] ?? "";
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(token)) {
     console.warn("[organisation] Einladungslink verworfen (Token-Form)");
     return;
   }
-  pendingJoinToken = token;
-  focusApp();
-  if (windows().hasWindows()) broadcast("org:joinLink", { token });
-}
-
-/** Renderer holt einen gepufferten Link genau einmal ab (Kaltstart). */
-export function consumePendingJoin(): string | null {
-  const t = pendingJoinToken;
-  pendingJoinToken = null;
-  return t;
+  void opener().openExternal(`${KONSOLE_URL}/beitreten/${token}`);
 }
 
 export function extractJoinToken(eingabe: string): string | null {
@@ -240,11 +231,8 @@ async function pruefeAnfragen(): Promise<void> {
         const wer = neu.map((r) => r.name ?? r.email ?? r.actorId.slice(0, 8)).join(", ");
         notifier().show({
           title: neu.length === 1 ? "Neue Beitrittsanfrage" : `${neu.length} neue Beitrittsanfragen`,
-          body: `${wer} möchte ${st.name ?? "deiner Organisation"} beitreten. Freigeben unter Organisation.`,
-          onClick: () => {
-            focusApp();
-            broadcast("org:openPage", {});
-          },
+          body: `${wer} möchte ${st.name ?? "deiner Organisation"} beitreten. Freigeben in der AVA Konsole.`,
+          onClick: () => void opener().openExternal(`${KONSOLE_URL}/mitglieder`),
         });
       } catch (err) {
         console.warn("[organisation] Benachrichtigung fehlgeschlagen:", err);

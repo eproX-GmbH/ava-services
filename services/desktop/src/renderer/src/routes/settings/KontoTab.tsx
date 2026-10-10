@@ -7,6 +7,7 @@ import {
 import { useFeature } from "../../store/policy";
 import { VerbindungenSection } from "./VerbindungenSection";
 import { InstanzenSection } from "./InstanzenSection";
+import { KonsoleSection } from "./KonsoleSection";
 
 // Konto-Tab — "wer du bist" + Abrechnung + (zukünftig) Erscheinung.
 //
@@ -21,6 +22,7 @@ export function KontoTab() {
       <ProfileSection />
       {beobachterErlaubt && <LinkedInCalibrationNote />}
       <GeneralMemorySection />
+      <KonsoleSection />
       <InstanzenSection />
       <VerbindungenSection />
       <section

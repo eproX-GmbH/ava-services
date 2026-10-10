@@ -4,7 +4,7 @@
 
 import { ipcMain } from "electron";
 import { getOrgPolicy } from "../org-policy";
-import { checkTenantChange, consumePendingJoin, extractJoinToken, listShares as orgListShares, markShare as orgMarkShare, refreshOrgContext as orgRefreshContext, shareRadar as orgShareRadar } from "../organisation";
+import { checkTenantChange, extractJoinToken, listShares as orgListShares, markShare as orgMarkShare, refreshOrgContext as orgRefreshContext, shareRadar as orgShareRadar } from "../organisation";
 import type { Auth } from "../auth";
 
 export interface KontoIpcDeps {
@@ -64,8 +64,6 @@ export function registerKontoIpc(deps: KontoIpcDeps): void {
   );
 
   // O2 — Organisationen.
-  ipcMain.handle("org:consumePendingJoin", () => consumePendingJoin());
-
   ipcMain.handle("org:checkTenant", () => checkTenantChange("auf Anforderung"));
 
   ipcMain.handle("org:extractJoinToken", (_e, eingabe: string) => extractJoinToken(String(eingabe ?? "")));

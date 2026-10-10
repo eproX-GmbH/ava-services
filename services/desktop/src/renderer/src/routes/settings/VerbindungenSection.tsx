@@ -45,7 +45,7 @@ export function VerbindungenSection() {
       </p>
       {!mcpErlaubt && (
         <p className="muted small">
-          Deine Organisation hat den MCP-Zugang nicht freigeschaltet (Einstellungen → Organisation → Module). Bestehende
+          Deine Organisation hat den MCP-Zugang nicht freigeschaltet (AVA Konsole admin.ava.bi → Funktionen & Vorgaben). Bestehende
           Verbindungen erhalten dann keine Werkzeuge.
         </p>
       )}

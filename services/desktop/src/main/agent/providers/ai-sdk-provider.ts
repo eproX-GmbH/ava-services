@@ -40,7 +40,7 @@ function orgQuotaText(q: OrgQuotaExceeded): string {
   // O6b — bei getrennten Budgets betrifft ein 429 im Chat nur das Chat-Budget.
   const was = q.channel === "chat" ? " für den Chat" : q.channel === "background" || (q.channel as string | null) === "vorschlaege" ? " für die Hintergrund-Verarbeitung" : " für KI-Aufrufe";
   return q.scope === "org_total"
-    ? `Das Monatsbudget deiner Organisation${was} ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit unter Einstellungen → Organisation anpassen; mit eigenem Schlüssel läuft der Chat weiter.`
+    ? `Das Monatsbudget deiner Organisation${was} ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit in der AVA Konsole (https://admin.ava.bi → Limits & Verbrauch) anpassen; mit eigenem Schlüssel läuft der Chat weiter.`
     : `Dein Tagesbudget${was} über den Organisationsschlüssel ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit anpassen; mit eigenem Schlüssel läuft der Chat weiter.`;
 }
 import type { OllamaToolSpec } from "../types";

@@ -75,20 +75,10 @@ export function AppShell({ children }: PropsWithChildren) {
   // Navigation (Seiten leiten zusaetzlich um, Tools sind im Chat gesperrt).
   const beobachterErlaubt = useFeature("linkedin.beobachter");
 
-  // O2 — Organisationen: Einladungslink → Seite mit Rueckfrage;
-  // Tenant-Wechsel → Hinweis, AVA startet neu; Klick auf die
-  // OS-Benachrichtigung „Neue Beitrittsanfrage" → Seite oeffnen.
+  // O2 — Tenant-Wechsel → Hinweis, AVA startet neu. Einladungslinks und
+  // Beitrittsanfragen öffnen die Web-Konsole (docs/PLAN_ADMIN_WEB.md).
   const [tenantWechsel, setTenantWechsel] = useState<{ tenantName: string | null; persoenlich: boolean } | null>(null);
-  useEffect(() => {
-    const offLink = window.api.org.onJoinLink(({ token }) => navigate(`/organisation?join=${encodeURIComponent(token)}`));
-    const offPage = window.api.org.onOpenPage(() => navigate("/organisation"));
-    const offWechsel = window.api.org.onTenantChanged((info) => setTenantWechsel(info));
-    return () => {
-      offLink();
-      offPage();
-      offWechsel();
-    };
-  }, [navigate]);
+  useEffect(() => window.api.org.onTenantChanged((info) => setTenantWechsel(info)), []);
 
   // Sidebar's search-icon button fires a bus event so it doesn't have
   // to know about the modal directly.
@@ -712,14 +702,7 @@ function TopBar() {
           ]}
         />
         {signaleErlaubt && <NavItem to="/linkedin" label="Signale" />}
-        <NavItem
-          to="/settings"
-          label="Einstellungen"
-          subItems={[
-            { to: "/settings", label: "Einstellungen" },
-            { to: "/organisation", label: "Organisation" },
-          ]}
-        />
+        <NavItem to="/settings" label="Einstellungen" />
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />

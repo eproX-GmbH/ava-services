@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { ExternalLink } from "./ExternalLink";
+import { KONSOLE_URL } from "../../../shared/config";
 import type { OrgQuotaExceeded } from "../../../shared/types";
 
 // O6 — Banner, wenn der Stellvertreter-Proxy einen Aufruf wegen des
@@ -40,9 +41,9 @@ export function OrgQuotaBanner() {
             ? "Die Hintergrund-Verarbeitung über den Organisationsschlüssel ist pausiert, der Chat läuft weiter; mit eigenem Schlüssel geht es weiter."
             : "KI-Aufrufe über den Organisationsschlüssel sind pausiert; mit eigenem Schlüssel geht es weiter."}
       </p>
-      <Link to="/organisation" className="token-limit-banner__cta">
+      <ExternalLink href={`${KONSOLE_URL}/verbrauch`} className="token-limit-banner__cta">
         Limits ansehen
-      </Link>
+      </ExternalLink>
       <button type="button" className="btn" onClick={() => setInfo(null)} aria-label="Hinweis schließen" style={{ marginLeft: "0.5rem" }}>
         Schließen
       </button>

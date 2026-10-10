@@ -1173,7 +1173,7 @@ export class LlmProviderManager extends EventEmitter {
     if (kind === "ollama") return null;
     if (this.keySource(kind) === "organisation") return null;
     if (this.isProviderLocked()) {
-      return `Organisationsvorgabe: Fuer ${labelFor(kind)} ist kein Organisationsschluessel hinterlegt; eigene Schluessel und Abos sind gesperrt. Ein Admin kann den Schluessel unter Einstellungen → Organisation hinterlegen.`;
+      return `Organisationsvorgabe: Fuer ${labelFor(kind)} ist kein Organisationsschluessel hinterlegt; eigene Schluessel und Abos sind gesperrt. Ein Admin kann den Schluessel in der AVA Konsole (https://admin.ava.bi → Schlüssel) hinterlegen.`;
     }
     // v0.1.145 — subscription mode is no longer a blocker (the token
     // now plumbs through as ANTHROPIC_AUTH_TOKEN). Missing token is a

@@ -16,6 +16,7 @@
 import * as yup from "yup";
 import { DEEP_RESEARCH_MODELS } from "../../../shared/research-models";
 import { defineTool } from "../define-tool";
+import { KONSOLE_URL } from "../../../shared/config";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
 import { ORG_FEATURES, type OrgState, type OrgPolicy, type OrgBillingState, type OrgBillingInvoice } from "../../../shared/types";
@@ -41,8 +42,8 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
       "Liefert die Organisation des angemeldeten Kontos (oder 'persoenlicher Bereich'), " +
       "die eigene Rolle (owner/admin/member), Mitgliederzahl, die Vorgaben (Funktionen, " +
       "Anbieter-Sperre, Modelle, Prompt-Audit) und fuer Admins den Einladungslink " +
-      "ava://join/<token>. Read-only. Organisation anlegen, per Link beitreten oder " +
-      "verlassen laeuft ueber die Seite 'Organisation' (#/organisation), weil AVA dabei neu startet.",
+      "https://admin.ava.bi/beitreten/<token>. Read-only. Organisation anlegen, beitreten, verlassen, " +
+      "Organisationsschluessel und Abrechnung laufen ueber die AVA Konsole (https://admin.ava.bi); die Desktop-App hat dafuer keine Seite.",
     parameters: { type: "object", properties: {} },
     schema: yup.object({}),
     preview: (r: { name?: string | null; kind?: string }) =>
@@ -55,9 +56,9 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
         rolle: st.myRole,
         mitglieder: st.members.length,
         offeneAnfragen: istAdmin(st) ? st.openRequests.length : undefined,
-        einladungslink: st.inviteToken ? `ava://join/${st.inviteToken}` : undefined,
+        einladungslink: st.inviteToken ? `${KONSOLE_URL}/beitreten/${st.inviteToken}` : undefined,
         vorgaben: st.policy,
-        seite: "#/organisation",
+        konsole: KONSOLE_URL,
       };
     },
   });
@@ -162,7 +163,7 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     description:
       "Entfernt ein Mitglied; es faellt auf seinen persoenlichen Bereich zurueck, seine AVA startet " +
       "beim naechsten Abgleich neu. Der letzte Owner kann nicht entfernt werden. actorId aus " +
-      "org_members. Fragt vor der Ausfuehrung nach. Fuer den eigenen Austritt die Seite 'Organisation' nutzen.",
+      "org_members. Fragt vor der Ausfuehrung nach. Fuer den eigenen Austritt die AVA Konsole (https://admin.ava.bi/mitglieder) nutzen.",
     parameters: {
       type: "object",
       required: ["actorId"],
@@ -522,7 +523,7 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
           prognoseNetto: eur(b.projectedCents),
         },
         datensaetze: b.invoices.map((i) => ({ periode: i.periodKey, seats: i.seatCount, netto: eur(i.subtotalCents), status: i.status })),
-        seite: "#/organisation",
+        konsole: KONSOLE_URL,
       };
     },
   });
@@ -537,8 +538,8 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     category: "organisation abrechnung rechnung nachweis seats monat export",
     description:
       "Liefert den Datensatz einer Periode (YYYY-MM): Positionen je Tier, Seats mit Name/E-Mail, Tier, erstem und letztem " +
-      "Stichtag und Anzahl Stichtage, Pruefsumme. Ohne Periode: Liste aller Datensaetze. CSV-Export ueber die Seite " +
-      "'Organisation' (#/organisation). Read-only, Admin.",
+      "Stichtag und Anzahl Stichtage, Pruefsumme. Ohne Periode: Liste aller Datensaetze. CSV-Export in der AVA Konsole " +
+      "(https://admin.ava.bi/abrechnung). Read-only, Admin.",
     parameters: { type: "object", properties: { periode: { type: "string", description: "YYYY-MM, z. B. 2026-09" } } },
     schema: yup.object({ periode: yup.string().matches(/^\d{4}-\d{2}$/).optional() }).noUnknown(true),
     preview: (r: { periode?: string; seats?: unknown[]; datensaetze?: unknown[] }) =>

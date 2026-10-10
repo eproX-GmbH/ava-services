@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { ExternalLink } from "./ExternalLink";
+import { KONSOLE_URL } from "../../../shared/config";
 import { useUsage, isUnlimited } from "../api/usage";
 
 // Permanent banner that surfaces under the topbar when the user has
@@ -32,9 +34,15 @@ export function QuotaExhaustedBanner() {
             ? `Die Sammelabrechnung von ${data.entitlement.paidBy ?? "deiner Organisation"} ist wegen einer offenen Zahlung pausiert. Neue Firmen warten, bis der Owner die Zahlung klärt.`
             : "Dein Abo ist wegen einer offenen Zahlung pausiert. Neue Firmen warten, bis die Zahlung geklärt ist."}
         </p>
-        <Link to={seat ? "/organisation" : "/settings#plan-section"} className="quota-banner__cta">
-          {seat ? "Zur Organisation" : "Zahlung klären"}
-        </Link>
+        {seat ? (
+          <ExternalLink href={`${KONSOLE_URL}/abrechnung`} className="quota-banner__cta">
+            Zur Abrechnung
+          </ExternalLink>
+        ) : (
+          <Link to="/settings#plan-section" className="quota-banner__cta">
+            Zahlung klären
+          </Link>
+        )}
       </div>
     );
   }

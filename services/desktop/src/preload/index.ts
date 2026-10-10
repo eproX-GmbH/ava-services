@@ -1181,17 +1181,10 @@ const api = {
   },
   // O2 — Organisationen (Einladungslink, Tenant-Wechsel, Anfragen).
   org: {
-    /** Gepufferten ava://join/<token> genau einmal abholen (Kaltstart). */
-    consumePendingJoin: (): Promise<string | null> => ipcRenderer.invoke("org:consumePendingJoin"),
     /** Tenant sofort abgleichen; true = Wechsel erkannt, AVA startet neu. */
     checkTenant: (): Promise<boolean> => ipcRenderer.invoke("org:checkTenant"),
     extractJoinToken: (eingabe: string): Promise<string | null> =>
       ipcRenderer.invoke("org:extractJoinToken", eingabe),
-    onJoinLink: (cb: (info: { token: string }) => void): (() => void) => {
-      const h = (_e: unknown, info: { token: string }) => cb(info);
-      ipcRenderer.on("org:joinLink", h);
-      return () => ipcRenderer.removeListener("org:joinLink", h);
-    },
     onTenantChanged: (
       cb: (info: { tenantId: string; tenantName: string | null; persoenlich: boolean }) => void,
     ): (() => void) => {
@@ -1203,11 +1196,6 @@ const api = {
       const h = () => cb();
       ipcRenderer.on("org:requestsChanged", h);
       return () => ipcRenderer.removeListener("org:requestsChanged", h);
-    },
-    onOpenPage: (cb: () => void): (() => void) => {
-      const h = () => cb();
-      ipcRenderer.on("org:openPage", h);
-      return () => ipcRenderer.removeListener("org:openPage", h);
     },
     /** O9 — Freigaben der Organisation (Radar-Firmen, Transaktionen). */
     shares: (kind?: "transaction" | "radar_company"): Promise<import("../shared/types").OrgShareRow[]> =>

@@ -1170,8 +1170,6 @@ function OrgStep({
       ]);
       setSt(org);
       setOffen(who.openJoinRequest ?? null);
-      const pending = await window.api.org.consumePendingJoin();
-      if (pending) setLink(`ava://join/${pending}`);
     } catch (e) {
       setFehler(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1187,7 +1185,7 @@ function OrgStep({
     setFehler(null);
     try {
       const token = await window.api.org.extractJoinToken(link);
-      if (!token) throw new Error("Das ist kein gültiger Einladungslink (erwartet: ava://join/…).");
+      if (!token) throw new Error("Das ist kein gültiger Einladungslink (erwartet: https://admin.ava.bi/beitreten/…).");
       const r = await gatewayFetch<{ tenantName: string | null }>("/v1/tenants/join", { method: "POST", body: { inviteToken: token } });
       setOffen({ tenantName: r.tenantName });
       setLink("");
@@ -1256,7 +1254,7 @@ function OrgStep({
         ) : (
           <>
             <p className="first-run__option-sub">
-              Deine Organisation hat noch keinen KI-Schlüssel hinterlegt. Bis ein Admin das unter Einstellungen → Organisation
+              Deine Organisation hat noch keinen KI-Schlüssel hinterlegt. Bis ein Admin das in der AVA Konsole (admin.ava.bi)
               nachholt, wähle deinen Anbieter selbst.
             </p>
             <button type="button" className="primary" onClick={onWeiterOhne}>
@@ -1306,11 +1304,11 @@ function OrgStep({
         ) : (
           <>
             <p className="first-run__option-sub">
-              Füge den Link ein, den du von deinem Admin bekommen hast (ava://join/…). Der Beitritt wird angefragt und muss vom
+              Füge den Link ein, den du von deinem Admin bekommen hast (https://admin.ava.bi/beitreten/…). Der Beitritt wird angefragt und muss vom
               Admin freigegeben werden.
             </p>
             <div style={{ display: "flex", gap: "0.5rem", maxWidth: 560 }}>
-              <input type="text" placeholder="ava://join/…" value={link} onChange={(e) => setLink(e.target.value)} style={{ flex: 1 }} />
+              <input type="text" placeholder="https://admin.ava.bi/beitreten/…" value={link} onChange={(e) => setLink(e.target.value)} style={{ flex: 1 }} />
               <button type="button" className="primary" disabled={busy || link.trim().length < 8} onClick={() => void beitritt()}>
                 Beitritt anfragen
               </button>
@@ -1322,8 +1320,8 @@ function OrgStep({
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">Ohne Organisation</h3>
         <p className="first-run__option-sub">
-          Du arbeitest in deinem persönlichen Bereich und wählst deine KI selbst. Eine Organisation kannst du später
-          unter Einstellungen → Organisation anlegen oder beitreten.
+          Du arbeitest in deinem persönlichen Bereich und wählst deine KI selbst. Eine Organisation legst du später in der
+          AVA Konsole (admin.ava.bi) an oder trittst ihr über den Einladungslink bei.
         </p>
         <button type="button" onClick={onWeiterOhne} disabled={busy}>
           Weiter ohne Organisation →

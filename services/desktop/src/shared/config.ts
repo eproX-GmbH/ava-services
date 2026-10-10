@@ -32,6 +32,12 @@
 
 import type { AppConfig } from "./types";
 
+/**
+ * Web-Konsole für die Organisationsverwaltung (Repo eproX-GmbH/ava-admin,
+ * docs/PLAN_ADMIN_WEB.md). Die Desktop-App hat dafür keine eigene Seite mehr.
+ */
+export const KONSOLE_URL = "https://admin.ava.bi";
+
 // ---- Hard-coded production defaults ----------------------------------------
 //
 // Shipping defaults: any user who installs the .dmg / .exe and does

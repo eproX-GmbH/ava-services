@@ -15,7 +15,6 @@ import "@fontsource-variable/geist-mono";
 import { App } from "./App";
 import { AppShell } from "./components/AppShell";
 import { Whoami } from "./routes/Whoami";
-import { Organisation } from "./routes/Organisation";
 import { FeatureGate } from "./components/FeatureGate";
 import { Settings } from "./routes/Settings";
 import { Chat } from "./routes/Chat";
@@ -76,7 +75,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/chat" element={<Chat />} />
               <Route path="/sprache" element={<FeatureGate feature="sprachmodus"><Sprachmodus /></FeatureGate>} />
               <Route path="/whoami" element={<Whoami />} />
-              <Route path="/organisation" element={<Organisation />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/:tab" element={<Settings />} />
               <Route path="/ingest" element={<Ingest />} />

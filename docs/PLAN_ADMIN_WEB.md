@@ -231,7 +231,14 @@ Reihenfolge: A0 → A1 → A2 → A3 → A4 → A5; A6/A7 nach Bedarf des ersten
 - Vercel: Projekt angelegt, Umgebung gesetzt, Produktion ausgerollt; Domain `admin.ava.bi` angemeldet.
 - Offen: DNS `admin.ava.bi` (CNAME laut Vercel), Keycloak-Client `ava-web` per
   `infra/scripts/keycloak-web-client.mjs --vercel <ava-admin>` (Admin-Zugang des Operators), danach neu ausrollen.
-  Später: A5 (Setup ohne geheimen Link, Instanz anfordern), Client-Prüfung im Gateway, Org-Seite aus der App entfernen.
+  Später: A5 (Setup ohne geheimen Link, Instanz anfordern), Client-Prüfung im Gateway.
+- Nachtrag: Keycloak-Client `ava-web` angelegt, DNS gesetzt, Anmeldung unter https://admin.ava.bi läuft (Operator, 2026-10-10).
+- **v0.1.798: Org-Seite aus der Desktop-App entfernt** (Route `/organisation`, Menüpunkt, `Organisation.tsx`). Stattdessen
+  Abschnitt „Organisation“ unter Einstellungen → Konto mit Knopf zur Konsole; `ava://join/<token>` und die
+  Benachrichtigung „Neue Beitrittsanfrage“ öffnen die Konsole (`/beitreten/<token>`, `/mitglieder`); Limit- und
+  Zahlungsbanner verlinken auf `/verbrauch` bzw. `/abrechnung`; Fehlertexte und Werkzeug-Beschreibungen nennen die
+  Konsole; `org_info` liefert den Web-Einladungslink. Bleibt in der App: Beitritt per Link im Einrichtungsassistenten,
+  Tenant-Wechsel mit Neustart, Org-Werkzeuge im Chat (ohne Schlüsseleingabe).
 
 ## 8. Risiken
 
