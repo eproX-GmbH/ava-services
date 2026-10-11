@@ -570,6 +570,7 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
                 name: k.name,
                 value: k.value,
                 period: k.period ?? undefined,
+                category: k.category ?? undefined,
               })),
             }
           : null,

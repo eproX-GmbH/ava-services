@@ -356,8 +356,13 @@ function renderBar(
   const innerH = HEIGHT - PAD_TOP - PAD_BOTTOM;
   let { min, max } = yRange(spec);
   const seriesCount = spec.series.length;
-  // x-Kategorien aus der ersten Serie ziehen; weitere Serien werden gruppiert
-  const categories = (spec.series[0]?.data ?? []).map((p) => p.x);
+  // x-Kategorien aus allen Serien; Zuordnung über x, damit Serien mit Lücken
+  // (z. B. Eigenkapital erst ab 2022) nicht ins falsche Jahr rutschen.
+  const categories: Array<string | number> = [];
+  for (const s of spec.series) for (const p of s.data) if (!categories.some((c) => String(c) === String(p.x))) categories.push(p.x);
+  const catIndex = new Map(categories.map((c, i) => [String(c), i]));
+  const slot = (x: string | number) => catIndex.get(String(x)) ?? 0;
+  const yAt = (s: ChartSpec["series"][number], c: string | number) => s.data.find((p) => String(p.x) === String(c))?.y as number | undefined;
   // v0.1.210 — Stapelung. Bei `stacked: true` (Default false) addieren
   // wir alle Serien pro Kategorie und zeichnen einen einzigen Balken,
   // gestapelt nach Serie. Max muss dann die SUMME pro Kategorie sein,
@@ -369,7 +374,7 @@ function renderBar(
     for (let ci = 0; ci < categories.length; ci++) {
       let sum = 0;
       for (const s of spec.series) {
-        const v = (s.data[ci]?.y as number) ?? 0;
+        const v = yAt(s, categories[ci]!) ?? 0;
         if (Number.isFinite(v) && v > 0) sum += v;
       }
       if (sum > sumMax) sumMax = sum;
@@ -429,7 +434,7 @@ function renderBar(
           return (
             <g key={`stack-${ci}`}>
               {spec.series.map((s, si) => {
-                const v = (s.data[ci]?.y as number) ?? 0;
+                const v = yAt(s, c) ?? 0;
                 if (!Number.isFinite(v) || v <= 0) return null;
                 const h = (v / (max - min || 1)) * innerH;
                 const y = PAD_TOP + innerH - (cumulative + v - min) / (max - min || 1) * innerH;
@@ -505,7 +510,7 @@ function renderBar(
             const h = ((v - min) / (max - min || 1)) * innerH;
             const x =
               PAD_LEFT +
-              pi * groupW +
+              slot(p.x) * groupW +
               (groupW * 0.15) +
               si * barW;
             const y = PAD_TOP + innerH - h;
@@ -577,7 +582,7 @@ function renderBar(
           const v = p.y as number;
           const w = ((v - min) / (max - min || 1)) * innerW;
           const y =
-            PAD_TOP + pi * rowH + (rowH - barH) / 2 + si * (barH / seriesCount);
+            PAD_TOP + slot(p.x) * rowH + (rowH - barH) / 2 + si * (barH / seriesCount);
           const x = PAD_LEFT;
           const label = `${formatX(p.x, format)}: ${formatY(v, format)}`;
           return (
