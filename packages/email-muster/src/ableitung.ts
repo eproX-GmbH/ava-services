@@ -213,6 +213,10 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     musterKonfidenz = server.konfidenz;
   }
   const serverBestaetigt = serverFrisch && server?.stats?.verifiziert === true && !!muster && server.muster === muster;
+  // Frischer Befund "kein Format bestaetigt": nicht bei jedem Contact-Lauf erneut raten.
+  if (!muster && serverFrisch && server?.stats?.keinFormat === true) {
+    return { ...ergebnis, urteil: "kein_format", zusammenfassung: `${k.name} (${domain}): Mailserver bestaetigte zuletzt kein gaengiges Adressformat — nichts abgeleitet` };
+  }
 
   // ---- 4./5. Einmal je Domain pruefen ----------------------------------------
   const ohneZuordnung = repraesentanten(unversorgt.filter((p) => !zugeordnet.has(p.personId)));

@@ -227,6 +227,15 @@ test("alle Formate abgelehnt: nichts ableiten", async () => {
   assert.equal(gespeichert.length, 0);
 });
 
+test("bekannter Befund 'kein Format': nicht erneut raten", async () => {
+  const s = server({ existiert: [] });
+  const { d, gespeichert } = deps({ pruefe: s.pruefe, serverMuster: { muster: null, konfidenz: 0, catchAllAt: null, checkedAt: "2026-10-10T00:00:00Z", stats: { keinFormat: true } } });
+  const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.equal(r.urteil, "kein_format");
+  assert.equal(s.aufrufe.length, 0);
+  assert.equal(gespeichert.length, 0);
+});
+
 test("Firmenadresse mit Namen wird zugeordnet und zaehlt als Beleg", async () => {
   const s = server({ existiert: ["bkunz@muster.de"] });
   const { d, gespeichert } = deps({ pruefe: s.pruefe });
