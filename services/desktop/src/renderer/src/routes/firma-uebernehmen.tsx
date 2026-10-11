@@ -74,28 +74,31 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
   const [vorgang, setVorgang] = useState<string | null>(null);
 
   // Ohne Name und Ort findet die Zuordnung die Firma nicht — dann lieber
-  // keinen Knopf als einen, der ins Leere greift. Dasselbe gilt für Länder,
-  // die sich noch nicht importieren lassen (Schweiz).
+  // keinen Knopf als einen, der ins Leere greift. Mit Firmen-ID geht es ohne
+  // Zuordnung und für jedes Land; ohne ID nur für Länder mit Namensabgleich.
   const land = landAusCompanyId(companyId);
-  if (!name?.trim() || !ort?.trim() || !IMPORTIERBAR.includes(land)) return null;
+  if (!companyId && (!name?.trim() || !ort?.trim() || !IMPORTIERBAR.includes(land))) return null;
 
   const anstossen = async () => {
     setLaeuft(true);
     setMeldung(null);
     setFehler(null);
     try {
-      const r = await gatewayFetch<{ transactionId: string; companyCount: number }>(
-        "/v1/imports/from-list",
-        {
-          method: "POST",
-          body: {
-            companies: [{ name: name.trim(), city: ort.trim() }],
-            transactionName: `${name.trim()} (aus der Firmenansicht)`,
-            // Ohne Land ordnet master-data gegen das deutsche Register zu.
-            ...(land !== "DE" ? { country: land } : {}),
-          },
-        },
-      );
+      const titel = `${(name ?? companyId ?? "").trim()} (aus der Firmenansicht)`;
+      const r = companyId
+        ? await gatewayFetch<{ transactionId: string; companyCount: number }>("/v1/imports/by-ids", {
+            method: "POST",
+            body: { companyIds: [companyId], transactionName: titel },
+          })
+        : await gatewayFetch<{ transactionId: string; companyCount: number }>("/v1/imports/from-list", {
+            method: "POST",
+            body: {
+              companies: [{ name: name!.trim(), city: ort!.trim() }],
+              transactionName: titel,
+              // Ohne Land ordnet master-data gegen das deutsche Register zu.
+              ...(land !== "DE" ? { country: land } : {}),
+            },
+          });
       setVorgang(r.transactionId);
       // Die Firma steht ab jetzt in "Meine Firmen" — die Antwort von vorhin
       // ist damit veraltet, und ohne dieses Verwerfen bliebe der Knopf bis

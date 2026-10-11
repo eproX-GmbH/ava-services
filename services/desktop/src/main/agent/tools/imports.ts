@@ -891,11 +891,13 @@ export function buildImportTools(deps: {
       "clearly-specified company you may commit directly. Each row needs " +
       "name + city (city disambiguates same-named companies); if the user gave " +
       "no city, use the best-known HQ — the dry-run report flags wrong guesses. " +
+      "BEST: when company_search already gave you the company, pass its id in " +
+      "`companyIds` — exact, works for every country, no dry-run needed. " +
       "Companies OUTSIDE Germany (company_search returned country AT or UK) " +
       "need `country` on their row — without it the row is matched against " +
       "the German register and finds nothing. Rows of different countries " +
-      "become one transaction per country. Switzerland (CH) cannot be " +
-      "imported yet. " +
+      "become one transaction per country. Swiss companies (CH) only via " +
+      "`companyIds`, not by name. " +
       "Returns a transactionId on commit; progress via `import_status`. " +
       "The dry-run creates NO transaction — waiting for the user's " +
       "confirmation before committing is the intended flow, never a " +
@@ -905,8 +907,14 @@ export function buildImportTools(deps: {
       "single-company import) is easily mistaken for this one.",
     parameters: {
       type: "object",
-      required: ["companies"],
       properties: {
+        companyIds: {
+          type: "array",
+          maxItems: 500,
+          items: { type: "string", minLength: 1 },
+          description:
+            "PREFERRED when you have them: companyIds from company_search (e.g. \"UK_11171399\", \"AT_FN56247T\", German ids). The id identifies the company exactly in every register country — no name/city matching, no dry-run needed, no country needed. Can be combined with `companies` for rows you only know by name.",
+        },
         companies: {
           type: "array",
           minItems: 1,
@@ -960,6 +968,7 @@ export function buildImportTools(deps: {
     },
     schema: yup
       .object({
+        companyIds: yup.array().of(yup.string().trim().required().min(1).max(64)).max(500).optional(),
         companies: yup
           .array()
           .of(
@@ -987,13 +996,13 @@ export function buildImportTools(deps: {
               })
               .noUnknown(true),
           )
-          .required()
-          .min(1),
+          .optional(),
         transactionName: yup.string().optional(),
         isFuzzy: yup.boolean().optional(),
         dryRun: yup.boolean().optional(),
       })
-      .noUnknown(true),
+      .noUnknown(true)
+      .test("firmen", "companyIds oder companies angeben", (v) => (v.companyIds?.length ?? 0) + (v.companies?.length ?? 0) > 0),
     preview: (r: {
       transactionId?: string;
       companyCount?: number;
@@ -1005,12 +1014,16 @@ export function buildImportTools(deps: {
         ? `dry-run: ${r.matchedCount ?? 0} gefunden, ${r.unmatchedCount ?? 0} nicht eindeutig → Report "${r.reportFilename}"`
         : `import ${r.companyCount ?? 0} Firmen → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
-      const companies = args.companies as Array<{
+      const companies = (args.companies ?? []) as Array<{
         name: string;
         city: string;
         country?: ImportLand;
         crm?: { type: string; externalId: string; displayName?: string };
       }>;
+      // Firmen-IDs (aus company_search) bestimmen die Firma eindeutig: eigener
+      // Vorgang ueber /v1/imports/by-ids, ohne Zuordnung und fuer jedes Land.
+      const ids = [...new Set(((args.companyIds ?? []) as string[]).map((x) => x.trim()).filter(Boolean))];
+      const anzahl = companies.length + ids.length;
       // Ein Vorgang je Land: master-data ordnet je Aufruf gegen EIN Register zu.
       const gruppen = nachLand(companies);
       const mehrereLaender = gruppen.size > 1;
@@ -1021,9 +1034,21 @@ export function buildImportTools(deps: {
         ...(c.crm ? { crm: c.crm } : {}),
       });
       const label =
-        args.transactionName ?? `Liste: ${companies.length} Firmen`;
+        args.transactionName ?? `Liste: ${anzahl} ${anzahl === 1 ? "Firma" : "Firmen"}`;
 
       // ---- Dry-Run: Vorschau + Excel-Report, KEINE Transaktion. ----------
+      if (args.dryRun && companies.length === 0) {
+        return {
+          dryRun: true as const,
+          status: "vorschau" as const,
+          importiert: false,
+          hinweis:
+            "Firmen-IDs sind eindeutig; eine Vorschau ist nicht noetig. Nach Bestaetigung import_companies mit denselben companyIds und dryRun=false aufrufen.",
+          providedCount: ids.length,
+          matchedCount: ids.length,
+          unmatchedCount: 0,
+        };
+      }
       if (args.dryRun) {
         ctx.log(
           `import_companies: dry-run für ${companies.length} Firmen → /v1/imports/from-list`,
@@ -1131,10 +1156,10 @@ export function buildImportTools(deps: {
         const { estimateImportCost, FEATURE_LABEL, formatEuroRange } =
           await import("../../../shared/research-cost");
         const store = ResearchFeaturesStore.shared();
-        const estimate = estimateImportCost(store.getConfig(), companies.length);
+        const estimate = estimateImportCost(store.getConfig(), anzahl);
         if (estimate) {
           const lines: string[] = [
-            `Du importierst ${companies.length.toLocaleString("de-DE")} Firmen aus einer Liste.`,
+            `Du importierst ${anzahl.toLocaleString("de-DE")} Firmen aus einer Liste.`,
             "",
             "Folgende kostenpflichtige Anreicherungen sind aktiv:",
             ...estimate.perFeature.map(
@@ -1154,7 +1179,7 @@ export function buildImportTools(deps: {
             ctx.signal,
           );
           if (choice === "cancel") {
-            return { cancelled: true, companyCount: companies.length } as never;
+            return { cancelled: true, companyCount: anzahl } as never;
           }
           useSkipMode = choice === "without";
           if (useSkipMode) {
@@ -1168,10 +1193,21 @@ export function buildImportTools(deps: {
         }
       }
 
-      ctx.log(
-        `import_companies: commit ${companies.length} Firmen → /v1/imports/from-list`,
-      );
-      const vorgaenge: Array<{ land: ImportLand; transactionId: string; companyCount: number }> = [];
+      if (companies.length > 0) {
+        ctx.log(`import_companies: commit ${companies.length} Firmen → /v1/imports/from-list`);
+      }
+      const vorgaenge: Array<{ land?: ImportLand; transactionId: string; companyCount: number; nichtGefunden?: string[] }> = [];
+      if (ids.length > 0) {
+        ctx.log(`import_companies: commit ${ids.length} Firmen-IDs → /v1/imports/by-ids`);
+        const r = await deps.gateway.request<{ transactionId: string; companyCount: number; nichtGefunden: string[] }>("/v1/imports/by-ids", {
+          method: "POST",
+          body: { companyIds: ids, transactionName: companies.length > 0 ? `${label} (IDs)` : label },
+          idempotencyKey: randomUUID(),
+          signal: ctx.signal,
+          attachUserLlm: true,
+        });
+        vorgaenge.push({ transactionId: r.transactionId, companyCount: r.companyCount, ...(r.nichtGefunden?.length ? { nichtGefunden: r.nichtGefunden } : {}) });
+      }
       for (const [land, zeilen] of gruppen) {
         const response = await deps.gateway.request<{
           transactionId: string;
@@ -1206,7 +1242,8 @@ export function buildImportTools(deps: {
         transactionId: vorgaenge[0]!.transactionId,
         // Zugeordnete Firmen laut Gateway, nicht die Zahl der gesendeten Zeilen.
         companyCount: zugeordnet,
-        ...(mehrereLaender ? { vorgaenge } : {}),
+        ...(vorgaenge.length > 1 ? { vorgaenge } : {}),
+        ...(vorgaenge.some((v) => v.nichtGefunden?.length) ? { nichtGefunden: vorgaenge.flatMap((v) => v.nichtGefunden ?? []) } : {}),
         ...(zugeordnet === 0
           ? {
               hinweis:

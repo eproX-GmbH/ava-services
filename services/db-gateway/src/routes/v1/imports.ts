@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
-import { callUpstreamBinary, callUpstreamBinaryExpectJson } from "../../lib/upstream";
+import { callUpstream, callUpstreamBinary, callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { setTransactionName } from "../../lib/transaction-names";
 import { seedEntityProgressForTransaction } from "../../lib/entity-progress-seed";
 import { buildXlsx } from "../../lib/xlsx-mini";
@@ -637,6 +637,68 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
     { transactionId, companyCount: zugeordnet, providedCount: companies.length },
     202,
   );
+});
+
+// ---- POST /v1/imports/by-ids (2026-10-11) -----------------------------------
+//
+// Vorgang direkt aus Firmen-IDs (Firmensuche, MCP, Chat). Keine Zuordnung über
+// Name und Ort, daher fuer alle Register gleich (DE, AT_…, UK_…). master-data
+// legt den Vorgang wie beim Listenimport an (gemeinsamer Ablauf
+// transaktion-starten); hier nur Name, Fortschritts-Zeilen und Antwort.
+
+const byIdsRoute = createRoute({
+  method: "post",
+  path: "/imports/by-ids",
+  tags: [tag],
+  summary: "Start one transaction for known companies by their companyId (e.g. from company search). Works for every register country.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            companyIds: z.array(z.string().trim().min(1).max(64)).min(1).max(500),
+            transactionName: z.string().trim().min(1).max(200).optional(),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    202: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              transactionId: z.string(),
+              companyCount: z.number().int().nonnegative(),
+              nichtGefunden: z.array(z.string()),
+            })
+            .openapi("ByIdsIngestResponse"),
+        },
+      },
+      description: "transaction accepted; pipeline events published",
+    },
+    ...errorResponses,
+  },
+});
+
+importsRouter.openapi(byIdsRoute, async (c) => {
+  const { companyIds, transactionName } = c.req.valid("json");
+  const name = transactionName ?? `Liste: ${companyIds.length} ${companyIds.length === 1 ? "Firma" : "Firmen"}`;
+  let r: { transactionId?: string; companyCount?: number; nichtGefunden?: string[] };
+  try {
+    r = await callUpstream(c, "masterData", "/api/v1/data-care/companies", { method: "POST", body: { companyIds, name } });
+  } catch (err) {
+    if (err instanceof HTTPException && err.status === 404) {
+      throw new HTTPException(422, { message: `keine_firma_bekannt: Keine der ${companyIds.length} Firmen-IDs ist im Register bekannt. Erst per Firmensuche gueltige IDs holen.` });
+    }
+    throw err;
+  }
+  if (!r?.transactionId) throw new HTTPException(502, { message: "upstream omitted transactionId" });
+  setTransactionName(r.transactionId, name);
+  await seedEntityProgressForTransaction(c, r.transactionId);
+  return c.json({ transactionId: r.transactionId, companyCount: r.companyCount ?? 0, nichtGefunden: r.nichtGefunden ?? [] }, 202);
 });
 
 // =============================================================================

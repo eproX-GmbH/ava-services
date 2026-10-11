@@ -303,29 +303,27 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
         .filter((f): f is { name: string; ort: string; land?: string } => !!f && typeof f === "object" && typeof (f as { name?: unknown }).name === "string" && typeof (f as { ort?: unknown }).ort === "string")
         .map((f) => ({ name: f.name.trim(), city: f.ort.trim(), land: (f.land ?? "DE").toUpperCase() }))
         .filter((f) => f.name && f.city);
-      // Bevorzugter Weg: IDs aus firma_suchen. Die Stammdaten liefern Registername und
-      // Ort, die Zuordnung laeuft dann exakt (kein unscharfes Raten).
-      const ids = Array.isArray(args.companyIds) ? args.companyIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim()).slice(0, 500) : [];
-      const unbekannt: string[] = [];
-      let exakt = false;
-      for (const id of ids) {
-        const r = await api(app, token, "GET", `/v1/companies/${encodeURIComponent(id)}`);
-        const c = r.ok ? (r.json as { name?: string; location?: string; country?: string } | null) : null;
-        if (!c?.name || !c.location) {
-          unbekannt.push(id);
-          continue;
+      // Bevorzugter Weg: IDs aus firma_suchen. Die ID bestimmt die Firma eindeutig
+      // (jedes Register-Land), master-data legt den Vorgang ohne Zuordnung an.
+      const ids = Array.isArray(args.companyIds) ? [...new Set(args.companyIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim()))].slice(0, 500) : [];
+      if (ids.length === 0 && zeilen.length === 0) return { text: "companyIds (aus firma_suchen), firmen (name, ort) oder dateiBase64 angeben.", isError: true };
+      const ergebnisse: unknown[] = [];
+      let unbekannt: string[] = [];
+      if (ids.length > 0) {
+        const r = await api(app, token, "POST", "/v1/imports/by-ids", { companyIds: ids, transactionName: name });
+        if (!r.ok) {
+          if (zeilen.length === 0) return { text: fehlerText(r), isError: true };
+          unbekannt = ids;
+        } else {
+          const j = r.json as { nichtGefunden?: string[] };
+          unbekannt = j.nichtGefunden ?? [];
+          ergebnisse.push(r.json);
         }
-        zeilen.push({ name: c.name, city: c.location, land: String(c.country ?? "DE").toUpperCase() });
-        exakt = true;
       }
-      if (unbekannt.length > 0 && zeilen.length === 0) return { text: `Keine Firma zu diesen IDs gefunden: ${unbekannt.join(", ")}. Erst firma_suchen nutzen.`, isError: true };
-      if (zeilen.length === 0) return { text: "companyIds (aus firma_suchen), firmen (name, ort) oder dateiBase64 angeben.", isError: true };
-      const zuordnungUnscharf = exakt && firmen.length === 0 ? false : unscharf;
       const nachLand = new Map<string, Array<{ name: string; city: string }>>();
       for (const z of zeilen) nachLand.set(z.land, [...(nachLand.get(z.land) ?? []), { name: z.name, city: z.city }]);
-      const ergebnisse: unknown[] = [];
       for (const [land, companies] of nachLand) {
-        const r = await api(app, token, "POST", "/v1/imports/from-list", { companies, transactionName: nachLand.size > 1 ? `${name} (${land})` : name, isFuzzy: zuordnungUnscharf, country: land });
+        const r = await api(app, token, "POST", "/v1/imports/from-list", { companies, transactionName: nachLand.size > 1 || ids.length > 0 ? `${name} (${land})` : name, isFuzzy: unscharf, country: land });
         if (!r.ok) return { text: fehlerText(r), isError: true };
         ergebnisse.push({ land, ...(r.json as object) });
       }
