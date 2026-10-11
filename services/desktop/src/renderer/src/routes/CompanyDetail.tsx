@@ -54,6 +54,8 @@ import {
   XingIcon,
   XIcon,
 } from "../components/icons";
+import { landAusCompanyId, type RegisterLand } from "../../../shared/register-land";
+import { adressZeilen, kartenSuche } from "../../../shared/adresse";
 
 // W8–W13 — single company drill-down, ported from the legacy ava-v2 web app.
 //
@@ -682,6 +684,7 @@ export function CompanyDetail() {
   }, [id, Boolean(summary.data)]);
 
   const adresse = ermittleAdresse({
+    land: landAusCompanyId(id),
     structured: structured.data,
     contact: contactFallback.data,
     website: website.data,
@@ -1122,6 +1125,7 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
  * Oesterreichische Firmen haben kein Handelsregister, dort greift die Kette.
  */
 export function ermittleAdresse(q: {
+  land?: RegisterLand;
   structured?: StructuredContent;
   contact?: CompanyContact;
   website?: Website;
@@ -1129,17 +1133,17 @@ export function ermittleAdresse(q: {
 }): {
   zeilen: string[];
   quelle: "Handelsregister" | "Kontaktdaten" | "Websuche" | "Stammdaten";
+  land: RegisterLand;
 } | null {
-  const street = [q.structured?.street, q.structured?.houseNumber]
-    .filter(Boolean)
-    .join(" ");
-  const cityLine = [q.structured?.zipCode, q.structured?.city]
-    .filter(Boolean)
-    .join(" ");
-  if (street || cityLine)
+  const land = q.land ?? "DE";
+  // Reihenfolge je Land (UK: "Nr Straße", "Ort Postcode"); alte UK-Daten mit
+  // "England" als Ort werden dabei bereinigt.
+  const register = q.structured ? adressZeilen(q.structured, land) : [];
+  if (register.length > 0)
     return {
-      zeilen: [street, cityLine].filter(Boolean),
+      zeilen: register,
       quelle: "Handelsregister",
+      land,
     };
   const fakt = (q.contact?.companyFacts ?? []).find(
     (f) =>
@@ -1161,12 +1165,13 @@ export function ermittleAdresse(q: {
           ? [teile.slice(0, -1).join(", "), letzte]
           : [fakt.value.trim()],
       quelle: "Kontaktdaten",
+      land,
     };
   }
   const serp = q.website?.companySerp?.address?.trim();
-  if (serp) return { zeilen: [serp], quelle: "Websuche" };
+  if (serp) return { zeilen: [serp], quelle: "Websuche", land };
   const ort = q.summary?.location?.trim();
-  if (ort) return { zeilen: [ort], quelle: "Stammdaten" };
+  if (ort) return { zeilen: [ort], quelle: "Stammdaten", land };
   return null;
 }
 
@@ -1194,8 +1199,11 @@ function OverviewTab({
   // Address parts get reused for the maps link AND the visible string.
   const street = adresse?.zeilen[0] ?? "";
   const cityLine = adresse?.zeilen[1] ?? "";
-  const mapsUrl = adresse ? mapsHref(adresse.zeilen) : null;
-  const mapsEmbed = adresse ? mapsEmbedUrl(adresse.zeilen) : null;
+  // Fuer die Karte mit Landesname, sonst landen gleichnamige Orte oder
+  // britische Postcodes irgendwo (und Google zeigt die Weltkarte).
+  const suche = adresse ? kartenSuche(adresse.zeilen, adresse.land) : null;
+  const mapsUrl = suche ? mapsHref([suche]) : null;
+  const mapsEmbed = suche ? mapsEmbedUrl([suche]) : null;
   const legalForm = structured?.legalForm || rechtsform || null;
   const zeigeKontaktKarte = Boolean(
     adresse || website?.companySerp?.phone || website?.website?.url
