@@ -8,6 +8,8 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const TAGES_DECKEL = 50;
+/** Dateiname im userData-Verzeichnis der AVA (neben email-muster.json). */
+export const BUDGET_DATEI = "email-budget.json";
 
 interface Stand {
   day: string;

@@ -258,3 +258,11 @@ test("Tages-Budget: zwei Prozesse zaehlen in dieselbe Datei, neuer Tag beginnt b
   tag = "2026-10-12";
   assert.equal(a.frei(), 5);
 });
+
+test("Einstellungen: ohne Zuordnung und ohne unverifizierte Adressen", async () => {
+  const s = server({ existiert: ["bkunz@muster.de"] });
+  const { d, gespeichert } = deps({ pruefe: s.pruefe, zuordnungAktiv: false, ungeprueftSpeichern: false });
+  await ermittleFirmenAdressen("c1", kontakte(TEAM, ["ameier@muster.de"]), d);
+  assert.ok(!gespeichert.some((g) => g.herkunft === "zuordnung"), "keine Zuordnung");
+  assert.ok(gespeichert.every((g) => g.art === "smtp" || g.art === "catchall"), "nur belegte Adressen");
+});

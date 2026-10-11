@@ -11,6 +11,7 @@ import { ermittleFirmenAdressen, kontakteAusAntwort, type TagesBudget, type Urte
 import type { GatewayClient } from "./gateway";
 import type { NetzStatus } from "./netz";
 import type { ProgressEingabe } from "./progress";
+import type { Einstellungen } from "./einstellungen";
 import { audit, logger } from "./log";
 
 export const LEBENSZEICHEN_MS = 5 * 60_000;
@@ -37,6 +38,8 @@ export interface WorkerDeps {
   urteil: Urteil | null;
   progress: (p: ProgressEingabe) => Promise<void>;
   persistWartenMs: number;
+  /** Schalter der Person/Organisation, je Trigger frisch gelesen. */
+  einstellungen?: () => Einstellungen;
   ableiten?: typeof ermittleFirmenAdressen;
   schlafe?: (ms: number) => Promise<void>;
   jetzt?: () => number;
@@ -83,6 +86,13 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
     }
     laufendeRuns.add(runId);
     const data = ereignis.data ?? {};
+    const schalter = deps.einstellungen?.() ?? { aktiv: true, zuordnungAktiv: true, ungeprueftSpeichern: true };
+    if (!schalter.aktiv) {
+      laufendeRuns.delete(runId);
+      logger.info(`runId=${runId} uebersprungen — E-Mail-Ableitung ist ausgeschaltet`);
+      await melde({ transactionId, companyId, state: "skipped", errorMessage: "E-Mail-Ableitung ist ausgeschaltet (Einstellungen oder Organisation)." });
+      return "skipped";
+    }
     logger.info(`received runId=${runId} firma=${data.companyName ?? "?"} kontakteGeaendert=${data.kontakteGeaendert !== false}`);
     await melde({ transactionId, companyId, state: "in_progress" });
     const timer = setInterval(() => void melde({ transactionId, companyId, state: "in_progress" }), deps.lebenszeichenMs ?? LEBENSZEICHEN_MS);
@@ -105,6 +115,8 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
         speichereMuster: (domain, body) => deps.gateway.speichereMuster(domain, body),
         speichereAdresse: (a) => deps.gateway.speichereAdresse(companyId, a),
         log: (m) => logger.info(`runId=${runId} ${m}`),
+        zuordnungAktiv: schalter.zuordnungAktiv,
+        ungeprueftSpeichern: schalter.ungeprueftSpeichern,
       });
       logger.info(`runId=${runId} done — ${r.zusammenfassung}`);
       if (r.status !== "fertig") {

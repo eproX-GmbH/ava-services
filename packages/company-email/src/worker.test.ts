@@ -128,3 +128,26 @@ test("Doppel-Dispatch desselben runId wird verworfen; ungueltige Trigger auch", 
   assert.equal(await erster, "completed");
   assert.equal(await verarbeite({ data: {} }), "ungueltig");
 });
+
+test("ausgeschaltet (Person oder Organisation): skipped, keine Ableitung", async () => {
+  const progress: ProgressEingabe[] = [];
+  let abgeleitet = false;
+  const verarbeite = makeWorker({
+    gateway: gateway(),
+    netz: { ok: () => true, aktualisiere: async () => undefined, gesperrt: () => undefined },
+    budget: new TagesBudget(null, 50),
+    urteil: null,
+    persistWartenMs: 0,
+    einstellungen: () => ({ aktiv: false, zuordnungAktiv: true, ungeprueftSpeichern: true }),
+    progress: async (p) => {
+      progress.push(p);
+    },
+    ableiten: async () => {
+      abgeleitet = true;
+      return ERGEBNIS;
+    },
+  });
+  assert.equal(await verarbeite(TRIGGER), "skipped");
+  assert.equal(abgeleitet, false);
+  assert.match(progress.at(-1)?.errorMessage ?? "", /ausgeschaltet/);
+});

@@ -20,6 +20,7 @@ import { buildProgressEvent } from "./progress";
 import { PROGRESS } from "./routing";
 import { makeUrteil } from "./urteil";
 import { makeWorker, type TriggerEreignis } from "./worker";
+import { leseEinstellungen } from "./einstellungen";
 import { logger } from "./log";
 
 function main(): void {
@@ -35,6 +36,7 @@ function main(): void {
     budget,
     urteil: makeUrteil(),
     persistWartenMs: cfg.persistWartenMs,
+    einstellungen: () => leseEinstellungen(cfg.einstellungenDatei, cfg.featureAktiv),
     progress: async (p) => {
       if (!bus?.verbunden()) return;
       await bus.publish(PROGRESS, buildProgressEvent(p, cfg.tenantId));

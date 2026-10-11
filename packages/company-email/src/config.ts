@@ -15,6 +15,10 @@ export interface Config {
   tagesDeckel: number;
   /** So lange auf den Persist des Contact-Laufs am Gateway warten. */
   persistWartenMs: number;
+  /** userData/email-muster.json des Desktops (Schalter der E-Mail-Ableitung). */
+  einstellungenDatei: string | null;
+  /** Organisations-Feature "kontakte" (wie beim Contact Producer). */
+  featureAktiv: boolean;
 }
 
 function zahl(wert: string | undefined, standard: number): number {
@@ -36,5 +40,7 @@ export function ladeConfig(env: NodeJS.ProcessEnv = process.env): Config {
     budgetDatei: env.AVA_EMAIL_BUDGET_FILE || null,
     tagesDeckel: zahl(env.AVA_EMAIL_TAGES_DECKEL, 50),
     persistWartenMs: zahl(env.AVA_EMAIL_PERSIST_WARTEN_MS, 3 * 60_000),
+    einstellungenDatei: env.AVA_EMAIL_MUSTER_CONFIG || null,
+    featureAktiv: env.AVA_EMAIL_AKTIV !== "0",
   };
 }

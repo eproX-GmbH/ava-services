@@ -97,6 +97,10 @@ export interface AbleitungDeps {
   jetzt?: () => Date;
   /** Zufallsadresse fuer die Catch-all-Probe (Tests setzen sie fest). */
   probe?: (domain: string) => string;
+  /** Einstellung "Firmenadressen Personen zuordnen" (Standard an). */
+  zuordnungAktiv?: boolean;
+  /** Einstellung "unverifizierte Adressen anzeigen": false = nur smtp/catchall speichern (Standard an). */
+  ungeprueftSpeichern?: boolean;
 }
 
 export type DomainUrteil = "verifiziert" | "catchall" | "offen" | "widerspruch" | "kein_format";
@@ -170,7 +174,7 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
 
   // ---- 2. Belege + Zuordnung von Firmenadressen ------------------------------
   const kandidatenAdressen = k.firmenEmails.filter((e) => domainVon(e) === domain);
-  const zuordnungen: Zuordnung[] = kandidatenAdressen.length > 0 ? (await ordneFirmenadressen({ firmenEmails: kandidatenAdressen, personen: unversorgt, firmenname: k.name, urteil })).zuordnungen : [];
+  const zuordnungen: Zuordnung[] = deps.zuordnungAktiv !== false && kandidatenAdressen.length > 0 ? (await ordneFirmenadressen({ firmenEmails: kandidatenAdressen, personen: unversorgt, firmenname: k.name, urteil })).zuordnungen : [];
   const zugeordnet = new Set(zuordnungen.map((z) => z.personId));
   const belege: MusterBeleg[] = [
     ...k.personen.flatMap((p) => p.emails.filter((e) => domainVon(e) === domain).map((email) => ({ fullName: p.fullName, email }))),
@@ -342,6 +346,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   const annahme = herkunft === "annahme";
   const geprueftFuer = (personId: string, email: string) => geprueft.get(`${personId}:${email}`)?.details;
   const speichere = async (a: AbgeleiteteAdresse): Promise<void> => {
+    // Wie der Hintergrund-Job: smtp/catchall immer, offen/abgelehnt nur mit Freigabe.
+    if (deps.ungeprueftSpeichern === false && (a.art === "offen" || a.art === "abgelehnt")) return;
     let r: SpeicherErgebnis;
     try {
       r = await deps.speichereAdresse(a);
