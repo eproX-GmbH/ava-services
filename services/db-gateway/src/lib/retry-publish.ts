@@ -27,6 +27,7 @@
 
 import {
   CloudEvent,
+  type EventPayload,
   CompanyContactUpsertPayload,
   EvaluationUpsertCompanyContactsPayload,
   EvaluationUpsertCompanyProfilePayload,
@@ -47,6 +48,7 @@ import { getProducerPool } from "./producer-pools";
 import { getContactPrismaClient } from "./contact-prisma";
 import { targetUserRoutingKey } from "./per-user-routing";
 import { loadEnv } from "./env";
+import { randomUUID } from "node:crypto";
 
 const ALL_PRODUCER_SERVICES = [
   "structured-content",
@@ -699,6 +701,84 @@ export async function publishCompanyContactRetry(opts: {
       })
       .build();
 
+  const env = loadEnv();
+  const client = await getGatewayAmqpPublisher();
+  await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
+  return { published: 1 };
+}
+
+// =============================================================================
+// company-email (docs/PLAN_EMAIL_VERIFIZIERUNG.md, V5)
+// =============================================================================
+
+/** Form des Triggers `companyContact.createEmailVerification`, wie ihn der
+ *  Contact-Producer am Ende seines Laufs sendet (company-contact/src/
+ *  infrastructure/events/email/publish-email-verification-trigger.ts). Von
+ *  Hand gebaut: das registry-@ava/event (1.1.40) kennt den Typ noch nicht. */
+export const EMAIL_VERIFICATION_TYPE = "companyContact.createEmailVerification";
+
+export function buildEmailVerificationRetry(args: {
+  source: string;
+  companyId: string;
+  transactionId: string;
+  companyName: string;
+  url?: string;
+  now?: Date;
+}): CloudEvent<EventPayload> {
+  const jetzt = args.now ?? new Date();
+  return {
+    id: randomUUID(),
+    specversion: "1.0",
+    datacontenttype: "application/json",
+    time: jetzt.toISOString(),
+    type: EMAIL_VERIFICATION_TYPE,
+    source: args.source,
+    subject: args.companyId,
+    transaction: args.transactionId,
+    services: ALL_PRODUCER_SERVICES,
+    data: {
+      companyName: args.companyName,
+      ...(args.url ? { url: args.url } : {}),
+      // Kontakte sind unveraendert: company-email liest den aktuellen Stand
+      // und wartet nicht auf einen neuen Contact-Persist.
+      kontakteGeaendert: false,
+      contactRunAt: jetzt.toISOString(),
+    },
+  } as unknown as CloudEvent<EventPayload>;
+}
+
+/**
+ * Stufe "E-Mail" allein wiederholen: Trigger des Contact-Producers neu senden,
+ * ohne Website-Crawl und Kontaktextraktion. Firmenname aus dem Register,
+ * Website-URL (optional) aus dem Website-Store.
+ */
+export async function publishCompanyEmailRetry(opts: {
+  transactionId: string;
+  companyId: string;
+  companyName?: string;
+  source: string;
+  userId: string;
+}): Promise<{ published: number }> {
+  const { transactionId, companyId, source, userId } = opts;
+  let companyName = opts.companyName;
+  if (!companyName) {
+    const loaded = await loadStructuredContent(companyId);
+    companyName = loaded?.sc.name ?? undefined;
+  }
+  if (!companyName) {
+    notFound(`No companyName for ${companyId}; cannot retry companyEmail`);
+  }
+  let url: string | undefined;
+  try {
+    const res = await getProducerPool("website").query<{ url: string | null }>(
+      `SELECT url FROM "Website" WHERE "companyId" = $1 LIMIT 1`,
+      [companyId],
+    );
+    url = res.rows[0]?.url ?? undefined;
+  } catch {
+    /* ohne URL: company-email nimmt die Website aus den Kontaktdaten */
+  }
+  const event = buildEmailVerificationRetry({ source, companyId, transactionId, companyName, url });
   const env = loadEnv();
   const client = await getGatewayAmqpPublisher();
   await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));

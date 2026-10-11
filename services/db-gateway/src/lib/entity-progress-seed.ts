@@ -32,7 +32,7 @@
 import type { Context } from "hono";
 import { callUpstream } from "./upstream";
 import { getGatewayPool } from "./producer-pools";
-import { PRODUCER_NAMES } from "./db-urls";
+import { PROGRESS_PRODUCER_NAMES } from "./db-urls";
 import { logger as baseLogger } from "./logger";
 
 const logger = baseLogger.child({ component: "entity-progress-seed" });
@@ -85,7 +85,7 @@ export async function seedEntityProgressForTransaction(
   // count to two arrays regardless of (companies × producers) — well
   // within Postgres' 65535 parameter ceiling even at thousand-company
   // imports.
-  const producers = PRODUCER_NAMES;
+  const producers = PROGRESS_PRODUCER_NAMES;
   const companyParams: string[] = [];
   const producerParams: string[] = [];
   for (const companyId of companyIds) {

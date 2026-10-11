@@ -6,7 +6,9 @@
 
 import type { WorkflowDefinition, WorkflowNode } from "./workflow-types";
 
-export const PIPELINE_STAGES = ["masterData", "structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEvaluation"] as const;
+// companyEmail: E-Mail-Ableitung + Verifizierung, nachgelagert zu companyContact
+// (docs/PLAN_EMAIL_VERIFIZIERUNG.md, Producer company-email).
+export const PIPELINE_STAGES = ["masterData", "structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEmail", "companyEvaluation"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 export const STAGE_LABELS: Record<PipelineStage, string> = {
@@ -16,6 +18,7 @@ export const STAGE_LABELS: Record<PipelineStage, string> = {
   website: "Website",
   companyProfile: "Firmenprofil",
   companyContact: "Kontakte",
+  companyEmail: "E-Mail-Adressen",
   companyEvaluation: "Bewertung",
 };
 
@@ -42,6 +45,8 @@ const SECTION_STAGE: Record<string, PipelineStage | null> = {
 const KEYWORDS: Array<{ stage: PipelineStage; re: RegExp }> = [
   { stage: "companyPublication", re: /(kasse|kassen|umsatz|umsaetze|umsätze|erloes|erlös|bilanz|eigenkapital|fremdkapital|gewinn|verlust|jahresueberschuss|jahresüberschuss|ebit|ebitda|ergebnis|liquid|cashflow|cash|schulden|verbindlichkeit|forderung|anlageverm|umlaufverm|rueckstellung|rückstellung|abschreibung|kennzahl|finanz|jahresabschluss|lagebericht|mitarbeiterzahl|beschaeftigte|beschäftigte|personalaufwand)/i },
   { stage: "structuredContent", re: /(geschaeftsfuehr|geschäftsführ|gesellschafter|prokur|vorstand|inhaber|stammkapital|grundkapital|rechtsform|gruendung|gründung|handelsregister|registergericht|hrb|hra|unternehmensgegenstand|gegenstand|sitz$|satzung)/i },
+  // Abgeleitete Adressen kommen aus der E-Mail-Stufe (nach den Kontakten).
+  { stage: "companyEmail", re: /(e-?mail|mailadresse|^mail$)/i },
   { stage: "companyContact", re: /(ansprechpartner|kontakt|e-?mail|mail|telefon|tel$|durchwahl|linkedin|xing|vertriebsleit|einkaufsleit|leiter|leiterin|entscheider|position|rolle)/i },
   { stage: "website", re: /(website|webseite|homepage|impressum|produkt|dienstleistung|leistung|referenz|karriere|stellen)/i },
   { stage: "companyEvaluation", re: /(bewertung|score|icp|signal|einschaetzung|einschätzung|fit)/i },

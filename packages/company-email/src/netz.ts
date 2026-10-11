@@ -40,6 +40,13 @@ export class NetzStatus {
     await this.laufend;
   }
 
+  /** Frische Gegenprobe (ohne Wartefrist): liegt es am Netz oder nur an einem Mailserver? */
+  async pruefeErneut(): Promise<boolean> {
+    this.stand = null;
+    await this.aktualisiere();
+    return this.ok();
+  }
+
   gesperrt(grund: string): void {
     this.stand = { erreichbar: false, grund, at: this.jetzt() };
   }

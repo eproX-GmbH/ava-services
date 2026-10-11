@@ -84,6 +84,8 @@ export interface ProducerConfig {
   databaseName: string | null;
   /** TCP port the producer listens on (each producer reads PORT env). */
   port: number;
+  /** true = laeuft auch ohne LLM-Konfiguration (company-email: KI-Urteil ist Zusatz). */
+  llmOptional?: boolean;
 }
 
 export interface ProducerSupervisorOptions {
@@ -725,10 +727,12 @@ export class ProducerSupervisor extends EventEmitter {
     const databaseUrl = this.opts.config.databaseName === null ? null : await this.opts.databaseUrl();
     if (this.opts.config.databaseName !== null && !databaseUrl) return null;
     const llm = await this.opts.llmConfig();
-    if (!llm) return null;
+    // Ohne LLM-Konfiguration startet ein Producer nicht ("nicht konfiguriert"),
+    // ausser er braucht das Modell nur als Zusatz (llmOptional, company-email).
+    if (!llm && !this.opts.config.llmOptional) return null;
     // v0.1.170 — remember the active config so getStatus() can compute
     // featureWarnings based on which provider keys are absent.
-    this.lastLlmConfig = {
+    this.lastLlmConfig = !llm ? {} : {
       ...(llm.openaiApiKey ? { openaiApiKey: llm.openaiApiKey } : {}),
       ...(llm.anthropicApiKey ? { anthropicApiKey: llm.anthropicApiKey } : {}),
       ...(llm.anthropicSubscriptionToken
@@ -759,6 +763,35 @@ export class ProducerSupervisor extends EventEmitter {
     // Fassung, bleibt alles wie bisher.
     const eigenerBrowser = this.opts.browserPfad?.() ?? null;
     const eigenerTreiber = this.opts.treiberVerzeichnis?.() ?? null;
+    const llmEnv: Record<string, string> = !llm ? {} : {
+      LLM_PROVIDER: llm.provider,
+      ...(llm.model ? { LLM_MODEL: llm.model } : {}),
+      ...(llm.openaiApiKey ? { OPENAI_API_KEY: llm.openaiApiKey } : {}),
+      ...(llm.anthropicApiKey
+        ? { ANTHROPIC_API_KEY: llm.anthropicApiKey }
+        : {}),
+      // v0.1.145 — Anthropic-Subscription-OAuth token. The producer's
+      // @ava/ai-provider getLLM() reads this env and applies the
+      // shared bearer-fetch wrapper from `anthropic-oauth-fetch.ts`.
+      ...(llm.anthropicSubscriptionToken
+        ? { ANTHROPIC_AUTH_TOKEN: llm.anthropicSubscriptionToken }
+        : {}),
+      ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
+      ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),
+      // v0.1.503 — OpenAI-kompatible Anbieter; die env-Namen entsprechen
+      // denen in packages/ai-provider (getLLM/createLLM).
+      ...(llm.deepseekApiKey ? { DEEPSEEK_API_KEY: llm.deepseekApiKey } : {}),
+      ...(llm.xaiApiKey ? { XAI_API_KEY: llm.xaiApiKey } : {}),
+      ...(llm.qwenApiKey ? { DASHSCOPE_API_KEY: llm.qwenApiKey } : {}),
+      ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
+      // O5 — Organisationsschluessel: LLM-Aufrufe ueber GATEWAY_URL/v1/llm/<anbieter>
+      // mit PRODUCER_GATEWAY_TOKEN; kein Anbieterschluessel im Kindprozess.
+      ...(llm.viaGateway ? { AVA_LLM_VIA_GATEWAY: "1" } : {}),
+      // ChatGPT-Abo: Token je Anfrage vom Loopback-Dienst, nie in der Umgebung.
+      ...(llm.planToken && this.opts.planTokenEndpunkt?.()
+        ? { OPENAI_PLAN_TOKEN_URL: this.opts.planTokenEndpunkt()!.url, OPENAI_PLAN_TOKEN_SECRET: this.opts.planTokenEndpunkt()!.secret }
+        : {}),
+    };
     return {
       ...process.env,
       ...(eigenerBrowser ? { CHROME_BIN: eigenerBrowser } : {}),
@@ -800,33 +833,7 @@ export class ProducerSupervisor extends EventEmitter {
       // Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md): structured-content laedt
       // Gesellschafterlisten nur, wenn die Organisation das Feature erlaubt.
       AVA_VERFLECHTUNGEN: featureEnabled("verflechtungen") ? "1" : "0",
-      LLM_PROVIDER: llm.provider,
-      ...(llm.model ? { LLM_MODEL: llm.model } : {}),
-      ...(llm.openaiApiKey ? { OPENAI_API_KEY: llm.openaiApiKey } : {}),
-      ...(llm.anthropicApiKey
-        ? { ANTHROPIC_API_KEY: llm.anthropicApiKey }
-        : {}),
-      // v0.1.145 — Anthropic-Subscription-OAuth token. The producer's
-      // @ava/ai-provider getLLM() reads this env and applies the
-      // shared bearer-fetch wrapper from `anthropic-oauth-fetch.ts`.
-      ...(llm.anthropicSubscriptionToken
-        ? { ANTHROPIC_AUTH_TOKEN: llm.anthropicSubscriptionToken }
-        : {}),
-      ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
-      ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),
-      // v0.1.503 — OpenAI-kompatible Anbieter; die env-Namen entsprechen
-      // denen in packages/ai-provider (getLLM/createLLM).
-      ...(llm.deepseekApiKey ? { DEEPSEEK_API_KEY: llm.deepseekApiKey } : {}),
-      ...(llm.xaiApiKey ? { XAI_API_KEY: llm.xaiApiKey } : {}),
-      ...(llm.qwenApiKey ? { DASHSCOPE_API_KEY: llm.qwenApiKey } : {}),
-      ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
-      // O5 — Organisationsschluessel: LLM-Aufrufe ueber GATEWAY_URL/v1/llm/<anbieter>
-      // mit PRODUCER_GATEWAY_TOKEN; kein Anbieterschluessel im Kindprozess.
-      ...(llm.viaGateway ? { AVA_LLM_VIA_GATEWAY: "1" } : {}),
-      // ChatGPT-Abo: Token je Anfrage vom Loopback-Dienst, nie in der Umgebung.
-      ...(llm.planToken && this.opts.planTokenEndpunkt?.()
-        ? { OPENAI_PLAN_TOKEN_URL: this.opts.planTokenEndpunkt()!.url, OPENAI_PLAN_TOKEN_SECRET: this.opts.planTokenEndpunkt()!.secret }
-        : {}),
+      ...llmEnv,
       // v0.1.184 — EMBED_PROVIDER / EMBED_MODEL are set per-producer
       // via the extraEnvAsync hook in index.ts (currently only
       // company-evaluation cares, hardcoded to ollama + embeddinggemma).

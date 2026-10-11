@@ -88,6 +88,10 @@ export interface AbleitungDeps {
   netzOk: () => boolean;
   /** Eine Verbindung scheiterte am Netz (Port 25 gesperrt). */
   netzGesperrt?: (grund: string) => void;
+  /** Frische Gegenprobe gegen bekannte Mailserver: true = Port 25 geht noch, der
+   *  Fehler lag am Mailserver der Domain, nicht am Netz. Ohne diese Funktion gilt
+   *  jeder Verbindungsfehler als Netzsperre. */
+  netzPruefe?: () => Promise<boolean>;
   budget: { frei: () => number; verbrauche: (n: number) => void };
   urteil?: Urteil | null;
   holeMuster: (domain: string) => Promise<ServerMuster | null>;
@@ -101,13 +105,23 @@ export interface AbleitungDeps {
   zuordnungAktiv?: boolean;
   /** Einstellung "unverifizierte Adressen anzeigen": false = nur smtp/catchall speichern (Standard an). */
   ungeprueftSpeichern?: boolean;
+  /** Je gespeicherter/abgewiesener Adresse (Verlauf im Hintergrund-Job). */
+  protokoll?: (eintrag: ProtokollEintrag) => void;
+}
+
+export interface ProtokollEintrag {
+  adresse: AbgeleiteteAdresse;
+  ergebnis: SpeicherErgebnis | "fehler";
+  fehler?: string;
+  smtp?: PruefErgebnis;
 }
 
 export type DomainUrteil = "verifiziert" | "catchall" | "offen" | "widerspruch" | "kein_format";
 export type MusterHerkunft = "beleg" | "judge" | "cache" | "smtp" | "annahme";
 
 export interface AbleitungsErgebnis {
-  status: "fertig" | "nichts_zu_tun" | "keine_domain";
+  /** fehler: keine einzige Adresse liess sich speichern (Gateway nicht erreichbar o. ae.). */
+  status: "fertig" | "nichts_zu_tun" | "keine_domain" | "fehler";
   domain: string | null;
   muster: string | null;
   musterHerkunft: MusterHerkunft | null;
@@ -118,6 +132,9 @@ export interface AbleitungsErgebnis {
   gespeichert: number;
   vorhanden: number;
   abgewiesen: number;
+  /** Speichern technisch gescheitert (Ausnahme), im Unterschied zu "abgewiesen" (Gateway lehnt ab). */
+  speicherFehler: number;
+  letzterFehler: string | null;
   arten: Record<Art, number>;
   zusammenfassung: string;
 }
@@ -160,6 +177,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     gespeichert: 0,
     vorhanden: 0,
     abgewiesen: 0,
+    speicherFehler: 0,
+    letzterFehler: null,
     arten: { smtp: 0, catchall: 0, offen: 0, abgelehnt: 0 },
     zusammenfassung: "",
   };
@@ -243,9 +262,21 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     deps.budget.verbrauche(anfragen);
     const sperre = werte.find((w) => w.ergebnis === "gesperrt");
     if (sperre) {
+      // Keine weitere Verbindung zu dieser Domain. Ob das Netz oder nur dieser
+      // Mailserver schuld ist, klaert eine frische Gegenprobe — sonst sperrt ein
+      // einzelner kaputter MX die Pruefung fuer alle Firmen.
       gesperrt = true;
-      offenGrund = "Mail-Pruefung in diesem Netz nicht moeglich";
-      deps.netzGesperrt?.(sperre.antwort ?? "Verbindung zum Mailserver nicht moeglich");
+      const netzNochOk = deps.netzPruefe ? await deps.netzPruefe().catch(() => false) : false;
+      if (netzNochOk) {
+        offenGrund = "Mailserver der Domain nicht erreichbar";
+        deps.log(`${domain}: Mailserver nicht erreichbar (${sperre.antwort ?? "?"}), Port 25 sonst offen`);
+      } else {
+        offenGrund = "Mail-Pruefung in diesem Netz nicht moeglich";
+        deps.netzGesperrt?.(sperre.antwort ?? "Verbindung zum Mailserver nicht moeglich");
+      }
+    } else if (werte.some((w) => w.ergebnis === "keine_mx")) {
+      gesperrt = true;
+      offenGrund = "Domain hat keinen Mailserver (kein MX-Eintrag)";
     } else if (werte.some((w) => w.ergebnis === "unbekannt")) {
       offenGrund = "Mailserver ohne eindeutige Antwort";
     }
@@ -356,14 +387,19 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     try {
       r = await deps.speichereAdresse(a);
     } catch (e) {
-      deps.log(`${a.email}: speichern fehlgeschlagen (${e instanceof Error ? e.message : String(e)})`);
-      r = "abgewiesen";
+      const msg = e instanceof Error ? e.message : String(e);
+      deps.log(`${a.email}: speichern fehlgeschlagen (${msg})`);
+      ergebnis.speicherFehler++;
+      ergebnis.letzterFehler = msg;
+      deps.protokoll?.({ adresse: a, ergebnis: "fehler", fehler: msg, smtp: geprueftFuer(a.personId, a.email)?.ergebnis });
+      return;
     }
     if (r === "gespeichert") {
       ergebnis.gespeichert++;
       ergebnis.arten[a.art]++;
     } else if (r === "vorhanden") ergebnis.vorhanden++;
     else ergebnis.abgewiesen++;
+    deps.protokoll?.({ adresse: a, ergebnis: r, smtp: geprueftFuer(a.personId, a.email)?.ergebnis });
   };
 
   // Zugeordnete Firmenadressen: echte Adressen von der Website.
@@ -443,6 +479,11 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     await teileMuster(deps, domain, { muster: null, konfidenz: 0, belege: [], catchAll: true, stats: { quelle: "live", firma: companyId } });
   }
 
+  if (ergebnis.gespeichert === 0 && ergebnis.vorhanden === 0 && ergebnis.speicherFehler > 0) {
+    ergebnis.status = "fehler";
+    ergebnis.zusammenfassung = `${k.name} (${domain}): ${ergebnis.speicherFehler} Adresse(n) konnten nicht gespeichert werden — ${ergebnis.letzterFehler}`;
+    return ergebnis;
+  }
   const a = ergebnis.arten;
   const teile = [
     a.smtp > 0 ? `${a.smtp} verifiziert` : "",
@@ -450,7 +491,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     a.offen > 0 ? `${a.offen} abgeleitet` : "",
     a.abgelehnt > 0 ? `${a.abgelehnt} vom Server abgelehnt` : "",
     ergebnis.vorhanden > 0 ? `${ergebnis.vorhanden} schon vorhanden` : "",
-    ergebnis.abgewiesen > 0 ? `${ergebnis.abgewiesen} nicht gespeichert` : "",
+    ergebnis.abgewiesen > 0 ? `${ergebnis.abgewiesen} vom Gateway abgewiesen` : "",
+    ergebnis.speicherFehler > 0 ? `${ergebnis.speicherFehler} nicht gespeichert (${ergebnis.letzterFehler})` : "",
   ].filter(Boolean);
   ergebnis.zusammenfassung = `${k.name} (${domain}): ${teile.join(", ") || "nichts gespeichert"} — Muster ${muster} (${herkunft}), Domain ${domainUrteil}, ${ergebnis.smtpVerbindungen} SMTP-Verbindung(en)/${ergebnis.smtpAnfragen} Anfragen`;
   return ergebnis;

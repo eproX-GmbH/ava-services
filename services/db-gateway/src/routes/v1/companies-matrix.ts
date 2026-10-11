@@ -31,7 +31,7 @@ import { getGatewayPool } from "../../lib/producer-pools";
 import { heldSubset } from "../../lib/company-holds";
 import { tombstonedSubset } from "../../lib/company-tombstones";
 import { cacheCompanyNames } from "../../lib/company-names";
-import { PRODUCER_NAMES } from "../../lib/db-urls";
+import { PROGRESS_PRODUCER_NAMES } from "../../lib/db-urls";
 import { ErrorShape } from "./schemas";
 
 export const companiesMatrixRouter = new OpenAPIHono();
@@ -267,7 +267,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     };
     const stages: Record<string, StageCell> = {};
     const found = byCompany.get(co.companyId) ?? new Map();
-    for (const producer of PRODUCER_NAMES) {
+    for (const producer of PROGRESS_PRODUCER_NAMES) {
       const row = found.get(producer);
       if (row) {
         stages[producer] = {
@@ -313,6 +313,14 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
             transactionId: null,
           };
         }
+      }
+      // E-Mail-Stufe: wird nur vom Contact-Lauf angestossen (auch bei dessen
+      // skipped, nicht bei failed). Lief Kontakt fehl oder gar nicht, bleibt die
+      // eigene Zeile sonst ewig pending.
+      const kontakt = stages["company-contact"];
+      const email = stages["company-email"];
+      if (email && email.state === "pending" && kontakt && (kontakt.state === "failed" || (kontakt.state === "skipped" && websiteTerminalNoResult))) {
+        stages["company-email"] = { state: "skipped", updatedAt: kontakt.updatedAt ?? null, errorMessage: null, transactionId: null };
       }
     }
 

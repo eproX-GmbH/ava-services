@@ -66,6 +66,7 @@ const PRODUCER_QUEUE_MAP: Record<string, string> = {
   "company-publication": "upsert-company-publication",
   "company-evaluation": "upsert-company-evaluation",
   "company-contact": "upsert-company-contact",
+  "company-email": "upsert-company-email",
 };
 
 producersRouter.openapi(queueDepthsRoute, async (c) => {

@@ -30,6 +30,7 @@ const RESUMABLE_STAGES = [
   "website",
   "companyProfile",
   "companyContact",
+  "companyEmail",
   // companyEvaluation bewusst NICHT (2026-10-05): abgeleitete Stufe, ein
   // Nachstoss erzeugt nur "laeuft" ohne Abschluss (siehe freshness-scheduler).
 ] as const;
@@ -47,6 +48,7 @@ const STAGE_TO_PRODUCER: Record<Stage, string> = {
   website: "website",
   companyProfile: "company-profile",
   companyContact: "company-contact",
+  companyEmail: "company-email",
 };
 
 /** Sanity bound: ignore transactions older than this. */

@@ -7,6 +7,7 @@
 // davon unberuehrt. Prefetch=1 auf der Queue: nie zwei Firmen parallel gegen
 // denselben MX.
 
+import * as yup from "yup";
 import { ermittleFirmenAdressen, kontakteAusAntwort, type TagesBudget, type Urteil } from "@ava/email-muster";
 import type { GatewayClient } from "./gateway";
 import type { NetzStatus } from "./netz";
@@ -33,7 +34,7 @@ export interface TriggerEreignis {
 
 export interface WorkerDeps {
   gateway: GatewayClient;
-  netz: Pick<NetzStatus, "ok" | "aktualisiere" | "gesperrt">;
+  netz: Pick<NetzStatus, "ok" | "aktualisiere" | "gesperrt"> & Partial<Pick<NetzStatus, "pruefeErneut">>;
   budget: TagesBudget;
   urteil: Urteil | null;
   progress: (p: ProgressEingabe) => Promise<void>;
@@ -47,6 +48,16 @@ export interface WorkerDeps {
 }
 
 export type Ausgang = "completed" | "skipped" | "failed" | "duplikat" | "ungueltig";
+
+/** Nutzdaten des Triggers (AMQP ist extern: pruefen statt vertrauen). */
+const DATEN_SCHEMA = yup
+  .object({
+    companyName: yup.string().max(500).optional(),
+    url: yup.string().max(2000).optional(),
+    kontakteGeaendert: yup.boolean().optional(),
+    contactRunAt: yup.string().max(64).optional(),
+  })
+  .noUnknown(false);
 
 export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Promise<Ausgang> {
   const laufendeRuns = new Set<string>();
@@ -85,7 +96,14 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
       return "duplikat";
     }
     laufendeRuns.add(runId);
-    const data = ereignis.data ?? {};
+    let data: NonNullable<TriggerEreignis["data"]>;
+    try {
+      data = DATEN_SCHEMA.validateSync(ereignis.data ?? {}, { stripUnknown: true }) as NonNullable<TriggerEreignis["data"]>;
+    } catch (e) {
+      laufendeRuns.delete(runId);
+      logger.error(`runId=${runId} Trigger mit ungueltigen Nutzdaten verworfen: ${e instanceof Error ? e.message : String(e)}`);
+      return "ungueltig";
+    }
     const schalter = deps.einstellungen?.() ?? { aktiv: true, zuordnungAktiv: true, ungeprueftSpeichern: true };
     if (!schalter.aktiv) {
       laufendeRuns.delete(runId);
@@ -109,6 +127,7 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
       const r = await ableiten(companyId, k, {
         netzOk: () => deps.netz.ok(),
         netzGesperrt: (grund) => deps.netz.gesperrt(grund),
+        ...(deps.netz.pruefeErneut ? { netzPruefe: () => deps.netz.pruefeErneut!() } : {}),
         budget: deps.budget,
         urteil: deps.urteil,
         holeMuster: (domain) => deps.gateway.holeMuster(domain),
@@ -119,6 +138,10 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
         ungeprueftSpeichern: schalter.ungeprueftSpeichern,
       });
       logger.info(`runId=${runId} done — ${r.zusammenfassung}`);
+      if (r.status === "fehler") {
+        await melde({ transactionId, companyId, state: "failed", errorMessage: r.zusammenfassung.slice(0, 500) });
+        return "failed";
+      }
       if (r.status !== "fertig") {
         await melde({ transactionId, companyId, state: "skipped", errorMessage: r.zusammenfassung.slice(0, 500) });
         return "skipped";

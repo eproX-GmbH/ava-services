@@ -6,7 +6,8 @@ import { promises as dns } from "node:dns";
 import net from "node:net";
 import tls from "node:tls";
 
-export type PruefErgebnis = "existiert" | "existiert_nicht" | "unbekannt" | "catch_all" | "gesperrt";
+/** keine_mx: Domain hat weder MX- noch A-Eintrag — kein Urteil ueber Adressen moeglich (NICHT "abgelehnt"). */
+export type PruefErgebnis = "existiert" | "existiert_nicht" | "unbekannt" | "catch_all" | "gesperrt" | "keine_mx";
 
 export interface PruefDetails {
   ergebnis: PruefErgebnis;
@@ -137,7 +138,7 @@ export async function pruefeAdressen(domain: string, adressen: string[], opts: P
     return out;
   };
   const hosts = await mxHosts(domain);
-  if (hosts.length === 0) return setzeAlle("existiert_nicht", null, null, "kein MX-/A-Eintrag");
+  if (hosts.length === 0) return setzeAlle("keine_mx", null, null, "Domain hat keinen Mailserver (kein MX-/A-Eintrag)");
   let sock: SmtpSocket | null = null;
   let mx: string | null = null;
   let letzterFehler = "";

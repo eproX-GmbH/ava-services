@@ -30,6 +30,7 @@ type StageId =
   | "website"
   | "companyProfile"
   | "companyContact"
+  | "companyEmail"
   | "companyEvaluation";
 
 type CellState = "completed" | "failed" | "skipped" | "pending" | "in_progress";
@@ -94,6 +95,7 @@ const STAGE_LABEL: Record<StageId, string> = {
   website: "Website",
   companyProfile: "Profil",
   companyContact: "Kontakt",
+  companyEmail: "E-Mail",
   companyEvaluation: "Bewertung",
 };
 
@@ -114,6 +116,7 @@ const SERVICE_TO_STAGE: Record<string, StageId> = {
   website: "website",
   "company-profile": "companyProfile",
   "company-contact": "companyContact",
+  "company-email": "companyEmail",
   "company-evaluation": "companyEvaluation",
 };
 
@@ -127,6 +130,7 @@ const STAGE_TO_PRODUCER: Partial<Record<StageId, string>> = {
   website: "website",
   companyProfile: "company-profile",
   companyContact: "company-contact",
+  companyEmail: "company-email",
   companyEvaluation: "company-evaluation",
 };
 
@@ -281,6 +285,7 @@ export function TransactionDetail() {
                 website: blank,
                 companyProfile: blank,
                 companyContact: blank,
+                companyEmail: blank,
                 companyEvaluation: blank,
               };
               cells[stage] = {
@@ -346,6 +351,7 @@ export function TransactionDetail() {
     "website",
     "companyProfile",
     "companyContact",
+    "companyEmail",
     "companyEvaluation",
   ];
 
@@ -551,6 +557,7 @@ export function TransactionDetail() {
               "website",
               "company-profile",
               "company-contact",
+              "company-email",
               "company-evaluation",
             ];
             const interesting = (() => {

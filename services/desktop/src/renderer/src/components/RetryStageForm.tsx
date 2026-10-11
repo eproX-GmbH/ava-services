@@ -47,6 +47,7 @@ export type RetryStageId =
   | "website"
   | "companyProfile"
   | "companyContact"
+  | "companyEmail"
   | "companyEvaluation";
 
 export const RETRY_STAGES: Array<{ id: RetryStageId; label: string }> = [
@@ -55,6 +56,7 @@ export const RETRY_STAGES: Array<{ id: RetryStageId; label: string }> = [
   { id: "website", label: "Website" },
   { id: "companyProfile", label: "Company Profile" },
   { id: "companyContact", label: "Company Contact" },
+  { id: "companyEmail", label: "E-Mail-Adressen" },
   { id: "companyEvaluation", label: "Company Evaluation" },
 ];
 
@@ -95,7 +97,8 @@ export function RetryStageForm({
 }) {
   // O3/v0.1.561 — Kontakt-Stufe nur, wenn die Organisation Kontakte erlaubt.
   const kontakteErlaubt = useFeature("kontakte");
-  const stufen = kontakteErlaubt ? RETRY_STAGES : RETRY_STAGES.filter((s) => s.id !== "companyContact");
+  // Ohne Feature "kontakte" gibt es weder Kontakte noch abgeleitete Adressen.
+  const stufen = kontakteErlaubt ? RETRY_STAGES : RETRY_STAGES.filter((s) => s.id !== "companyContact" && s.id !== "companyEmail");
   const firstFailed = useMemo<RetryStageId>(
     () => failedStages?.[0] ?? "structuredContent",
     [failedStages],

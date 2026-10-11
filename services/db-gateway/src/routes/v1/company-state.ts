@@ -73,6 +73,7 @@ const KNOWN_STAGES = [
   "website",
   "company-profile",
   "company-contact",
+  "company-email",
   "company-evaluation",
 ] as const;
 

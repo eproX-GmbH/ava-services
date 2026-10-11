@@ -39,7 +39,9 @@ export function ladeConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.LISTEN_HOST ?? "127.0.0.1",
     budgetDatei: env.AVA_EMAIL_BUDGET_FILE || null,
     tagesDeckel: zahl(env.AVA_EMAIL_TAGES_DECKEL, 50),
-    persistWartenMs: zahl(env.AVA_EMAIL_PERSIST_WARTEN_MS, 3 * 60_000),
+    // Der Contact-Persist landet in Sekunden; bei einem Tier-Gate-Skip kommt er nie.
+    // Laenger zu warten haelt nur die Queue (Prefetch 1) auf.
+    persistWartenMs: zahl(env.AVA_EMAIL_PERSIST_WARTEN_MS, 60_000),
     einstellungenDatei: env.AVA_EMAIL_MUSTER_CONFIG || null,
     featureAktiv: env.AVA_EMAIL_AKTIV !== "0",
   };

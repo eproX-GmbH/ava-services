@@ -27,7 +27,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { domainVon, erkenneMuster, type MusterBeleg } from "./pattern";
 import { firmenDomain } from "./domain";
-import { beurteileMuster, bildeAdresseAllgemein, ordneFirmenadressen, type Urteil, type Zuordnung } from "./zuordnung";
+import { bildeAdresseAllgemein, ordneFirmenadressen, type Urteil } from "./zuordnung";
+import { ermittleFirmenAdressen, type AbgeleiteteAdresse, type ServerMuster, type SpeicherErgebnis } from "./ableitung";
 import { VERLAUF_MAX, type EmailMusterConfig, type VerlaufEintrag, type Vorschau } from "../../../shared/email-muster-types";
 export type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
 import { pruefeAdressen, pruefePort25, zufallsAdresse, type PruefErgebnis } from "./smtp-verify";
@@ -42,7 +43,6 @@ const CATCHALL_RECHECK_MS = 90 * 86_400_000;
 const TAGES_DECKEL = 50;
 /** V4: so lange nach einem Live-Lauf des Producers company-email bleibt die Domain dem Producer ueberlassen. */
 const LIVE_SCHONFRIST_MS = 24 * 3600_000;
-const MAX_JE_FIRMA = 10;
 const MAX_FIRMEN_JE_TICK = 25;
 /** Offene (unverifizierte) Adressen: hoechstens 3 Nachpruefungen, Abstand 24 h. */
 const OFFEN_MAX_VERSUCHE = 3;
@@ -280,17 +280,14 @@ export class EmailMusterSupervisor {
   /** Liefert eine Zusammenfassung, wenn fuer diese Firma gearbeitet wurde; sonst null (naechste Firma). */
   private async pruefeFirma(companyId: string, cfg: EmailMusterConfig, manuell: boolean): Promise<string | null> {
     const k = await this.kontakte(companyId);
-    const { personen, firmenEmails } = k;
+    const { personen } = k;
     const name = k.name;
     if (personen.length === 0) return null;
     const fd = await this.firmenDomainVon(k, true);
     if (!fd) return null;
     const domain = fd.domain;
-    const domainQuelle = fd.quelle;
     const netzOk = cfg.netz?.erreichbar === true;
-    const ungeprueft = cfg.ungeprueftAnzeigen !== false;
     const jetzt = () => new Date().toISOString();
-    const derived = (body: Record<string, unknown>) => this.deps.gatewayRequest(`/v1/companies/${encodeURIComponent(companyId)}/contacts/derived-email`, { method: "POST", body });
 
     // Personen ohne belastbare Adresse; "offene" Ableitungen zaehlen als nachpruefbar.
     const ohne = personen.filter((p) => p.emails.length === 0);
@@ -299,196 +296,156 @@ export class EmailMusterSupervisor {
     if (unversorgt.length === 0 && nachpruefbar.length === 0) return null;
 
     // V4: Muster/Befund vom Gateway — auch, um frische Live-Laeufe des Producers zu erkennen.
-    let server: { muster: string | null; konfidenz: number; catchAllAt: string | null; checkedAt?: string; stats?: Record<string, unknown> } | null = null;
-    try {
-      server = await this.deps.gatewayRequest<{ muster: string | null; konfidenz: number; catchAllAt: string | null; checkedAt?: string; stats?: Record<string, unknown> }>(`/v1/email-patterns/${encodeURIComponent(domain)}`);
-    } catch {
-      server = null;
-    }
+    const server = await this.holeMuster(domain);
     if (!manuell && server?.stats?.quelle === "live" && Date.now() - Date.parse(server.checkedAt ?? "") < LIVE_SCHONFRIST_MS) return null;
 
-    // ---- E1 Zuordnung: Firmenadressen mit Namen → Person -----------------------
-    let zugeordnet = 0;
-    const zuordnungen: Zuordnung[] = [];
-    if (cfg.zuordnungAktiv !== false && unversorgt.length > 0) {
-      const kandidatenAdressen = firmenEmails.filter((e) => domainVon(e) === domain);
-      if (kandidatenAdressen.length > 0) {
-        const z = await ordneFirmenadressen({ firmenEmails: kandidatenAdressen, personen: unversorgt, firmenname: name, urteil: this.deps.urteil ?? null });
-        zuordnungen.push(...z.zuordnungen);
+    const teile: string[] = [];
+
+    // ---- A. Nachpruefung offener Adressen (nur dieser Job macht das) ----------
+    if (nachpruefbar.length > 0) {
+      const kandidaten = nachpruefbar
+        .map((p) => ({ p, email: p.offeneEmails.find((e) => this.offenFaellig(cfg, e)) ?? "" }))
+        .filter((x) => x.email)
+        .slice(0, 5);
+      const r = await pruefeAdressen(domain, kandidaten.map((x) => x.email), { catchAllProbe: zufallsAdresse(domain), log: this.deps.log });
+      let verifiziert = 0, abgelehnt = 0, unbestaetigt = 0, weiterOffen = 0;
+      for (const { p, email } of kandidaten) {
+        const d = r.get(email);
+        const e: PruefErgebnis = d?.ergebnis ?? "unbekannt";
+        if (d?.mx && e !== "gesperrt") {
+          this.zaehle(cfg);
+          cfg.stats.geprueft++;
+        }
+        const art = e === "existiert" ? "smtp" : e === "catch_all" ? "catchall" : e === "existiert_nicht" ? "abgelehnt" : "offen";
+        const eintrag: VerlaufEintrag = { at: jetzt(), companyId, firma: name, domain, personId: p.personId, fullName: p.fullName, email, muster: server?.muster ?? "nachpruefung", ergebnis: e === "existiert" ? "verifiziert" : e === "catch_all" ? "catch_all" : e === "existiert_nicht" ? "abgelehnt" : e === "gesperrt" ? "gesperrt" : "unklar", gespeichert: false, smtpCode: d?.code ?? undefined, mx: d?.mx ?? null };
+        if (art === "offen") {
+          // Offen bleibt offen: Versuch zaehlen, nichts erneut speichern.
+          weiterOffen++;
+          cfg.stats.unbekannt++;
+          this.offenMerken(cfg, email);
+          if (e === "gesperrt" && netzOk) cfg.netz = { erreichbar: false, grund: d?.antwort ?? "Verbindung zum Mailserver nicht moeglich", at: jetzt() };
+        } else {
+          try {
+            await this.speichereAdresse(companyId, { personId: p.personId, email, muster: server?.muster ?? "nachpruefung", beleg: email, baseline: email, herkunft: "muster", art, domainQuelle: fd.quelle, mx: d?.mx ?? null, checkedAt: eintrag.at, ...(d?.code != null ? { smtpCode: d.code } : {}) });
+            eintrag.gespeichert = true;
+          } catch (err) {
+            eintrag.fehler = `Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`;
+            this.deps.log(`[email-muster] speichern fehlgeschlagen ${email}: ${eintrag.fehler}`);
+          }
+          this.offenVergessen(cfg, email);
+          if (art === "smtp") {
+            verifiziert++;
+            cfg.stats.verifiziert++;
+          } else if (art === "catchall") {
+            unbestaetigt++;
+            cfg.stats.unbestaetigt++;
+          } else {
+            abgelehnt++;
+            cfg.stats.abgelehnt++;
+          }
+        }
+        this.merke(cfg, eintrag);
       }
-    }
-    for (const z of zuordnungen) {
-      const p = unversorgt.find((x) => x.personId === z.personId)!;
-      const r = netzOk ? (await pruefeAdressen(domain, [z.email], { catchAllProbe: zufallsAdresse(domain), log: this.deps.log })).get(z.email) : undefined;
-      if (netzOk) {
-        this.zaehle(cfg);
-        cfg.stats.geprueft++;
+      if (verifiziert + abgelehnt + unbestaetigt + weiterOffen > 0) {
+        teile.push(`Nachpruefung: ${[verifiziert > 0 ? `${verifiziert} verifiziert` : "", unbestaetigt > 0 ? `${unbestaetigt} unbestaetigt (Catch-all)` : "", abgelehnt > 0 ? `${abgelehnt} vom Server abgelehnt` : "", weiterOffen > 0 ? `${weiterOffen} weiter offen` : ""].filter(Boolean).join(", ")}`);
       }
-      const e: PruefErgebnis = r?.ergebnis ?? "unbekannt";
-      const art = e === "existiert" ? "smtp" : e === "catch_all" ? "catchall" : e === "existiert_nicht" ? "abgelehnt" : "offen";
-      const eintrag: VerlaufEintrag = { at: jetzt(), companyId, firma: name, domain, personId: p.personId, fullName: p.fullName, email: z.email, muster: "zuordnung", ergebnis: "zugeordnet", gespeichert: false, baseline: z.email, smtpCode: r?.code ?? undefined, mx: r?.mx ?? null };
-      if (art === "abgelehnt") {
-        // Eine Firmenadresse, die der Server ablehnt, ist ein Widerspruch — nicht zuordnen.
-        this.merke(cfg, { ...eintrag, ergebnis: "abgelehnt" });
-        continue;
-      }
-      try {
-        await derived({ personId: p.personId, email: z.email, muster: "zuordnung", beleg: z.email, baseline: z.email, herkunft: "zuordnung", art, domainQuelle, hinweis: z.begruendung.slice(0, 300), mx: r?.mx ?? null, checkedAt: eintrag.at, smtpCode: r?.code ?? undefined });
-        eintrag.gespeichert = true;
-        zugeordnet++;
-        cfg.stats.zugeordnet = (cfg.stats.zugeordnet ?? 0) + 1;
-        p.emails.push(z.email);
-        if (art === "offen") this.offenMerken(cfg, z.email);
-      } catch (err) {
-        eintrag.fehler = `Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`;
-        this.deps.log(`[email-muster] zuordnung fehlgeschlagen ${z.email}: ${eintrag.fehler}`);
-      }
-      this.merke(cfg, eintrag);
     }
 
-    // ---- Muster bestimmen (Katalog, Server, KI-Urteil) ------------------------
-    const belege: MusterBeleg[] = personen.flatMap((p) => p.emails.map((email) => ({ fullName: p.fullName, email })));
-    const stand = cfg.domains[domain];
-    const belegeAnzahl = belege.filter((b) => domainVon(b.email) === domain).length;
-    const restOhne = personen.filter((p) => p.emails.length === 0);
-    if (stand && !manuell && restOhne.length > 0) {
-      const alter = Date.now() - Date.parse(stand.at);
-      const frist = stand.catchAll ? CATCHALL_RECHECK_MS : DOMAIN_RECHECK_MS;
-      // Regel (Operator 2026-09-10): erneut nur, wenn die Frist ablief ODER neue
-      // Belege auftauchten. Stufe 2: solange Personen unversorgt sind oder offene
-      // Adressen nachpruefbar, bleibt die Domain "offen" (kein Warten).
-      const bleibtOffen = (!!stand.muster && (unversorgt.length > 0 || nachpruefbar.length > 0)) || stand.offen === true;
-      if (alter < frist && stand.belege === belegeAnzahl && !bleibtOffen) return zugeordnet > 0 ? `${name}: ${zugeordnet} Firmenadresse(n) Personen zugeordnet` : null;
-    }
-    const befund = erkenneMuster(domain, belege);
-    const catchAllBekannt = !!server?.catchAllAt && Date.now() - Date.parse(server.catchAllAt) < CATCHALL_RECHECK_MS && !manuell;
-    let muster = befund.muster ?? server?.muster ?? null;
-    let musterQuelle: "katalog" | "judge" = "katalog";
-    let baseline = befund.belege[0]?.email ?? belege.find((b) => domainVon(b.email) === domain)?.email ?? null;
-    // E2: Kein (eindeutiges) Katalogmuster, aber Belege → KI-Urteil mit Reproduktionspruefung.
-    const musterBelege = belege.filter((b) => domainVon(b.email) === domain);
-    if (this.deps.urteil && musterBelege.length > 0 && (!muster || (befund.belege.length <= 1 && befund.alternativen.length > 1))) {
-      const u = await beurteileMuster({ domain, belege: musterBelege, alternativen: befund.alternativen, urteil: this.deps.urteil });
-      if (u) {
-        muster = u.muster;
-        musterQuelle = "judge";
-        baseline = u.baseline;
-        this.deps.log(`[email-muster] ${name} (${domain}): Muster per Urteil ${u.muster} (${u.begruendung})`);
+    // ---- B. Unversorgte Personen: dieselbe Ableitung wie der Producer ----------
+    if (unversorgt.length > 0) {
+      // Regel (Operator 2026-09-10): eine Domain erst nach Ablauf der Frist erneut
+      // anfassen, ausser es gibt neue Belege oder sie blieb ausdruecklich offen.
+      const belegeAnzahl = personen.reduce((n, p) => n + p.emails.filter((e) => domainVon(e) === domain).length, 0);
+      const stand = cfg.domains[domain];
+      let faellig = true;
+      if (stand && !manuell) {
+        const alter = Date.now() - Date.parse(stand.at);
+        const frist = stand.catchAll ? CATCHALL_RECHECK_MS : DOMAIN_RECHECK_MS;
+        if (alter < frist && stand.belege === belegeAnzahl && stand.offen !== true) faellig = false;
       }
-    }
-    if (!muster || !baseline) {
-      const anzahl = befund.belege.length + befund.unerklaert.length;
-      const grund =
-        anzahl === 0
-          ? `keine personengebundene Adresse als Beleg (${befund.funktionsadressen.length} Funktionsadressen, z. B. ${befund.funktionsadressen[0] ?? "–"})`
-          : `${anzahl} personengebundene Belege passen zu keinem gemeinsamen Muster (z. B. ${befund.unerklaert
-              .slice(0, 3)
-              .map((u) => `${u.fullName} → ${u.email}`)
-              .join("; ")})`;
-      cfg.domains[domain] = { at: jetzt(), muster: null, belege: belegeAnzahl, catchAll: false, grund };
-      return zugeordnet > 0 ? `${name}: ${zugeordnet} Firmenadresse(n) Personen zugeordnet, kein Adressmuster erkennbar` : null;
-    }
-    const musterKonfidenz = musterQuelle === "judge" ? Math.max(0.5, befund.konfidenz) : befund.konfidenz;
-    if ((befund.muster && (befund.muster !== server?.muster || befund.konfidenz > (server?.konfidenz ?? 0))) || (musterQuelle === "judge" && muster !== server?.muster)) {
-      await this.deps.gatewayRequest(`/v1/email-patterns/${encodeURIComponent(domain)}`, { method: "PUT", body: { muster, konfidenz: musterKonfidenz, belege: musterBelege.slice(0, 20), stats: { firma: companyId, quelle: musterQuelle } } }).catch(() => undefined);
-    }
-
-    // ---- E3 Kandidaten: unversorgte Personen + faellige Nachpruefungen ----------
-    const kandidaten = [
-      ...restOhne.filter((p) => p.offeneEmails.length === 0).map((p) => ({ personId: p.personId, fullName: p.fullName, email: bildeAdresseAllgemein(muster!, p.fullName, domain) ?? "", nachpruefung: false })),
-      ...(netzOk ? nachpruefbar.map((p) => ({ personId: p.personId, fullName: p.fullName, email: p.offeneEmails.find((e) => this.offenFaellig(cfg, e)) ?? "", nachpruefung: true })) : []),
-    ]
-      .filter((k) => k.email)
-      .slice(0, MAX_JE_FIRMA);
-    const rest = restOhne.filter((p) => p.offeneEmails.length === 0).length - kandidaten.filter((k) => !k.nachpruefung).length;
-    if (kandidaten.length === 0) {
-      cfg.domains[domain] = { at: jetzt(), muster, belege: belegeAnzahl, catchAll: stand?.catchAll ?? false, offen: false };
-      return zugeordnet > 0 ? `${name}: ${zugeordnet} Firmenadresse(n) Personen zugeordnet` : null;
-    }
-    cfg.stats.firmen++;
-    this.deps.log(`[email-muster] ${name} (${domain}): Muster ${muster}, ${kandidaten.length} Kandidaten${catchAllBekannt ? " (Catch-all bekannt)" : ""}${netzOk ? "" : " (ohne Mail-Pruefung)"}`);
-    const ergebnisse = catchAllBekannt
-      ? new Map(kandidaten.map((k) => [k.email, { ergebnis: "catch_all" as PruefErgebnis, mx: null, code: null, antwort: null, dauerMs: 0 }]))
-      : netzOk
-        ? await pruefeAdressen(domain, kandidaten.map((k) => k.email), { catchAllProbe: zufallsAdresse(domain), log: this.deps.log })
-        : new Map();
-    let verifiziert = 0, abgelehnt = 0, unbekannt = 0, unbestaetigt = 0, catchAll = false, gesperrt = false;
-    for (const k of kandidaten) {
-      const r = ergebnisse.get(k.email);
-      let e: PruefErgebnis = r?.ergebnis ?? (netzOk && !gesperrt ? "unbekannt" : "gesperrt");
-      if (gesperrt) e = "gesperrt";
-      if (netzOk && !gesperrt && !catchAllBekannt) {
-        this.zaehle(cfg);
-        cfg.stats.geprueft++;
-      }
-      if (e === "gesperrt") gesperrt = true;
-      const eintrag: VerlaufEintrag = { at: jetzt(), companyId, firma: name, domain, personId: k.personId, fullName: k.fullName, email: k.email, muster, ergebnis: "unklar", gespeichert: false, baseline, smtpCode: r?.code ?? undefined, mx: r?.mx ?? null };
-      const art = e === "existiert" ? "smtp" : e === "catch_all" ? "catchall" : e === "existiert_nicht" ? "abgelehnt" : "offen";
-      eintrag.ergebnis = e === "existiert" ? "verifiziert" : e === "catch_all" ? "catch_all" : e === "existiert_nicht" ? "abgelehnt" : e === "gesperrt" ? "gesperrt" : "unklar";
-      if (e === "catch_all") catchAll = true;
-      // Speichern: smtp/catchall immer; offen/abgelehnt nur mit Freigabe (Standard an).
-      // Nachpruefung ohne neues Ergebnis (offen bleibt offen) wird nicht erneut gespeichert.
-      const speichern = art === "smtp" || art === "catchall" || (ungeprueft && !(k.nachpruefung && art === "offen"));
-      if (speichern) {
-        try {
-          await derived({
-            personId: k.personId,
-            email: k.email,
-            muster,
-            beleg: baseline,
-            baseline,
-            musterQuelle,
-            herkunft: "muster",
-            art,
-            domainQuelle,
-            belegAnzahl: musterBelege.length,
-            mx: r?.mx ?? null,
-            checkedAt: eintrag.at,
-            smtpCode: r?.code ?? undefined,
-            ...(art === "offen" ? { hinweis: e === "gesperrt" ? "Mail-Pruefung in diesem Netz nicht moeglich" : "Mailserver ohne eindeutige Antwort" } : {}),
-          });
-          eintrag.gespeichert = true;
-        } catch (err) {
-          eintrag.fehler = `Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`;
-          this.deps.log(`[email-muster] speichern fehlgeschlagen ${k.email}: ${eintrag.fehler}`);
+      if (faellig) {
+        let offenGespeichert = 0;
+        const r = await ermittleFirmenAdressen(companyId, k, {
+          netzOk: () => cfg.netz?.erreichbar === true,
+          netzGesperrt: (grund) => {
+            cfg.netz = { erreichbar: false, grund, at: jetzt() };
+          },
+          netzPruefe: async () => {
+            const n = await pruefePort25();
+            cfg.netz = { ...n, at: jetzt() };
+            return n.erreichbar;
+          },
+          budget: { frei: () => this.budget.frei(), verbrauche: (n) => this.verbuche(cfg, n) },
+          urteil: this.deps.urteil ?? null,
+          holeMuster: () => Promise.resolve(server),
+          speichereMuster: (dom, body) => this.deps.gatewayRequest(`/v1/email-patterns/${encodeURIComponent(dom)}`, { method: "PUT", body: { ...body, stats: { ...(body.stats ?? {}), quelle: "nachzuegler" } } }).then(() => undefined),
+          speichereAdresse: (a) => this.speichereAdresse(companyId, a),
+          log: (m) => this.deps.log(`[email-muster] ${m}`),
+          zuordnungAktiv: cfg.zuordnungAktiv !== false,
+          ungeprueftSpeichern: cfg.ungeprueftAnzeigen !== false,
+          protokoll: (e) => {
+            const a = e.adresse;
+            const ergebnis: VerlaufEintrag["ergebnis"] = a.herkunft === "zuordnung" ? "zugeordnet" : a.art === "smtp" ? "verifiziert" : a.art === "catchall" ? "catch_all" : a.art === "abgelehnt" ? "abgelehnt" : e.smtp === "gesperrt" ? "gesperrt" : "unklar";
+            const p = personen.find((x) => x.personId === a.personId);
+            this.merke(cfg, { at: a.checkedAt, companyId, firma: name, domain, personId: a.personId, fullName: p?.fullName ?? "", email: a.email, muster: a.muster, ergebnis, gespeichert: e.ergebnis === "gespeichert", baseline: a.baseline, ...(a.smtpCode != null ? { smtpCode: a.smtpCode } : {}), mx: a.mx ?? null, ...(e.fehler ? { fehler: e.fehler } : {}) });
+            if (e.ergebnis === "gespeichert") {
+              if (a.herkunft === "zuordnung") cfg.stats.zugeordnet = (cfg.stats.zugeordnet ?? 0) + 1;
+              else if (a.art === "smtp") cfg.stats.verifiziert++;
+              else if (a.art === "catchall") cfg.stats.unbestaetigt++;
+              else if (a.art === "abgelehnt") cfg.stats.abgelehnt++;
+              else cfg.stats.unbekannt++;
+              // Offene Adressen spaeter nachpruefen (Rolle dieses Jobs).
+              if (a.art === "offen") {
+                this.offenMerken(cfg, a.email);
+                offenGespeichert++;
+              }
+            }
+          },
+        });
+        if (r.urteil === "catchall") cfg.stats.catchAll++;
+        if (r.status === "fertig" || r.status === "fehler") cfg.stats.firmen++;
+        if (r.status !== "nichts_zu_tun" && r.status !== "keine_domain") {
+          cfg.domains[domain] = { at: jetzt(), muster: r.muster, belege: belegeAnzahl, catchAll: r.urteil === "catchall", offen: r.status === "fehler" || r.gespeichert + r.vorhanden < unversorgt.length, ...(r.status === "fehler" ? { grund: r.letzterFehler ?? "Speichern fehlgeschlagen" } : {}) };
+          teile.push(r.zusammenfassung.replace(/^[^:]*: /, ""));
+          this.deps.log(`[email-muster] ${r.zusammenfassung}${offenGespeichert > 0 ? ` (${offenGespeichert} zur Nachpruefung vorgemerkt)` : ""}`);
         }
       }
-      if (art === "smtp") {
-        verifiziert++;
-        cfg.stats.verifiziert++;
-        this.offenVergessen(cfg, k.email);
-      } else if (art === "catchall") {
-        unbestaetigt++;
-        cfg.stats.unbestaetigt++;
-        this.offenVergessen(cfg, k.email);
-      } else if (art === "abgelehnt") {
-        abgelehnt++;
-        cfg.stats.abgelehnt++;
-        this.offenVergessen(cfg, k.email);
-      } else {
-        unbekannt++;
-        cfg.stats.unbekannt++;
-        if (eintrag.gespeichert || k.nachpruefung) this.offenMerken(cfg, k.email);
-      }
-      this.merke(cfg, eintrag);
     }
-    if (gesperrt && netzOk) cfg.netz = { erreichbar: false, grund: "Verbindung zum Mailserver nicht moeglich", at: jetzt() };
-    if (catchAll && !catchAllBekannt) {
-      cfg.stats.catchAll++;
-      await this.deps.gatewayRequest(`/v1/email-patterns/${encodeURIComponent(domain)}`, { method: "PUT", body: { muster, konfidenz: musterKonfidenz, belege: musterBelege.slice(0, 20), catchAll: true } }).catch(() => undefined);
-    }
-    cfg.domains[domain] = { at: jetzt(), muster, belege: belegeAnzahl, catchAll, offen: rest > 0 };
-    const teile = [
-      zugeordnet > 0 ? `${zugeordnet} Firmenadresse(n) zugeordnet` : "",
-      verifiziert > 0 ? `${verifiziert} verifiziert` : "",
-      unbestaetigt > 0 ? `${unbestaetigt} unbestaetigt (Catch-all)` : "",
-      unbekannt > 0 ? `${unbekannt} unverifiziert${netzOk ? "" : " (Mail-Pruefung in diesem Netz nicht moeglich)"}` : "",
-      abgelehnt > 0 ? `${abgelehnt} vom Server abgelehnt` : "",
-      rest > 0 ? `${rest} weitere folgen` : "",
-    ].filter(Boolean);
-    const zusammenfassung = `${name}: ${teile.join(", ")} (Muster ${muster}${musterQuelle === "judge" ? " per KI-Urteil" : ""}, Baseline ${baseline})`;
-    this.deps.audit({ summary: `E-Mail-Ableitung — ${zusammenfassung}`, severity: "info", metadata: { companyId, domain, muster, musterQuelle, baseline, zugeordnet, verifiziert, unbestaetigt, abgelehnt, unbekannt, catchAll, rest } });
+
+    if (teile.length === 0) return null;
+    const zusammenfassung = `${name}: ${teile.join("; ")}`;
+    this.deps.audit({ summary: `E-Mail-Ableitung (Nachzuegler) — ${zusammenfassung}`, severity: "info", metadata: { companyId, domain } });
     return zusammenfassung;
+  }
+
+  private async holeMuster(domain: string): Promise<ServerMuster | null> {
+    try {
+      const r = await this.deps.gatewayRequest<{ muster: string | null; konfidenz: number; belege?: MusterBeleg[]; catchAllAt: string | null; checkedAt?: string; stats?: Record<string, unknown> }>(`/v1/email-patterns/${encodeURIComponent(domain)}`);
+      return { muster: r.muster, konfidenz: r.konfidenz, belege: r.belege, catchAllAt: r.catchAllAt, checkedAt: r.checkedAt ?? "", stats: r.stats };
+    } catch {
+      return null;
+    }
+  }
+
+  /** POST derived-email; 409 = schon vorhanden, andere 4xx = vom Gateway abgewiesen, sonst Fehler. */
+  private async speichereAdresse(companyId: string, a: AbgeleiteteAdresse): Promise<SpeicherErgebnis> {
+    try {
+      await this.deps.gatewayRequest(`/v1/companies/${encodeURIComponent(companyId)}/contacts/derived-email`, { method: "POST", body: a });
+      return "gespeichert";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = /\b(4\d\d)\b/.exec(msg)?.[1];
+      if (status === "409") return "vorhanden";
+      if (status) return "abgewiesen";
+      throw err;
+    }
+  }
+
+  /** n SMTP-Anfragen im gemeinsamen Tages-Deckel verbuchen. */
+  private verbuche(cfg: EmailMusterConfig, n: number): void {
+    this.budget.verbrauche(n);
+    cfg.tag.count = this.budget.verbraucht();
+    cfg.stats.geprueft += n;
   }
 
   /** Eine SMTP-Anfrage im gemeinsamen Tages-Deckel verbuchen (V4). */

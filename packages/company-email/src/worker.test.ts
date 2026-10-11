@@ -17,6 +17,8 @@ const ERGEBNIS: AbleitungsErgebnis = {
   gespeichert: 2,
   vorhanden: 0,
   abgewiesen: 0,
+  speicherFehler: 0,
+  letzterFehler: null,
   arten: { smtp: 1, catchall: 0, offen: 1, abgelehnt: 0 },
   zusammenfassung: "Muster GmbH (muster.de): 1 verifiziert, 1 abgeleitet",
 };
@@ -150,4 +152,22 @@ test("ausgeschaltet (Person oder Organisation): skipped, keine Ableitung", async
   assert.equal(await verarbeite(TRIGGER), "skipped");
   assert.equal(abgeleitet, false);
   assert.match(progress.at(-1)?.errorMessage ?? "", /ausgeschaltet/);
+});
+
+test("Ableitung meldet 'fehler' (nichts gespeichert): Stufe failed mit Grund", async () => {
+  const { verarbeite, progress } = aufbau({
+    ableiten: async () => ({ ...ERGEBNIS, status: "fehler", gespeichert: 0, speicherFehler: 2, letzterFehler: "gateway 503", zusammenfassung: "Muster GmbH (muster.de): 2 Adresse(n) konnten nicht gespeichert werden — gateway 503" }),
+  });
+  const ausgang = await verarbeite({ subject: "c1", transaction: "t1", data: { companyName: "Muster GmbH", kontakteGeaendert: false } });
+  assert.equal(ausgang, "failed");
+  const letzter = progress.at(-1)!;
+  assert.equal(letzter.state, "failed");
+  assert.match(letzter.errorMessage ?? "", /gateway 503/);
+});
+
+test("Trigger mit kaputten Nutzdaten wird verworfen", async () => {
+  const { verarbeite, progress } = aufbau();
+  const ausgang = await verarbeite({ subject: "c1", transaction: "t1", data: { kontakteGeaendert: "ja" as never } });
+  assert.equal(ausgang, "ungueltig");
+  assert.equal(progress.length, 0);
 });

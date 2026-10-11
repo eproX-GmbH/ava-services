@@ -275,3 +275,58 @@ test("Einstellungen: ohne Zuordnung und ohne unverifizierte Adressen", async () 
   assert.ok(!gespeichert.some((g) => g.herkunft === "zuordnung"), "keine Zuordnung");
   assert.ok(gespeichert.every((g) => g.art === "smtp" || g.art === "catchall"), "nur belegte Adressen");
 });
+
+test("Domain ohne Mailserver: kein 'kein Format', Adressen offen mit Grund, nichts geteilt", async () => {
+  const pruefe = async (_d: string, adressen: string[]): Promise<Map<string, PruefDetails>> =>
+    new Map(adressen.map((a) => [a, { ergebnis: "keine_mx" as const, mx: null, code: null, antwort: "Domain hat keinen Mailserver (kein MX-/A-Eintrag)", dauerMs: 1 }]));
+  const { d, gespeichert, geteilt } = deps({ pruefe });
+  const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.notEqual(r.urteil, "kein_format");
+  assert.equal(r.musterHerkunft, "annahme");
+  assert.ok(gespeichert.length > 0 && gespeichert.every((g) => g.art === "offen" && /keinen Mailserver/.test(g.hinweis ?? "")));
+  assert.equal(geteilt.length, 0, "ohne Mailserver wird kein Befund geteilt");
+  assert.equal(r.smtpAnfragen, 0, "ohne MX zaehlt keine Anfrage gegen den Deckel");
+});
+
+test("einzelner Mailserver nicht erreichbar, Port 25 sonst offen: keine Netzsperre", async () => {
+  const s = server({ gesperrt: true });
+  let gemeldet = "";
+  const { d, gespeichert } = deps({ pruefe: s.pruefe, netzGesperrt: (g) => (gemeldet = g), netzPruefe: async () => true });
+  await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.equal(gemeldet, "", "Gegenprobe ok → nicht das Netz sperren");
+  assert.equal(s.aufrufe.length, 1);
+  assert.ok(gespeichert.every((g) => g.art === "offen" && /Mailserver der Domain/.test(g.hinweis ?? "")));
+});
+
+test("Gegenprobe scheitert auch: Netzsperre wie bisher", async () => {
+  const s = server({ gesperrt: true });
+  let gemeldet = "";
+  const { d } = deps({ pruefe: s.pruefe, netzGesperrt: (g) => (gemeldet = g), netzPruefe: async () => false });
+  await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.ok(gemeldet);
+});
+
+test("Speichern scheitert technisch bei allen Adressen: status fehler", async () => {
+  const s = server({ existiert: ["anna.meier@muster.de"] });
+  const protokoll: string[] = [];
+  const { d } = deps({
+    pruefe: s.pruefe,
+    speichereAdresse: async () => {
+      throw new Error("gateway 503");
+    },
+    protokoll: (e) => protokoll.push(`${e.adresse.email}:${e.ergebnis}`),
+  });
+  const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.equal(r.status, "fehler");
+  assert.match(r.zusammenfassung, /gateway 503/);
+  assert.equal(r.speicherFehler, 3);
+  assert.ok(protokoll.every((p) => p.endsWith(":fehler")));
+});
+
+test("Gateway weist ab (kein Fehler): status fertig, abgewiesen gezaehlt", async () => {
+  const s = server({ existiert: ["anna.meier@muster.de"] });
+  const { d } = deps({ pruefe: s.pruefe, speichereAdresse: async () => "abgewiesen" });
+  const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.equal(r.status, "fertig");
+  assert.equal(r.abgewiesen, 3);
+});

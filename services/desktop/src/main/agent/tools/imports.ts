@@ -1541,6 +1541,7 @@ export function buildImportTools(deps: {
             "website",
             "companyProfile",
             "companyContact",
+            "companyEmail",
             "companyEvaluation",
             // v0.1.243 — Sub-Pipelines des Website-Producers.
             // `deepResearch` umfasst Ausschreibungen + Expansion +
@@ -1572,6 +1573,7 @@ export function buildImportTools(deps: {
             "website",
             "companyProfile",
             "companyContact",
+            "companyEmail",
             "companyEvaluation",
             "deepResearch",
             "jobPostings",

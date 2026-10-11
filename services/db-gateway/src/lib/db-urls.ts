@@ -26,6 +26,16 @@ export const PRODUCER_DATABASE_NAMES: Record<string, string> = {
 
 export type ProducerName = keyof typeof PRODUCER_DATABASE_NAMES;
 
+/**
+ * Producer ohne eigene Datenbank (docs/PLAN_EMAIL_VERIFIZIERUNG.md): company-email
+ * meldet seinen Fortschritt selbst (transaction.progress) und persistiert ueber
+ * REST. Fuer EntityProgress (Seed, Matrix, Fortschritt) zaehlt er wie die anderen.
+ */
+export const PROGRESS_PRODUCER_NAMES: readonly string[] = [
+  ...(Object.keys(PRODUCER_DATABASE_NAMES) as string[]),
+  "company-email",
+];
+
 /** Producer keys in registry order — convenient for iteration. */
 export const PRODUCER_NAMES: readonly ProducerName[] = Object.keys(
   PRODUCER_DATABASE_NAMES,

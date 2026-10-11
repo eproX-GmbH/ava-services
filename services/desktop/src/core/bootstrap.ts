@@ -546,6 +546,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     entry: string,
     databaseName: string | null,
     port: number,
+    llmOptional = false,
   ): ProducerSupervisor {
     // v0.1.105 — structured-content can scrape from either
     // unternehmensregister.de or handelsregister.de. The picker reads
@@ -710,7 +711,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
                 })
               : undefined;
     return new ProducerSupervisor({
-      config: { name, entry, databaseName, port },
+      config: { name, entry, databaseName, port, llmOptional },
       // Eigener Browser statt der Chrome-Installation der Person, sobald eine
       // Fassung bereitliegt (docs/ANALYSE_CHROME_PROZESSE.md, L5).
       browserPfad: () => eigenerBrowser?.browserPfad() ?? null,
@@ -759,6 +760,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       entry: string;
       databaseName: string | null;
       port: number;
+      /** true = laeuft auch ohne LLM-Konfiguration (ProducerConfig.llmOptional). */
+      llmOptional?: boolean;
     }> = [
       // §8.v3 pivot-2 — local compute for everything except `website`
       // (which uses operator-paid valueserp). Each entry runs as a
@@ -823,6 +826,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         entry: "dist/main.js",
         databaseName: null,
         port: 51070,
+        // Das KI-Urteil ist nur Zusatz (Zuordnung unklarer Muster); Ableitung
+        // und SMTP-Pruefung laufen auch ohne Modell.
+        llmOptional: true,
       },
       // All six legacy producers now have a localized counterpart.
       // Phase 4 cleanup destroys the suspended fly app definitions.
@@ -838,7 +844,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       const vendored = resolveProducerDirUnder(resourcesRoot, entry.name);
       if (vendored) {
         producers.push(
-          buildProducer(entry.name, entry.entry, entry.databaseName, entry.port),
+          buildProducer(entry.name, entry.entry, entry.databaseName, entry.port, entry.llmOptional === true),
         );
       } else {
         console.log(
@@ -2961,6 +2967,21 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     umschalten("linkedin.watchlist", () => watchlistSupervisor?.start(), () => watchlistSupervisor?.stop());
     umschalten("linkedin.radar", () => personenRadarSupervisor?.start(), () => personenRadarSupervisor?.stop());
     umschalten("linkedin.beobachter", () => startLinkedInScheduler(), () => stopLinkedInScheduler());
+    // Feature "kontakte" erreicht den Producer company-email nur als Umgebung
+    // beim Start (AVA_EMAIL_AKTIV): beim Umschalten neu starten, sonst gilt
+    // die Vorgabe erst nach dem naechsten App-Start.
+    if (an("kontakte") !== war("kontakte")) {
+      const ce = producers.find((p) => p.getStatus().name === "company-email");
+      const st = ce?.getStatus().state;
+      if (ce && st !== "idle" && st !== "stopping") {
+        console.log(`[org-policy] kontakte ${an("kontakte") ? "freigegeben" : "abgeschaltet"} → company-email neu starten`);
+        void ce
+          .stop()
+          .catch((err) => console.warn("[org-policy] company-email stop() fehlgeschlagen:", err))
+          .then(() => (auth.getStatus().signedIn ? ce.start() : undefined))
+          .catch((err) => console.error("[org-policy] company-email start() fehlgeschlagen:", err));
+      }
+    }
   });
   // v0.1.559 — Modellvorgabe der Organisation (providerLock, chatModel,
   // producerModel) wird von den Producern nur beim Spawn gelesen

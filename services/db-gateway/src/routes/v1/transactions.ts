@@ -8,6 +8,7 @@ import { transactionProgressBus } from "../../lib/event-bus";
 import { getGatewayPool } from "../../lib/producer-pools";
 import {
   publishCompanyContactRetry,
+  publishCompanyEmailRetry,
   publishCompanyProfileRetry,
   publishCompanyPublicationRetry,
   publishStructuredContentRetry,
@@ -600,6 +601,13 @@ transactionsRouter.openapi(fortschrittRoute, async (c) => {
       if ((producer === "company-profile" || producer === "company-contact") && st === "pending" && webOhneErgebnis) st = "skipped";
       effektiv.set(producer, st);
     }
+    // E-Mail-Stufe haengt am Contact-Lauf: der stoesst sie bei completed und
+    // skipped an, bei failed nicht; ohne Website laeuft Kontakt gar nicht.
+    const kontakt = effektiv.get("company-contact");
+    const kontaktRoh = m.get("company-contact")?.state;
+    if (effektiv.get("company-email") === "pending" && (kontakt === "failed" || (kontakt === "skipped" && kontaktRoh === "pending"))) {
+      effektiv.set("company-email", "skipped");
+    }
     if (m.has("company-evaluation")) {
       const vor = [...effektiv.values()];
       const roh = m.get("company-evaluation")!.state;
@@ -803,6 +811,7 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
 
       // Fly stage — keep legacy per-company fan-out until the producer
       // localizes.
+      if (!upstream) return [] as Array<Record<string, unknown>>;
       let entities: Array<Record<string, unknown>>;
       try {
         const res = await callUpstream<UpstreamEntitiesPayload>(
@@ -980,7 +989,8 @@ function normalizeRows(
 // upstream call required".
 const STAGE_UPSTREAMS: Array<{
   stage: Exclude<z.infer<typeof PipelineStage>, "masterData">;
-  upstream: UpstreamName;
+  /** null = nie auf Fly gelaufen (nur EntityProgress). */
+  upstream: UpstreamName | null;
   producer: string | null;
 }> = [
   { stage: "structuredContent", upstream: "structuredContent", producer: "structured-content" },
@@ -988,6 +998,7 @@ const STAGE_UPSTREAMS: Array<{
   { stage: "website", upstream: "website", producer: "website" },
   { stage: "companyProfile", upstream: "companyProfile", producer: "company-profile" },
   { stage: "companyContact", upstream: "companyContact", producer: "company-contact" },
+  { stage: "companyEmail", upstream: null, producer: "company-email" },
   { stage: "companyEvaluation", upstream: "companyEvaluation", producer: "company-evaluation" },
 ];
 
@@ -1003,7 +1014,7 @@ const STAGE_UPSTREAMS: Array<{
 async function loadStageEntities(
   c: Context,
   transactionId: string,
-  upstream: UpstreamName,
+  upstream: UpstreamName | null,
   producer: string | null,
 ): Promise<Array<z.infer<typeof EntityTransactionShape>>> {
   if (producer) {
@@ -1049,6 +1060,7 @@ async function loadStageEntities(
     });
   }
   // Fly stage — upstream call.
+  if (!upstream) throw new Error("stage without producer and upstream");
   const res = await callUpstream<UpstreamEntitiesPayload>(
     c,
     upstream,
@@ -1067,6 +1079,7 @@ const ALL_STAGES: Array<z.infer<typeof PipelineStage>> = [
   "website",
   "companyProfile",
   "companyContact",
+  "companyEmail",
   "companyEvaluation",
 ];
 
@@ -1190,6 +1203,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
     website: "website",
     companyProfile: "company-profile",
     companyContact: "company-contact",
+    companyEmail: "company-email",
   };
   const attachRetry = (
     stage: string,
@@ -1335,6 +1349,21 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
     return ownCell ?? { state: "pending", errorCount: 0 };
   };
 
+  // E-Mail-Stufe (company-email) wird vom Contact-Lauf angestossen — bei dessen
+  // completed UND skipped, nicht bei failed. Lief Kontakt fehl oder (ohne
+  // Website) gar nicht, bliebe die eigene pending-Zeile ewig gelb → skipped.
+  const deriveEmailCell = (companyId: string, contactCell: Cell): Cell => {
+    const own = byStage.get("companyEmail")?.get(companyId);
+    const ownCell = own ? cellFromRow(own) : null;
+    if (ownCell && ownCell.state !== "pending") return ownCell;
+    const contactOwn = byStage.get("companyContact")?.get(companyId);
+    const kontaktLiefNie = !contactOwn || contactOwn.state === "pending";
+    if (contactCell.state === "failed" || (contactCell.state === "skipped" && kontaktLiefNie)) {
+      return { state: "skipped", updatedAt: contactCell.updatedAt ?? null, errorCount: 0 };
+    }
+    return ownCell ?? { state: "pending", errorCount: 0 };
+  };
+
   const rows = Array.from(allCompanyIds).map((companyId) => {
     const websiteCell = attachRetry(
       "website",
@@ -1348,6 +1377,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
       website: Cell;
       companyProfile: Cell;
       companyContact: Cell;
+      companyEmail: Cell;
       companyEvaluation: Cell;
     } = {
       // master-data is derived: appearing in any downstream stage proves its
@@ -1382,6 +1412,11 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
         "companyContact",
         companyId,
         deriveDependentOnWebsite("companyContact", companyId, websiteCell),
+      ),
+      companyEmail: attachRetry(
+        "companyEmail",
+        companyId,
+        deriveEmailCell(companyId, deriveDependentOnWebsite("companyContact", companyId, websiteCell)),
       ),
       companyEvaluation: deriveEvaluationCell(companyId),
     };
@@ -1554,7 +1589,8 @@ type RetryTarget =
         | "website"
         | "company-profile"
         | "company-publication"
-        | "company-contact";
+        | "company-contact"
+        | "company-email";
       stage: string;
     };
 
@@ -1583,6 +1619,9 @@ const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
   ],
   // company-contact is fed by website only.
   companyContact: [{ kind: "gateway", producer: "website", stage: "companyContact" }],
+  // E-Mail-Stufe: Trigger des Contact-Producers direkt neu senden (der
+  // Kontaktlauf selbst muss dafuer nicht wiederholt werden).
+  companyEmail: [{ kind: "gateway", producer: "company-email", stage: "companyEmail" }],
   // Evaluation fan-out: each producer republishes the slice it owns.
   // companyContact + companyEvaluation are still fly-side until Phase 2/3,
   // so their slices keep hitting upstream.
@@ -1795,6 +1834,15 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               userId,
             });
             break;
+          case "company-email":
+            res = await publishCompanyEmailRetry({
+              transactionId,
+              companyId,
+              companyName,
+              source: requestSource,
+              userId,
+            });
+            break;
           case "company-contact":
             res = await publishCompanyContactRetry({
               transactionId,
@@ -1974,6 +2022,7 @@ const STAGE_TO_SERVICE: Record<z.infer<typeof RetryStage>, string> = {
   website: "website",
   companyProfile: "company-profile",
   companyContact: "company-contact",
+  companyEmail: "company-email",
   companyEvaluation: "company-evaluation",
   // v0.1.243 — beide Stages laufen IM Website-Producer; das
   // ContentFreshness-Clear muss den Website-Producer-Slice
