@@ -47,6 +47,7 @@
     "test:alarm-neuheiten": "node scripts/test-alarm-neuheiten.mjs",
     "test:siwc-oauth": "node scripts/test-siwc-oauth.mjs",
     "test:email-zuordnung": "node scripts/test-email-zuordnung.mjs",
+    "test:email-nachzuegler": "node scripts/test-email-nachzuegler.mjs",
     "test:telegram-sprachantwort": "node scripts/test-telegram-sprachantwort.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:skills": "node scripts/test-skills-loader.mjs",

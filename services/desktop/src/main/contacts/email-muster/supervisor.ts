@@ -12,6 +12,16 @@
 //    in diesem Netz nicht moeglich ist (Port 25) oder der Server ablehnt —
 //    dann klar als "abgeleitet · unverifiziert" bzw. "abgelehnt" mit
 //    Verweis auf die Baseline. Offene Adressen werden spaeter nachgeprueft.
+//
+// Nachzuegler-Rolle (docs/PLAN_EMAIL_VERIFIZIERUNG.md, V4, 2026-10-11): Der
+// Haupttreiber ist jetzt der Producer company-email direkt nach dem Contact
+// Producer. Dieser Job holt nach, was dort nicht pruefbar war (Port 25
+// gesperrt, 4xx, Deckel erreicht, offene Adressen) und frischt periodisch auf.
+//  - Ein gemeinsamer Tages-Deckel mit dem Producer (TagesBudget, Datei
+//    email-budget.json): Reputation ist geraeteweit.
+//  - Domains, die der Producer in den letzten LIVE_SCHONFRIST_MS bearbeitet
+//    hat (EmailPattern.stats.quelle = "live"), fasst der Job nicht an —
+//    keine Doppelpruefung derselben Firma.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,6 +32,7 @@ import { VERLAUF_MAX, type EmailMusterConfig, type VerlaufEintrag, type Vorschau
 export type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
 import { pruefeAdressen, pruefePort25, zufallsAdresse, type PruefErgebnis } from "./smtp-verify";
 import { kontakteAusAntwort, type FirmenKontakte, type KontakteAntwort, type PersonInfo } from "./kontakte";
+import { BUDGET_DATEI, TagesBudget } from "./budget";
 
 const TICK_MS = 15 * 60_000;
 const FIRST_TICK_MS = 5 * 60_000;
@@ -29,6 +40,8 @@ const NETZ_RECHECK_MS = 6 * 3600_000;
 const DOMAIN_RECHECK_MS = 30 * 86_400_000;
 const CATCHALL_RECHECK_MS = 90 * 86_400_000;
 const TAGES_DECKEL = 50;
+/** V4: so lange nach einem Live-Lauf des Producers company-email bleibt die Domain dem Producer ueberlassen. */
+const LIVE_SCHONFRIST_MS = 24 * 3600_000;
 const MAX_JE_FIRMA = 10;
 const MAX_FIRMEN_JE_TICK = 25;
 /** Offene (unverifizierte) Adressen: hoechstens 3 Nachpruefungen, Abstand 24 h. */
@@ -67,8 +80,12 @@ export class EmailMusterSupervisor {
   private cfg: EmailMusterConfig | null = null;
   private readonly path: string;
 
+  /** V4: Tages-Deckel geteilt mit dem Producer company-email. */
+  private readonly budget: TagesBudget;
+
   constructor(private readonly deps: EmailMusterDeps, dir: string) {
     this.path = join(dir, "email-muster.json");
+    this.budget = new TagesBudget(join(dir, BUDGET_DATEI), TAGES_DECKEL);
   }
 
   start(): void {
@@ -216,7 +233,10 @@ export class EmailMusterSupervisor {
     if (!manuell && (this.deps.isLlmBusy() || this.deps.isOnBattery())) return "pausiert (Chat aktiv oder Akkubetrieb)";
     const heute = new Date().toISOString().slice(0, 10);
     if (cfg.tag.day !== heute) cfg.tag = { day: heute, count: 0 };
-    if (cfg.tag.count >= TAGES_DECKEL && !manuell) return `Tages-Deckel (${TAGES_DECKEL}) erreicht`;
+    // Uebergang: der bisherige Zaehler des Tages geht ins gemeinsame Budget ein.
+    if (cfg.tag.count > this.budget.verbraucht()) this.budget.verbrauche(cfg.tag.count - this.budget.verbraucht());
+    cfg.tag.count = this.budget.verbraucht();
+    if (this.budget.frei() <= 0 && !manuell) return `Tages-Deckel (${TAGES_DECKEL}) erreicht (gemeinsam mit dem Producer company-email)`;
     this.running = true;
     let outcome = "nichts zu tun";
     try {
@@ -278,6 +298,15 @@ export class EmailMusterSupervisor {
     const unversorgt = ohne.filter((p) => p.offeneEmails.length === 0);
     if (unversorgt.length === 0 && nachpruefbar.length === 0) return null;
 
+    // V4: Muster/Befund vom Gateway — auch, um frische Live-Laeufe des Producers zu erkennen.
+    let server: { muster: string | null; konfidenz: number; catchAllAt: string | null; checkedAt?: string; stats?: Record<string, unknown> } | null = null;
+    try {
+      server = await this.deps.gatewayRequest<{ muster: string | null; konfidenz: number; catchAllAt: string | null; checkedAt?: string; stats?: Record<string, unknown> }>(`/v1/email-patterns/${encodeURIComponent(domain)}`);
+    } catch {
+      server = null;
+    }
+    if (!manuell && server?.stats?.quelle === "live" && Date.now() - Date.parse(server.checkedAt ?? "") < LIVE_SCHONFRIST_MS) return null;
+
     // ---- E1 Zuordnung: Firmenadressen mit Namen → Person -----------------------
     let zugeordnet = 0;
     const zuordnungen: Zuordnung[] = [];
@@ -292,7 +321,7 @@ export class EmailMusterSupervisor {
       const p = unversorgt.find((x) => x.personId === z.personId)!;
       const r = netzOk ? (await pruefeAdressen(domain, [z.email], { catchAllProbe: zufallsAdresse(domain), log: this.deps.log })).get(z.email) : undefined;
       if (netzOk) {
-        cfg.tag.count++;
+        this.zaehle(cfg);
         cfg.stats.geprueft++;
       }
       const e: PruefErgebnis = r?.ergebnis ?? "unbekannt";
@@ -332,12 +361,6 @@ export class EmailMusterSupervisor {
       if (alter < frist && stand.belege === belegeAnzahl && !bleibtOffen) return zugeordnet > 0 ? `${name}: ${zugeordnet} Firmenadresse(n) Personen zugeordnet` : null;
     }
     const befund = erkenneMuster(domain, belege);
-    let server: { muster: string | null; konfidenz: number; catchAllAt: string | null } | null = null;
-    try {
-      server = await this.deps.gatewayRequest<{ muster: string | null; konfidenz: number; catchAllAt: string | null }>(`/v1/email-patterns/${encodeURIComponent(domain)}`);
-    } catch {
-      server = null;
-    }
     const catchAllBekannt = !!server?.catchAllAt && Date.now() - Date.parse(server.catchAllAt) < CATCHALL_RECHECK_MS && !manuell;
     let muster = befund.muster ?? server?.muster ?? null;
     let musterQuelle: "katalog" | "judge" = "katalog";
@@ -395,7 +418,7 @@ export class EmailMusterSupervisor {
       let e: PruefErgebnis = r?.ergebnis ?? (netzOk && !gesperrt ? "unbekannt" : "gesperrt");
       if (gesperrt) e = "gesperrt";
       if (netzOk && !gesperrt && !catchAllBekannt) {
-        cfg.tag.count++;
+        this.zaehle(cfg);
         cfg.stats.geprueft++;
       }
       if (e === "gesperrt") gesperrt = true;
@@ -466,6 +489,12 @@ export class EmailMusterSupervisor {
     const zusammenfassung = `${name}: ${teile.join(", ")} (Muster ${muster}${musterQuelle === "judge" ? " per KI-Urteil" : ""}, Baseline ${baseline})`;
     this.deps.audit({ summary: `E-Mail-Ableitung — ${zusammenfassung}`, severity: "info", metadata: { companyId, domain, muster, musterQuelle, baseline, zugeordnet, verifiziert, unbestaetigt, abgelehnt, unbekannt, catchAll, rest } });
     return zusammenfassung;
+  }
+
+  /** Eine SMTP-Anfrage im gemeinsamen Tages-Deckel verbuchen (V4). */
+  private zaehle(cfg: EmailMusterConfig): void {
+    this.budget.verbrauche(1);
+    cfg.tag.count = this.budget.verbraucht();
   }
 
   // ---- Offene Adressen (Nachpruefung) ----------------------------------------
