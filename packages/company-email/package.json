@@ -1,0 +1,27 @@
+{
+  "name": "@ava/company-email",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Producer company-email: leitet nach dem Contact Producer die E-Mail-Adressen der Kontakte einer Firma ab und verifiziert das Muster einmal je Domain per SMTP (docs/PLAN_EMAIL_VERIFIZIERUNG.md, Variante B).",
+  "license": "SEE LICENSE IN LICENSE",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc --noEmit && esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --sourcemap --external:amqplib --external:@ava/ai-provider --outfile=dist/main.js",
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@ava/ai-provider": "file:../ai-provider",
+    "@ava/email-muster": "file:../email-muster",
+    "amqplib": "^0.10.9",
+    "yup": "^1.7.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.0",
+    "tsx": "^4.19.0"
+  }
+}
