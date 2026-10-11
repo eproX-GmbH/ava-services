@@ -1,6 +1,10 @@
 # Build-Kontext für services/desktop/Dockerfile.server (Repo-Wurzel).
 .git
+# Die Submodule haben eigene .git-Verzeichnisse (keine gitfiles); ohne diese Zeile
+# wandern ~300 MB Historie mit in den Build-Kontext.
+**/.git
 .claude
+.github
 **/node_modules
 # Bauartefakte des Desktop-Pakets; die Vendor-Kopien der Producer (vendor/ai-provider/dist)
 # sind eingecheckt und werden gebraucht, darum kein pauschales **/dist.

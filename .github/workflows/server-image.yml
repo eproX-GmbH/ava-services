@@ -1,0 +1,132 @@
+# Server-Image fuer die AVA-Instanzen auf Fly (docs/PLAN_AVA_CLOUD.md §14).
+#
+# Baut je Release EINMAL das Image registry.fly.io/ava-server-image:v<version>
+# (dasselbe, was `node scripts/instanz-image.mjs` von Hand macht) und legt es
+# in der Fly-Registry ab. Die Instanzen (headless-ava, ava-i-<slug>) rollen
+# danach nur noch aus: `node scripts/instanzen-aktualisieren.mjs --version …`
+# oder in der Admin-Konsole „Auf vX aktualisieren“.
+#
+# BEWUSST UNABHAENGIG von desktop-release.yml: eigener Workflow, eigener
+# Lauf. Der Promote des GitHub-Releases (macOS/Windows) wartet NICHT auf dieses
+# Image, und dieses Image wartet nicht auf die Installer. Scheitert eines von
+# beiden, bleibt das andere unberuehrt.
+#
+# Secrets:
+#   FLY_API_TOKEN    Deploy-Token NUR fuer die App ava-server-image
+#                    (`fly tokens create deploy -a ava-server-image`).
+#   NPM_TOKEN        GitLab-Registry (Vendoring der Producer), wie im
+#                    Desktop-Release.
+#   SUBMODULES_PAT   Producer-Submodule auf GitHub, wie im Desktop-Release.
+
+name: Server image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag, der gebaut wird (muss existieren), z. B. v0.1.813"
+        required: true
+
+permissions:
+  contents: read
+
+# Ein Lauf je Tag; ein zweiter Start desselben Tags loest den ersten ab.
+concurrency:
+  group: server-image-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-server-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AVA_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      # Gleiche Auswahl wie im Desktop-Release: nur die Producer-Submodule auf
+      # GitHub, je Submodul tolerant (ein fehlendes bricht nicht alles ab).
+      - name: Producer-Submodule holen
+        shell: bash
+        env:
+          SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
+        run: |
+          if [ -z "$SUBMODULES_PAT" ]; then
+            echo "::error::SUBMODULES_PAT fehlt — ohne die Producer-Submodule gibt es kein Server-Image."
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
+          for sub in company-profile structured-content company-publication company-evaluation company-contact website; do
+            git submodule update --init --depth=1 -- "$sub" \
+              && echo "✓ $sub" \
+              || echo "✗ $sub (uebersprungen)"
+          done
+
+      - name: Version aus dem Tag pruefen
+        shell: bash
+        run: |
+          case "$AVA_RELEASE_TAG" in
+            v*) ;;
+            *) echo "::error::Tag muss mit v beginnen: $AVA_RELEASE_TAG"; exit 1 ;;
+          esac
+          VERSION="${AVA_RELEASE_TAG#v}"
+          PKG=$(node -p "require('./services/desktop/package.json').version")
+          if [ "$VERSION" != "$PKG" ]; then
+            echo "::error::Tag $AVA_RELEASE_TAG passt nicht zu services/desktop/package.json ($PKG)."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Baue registry.fly.io/ava-server-image:v$VERSION"
+
+      # Wie im Desktop-Release: abgelaufener Token soll nach Sekunden auffallen,
+      # nicht nach 15 Minuten Build.
+      - name: Preflight — GitLab npm token
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN fehlt — das Vendoring der Producer braucht ihn."
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            -H "Authorization: Bearer $NPM_TOKEN" \
+            "https://gitlab.com/api/v4/groups/65084418/-/packages/npm/@ava%2Fauth" || echo "000")
+          case "$code" in
+            401|403)
+              echo "::error::NPM_TOKEN ist abgelaufen oder ungueltig (HTTP $code). Fix: GitLab Gruppe eprox-gmbh/ava -> Settings -> Repository -> Deploy tokens, Scope read_package_registry, ohne Ablauf; als GitHub-Secret NPM_TOKEN hinterlegen."
+              exit 1
+              ;;
+            000) echo "::warning::GitLab nicht erreichbar — Preflight uebersprungen." ;;
+            *) echo "NPM_TOKEN ok (HTTP $code)" ;;
+          esac
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Der Build laeuft auf den Fly-Buildern (--remote-only), der Runner
+      # schiebt nur den Kontext hoch. Kontext = Repo-Wurzel, Dockerfile relativ
+      # zur toml (services/desktop/Dockerfile.server), genau wie
+      # scripts/instanz-image.mjs.
+      - name: Server-Image bauen und in die Fly-Registry legen
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN fehlt (Deploy-Token fuer ava-server-image)."
+            exit 1
+          fi
+          flyctl deploy . \
+            -c services/desktop/fly.server.toml \
+            -a ava-server-image \
+            --build-only --push --remote-only \
+            --image-label "v$VERSION" \
+            --build-secret "npm_token=$NPM_TOKEN"
+          echo "Fertig: registry.fly.io/ava-server-image:v$VERSION"
+          echo "Ausrollen: node scripts/instanzen-aktualisieren.mjs --version $VERSION (oder Admin-Konsole → Instanzen)"
