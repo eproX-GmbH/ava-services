@@ -480,6 +480,7 @@ const STAGE_LABEL: Record<string, string> = {
   website: "Website",
   "company-profile": "Profil",
   "company-contact": "Kontakt",
+  "company-email": "E-Mail",
   "company-evaluation": "Bewertung",
 };
 /** Map tier 1..4 onto the `.dot.<class>` palette. */

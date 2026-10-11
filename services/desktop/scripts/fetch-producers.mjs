@@ -146,6 +146,18 @@ const PRODUCERS = [
     entry: "dist/cli.js",
     databaseName: null,
   },
+  {
+    // docs/PLAN_EMAIL_VERIFIZIERUNG.md (Variante B) — E-Mail-Ableitung und
+    // SMTP-Verifizierung je Domain, nachgelagert zum Contact Producer. Kein
+    // PGlite (Zustand am Gateway). Das esbuild-Bundle dist/main.js enthaelt
+    // packages/email-muster; deshalb zaehlt dessen Quelle zum Fingerabdruck.
+    name: "company-email",
+    dir: "em",
+    workspaceDir: "packages/company-email",
+    entry: "dist/main.js",
+    databaseName: null,
+    quellenMit: ["packages/email-muster"],
+  },
 ];
 
 const argv = process.argv.slice(2);
@@ -189,7 +201,10 @@ async function main() {
     // sentinel. Skip only when the recorded digest matches the
     // current source. Local devs benefit too: a `git pull` that
     // touches a producer triggers a fresh vendor on the next run.
-    const sourceFingerprint = computeSourceFingerprint(srcDir);
+    const sourceFingerprint = computeSourceFingerprint(
+      srcDir,
+      (target.quellenMit ?? []).map((d) => join(REPO_ROOT, d)),
+    );
     const fingerprintFile = join(dstDir, ".vendor-fingerprint");
 
     // Submodule may not be checked out (e.g. CI without
@@ -685,7 +700,10 @@ function symlinksAufloesen(dir) {
  * trigger an extra rebuild; false-positives (changed content, same
  * mtime + size) require a malicious actor and are out of scope.
  */
-function computeSourceFingerprint(srcDir) {
+/** `mitDirs`: weitere Workspace-Pakete, die ins Bundle eingehen (z. B.
+ *  packages/email-muster fuer company-email) — sonst bliebe eine Aenderung
+ *  dort beim naechsten Lauf als "schon vendort" liegen. */
+function computeSourceFingerprint(srcDir, mitDirs = []) {
   const ROOTS = ["src", "vendor", "prisma", "generated"];
   const TOP_FILES = [
     "package.json",
@@ -704,6 +722,14 @@ function computeSourceFingerprint(srcDir) {
     const dir = join(srcDir, root);
     if (!existsSync(dir)) continue;
     walkSorted(dir, dir, hash);
+  }
+  for (const mit of mitDirs) {
+    for (const f of ["package.json", "src"]) {
+      const p = join(mit, f);
+      if (!existsSync(p)) continue;
+      if (f === "src") walkSorted(p, p, hash);
+      else hash.update(`${mit}/${f}|${statSync(p).size}|${statSync(p).mtimeMs.toFixed(0)}\n`);
+    }
   }
   return hash.digest("hex");
 }

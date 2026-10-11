@@ -47,6 +47,7 @@ import { liveSitzungStarten } from "../main/sprache/live";
 import { faehigkeitenText, verfuegbareFaehigkeiten } from "../main/suggestions/faehigkeiten";
 import { pruefeModellstufe } from "../main/workflows/modellstufe";
 import { EmailMusterSupervisor } from "../main/contacts/email-muster/supervisor";
+import { BUDGET_DATEI } from "../main/contacts/email-muster/budget";
 import { streamToText as hintergrundUrteil } from "../main/link-monitor/llm";
 import { handleSignedIn as accountSpaceSignedIn, listAccounts, spaceDirFor, readIdentity } from "../main/account-space";
 import { join } from "node:path";
@@ -536,14 +537,14 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
    *  Broadcast as state="not_installed" so Settings can show them. */
   const missingProducers: Array<{
     name: string;
-    databaseName: string;
+    databaseName: string | null;
     port: number;
   }> = [];
 
   function buildProducer(
     name: string,
     entry: string,
-    databaseName: string,
+    databaseName: string | null,
     port: number,
   ): ProducerSupervisor {
     // v0.1.105 — structured-content can scrape from either
@@ -685,6 +686,15 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
                       watchlistKeyStore?.getConfig().profilModus === "voll" ? "full" : "short",
                   };
                 }
+            : name === "company-email"
+              ? // docs/PLAN_EMAIL_VERIFIZIERUNG.md (V3): gemeinsamer Tages-Deckel
+                // mit dem Hintergrund-Job (eine Zaehldatei), dessen Schalter
+                // (email-muster.json, live gelesen) und das Feature "kontakte".
+                async (): Promise<Record<string, string>> => ({
+                  AVA_EMAIL_BUDGET_FILE: join(paths().get("userData"), BUDGET_DATEI),
+                  AVA_EMAIL_MUSTER_CONFIG: join(paths().get("userData"), "email-muster.json"),
+                  AVA_EMAIL_AKTIV: featureEnabled("kontakte") ? "1" : "0",
+                })
             : name === "company-publication"
               ? // v0.1.424 — Analyse-Modus (PB1): "lazy" (Default) analysiert
                 // nur trend-relevante Bloecke, "eager" jeden Block.
@@ -747,7 +757,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     const PRODUCER_REGISTRY: Array<{
       name: string;
       entry: string;
-      databaseName: string;
+      databaseName: string | null;
       port: number;
     }> = [
       // §8.v3 pivot-2 — local compute for everything except `website`
@@ -802,6 +812,17 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         entry: "dist/web/api/server.js",
         databaseName: "company_contact",
         port: 51050,
+      },
+      {
+        // docs/PLAN_EMAIL_VERIFIZIERUNG.md (Variante B): nachgelagert zum
+        // Contact Producer (Trigger companyContact.createEmailVerification).
+        // Leitet je Firma die E-Mail-Adressen ab und verifiziert das Muster
+        // einmal je Domain per SMTP. Zustandslos — keine eigene Datenbank,
+        // Muster/Catch-all liegen am Gateway (email-patterns).
+        name: "company-email",
+        entry: "dist/main.js",
+        databaseName: null,
+        port: 51070,
       },
       // All six legacy producers now have a localized counterpart.
       // Phase 4 cleanup destroys the suspended fly app definitions.
@@ -871,7 +892,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         name: m.name,
         state: "not_installed",
         port: null,
-        databaseName: m.databaseName,
+        databaseName: m.databaseName ?? "",
         pid: null,
         errorMessage: null,
         lastExitCode: null,

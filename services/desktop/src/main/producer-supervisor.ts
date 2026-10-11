@@ -78,8 +78,10 @@ export interface ProducerConfig {
   name: string;
   /** Path to the producer entry inside its dist/ tree. */
   entry: string;
-  /** PGlite database name to inject into DATABASE_URL. */
-  databaseName: string;
+  /** PGlite database name to inject into DATABASE_URL. null = Producer ohne
+   *  eigene Datenbank (company-email: Zustand liegt am Gateway) — dann wird
+   *  keine DATABASE_URL geholt und nicht gesetzt. */
+  databaseName: string | null;
   /** TCP port the producer listens on (each producer reads PORT env). */
   port: number;
 }
@@ -421,7 +423,7 @@ export class ProducerSupervisor extends EventEmitter {
       name: this.opts.config.name,
       state: this.state,
       port: this.state === "ready" ? this.opts.config.port : null,
-      databaseName: this.opts.config.databaseName,
+      databaseName: this.opts.config.databaseName ?? "",
       pid: this.child?.pid ?? null,
       errorMessage: this.errorMessage,
       lastExitCode: this.exitCode,
@@ -719,8 +721,9 @@ export class ProducerSupervisor extends EventEmitter {
   private async buildEnv(): Promise<NodeJS.ProcessEnv | null> {
     const amqpUrl = await this.opts.amqpUrl();
     if (!amqpUrl) return null;
-    const databaseUrl = await this.opts.databaseUrl();
-    if (!databaseUrl) return null;
+    // Producer ohne eigene Datenbank (databaseName null) brauchen keine URL.
+    const databaseUrl = this.opts.config.databaseName === null ? null : await this.opts.databaseUrl();
+    if (this.opts.config.databaseName !== null && !databaseUrl) return null;
     const llm = await this.opts.llmConfig();
     if (!llm) return null;
     // v0.1.170 — remember the active config so getStatus() can compute
@@ -764,8 +767,7 @@ export class ProducerSupervisor extends EventEmitter {
       // producer's prisma client connects directly to fly's MPG
       // cluster; schema migrations were applied by the matching
       // fly producer's deploy, not here.
-      DATABASE_URL: databaseUrl,
-      DIRECT_URL: databaseUrl,
+      ...(databaseUrl ? { DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl } : {}),
       AMQP_URL: amqpUrl,
       // 8.v2: split producers into compute (local) + persist (cloud).
       // Local producers do LLM/scraping with the user's API key, emit

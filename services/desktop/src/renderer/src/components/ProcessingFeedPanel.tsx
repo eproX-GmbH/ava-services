@@ -30,6 +30,7 @@ const PRODUCER_LABEL: Record<string, string> = {
   website: "Website",
   "company-profile": "Profil",
   "company-contact": "Kontakt",
+  "company-email": "E-Mail",
   "company-evaluation": "Bewertung",
 };
 
