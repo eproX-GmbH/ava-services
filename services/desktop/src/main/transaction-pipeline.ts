@@ -7,6 +7,7 @@
 // Teilfehler anderer Stufen werden als Ursache genannt, nicht als Totalausfall.
 
 import { KEY_STAGE, STAGE_LABELS, type PipelineStage } from "../shared/workflow-dependencies";
+import { landAusCompanyId } from "../shared/register-land";
 
 export type StageState = "completed" | "failed" | "skipped" | "pending" | "in_progress";
 export type Stage = PipelineStage;
@@ -133,7 +134,11 @@ export function beschreibeBefund(b: VorgangsBefund): { headline: (name: string) 
     }
     const quellen = teil.filter(([s, n]) => (s === "structuredContent" || s === "companyPublication") && n >= Math.max(2, Math.ceil(b.gesamt * 0.6)));
     if (quellen.length > 0) {
-      zeilen.push("Vermutlich ist die Quelle (Handelsregister/Unternehmensanzeiger) gerade nicht erreichbar. Die Schritte lassen sich spaeter unter Vorgaenge → „Schritt erneut starten“ wiederholen.");
+      // Nur bei deutschen Firmen sind Handelsregister/Unternehmensanzeiger die Quelle
+      // (UK: Companies House, AT: Firmenbuch).
+      const laender = new Set(b.firmen.map((f) => landAusCompanyId(f.companyId)));
+      const quelle = laender.size === 1 && laender.has("DE") ? "die Quelle (Handelsregister/Unternehmensanzeiger)" : laender.has("UK") && laender.size === 1 ? "Companies House" : "die Registerquelle";
+      zeilen.push(`Vermutlich ist ${quelle} gerade nicht erreichbar. Die Schritte lassen sich spaeter unter Vorgaenge → „Schritt erneut starten“ wiederholen.`);
     }
   }
   const warnung = b.profilFehlgeschlagen > 0 || teil.length > 0;

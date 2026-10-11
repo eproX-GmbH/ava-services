@@ -17,6 +17,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
+import { IMPORTIERBAR, landAusCompanyId } from "../../../shared/register-land";
 
 export interface UebernehmenProps {
   /** Firmenname, wie er im Register steht. */
@@ -73,8 +74,10 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
   const [vorgang, setVorgang] = useState<string | null>(null);
 
   // Ohne Name und Ort findet die Zuordnung die Firma nicht — dann lieber
-  // keinen Knopf als einen, der ins Leere greift.
-  if (!name?.trim() || !ort?.trim()) return null;
+  // keinen Knopf als einen, der ins Leere greift. Dasselbe gilt für Länder,
+  // die sich noch nicht importieren lassen (Schweiz).
+  const land = landAusCompanyId(companyId);
+  if (!name?.trim() || !ort?.trim() || !IMPORTIERBAR.includes(land)) return null;
 
   const anstossen = async () => {
     setLaeuft(true);
@@ -88,6 +91,8 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
           body: {
             companies: [{ name: name.trim(), city: ort.trim() }],
             transactionName: `${name.trim()} (aus der Firmenansicht)`,
+            // Ohne Land ordnet master-data gegen das deutsche Register zu.
+            ...(land !== "DE" ? { country: land } : {}),
           },
         },
       );

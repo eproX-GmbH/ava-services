@@ -2237,11 +2237,20 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     const titel = AUTO_WERKZEUGE[e.toolName];
     if (!titel) return;
     try {
-      const r = JSON.parse(e.content) as { transactionId?: unknown; companyCount?: unknown; filename?: unknown };
+      const r = JSON.parse(e.content) as { transactionId?: unknown; companyCount?: unknown; filename?: unknown; vorgaenge?: unknown };
       if (typeof r.transactionId !== "string" || !r.transactionId) return;
-      const anzahl = typeof r.companyCount === "number" ? ` (${r.companyCount} Firmen)` : "";
       const datei = typeof r.filename === "string" ? ` ${r.filename}` : "";
-      hintergrundAufgaben.registrieren({ conversationId: e.conversationId, transactionId: r.transactionId, titel: `${titel}${datei}${anzahl}`, quelle: e.toolName, ankerToolCallId: e.toolCallId });
+      // Ein Import ueber mehrere Laender legt einen Vorgang je Land an; jeder wird beobachtet.
+      const vorgaenge = Array.isArray(r.vorgaenge)
+        ? (r.vorgaenge as Array<{ land?: unknown; transactionId?: unknown; companyCount?: unknown }>).filter((v) => typeof v.transactionId === "string" && v.transactionId)
+        : [{ transactionId: r.transactionId, companyCount: r.companyCount, land: undefined }];
+      for (const v of vorgaenge) {
+        // Ohne zugeordnete Firma gibt es nichts zu beobachten (die Leiste stuende sonst ewig bei 0).
+        if (v.companyCount === 0) continue;
+        const anzahl = typeof v.companyCount === "number" ? ` (${v.companyCount} ${v.companyCount === 1 ? "Firma" : "Firmen"})` : "";
+        const land = typeof v.land === "string" && v.land !== "DE" ? ` ${v.land}` : "";
+        hintergrundAufgaben.registrieren({ conversationId: e.conversationId, transactionId: v.transactionId as string, titel: `${titel}${land}${datei}${anzahl}`, quelle: e.toolName, ankerToolCallId: e.toolCallId });
+      }
     } catch {
       /* kein JSON → keine Transaktion */
     }

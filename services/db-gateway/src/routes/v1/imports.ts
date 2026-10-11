@@ -550,8 +550,24 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
         xlsx,
         effectiveTxName,
         String(isFuzzy ?? false),
+        country,
       )
     : new Map<string, string>();
+
+  // Ohne unscharfe Zuordnung uebernimmt master-data nur eindeutig gefundene
+  // Zeilen. Findet sich keine einzige, entstuende ein leerer Vorgang, der nie
+  // fertig wird (2026-10-11: UK-Firma ohne country gegen das deutsche Register).
+  // Deshalb vorher pruefen und gar keinen Vorgang anlegen.
+  if (!isFuzzy) {
+    const gefunden = preMatchById.size > 0 ? preMatchById.size : await zugeordneteAnzahl(c, xlsx, effectiveTxName, country);
+    if (gefunden === 0) {
+      throw new HTTPException(422, {
+        message:
+          `keine_firma_zugeordnet: Keine der ${companies.length} Firmen wurde im Register (${country ?? "DE"}) eindeutig gefunden; es wurde kein Vorgang angelegt. ` +
+          "Genaue Schreibweise und Ort per Firmensuche pruefen; Firmen ausserhalb Deutschlands brauchen das Land (AT, UK).",
+      });
+    }
+  }
 
   const { headers } = await callUpstreamBinary(
     c,
@@ -572,6 +588,12 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
 
   const transactionId =
     headers.get("transaction-id") ?? headers.get("Transaction-Id");
+  // Zugeordnete Firmen = veroeffentlicht + geparkt (Kontingent); fehlen die
+  // Header (aeltere master-data), bleibt es bei der Zahl der Zeilen.
+  const veroeffentlicht = Number(headers.get("x-published-count") ?? NaN);
+  const geparkt = Number(headers.get("x-parked-count") ?? NaN);
+  const zugeordnet =
+    Number.isFinite(veroeffentlicht) && Number.isFinite(geparkt) ? veroeffentlicht + geparkt : companies.length;
   if (!transactionId) {
     throw new HTTPException(502, {
       message: "upstream omitted Transaction-Id header",
@@ -612,7 +634,7 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
   }
 
   return c.json(
-    { transactionId, companyCount: companies.length },
+    { transactionId, companyCount: zugeordnet, providedCount: companies.length },
     202,
   );
 });
@@ -648,6 +670,7 @@ async function resolveCompanyIdsViaDryRun(
   xlsx: Uint8Array,
   effectiveTxName: string,
   isFuzzy: string,
+  country?: string,
 ): Promise<Map<string, string>> {
   try {
     const { body } = await callUpstreamBinaryExpectJson(
@@ -663,6 +686,7 @@ async function resolveCompanyIdsViaDryRun(
           name: effectiveTxName,
           isFuzzy,
           dryRun: "true",
+          ...(country ? { country } : {}),
         },
       },
     );
@@ -675,5 +699,34 @@ async function resolveCompanyIdsViaDryRun(
   } catch (err) {
     logger.warn({ err }, "resolveCompanyIdsViaDryRun: pre-commit dry-run failed");
     return new Map();
+  }
+}
+
+/**
+ * Wie viele Zeilen master-data eindeutig zuordnet (Trockenlauf). Bei einem
+ * Fehler des Trockenlaufs null: dann nicht blockieren, der Import laeuft wie bisher.
+ */
+async function zugeordneteAnzahl(
+  c: Parameters<typeof callUpstreamBinaryExpectJson>[0],
+  xlsx: Uint8Array,
+  effectiveTxName: string,
+  country?: string,
+): Promise<number | null> {
+  try {
+    const { body } = await callUpstreamBinaryExpectJson(c, "masterData", "/api/v1/data-care", xlsx, {
+      contentType: "application/octet-stream",
+      query: {
+        companyNameIdentifiers: COMPANY_HEADER,
+        city: CITY_HEADER,
+        name: effectiveTxName,
+        isFuzzy: "false",
+        dryRun: "true",
+        ...(country ? { country } : {}),
+      },
+    });
+    return ((body as MasterDataPreview).matched ?? []).length;
+  } catch (err) {
+    logger.warn({ err }, "from-list: Trockenlauf zur Zuordnungspruefung fehlgeschlagen (Import laeuft weiter)");
+    return null;
   }
 }

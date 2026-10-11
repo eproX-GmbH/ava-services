@@ -26,6 +26,29 @@ import {
 // re-issues the same import call without dryRun (or via a follow-up
 // `import_company` / `import_excel` / `import_companies_from_crm` with
 // the corrected company list).
+/** Register-Länder, die master-data beim Import zuordnen kann (CH noch nicht). */
+export const IMPORT_LAENDER = ["DE", "AT", "UK"] as const;
+export type ImportLand = (typeof IMPORT_LAENDER)[number];
+
+/** „gb“, „GB“, „Vereinigtes Königreich“ → „UK“; sonst Großschreibung. */
+export function landNormal(v: string): string {
+  const t = v.trim().toUpperCase();
+  if (t === "GB" || t === "GBR" || t === "UNITED KINGDOM" || t === "VEREINIGTES KÖNIGREICH" || t === "ENGLAND") return "UK";
+  if (t === "AUT" || t === "ÖSTERREICH" || t === "OESTERREICH" || t === "AUSTRIA") return "AT";
+  if (t === "DEU" || t === "DEUTSCHLAND" || t === "GERMANY") return "DE";
+  return t;
+}
+
+/** Zeilen nach Land gruppieren (ohne Land = DE), Reihenfolge des ersten Auftretens. */
+export function nachLand<T extends { country?: ImportLand }>(zeilen: T[]): Map<ImportLand, T[]> {
+  const m = new Map<ImportLand, T[]>();
+  for (const z of zeilen) {
+    const land = z.country ?? "DE";
+    m.set(land, [...(m.get(land) ?? []), z]);
+  }
+  return m;
+}
+
 interface ImportPreview {
   dryRun: true;
   providedCount: number;
@@ -34,10 +57,12 @@ interface ImportPreview {
     location: string;
     companyId: string;
     matchingType: "direct" | "history";
+    country?: ImportLand;
   }>;
   unmatched: Array<{
     name: string;
     location: string;
+    country?: ImportLand;
     candidates: Array<{
       companyId: string;
       name: string;
@@ -113,10 +138,11 @@ export function buildImportTools(deps: {
   // (das dauerte bei 24 Firmen viele Sekunden → die Karte erschien gefühlt
   // gar nicht). TTL 30 min, simple Größen-Begrenzung.
   type CachedPreview = {
-    matched: Array<{ name: string; location: string }>;
+    matched: Array<{ name: string; location: string; country?: ImportLand }>;
     unmatched: Array<{
       name: string;
       location: string;
+      country?: ImportLand;
       candidates: Array<{
         companyId: string;
         name: string;
@@ -865,6 +891,11 @@ export function buildImportTools(deps: {
       "clearly-specified company you may commit directly. Each row needs " +
       "name + city (city disambiguates same-named companies); if the user gave " +
       "no city, use the best-known HQ — the dry-run report flags wrong guesses. " +
+      "Companies OUTSIDE Germany (company_search returned country AT or UK) " +
+      "need `country` on their row — without it the row is matched against " +
+      "the German register and finds nothing. Rows of different countries " +
+      "become one transaction per country. Switzerland (CH) cannot be " +
+      "imported yet. " +
       "Returns a transactionId on commit; progress via `import_status`. " +
       "The dry-run creates NO transaction — waiting for the user's " +
       "confirmation before committing is the intended flow, never a " +
@@ -887,6 +918,12 @@ export function buildImportTools(deps: {
             properties: {
               name: { type: "string", minLength: 1 },
               city: { type: "string", minLength: 1 },
+              country: {
+                type: "string",
+                enum: ["DE", "AT", "UK"],
+                description:
+                  "Register country, taken from company_search (`country`). DE = Handelsregister (default), AT = Firmenbuch, UK = Companies House.",
+              },
               crm: {
                 type: "object",
                 description:
@@ -930,6 +967,11 @@ export function buildImportTools(deps: {
               .object({
                 name: yup.string().required().min(1),
                 city: yup.string().required().min(1),
+                country: yup
+                  .string()
+                  .transform((v: unknown) => (typeof v === "string" ? landNormal(v) : v))
+                  .oneOf([...IMPORT_LAENDER])
+                  .optional(),
                 crm: yup
                   .object({
                     type: yup
@@ -966,8 +1008,13 @@ export function buildImportTools(deps: {
       const companies = args.companies as Array<{
         name: string;
         city: string;
+        country?: ImportLand;
         crm?: { type: string; externalId: string; displayName?: string };
       }>;
+      // Ein Vorgang je Land: master-data ordnet je Aufruf gegen EIN Register zu.
+      const gruppen = nachLand(companies);
+      const mehrereLaender = gruppen.size > 1;
+      const labelFuer = (land: ImportLand, base: string) => (mehrereLaender ? `${base} (${land})` : base);
       const toWire = (c: (typeof companies)[number]) => ({
         name: c.name,
         city: c.city,
@@ -981,20 +1028,28 @@ export function buildImportTools(deps: {
         ctx.log(
           `import_companies: dry-run für ${companies.length} Firmen → /v1/imports/from-list`,
         );
-        const preview = await deps.gateway.request<ImportPreview>(
-          "/v1/imports/from-list",
-          {
-            method: "POST",
-            body: {
-              companies: companies.map(toWire),
-              transactionName: label,
-              ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
-              dryRun: true,
+        const preview: ImportPreview = { dryRun: true, providedCount: 0, matched: [], unmatched: [] };
+        for (const [land, zeilen] of gruppen) {
+          const teil = await deps.gateway.request<ImportPreview>(
+            "/v1/imports/from-list",
+            {
+              method: "POST",
+              body: {
+                companies: zeilen.map(toWire),
+                transactionName: labelFuer(land, label),
+                ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+                ...(land !== "DE" ? { country: land } : {}),
+                dryRun: true,
+              },
+              idempotencyKey: randomUUID(),
+              signal: ctx.signal,
             },
-            idempotencyKey: randomUUID(),
-            signal: ctx.signal,
-          },
-        );
+          );
+          const mitLand = <T extends object>(x: T) => (land !== "DE" ? { ...x, country: land } : x);
+          preview.providedCount += teil.providedCount ?? zeilen.length;
+          preview.matched.push(...(teil.matched ?? []).map(mitLand));
+          preview.unmatched.push(...(teil.unmatched ?? []).map(mitLand));
+        }
         let reportPath: string | undefined;
         let reportFilename: string | undefined;
         try {
@@ -1022,10 +1077,12 @@ export function buildImportTools(deps: {
           matched: preview.matched.map((m) => ({
             name: m.name,
             location: m.location,
+            ...(m.country ? { country: m.country } : {}),
           })),
           unmatched: preview.unmatched.map((u) => ({
             name: u.name,
             location: u.location,
+            ...(u.country ? { country: u.country } : {}),
             candidates: (u.candidates ?? []).map((c) => ({
               companyId: c.companyId,
               name: c.name,
@@ -1114,32 +1171,48 @@ export function buildImportTools(deps: {
       ctx.log(
         `import_companies: commit ${companies.length} Firmen → /v1/imports/from-list`,
       );
-      const response = await deps.gateway.request<{
-        transactionId: string;
-        companyCount: number;
-      }>("/v1/imports/from-list", {
-        method: "POST",
-        body: {
-          companies: companies.map((c) => ({ name: c.name, city: c.city })),
-          transactionName: label,
-          ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
-        },
-        idempotencyKey: randomUUID(),
-        signal: ctx.signal,
-        attachUserLlm: true,
-      });
+      const vorgaenge: Array<{ land: ImportLand; transactionId: string; companyCount: number }> = [];
+      for (const [land, zeilen] of gruppen) {
+        const response = await deps.gateway.request<{
+          transactionId: string;
+          companyCount: number;
+        }>("/v1/imports/from-list", {
+          method: "POST",
+          body: {
+            companies: zeilen.map((c) => ({ name: c.name, city: c.city })),
+            transactionName: labelFuer(land, label),
+            ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+            ...(land !== "DE" ? { country: land } : {}),
+          },
+          idempotencyKey: randomUUID(),
+          signal: ctx.signal,
+          attachUserLlm: true,
+        });
+        vorgaenge.push({ land, transactionId: response.transactionId, companyCount: response.companyCount });
+      }
 
       if (skipSnapshotKey) {
         const { ResearchFeaturesStore } = await import("../../research/store");
-        ResearchFeaturesStore.shared().attachSkipSnapshotToTransaction(
-          skipSnapshotKey,
-          response.transactionId,
-        );
+        for (const v of vorgaenge) {
+          ResearchFeaturesStore.shared().attachSkipSnapshotToTransaction(
+            skipSnapshotKey,
+            v.transactionId,
+          );
+        }
       }
 
+      const zugeordnet = vorgaenge.reduce((n, v) => n + v.companyCount, 0);
       return {
-        transactionId: response.transactionId,
-        companyCount: response.companyCount,
+        transactionId: vorgaenge[0]!.transactionId,
+        // Zugeordnete Firmen laut Gateway, nicht die Zahl der gesendeten Zeilen.
+        companyCount: zugeordnet,
+        ...(mehrereLaender ? { vorgaenge } : {}),
+        ...(zugeordnet === 0
+          ? {
+              hinweis:
+                "Keine Firma wurde im Register zugeordnet; es wird nichts verarbeitet. Schreibweise und Ort per company_search pruefen, ausserhalb Deutschlands country (AT, UK) angeben.",
+            }
+          : {}),
       };
     },
   });
@@ -1232,6 +1305,7 @@ export function buildImportTools(deps: {
               .object({
                 name: yup.string().required(),
                 location: yup.string().defined(),
+                country: yup.string().oneOf([...IMPORT_LAENDER]).optional(),
               })
               .noUnknown(true),
           )
@@ -1244,6 +1318,7 @@ export function buildImportTools(deps: {
               .object({
                 name: yup.string().required(),
                 location: yup.string().defined(),
+                country: yup.string().oneOf([...IMPORT_LAENDER]).optional(),
                 candidates: yup
                   .array()
                   .of(
@@ -1275,10 +1350,11 @@ export function buildImportTools(deps: {
       // v0.1.393 — Bevorzugt aus dem Dry-Run-Cache über `resolveToken` laden
       // (kein Re-Ausschreiben der Firmen durch das Modell). Fallback: die
       // inline übergebenen Arrays.
-      let matched: Array<{ name: string; location: string }>;
+      let matched: Array<{ name: string; location: string; country?: ImportLand }>;
       let unmatched: Array<{
         name: string;
         location: string;
+        country?: ImportLand;
         candidates: Array<{
           companyId: string;
           name: string;
@@ -1301,6 +1377,7 @@ export function buildImportTools(deps: {
           commitCompanies: matched.map((m) => ({
             name: m.name,
             city: m.location,
+            ...(m.country ? { country: m.country } : {}),
           })),
           autoAssigned: 0,
           resolved: 0,
@@ -1316,10 +1393,11 @@ export function buildImportTools(deps: {
       // Klar dominanter Top-Treffer (≥1.6× zweitbester) oder einziger
       // Kandidat → automatisch zuordnen, NICHT in der Karte zeigen.
       const DOMINANCE = 1.6;
-      const autoResolved: Array<{ name: string; city: string }> = [];
+      const autoResolved: Array<{ name: string; city: string; country?: ImportLand }> = [];
       const doubt: Array<{
         name: string;
         location: string;
+        country?: ImportLand;
         candidates: Array<{
           companyId: string;
           name: string;
@@ -1332,7 +1410,7 @@ export function buildImportTools(deps: {
           (a, b) => (b.score ?? 0) - (a.score ?? 0),
         );
         if (cands.length === 0) {
-          doubt.push({ name: u.name, location: u.location, candidates: [] });
+          doubt.push({ name: u.name, location: u.location, country: u.country, candidates: [] });
           continue;
         }
         const top = cands[0]!;
@@ -1340,9 +1418,9 @@ export function buildImportTools(deps: {
         const dominant =
           !second || (top.score > 0 && top.score >= DOMINANCE * (second.score ?? 0));
         if (cands.length === 1 || dominant) {
-          autoResolved.push({ name: top.name, city: top.location });
+          autoResolved.push({ name: top.name, city: top.location, ...(u.country ? { country: u.country } : {}) });
         } else {
-          doubt.push({ name: u.name, location: u.location, candidates: cands });
+          doubt.push({ name: u.name, location: u.location, country: u.country, candidates: cands });
         }
       }
 
@@ -1358,7 +1436,7 @@ export function buildImportTools(deps: {
         })),
       }));
 
-      const userResolved: Array<{ name: string; city: string }> = [];
+      const userResolved: Array<{ name: string; city: string; country?: ImportLand }> = [];
       let skipped = 0;
       if (rows.length > 0) {
         const promptText =
@@ -1372,13 +1450,14 @@ export function buildImportTools(deps: {
             continue;
           }
           const cand = r.candidates.find((c) => c.companyId === pick);
-          if (cand) userResolved.push({ name: cand.name, city: cand.location });
+          const land = doubt[Number(r.rowId)]?.country;
+          if (cand) userResolved.push({ name: cand.name, city: cand.location, ...(land ? { country: land } : {}) });
           else skipped += 1;
         }
       }
 
       const commitCompanies = [
-        ...matched.map((m) => ({ name: m.name, city: m.location })),
+        ...matched.map((m) => ({ name: m.name, city: m.location, ...(m.country ? { country: m.country } : {}) })),
         ...autoResolved,
         ...userResolved,
       ];

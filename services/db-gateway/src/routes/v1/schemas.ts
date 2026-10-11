@@ -749,7 +749,9 @@ export const FromListIngestBody = z
 export const FromListIngestResponseShape = z
   .object({
     transactionId: z.string(),
+    /** Zugeordnete Firmen im Vorgang (nicht die Zahl der gesendeten Zeilen). */
     companyCount: z.number().int().nonnegative(),
+    providedCount: z.number().int().nonnegative().optional(),
   })
   .openapi("FromListIngestResponse");
 

@@ -22,6 +22,7 @@ const LAND: Record<string, LandInfo> = {
   DE: LAND_DE,
   AT: { name: "Österreich", register: "Firmenbuch", insolvenzquelle: "in der Ediktsdatei (Insolvenzdatei)" },
   CH: { name: "Schweiz", register: "Handelsregister", insolvenzquelle: "im SHAB" },
+  UK: { name: "Vereinigtes Königreich", register: "Companies House", insolvenzquelle: "in der Gazette" },
 };
 
 function land(f: StatusQuelle): LandInfo {

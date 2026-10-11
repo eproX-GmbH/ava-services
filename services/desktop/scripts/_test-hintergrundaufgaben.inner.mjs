@@ -76,6 +76,20 @@ await aufgaben.takt();
 const m2 = gemeldet.find((g) => g.conv === "conv2");
 assert.ok(m2, "Abbruch wird gemeldet"); assert.match(m2.text, /^\[Hintergrundaufgabe abgebrochen\] Deep Research/);
 
+// 3b) Vorgang ohne jede Firma (nichts zugeordnet): nach LEER_NACH_MS beenden, ohne Gateway-Abbruch
+tx.tLeer = { zuletzt: null, schritte: [] };
+const leer = aufgaben.registrieren({ conversationId: "convLeer", transactionId: "tLeer", titel: "Firmen-Import (1 Firma)", quelle: "import_companies" });
+await aufgaben.takt();
+assert.equal(leer.status, "laeuft", "frisch angelegt: noch warten");
+leer.gestartet = Date.now() - A.LEER_NACH_MS - 1_000;
+const abbruecheVorher = abgebrochen.length;
+await aufgaben.takt();
+assert.equal(leer.status, "abgebrochen"); assert.equal(leer.grund, "leer");
+assert.equal(abgebrochen.length, abbruecheVorher, "leerer Vorgang: nichts im Gateway abzubrechen");
+for (let i = 0; i < 3 && !gemeldet.some((g) => g.conv === "convLeer"); i++) await aufgaben.takt();
+const mLeer = gemeldet.find((g) => g.conv === "convLeer");
+assert.ok(mLeer); assert.match(mLeer.text, /keine einzige zugeordnete Firma/); assert.match(mLeer.text, /country AT oder UK/);
+
 // 4) × = nicht mehr verfolgen, kein Abbruch im Gateway
 tx.t3 = { zuletzt: new Date().toISOString(), schritte: [{ c: "D", p: "website", state: "pending" }] };
 const c = aufgaben.registrieren({ conversationId: "conv1", transactionId: "t3", titel: "Z", quelle: "x" });

@@ -72,6 +72,8 @@ export interface HintergrundAufgabe {
   gemeldet: boolean;
   beendet: number | null;
   letzterFehler: string | null;
+  /** "leer": Der Vorgang enthielt keine einzige zugeordnete Firma. */
+  grund?: "leer";
 }
 
 /** Werkzeuge, deren transactionId automatisch beobachtet wird. */
@@ -84,6 +86,8 @@ export const AUTO_WERKZEUGE: Record<string, string> = {
 const TAKT_MS = 20_000;
 /** Nutzervorgabe 2026-10-03: 60 Minuten ohne jede Veraenderung = Abbruch. */
 export const STILLSTAND_MS = 60 * 60_000;
+/** Ein Vorgang ohne jede Firma nach dieser Zeit ist leer (nichts zugeordnet), nicht langsam. */
+export const LEER_NACH_MS = 5 * 60_000;
 /** Erledigte Aufgaben bleiben so lange in der Leiste sichtbar. */
 const SICHTBAR_NACH_ENDE_MS = 30 * 60_000;
 /** Karten stehen im Verlauf wie Nachrichten; so lange bleiben sie erhalten. */
@@ -127,6 +131,13 @@ export const MELDUNG_PRAEFIX = "[Hintergrundaufgabe";
 export function meldungsText(a: HintergrundAufgabe): string {
   const s = a.stand;
   const dauerMin = Math.max(1, Math.round(((a.beendet ?? Date.now()) - a.gestartet) / 60_000));
+  if (a.grund === "leer") {
+    return (
+      `${MELDUNG_PRAEFIX} abgebrochen] ${a.titel} (Transaktion ${a.transactionId}) enthielt keine einzige zugeordnete Firma; es wurde nichts verarbeitet.` +
+      " Sag dem Nutzer, dass die Firma im Register nicht gefunden wurde. Pruefe mit company_search die genaue Schreibweise und den Ort; Firmen ausserhalb Deutschlands brauchen beim Import das Land (country AT oder UK)." +
+      " Biete an, sie richtig zu importieren. Nicht von dir aus neu starten."
+    );
+  }
   const kopf = a.status === "abgebrochen"
     ? `${MELDUNG_PRAEFIX} abgebrochen] ${a.titel} (Transaktion ${a.transactionId}) kam ${Math.round(STILLSTAND_MS / 60_000)} Minuten lang gar nicht weiter und wurde nach ${dauerMin} Min. mit Fehler abgebrochen.`
     : `${MELDUNG_PRAEFIX} abgeschlossen] ${a.titel} (Transaktion ${a.transactionId}) ist nach ${dauerMin} Min. fertig.`;
@@ -267,6 +278,12 @@ export class HintergrundAufgaben extends EventEmitter {
               a.status = "fertig";
               a.beendet = jetzt;
             }
+          } else if (s.total === 0 && jetzt - a.gestartet > LEER_NACH_MS) {
+            // Kein Firmeneintrag nach Minuten: master-data hat nichts zugeordnet.
+            // Nicht 60 Minuten auf Fortschritt warten, den es nie geben wird.
+            a.status = "abgebrochen";
+            a.grund = "leer";
+            a.beendet = jetzt;
           } else {
             a.fertigGesehen = 0;
             if (jetzt - a.fortschrittAm > STILLSTAND_MS) {
