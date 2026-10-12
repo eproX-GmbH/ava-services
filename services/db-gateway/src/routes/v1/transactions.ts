@@ -17,7 +17,7 @@ import {
 import { erzwingen } from "../../lib/verflechtungen";
 import { heldSubset, isHeld } from "../../lib/company-holds";
 import { hiddenTransactionSubset } from "../../lib/company-tombstones";
-import { activeShareFor, listShares, copyEntityProgress } from "../../lib/org-shares";
+import { activeShareFor, istMitgliedDerOrganisation, listShares, copyEntityProgress } from "../../lib/org-shares";
 import { resolveCompanyNames } from "../../lib/company-names";
 import { logger } from "../../lib/logger";
 import {
@@ -2181,6 +2181,8 @@ async function assertTransactionOwnership(
     return assertTransactionOwnershipById(c, txnId);
   }
   if (owner !== actorId) {
+    // 2026-10-12: Vorgaenge von Mitgliedern derselben Organisation gehoeren allen.
+    if (await istMitgliedDerOrganisation(getGatewayPool(), c.get("auth").tenantId, owner)) return;
     // O8 — Lesezugriff fuer Mitglieder derselben Organisation bei aktiver Freigabe.
     const txnId = ((txn as UpstreamTransaction).id ?? (txn as UpstreamTransaction).transactionId) as string | undefined;
     if (txnId && (await activeShareFor(getGatewayPool(), c.get("auth").tenantId, "transaction", txnId))) return;
@@ -2223,6 +2225,11 @@ async function assertTransactionOwnershipById(
       `/api/v1/transactions/${encodeURIComponent(transactionId)}`,
     );
     if (one && typeof one.userId === "string" && one.userId === actorId) {
+      return;
+    }
+    // 2026-10-12: Vorgang eines Kollegen derselben Organisation ("Meine Firmen"
+    // zeigt die Firmen der Organisation, also muss auch der Neustart gehen).
+    if (one && typeof one.userId === "string" && (await istMitgliedDerOrganisation(getGatewayPool(), c.get("auth").tenantId, one.userId))) {
       return;
     }
   } catch (err) {

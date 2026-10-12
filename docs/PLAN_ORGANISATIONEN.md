@@ -339,3 +339,14 @@ zaehlen auf sein Konto bzw. die Organisation, nicht auf den Teilenden).
 5. **Radar-Meldung:** Sammel-Meldung je Teilvorgang.
 
 Reihenfolge bestaetigt: O6 (Go 2026-09-05) → O7 → O8 → O9.
+
+## Nachtrag 2026-10-12: Vorgaenge gehoeren der Organisation
+
+"Meine Firmen" zeigt die Firmen der ganzen Organisation, der Neustart einer
+Stufe prueft aber den Besitzer des Vorgangs (`userId` in master-data). Bei
+jeder Firma, deren letzter Lauf von einem Kollegen kam, kam 403 ("gehoert
+nicht zu deinem Konto"). Seit heute gilt in `assertTransactionOwnership*`:
+Vorgaenge von Mitgliedern derselben Organisation (`istMitgliedDerOrganisation`,
+TenantMember + Tenant.kind = organisation) zaehlen wie eigene; die OrgShare-
+Freigabe bleibt fuer persoenliche Tenants und Lesezugriffe bestehen.
+

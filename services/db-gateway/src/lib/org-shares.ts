@@ -175,3 +175,21 @@ export async function copyEntityProgress(pool: pg.Pool, fromTx: string, toTx: st
   );
   return r.rowCount ?? 0;
 }
+
+/**
+ * 2026-10-12: Vorgaenge in einer Organisation gehoeren allen Mitgliedern.
+ * "Meine Firmen" zeigt die Firmen der ganzen Organisation; ein Neustart einer
+ * Stufe traf bisher auf 403, sobald der letzte Lauf von einem Kollegen kam.
+ * true, wenn `actorId` Mitglied der Organisation `tenantId` ist (persoenliche
+ * Tenants zaehlen nicht).
+ */
+export async function istMitgliedDerOrganisation(pool: pg.Pool, tenantId: string, actorId: string): Promise<boolean> {
+  if (!tenantId || !actorId) return false;
+  const r = await pool.query(
+    `SELECT 1 FROM "TenantMember" m JOIN "Tenant" t ON t."id" = m."tenantId"
+      WHERE m."tenantId" = $1 AND m."actorId" = $2 AND t."kind" = 'organisation' LIMIT 1`,
+    [tenantId, actorId],
+  );
+  return r.rows.length > 0;
+}
+
