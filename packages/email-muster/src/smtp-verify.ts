@@ -126,6 +126,26 @@ export interface PruefOptionen {
 }
 
 /**
+ * RCPT-Antwort deuten. 250 = existiert. 55x heisst nur dann "existiert nicht",
+ * wenn der Server ueber den Empfaenger spricht (erweiterter Status 5.1.x =
+ * Adresse, 5.4.1 = Microsoft "Recipient address rejected: Access denied" bei
+ * unbekanntem Nutzer). Richtlinien-Antworten (5.7.x, "blocked", "blacklist",
+ * "banned", "reputation", "rate", "too many") betreffen den PRUEFENDEN Host,
+ * nicht die Adresse: "gesperrt". Alles andere "unbekannt".
+ */
+export function klassifiziereRcpt(code: number, text: string): PruefErgebnis {
+  if (code >= 250 && code < 260) return "existiert";
+  const t = text.toLowerCase();
+  const sperre = /\b5\.7\.\d+\b/.test(t) || /blocked|blacklist|spamhaus|banned|reputation|rate ?limit|too many|not allowed to|relay(ing)? denied|client host|policy|unsolicited|abuse/.test(t);
+  if (code === 550 || code === 551 || code === 553 || code === 554) {
+    if (sperre) return "gesperrt";
+    return "existiert_nicht";
+  }
+  if (code >= 500 && sperre) return "gesperrt";
+  return "unbekannt";
+}
+
+/**
  * Handshake bis RCPT TO fuer `adressen` (max 5) am gleichen MX. Liefert je
  * Adresse das Ergebnis. `catchAllProbe` (zufaellige Adresse) wird zuerst
  * geprueft: antwortet der Server 250, ist alles "catch_all".
@@ -188,8 +208,15 @@ export async function pruefeAdressen(domain: string, adressen: string[], opts: P
     }
     for (const a of adressen.slice(0, 5)) {
       const r = await rcpt(a);
-      const ergebnis: PruefErgebnis = r.code >= 250 && r.code < 260 ? "existiert" : r.code === 550 || r.code === 551 || r.code === 553 || r.code === 554 ? "existiert_nicht" : "unbekannt";
+      const ergebnis = klassifiziereRcpt(r.code, r.text);
       out.set(a, { ergebnis, mx, code: r.code, antwort: r.text.slice(0, 200), dauerMs: Date.now() - start });
+      if (ergebnis === "gesperrt") {
+        // Befund riha WeserGold 2026-10-12: Microsoft 365 wies eine ganze Sitzung mit 550
+        // ab (Richtlinie gegen den pruefenden Host), die Adressen existieren. Ab hier
+        // sagt kein weiteres 550 etwas ueber die Adresse — Rest bleibt offen.
+        opts.log?.(`[smtp] ${mx}: Richtliniensperre statt Adressauskunft (${r.text.slice(0, 120)})`);
+        break;
+      }
       if (ergebnis === "existiert" && opts.bisErsterTreffer) break;
       await new Promise((r2) => setTimeout(r2, opts.rcptAbstandMs ?? 2_000));
     }

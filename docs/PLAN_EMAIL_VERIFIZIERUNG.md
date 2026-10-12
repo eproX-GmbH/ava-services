@@ -572,3 +572,24 @@ ohne Firmenbezug, und der Eindeutigkeitsschluessel von `Fact` kannte keine Firma
   Gateway-Deploy. Lokale PGlite-Datenbanken des Producers ziehen sie beim
   naechsten `prisma migrate deploy` nach.
 
+### 8.7 Richtliniensperren erkennen, Kontaktzeile entlastet (v0.1.817, 2026-10-12)
+
+Befund riha WeserGold (Microsoft 365, `*.mail.protection.outlook.com`): ein Lauf
+bekam fuer 29 Adressen hintereinander 550, obwohl dieselben Adressen von einem
+anderen Host mit 250 bestaetigt werden. Der Server hatte den pruefenden Host per
+Richtlinie abgewiesen; der Verifizierer wertete jedes 550 als "existiert nicht".
+- `klassifiziereRcpt` (smtp-verify.ts): 55x nur noch "existiert nicht", wenn die
+  Antwort ueber die Adresse spricht (5.1.x, Microsoft 5.4.1 "Recipient address
+  rejected"); 5.7.x und Texte wie blocked/blacklist/banned/reputation/rate limit
+  sind "gesperrt" — die Sitzung endet, die uebrigen Adressen bleiben offen mit
+  dem Grund "Mailserver lehnt Pruefanfragen ab (…)". Keine Netzsperre dadurch.
+- Antwortzeile des Servers wandert als `smtpAntwort` in den Herkunftstext
+  (derived-email, max. 200 Zeichen), damit eine Ablehnung nachvollziehbar ist.
+- Bestand riha: 29 Fakten per SQL von `pattern:abgelehnt` auf `pattern:offen`
+  (Konfidenz 0,4) mit erklaerendem Herkunftstext gesetzt; sie werden beim
+  naechsten Lauf einzeln nachgeprueft.
+- Kontaktkarte: Badge der E-Mail-Verifizierung sprengte die Zeile (Adresse brach
+  zeichenweise um). Jetzt Wert in Zeile 1, Meta (Badge, Quelle, Zuverlaessigkeit)
+  umbrechend darunter; Badges kurz ("abgeleitet · verifiziert / ungeprüft /
+  abgelehnt / unbestätigt"), Baseline und Datum nur im Tooltip.
+

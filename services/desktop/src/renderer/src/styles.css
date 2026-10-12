@@ -3600,14 +3600,24 @@ input.kontakt-suche__feld:focus { border-color: var(--accent); }
 .pc__herkunft > :first-child { padding-right: 38px; }
 .pc__notice { margin: 0; font-size: 11px; color: var(--muted); }
 .pc__facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
-.pc__fact { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-top: 1px solid var(--border); }
+/* 2026-10-12: Das Badge der E-Mail-Verifizierung ist breit. In einem Raster
+   "Wert | Meta" nahm die Meta-Spalte die ganze Breite, der Wert fiel auf
+   Null und die Adresse brach zeichenweise um. Jetzt: Wert in Zeile 1, Meta
+   (Badge, Quelle, Zuverlaessigkeit) als umbrechende Zeile darunter. */
+.pc__fact { display: grid; grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 0.5rem; row-gap: 0.15rem; align-items: center; padding: 0.3rem 0; border-top: 1px solid var(--border); }
 .pc__fact:first-child { border-top: 0; }
+.pc__fact-icon { grid-row: 1; }
+.pc__fact-value { grid-column: 2; grid-row: 1; }
+.pc__fact-meta { grid-column: 2; grid-row: 2; }
+.pc__fact-meta:empty { display: none; }
 /* Traegt seit v0.1.691 ein SVG statt eines Unicode-Zeichens: die Glyphen
    der Schrift waren zu zierlich und je nach System verschieden gross. */
 .pc__fact-icon { color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
-.pc__fact-value { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.pc__fact-value { min-width: 0; font-weight: 500; overflow-wrap: break-word; word-break: normal; }
+.pc__fact-value a { overflow-wrap: anywhere; }
 .pc__fact-value .fact-url__label { max-width: 100%; }
-.pc__fact-meta { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+.pc__fact-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; min-width: 0; }
+.pc__fact-meta .pill { white-space: nowrap; font-weight: 500; font-size: 11px; padding: 1px 7px; }
 .pc__src { font-size: 11px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
 .pc__src:hover { color: var(--accent); border-color: var(--accent); }
 .pc__conf { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }

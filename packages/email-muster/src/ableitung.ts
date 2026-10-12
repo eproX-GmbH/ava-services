@@ -83,6 +83,8 @@ export interface AbgeleiteteAdresse {
   mx?: string | null;
   checkedAt: string;
   smtpCode?: number;
+  /** Antwortzeile des Mailservers (Beleg fuer abgelehnt/verifiziert, max. 200 Zeichen). */
+  smtpAntwort?: string;
   hinweis?: string;
 }
 
@@ -273,7 +275,14 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     const anfragen = werte.some((w) => w.ergebnis === "catch_all") ? 1 : werte.filter((w) => w.mx !== null && w.ergebnis !== "gesperrt").length;
     ergebnis.smtpAnfragen += anfragen;
     const sperre = werte.find((w) => w.ergebnis === "gesperrt");
-    if (sperre) {
+    if (sperre && sperre.code != null) {
+      // Der Server hat geantwortet, aber mit einer Richtlinie gegen den pruefenden
+      // Host (5.7.x, "blocked", …) statt einer Auskunft zur Adresse. Keine weitere
+      // Verbindung zu dieser Domain; Netz ist in Ordnung.
+      gesperrt = true;
+      offenGrund = `Mailserver lehnt Pruefanfragen ab (${(sperre.antwort ?? "Richtlinie").slice(0, 80)})`;
+      deps.log(`${domain}: Richtliniensperre des Mailservers, Adressen bleiben offen (${sperre.antwort ?? "?"})`);
+    } else if (sperre) {
       // Keine weitere Verbindung zu dieser Domain. Ob das Netz oder nur dieser
       // Mailserver schuld ist, klaert eine frische Gegenprobe — sonst sperrt ein
       // einzelner kaputter MX die Pruefung fuer alle Firmen.
@@ -467,6 +476,7 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
       checkedAt,
       mx: dz?.mx ?? null,
       ...(dz?.code != null ? { smtpCode: dz.code } : {}),
+      ...(dz?.antwort ? { smtpAntwort: dz.antwort.slice(0, 200) } : {}),
       hinweis: z.begruendung.slice(0, 300),
     });
   }
@@ -490,6 +500,7 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
       mx: d.mx ?? null,
       checkedAt,
       ...(d.code != null ? { smtpCode: d.code } : {}),
+      ...(d.antwort ? { smtpAntwort: d.antwort.slice(0, 200) } : {}),
     });
   }
 
@@ -530,6 +541,7 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
       mx: d?.mx ?? null,
       checkedAt,
       ...(d?.code != null ? { smtpCode: d.code } : {}),
+      ...(d?.antwort ? { smtpAntwort: d.antwort.slice(0, 200) } : {}),
       ...(hinweis ? { hinweis: hinweis.slice(0, 300) } : {}),
     });
   }

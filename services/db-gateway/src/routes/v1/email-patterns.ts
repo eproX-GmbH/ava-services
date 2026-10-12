@@ -156,6 +156,8 @@ const derivedRoute = createRoute({
             mx: z.string().max(253).nullable().optional(),
             checkedAt: z.string().datetime().optional(),
             smtpCode: z.number().int().optional(),
+            /** Antwortzeile des Mailservers (2026-10-12), damit eine Ablehnung nachvollziehbar ist. */
+            smtpAntwort: z.string().max(200).optional(),
             /** smtp (Standard): Existenz per RCPT TO belegt. catchall: Domain nimmt alles an,
              *  Adresse nur nach Muster gebildet — "unbestaetigt". offen (Stufe 2, 2026-10-07):
              *  abgeleitet, Pruefung nicht moeglich (Port 25, 4xx) — "unverifiziert".
@@ -231,7 +233,7 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
       : art === "offen"
         ? `Existenz noch nicht geprueft (${herkunft !== "zuordnung" && b.hinweis ? b.hinweis : "Pruefung in diesem Netz nicht moeglich oder Server ohne Antwort"}), Stand ${geprueft.slice(0, 10)}. Unverifiziert`
         : art === "abgelehnt"
-          ? `Mailserver hat die Adresse am ${geprueft.slice(0, 10)} abgelehnt${b.smtpCode ? ` (Antwort ${b.smtpCode}` : ""}${b.mx && b.smtpCode ? `, ${b.mx})` : b.mx ? ` (${b.mx})` : b.smtpCode ? ")" : ""}`
+          ? `Mailserver hat die Adresse am ${geprueft.slice(0, 10)} abgelehnt${b.smtpCode ? ` (Antwort ${b.smtpCode}` : ""}${b.mx && b.smtpCode ? `, ${b.mx})` : b.mx ? ` (${b.mx})` : b.smtpCode ? ")" : ""}${b.smtpAntwort ? `: "${b.smtpAntwort.replace(/["\n\r]/g, " ").trim().slice(0, 160)}"` : ""}`
           : `Existenz per SMTP geprueft am ${geprueft.slice(0, 10)}${b.mx ? ` (${b.mx}` : ""}${b.smtpCode ? `, Antwort ${b.smtpCode}` : ""}${b.mx ? ")" : ""}`;
   const evidence = `${wie}; ${pruefung}. Keine E-Mail zugestellt.`;
   // Konfidenz: SMTP 0,9 (zugeordnet 0,95); Catch-all 0,6/0,75 (zugeordnet 0,8); offen 0,4 (zugeordnet 0,7); abgelehnt 0,2/0,3.

@@ -365,19 +365,21 @@ function AbgeleitetBadge({
   const zugeordnet = src.startsWith("zuordnung:");
   const art = src.split(":")[1] ?? "";
   const praefix = zugeordnet ? "zugeordnet" : "abgeleitet";
+  // 2026-10-12: kurze Badges — Baseline-Adresse und Datum stehen nur im Tooltip,
+  // sonst sprengt das Badge die Kontaktzeile.
   const baseline = evidence?.match(/Abgeleitet aus ([^\s;]+@[^\s;]+)/)?.[1];
-  const baselineText = baseline ? ` · aus ${baseline}` : "";
+  const baselineHinweis = baseline ? ` Abgeleitet aus ${baseline}.` : "";
   if (art === "offen") {
     return (
-      <span className="pill pill--paused" title={evidence ?? "Nach dem Adressmuster der Firma gebildet; die Existenz konnte noch nicht geprüft werden."}>
-        {praefix} · unverifiziert{baselineText}
+      <span className="pill pill--paused" title={`Nach dem Adressmuster der Firma gebildet; die Existenz konnte noch nicht geprüft werden.${baselineHinweis}`}>
+        {praefix} · ungeprüft
       </span>
     );
   }
   if (art === "abgelehnt") {
     return (
-      <span className="pill pill--error" title={evidence ?? "Nach dem Adressmuster der Firma gebildet; der Mailserver hat die Adresse abgelehnt."}>
-        {praefix} · vom Server abgelehnt{baselineText}
+      <span className="pill pill--error" title={`Nach dem Adressmuster der Firma gebildet; der Mailserver hat die Adresse abgelehnt.${baselineHinweis}`}>
+        {praefix} · abgelehnt
       </span>
     );
   }
@@ -385,42 +387,30 @@ function AbgeleitetBadge({
   const m = evidence?.match(
     /(?:geprueft|eingegangen) am (\d{4})-(\d{2})-(\d{2})/
   );
-  const datum = m ? ` ${m[3]}.${m[2]}.${m[1]!.slice(2)}` : "";
+  const datum = m ? ` Geprüft am ${m[3]}.${m[2]}.${m[1]}.` : "";
   if (art === "catchall") {
     return (
       <span
         className="pill pill--paused"
-        title={
-          evidence ??
-          "Nach dem Adressmuster der Firma gebildet. Der Mailserver nimmt jede Adresse an (Catch-all), die Existenz ist daher nicht einzeln belegbar. Wird bei einer Antwort bestätigt, bei Unzustellbarkeit entfernt."
-        }
+        title={`Nach dem Adressmuster der Firma gebildet. Der Mailserver nimmt jede Adresse an (Catch-all), die Existenz ist daher nicht einzeln belegbar. Wird bei einer Antwort bestätigt, bei Unzustellbarkeit entfernt.${baselineHinweis}${datum}`}
       >
-        {praefix} · unbestätigt{datum}
+        {praefix} · unbestätigt
       </span>
     );
   }
   if (art === "reply") {
     return (
-      <span
-        className="pill pill--active"
-        title={
-          evidence ??
-          "Abgeleitete Adresse, bestätigt durch eine eingegangene Antwort."
-        }
-      >
-        {praefix} · bestätigt{datum}
+      <span className="pill pill--active" title={`Abgeleitete Adresse, bestätigt durch eine eingegangene Antwort.${datum}`}>
+        {praefix} · bestätigt
       </span>
     );
   }
   return (
     <span
       className="pill pill--active"
-      title={
-        evidence ??
-        "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."
-      }
+      title={`Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt).${baselineHinweis}${datum}`}
     >
-      {praefix} · verifiziert{datum}
+      {praefix} · verifiziert
     </span>
   );
 }
