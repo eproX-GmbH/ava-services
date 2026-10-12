@@ -305,7 +305,17 @@ export class RegisterPortal {
     if (!datei) {
       const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
       if (SPERR_RE.test(text)) throw new PortalStoerung("SI: Portal gesperrt");
-      throw new Error("SI: weder Datei noch XML-Fenster innerhalb von 25 s");
+      // Diagnose fuer Fly: was liegt im Ordner, welche Seite, wie viele Fenster.
+      let titel = "?";
+      let fenster = 0;
+      try {
+        titel = await d.getTitle();
+        fenster = (await d.getAllWindowHandles()).length;
+      } catch {
+        /* egal */
+      }
+      const ordner = fs.readdirSync(dir).filter((n) => !vorher.has(n));
+      throw new Error(`SI: weder Datei noch XML-Fenster innerhalb von 25 s (Titel "${titel}", ${fenster} Fenster, Ordner: ${ordner.join(", ") || "leer"}, Text: "${text.slice(0, 120)}")`);
     }
     const pfad = join(dir, datei);
     try {

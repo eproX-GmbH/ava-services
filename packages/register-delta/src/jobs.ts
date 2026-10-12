@@ -292,12 +292,19 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
     if (!meldung) continue;
     const zeile = r.treffer.indexOf(ziel);
     try {
-      let xml: string | null;
+      let xml: string | null = null;
+      let siFehler: string | null = null;
       try {
         xml = await o.portal.strukturierterInhalt!(zeile); // eslint-disable-line @typescript-eslint/no-non-null-assertion
       } catch (err) {
+        if (err instanceof Error && /gesperrt/i.test(err.message)) throw err;
         // Sitzung abgelaufen: einmal neu suchen und wiederholen, wenn das Budget reicht.
-        if (!(err instanceof SitzungAbgelaufen) || basis.abfragen + 2 > max) throw err;
+        if (!(err instanceof SitzungAbgelaufen) || basis.abfragen + 2 > max) {
+          // Anderer SI-Fehler (Datei kam nicht, Treiber): unten auf den CD ausweichen.
+          siFehler = err instanceof Error ? err.message : String(err);
+          basis.abfragen++;
+          log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI fehlgeschlagen: ${siFehler}${cdAktiv ? " — versuche CD" : ""}`);
+        } else {
         log(`refresh ${f.gericht} ${f.art} ${f.nummer}: ${err.message} — neue Suche, zweiter Versuch`);
         await warteTakt(o, 2);
         const r2 = await o.portal.suche(f.gericht, f.art, f.nummer);
@@ -306,6 +313,7 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
         const ziel2 = r2.treffer.find((t) => t.kopfGeparst && t.nummer === f.nummer && t.zusatz === ziel.zusatz && t.frueher === ziel.frueher);
         if (!ziel2) throw new Error("SI: Trefferzeile nach neuer Suche nicht gefunden");
         xml = await o.portal.strukturierterInhalt!(r2.treffer.indexOf(ziel2)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        }
       }
       if (xml !== null) {
         basis.abfragen++;
@@ -318,9 +326,9 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
         }
         log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar (${xml.length} Zeichen, Aufbau: ${siBauplan(xml)}) — versuche CD`);
       }
-      // Kein SI-Link oder unlesbar: chronologischer Abdruck (eine weitere Abfrage).
+      // Kein SI-Link, unlesbar oder SI-Fehler: chronologischer Abdruck (eine weitere Abfrage).
       if (!cdAktiv || basis.abfragen + 1 > max) {
-        if (xml === null) si.ohneLink++;
+        if (xml === null && !siFehler) si.ohneLink++;
         else si.fehler++;
         continue;
       }
