@@ -190,7 +190,7 @@ export function buildReadOnlyRegistry(deps: {
   /** W1 — Workflow-Service (lazy, entsteht im App-Boot). */
   getWorkflows?: () => import("../../workflows").WorkflowService | null;
   /** M4 — lokale E-Mail-Ableitung (lazy, entsteht im App-Boot). */
-  getEmailMuster?: () => import("../../contacts/email-muster/supervisor").EmailMusterSupervisor | null;
+  getEmailMuster?: () => import("../../contacts/email-muster/dienst").EmailMusterDienst | null;
   /** Doppelte Kontakte zusammenführen (main/contacts/personen-abgleich.ts). */
   getPersonenAbgleich?: () => import("../../contacts/personen-abgleich").PersonenAbgleich | null;
   /** v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (lazy, entsteht im Boot). */

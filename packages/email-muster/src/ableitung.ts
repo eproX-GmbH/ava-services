@@ -18,7 +18,7 @@
 //
 // Netz, Gateway und KI kommen als Funktionen herein; die Datei bleibt ohne
 // Seiteneffekte testbar. Hoechstens MAX_DURCHGAENGE SMTP-Verbindungen je Firma,
-// jede mit hoechstens 5 RCPT TO (smtp-verify.ts), alle im Tages-Deckel.
+// jede mit hoechstens 5 RCPT TO (smtp-verify.ts); danach jede Adresse einzeln, ohne Tages-Deckel.
 
 import { MUSTER, bildeAdresse, domainVon, erkenneMuster, nameVarianten, type MusterBeleg } from "./pattern";
 import { firmenDomain } from "./domain";
@@ -30,10 +30,16 @@ export const DOMAIN_RECHECK_MS = 30 * 86_400_000;
 export const CATCHALL_RECHECK_MS = 90 * 86_400_000;
 /** Ab so vielen Personen ohne Adresse wird das Muster an einer zweiten Person gegengeprueft. */
 export const STICHPROBE_AB = 5;
-/** Hoechstens so viele SMTP-Verbindungen je Firma (Format-Rate + Gegenprobe). */
-export const MAX_DURCHGAENGE = 2;
 /** Schutz gegen sehr grosse Personenlisten: so viele Adressen je Lauf speichern. */
 export const MAX_PERSONEN = 50;
+/** Adressen je SMTP-Verbindung (4 RCPT + Catch-all-Probe). */
+export const JE_VERBINDUNG = 5;
+/**
+ * Hoechstens so viele SMTP-Verbindungen je Firma: Format-Rate + Gegenprobe
+ * und danach die Einzelpruefung jeder abgeleiteten Adresse (seit 2026-10-12,
+ * Vorgabe des Operators: jede Adresse wird verifiziert, kein Tages-Deckel).
+ */
+export const MAX_DURCHGAENGE = 4 + Math.ceil((MAX_PERSONEN * 2) / JE_VERBINDUNG);
 /** Rate-Reihenfolge nach DACH-B2B-Verbreitung; je Durchgang eine Gruppe (4 RCPT + Catch-all-Probe = 5). */
 export const RATE_GRUPPEN: string[][] = [
   ["vorname.nachname", "vorname", "v.nachname", "nachname"],
@@ -92,7 +98,6 @@ export interface AbleitungDeps {
    *  Fehler lag am Mailserver der Domain, nicht am Netz. Ohne diese Funktion gilt
    *  jeder Verbindungsfehler als Netzsperre. */
   netzPruefe?: () => Promise<boolean>;
-  budget: { frei: () => number; verbrauche: (n: number) => void };
   urteil?: Urteil | null;
   holeMuster: (domain: string) => Promise<ServerMuster | null>;
   speichereMuster: (domain: string, body: MusterSpeichern) => Promise<void>;
@@ -189,7 +194,15 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   const domain = fd.domain;
   ergebnis.domain = domain;
   const unversorgt = k.personen.filter((p) => p.emails.length === 0 && p.offeneEmails.length === 0 && nameVarianten(p.fullName).length > 0).slice(0, MAX_PERSONEN);
-  if (unversorgt.length === 0) return { ...ergebnis, status: "nichts_zu_tun", zusammenfassung: `${k.name}: alle Personen haben bereits eine Adresse` };
+  // Personen mit nur offener (unverifizierter) Ableitung: im selben Lauf einzeln
+  // nachpruefen, damit sie nicht auf den Hintergrund-Job warten muessen.
+  const nachpruefbar = deps.netzOk()
+    ? k.personen
+        .filter((p) => p.emails.length === 0 && p.offeneEmails.some((e) => domainVon(e) === domain))
+        .map((p) => ({ p, email: p.offeneEmails.find((e) => domainVon(e) === domain)! }))
+        .slice(0, MAX_PERSONEN)
+    : [];
+  if (unversorgt.length === 0 && nachpruefbar.length === 0) return { ...ergebnis, status: "nichts_zu_tun", zusammenfassung: `${k.name}: alle Personen haben bereits eine Adresse` };
 
   // ---- 2. Belege + Zuordnung von Firmenadressen ------------------------------
   const kandidatenAdressen = k.firmenEmails.filter((e) => domainVon(e) === domain);
@@ -244,22 +257,16 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   let offenGrund = "Mail-Pruefung in diesem Netz nicht moeglich";
   let gesperrt = false;
 
-  /** Eine SMTP-Verbindung; respektiert Deckel, Netz und Verbindungshoechstzahl. */
+  /** Eine SMTP-Verbindung; respektiert Netz und Verbindungshoechstzahl. Kein Tages-Deckel mehr (2026-10-12). */
   const sitzung = async (adressen: string[], bisErsterTreffer: boolean): Promise<Map<string, PruefDetails> | null> => {
     if (ergebnis.smtpVerbindungen >= MAX_DURCHGAENGE || gesperrt || !deps.netzOk()) return null;
-    const frei = deps.budget.frei();
-    if (frei <= 0) {
-      offenGrund = "Tages-Deckel fuer Mail-Pruefungen erreicht";
-      return null;
-    }
-    const liste = adressen.slice(0, Math.min(5, frei));
+    const liste = adressen.slice(0, JE_VERBINDUNG);
     if (liste.length === 0) return null;
     ergebnis.smtpVerbindungen++;
     const r = await pruefe(domain, liste, { catchAllProbe: probe(domain), log: deps.log, bisErsterTreffer });
     const werte = [...r.values()];
     const anfragen = werte.some((w) => w.ergebnis === "catch_all") ? 1 : werte.filter((w) => w.mx !== null && w.ergebnis !== "gesperrt").length;
     ergebnis.smtpAnfragen += anfragen;
-    deps.budget.verbrauche(anfragen);
     const sperre = werte.find((w) => w.ergebnis === "gesperrt");
     if (sperre) {
       // Keine weitere Verbindung zu dieser Domain. Ob das Netz oder nur dieser
@@ -360,6 +367,11 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   }
 
   // Ohne Muster bleibt nur die Annahme des verbreitetsten Formats — ausser alle Formate wurden abgelehnt.
+  if (!muster && ohneZuordnung.length === 0 && zuordnungen.length === 0) {
+    // Nur Nachpruefungen offener Adressen: dafuer braucht es kein Muster.
+    muster = server?.muster ?? "nachpruefung";
+    herkunft = "cache";
+  }
   if (!muster) {
     if (domainUrteil === "kein_format") {
       ergebnis.urteil = domainUrteil;
@@ -372,6 +384,38 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   }
   ergebnis.muster = muster;
   ergebnis.musterHerkunft = herkunft;
+
+  // ---- 5b. Einzelpruefung jeder Adresse ---------------------------------------
+  // Vorgabe des Operators (2026-10-12): abgeleitete Adressen werden nicht nur
+  // ueber das Muster der Domain gestuetzt, sondern einzeln per RCPT TO geprueft;
+  // dasselbe gilt fuer zugeordnete Firmenadressen und fuer bisher offene
+  // Ableitungen. Nur Catch-all-Domains (jede Adresse wird angenommen) und
+  // Domains ohne gaengiges Format bleiben aussen vor.
+  const einzelnPruefen = deps.netzOk() && !gesperrt && domainUrteil !== "catchall" && domainUrteil !== "kein_format";
+  if (einzelnPruefen) {
+    const kandidaten: Array<{ personId: string; email: string }> = [];
+    for (const p of ohneZuordnung) {
+      const email = bildeAdresseAllgemein(muster, p.fullName, domain);
+      if (email) kandidaten.push({ personId: p.personId, email });
+    }
+    for (const z of zuordnungen) kandidaten.push({ personId: z.personId, email: z.email });
+    for (const n of nachpruefbar) kandidaten.push({ personId: n.p.personId, email: n.email });
+    const offen = kandidaten.filter((c) => !geprueft.has(`${c.personId}:${c.email}`));
+    for (let i = 0; i < offen.length; i += JE_VERBINDUNG) {
+      const block = offen.slice(i, i + JE_VERBINDUNG);
+      const r = await sitzung(block.map((c) => c.email), false);
+      if (!r) break;
+      for (const c of block) {
+        const d = r.get(c.email);
+        if (d) geprueft.set(`${c.personId}:${c.email}`, { personId: c.personId, email: c.email, details: d });
+      }
+      if ([...r.values()].some((d) => d.ergebnis === "catch_all")) {
+        domainUrteil = "catchall";
+        break;
+      }
+      if (domainUrteil !== "verifiziert" && [...r.values()].some((d) => d.ergebnis === "existiert")) domainUrteil = "verifiziert";
+    }
+  }
   ergebnis.urteil = domainUrteil;
 
   // ---- 6. Anwenden + speichern ------------------------------------------------
@@ -404,7 +448,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
 
   // Zugeordnete Firmenadressen: echte Adressen von der Website.
   for (const z of zuordnungen) {
-    const art: Art = domainUrteil === "catchall" ? "catchall" : "offen";
+    const dz = geprueftFuer(z.personId, z.email);
+    const art: Art = dz ? artAus(dz.ergebnis) : domainUrteil === "catchall" ? "catchall" : "offen";
     await speichere({
       personId: z.personId,
       email: z.email,
@@ -415,7 +460,31 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
       art,
       domainQuelle: fd.quelle,
       checkedAt,
+      mx: dz?.mx ?? null,
+      ...(dz?.code != null ? { smtpCode: dz.code } : {}),
       hinweis: z.begruendung.slice(0, 300),
+    });
+  }
+
+  // Bisher offene Ableitungen: nur ein neues Urteil wird gespeichert (offen bleibt offen).
+  for (const n of nachpruefbar) {
+    const d = geprueftFuer(n.p.personId, n.email);
+    if (!d) continue;
+    const art = annahme && d.ergebnis === "catch_all" ? "offen" : artAus(d.ergebnis);
+    if (art === "offen") continue;
+    await speichere({
+      personId: n.p.personId,
+      email: n.email,
+      muster,
+      beleg: n.email,
+      baseline: n.email,
+      musterQuelle,
+      herkunft: "muster",
+      art,
+      domainQuelle: fd.quelle,
+      mx: d.mx ?? null,
+      checkedAt,
+      ...(d.code != null ? { smtpCode: d.code } : {}),
     });
   }
 
@@ -435,7 +504,7 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
           ? "Catch-all-Domain ohne Beleg: verbreitetstes Format angenommen"
           : `kein Beleg, verbreitetstes Format angenommen; ${offenGrund}`
         : domainUrteil === "verifiziert"
-          ? `Muster der Domain per SMTP bestaetigt${baseline ? ` (${baseline})` : ""}, Adresse nicht einzeln geprueft`
+          ? `Muster der Domain per SMTP bestaetigt${baseline ? ` (${baseline})` : ""}; Einzelpruefung: ${offenGrund}`
           : domainUrteil === "widerspruch"
             ? "Mailserver lehnte eine Stichprobe nach diesem Muster ab"
             : offenGrund;

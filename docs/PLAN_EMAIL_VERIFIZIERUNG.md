@@ -500,5 +500,23 @@ Betriebsthema.
 ### 8.3 Offen
 
 - Server-Instanzen (Fly): Port 25 gesperrt, dort immer `offen` — ein externer Pruefdienst bleibt abgelehnt.
-- Tages-Deckel-Datei ohne Sperre: bei gleichzeitigem Schreiben von Producer und Nachzuegler kann ein Zaehlschritt verloren gehen (Deckel wird um einzelne Anfragen ueberschritten).
 - Lasttest Import (Durchsatz Contact unveraendert) steht aus.
+
+### 8.4 Stand 2026-10-12: kein Deckel, Einzelpruefung, kein Hintergrund-Job (v0.1.814)
+
+Vorgabe des Operators: keine Limits mehr fuer die Verarbeitung von E-Mail-Adressen
+(weder fuer kostenlose noch fuer bezahlte Konten), jede abgeleitete Adresse wird
+verifiziert und erhaelt bei Erfolg das gruene Badge; der Hintergrund-Job entfaellt,
+die Pipeline-Stufe reicht (fehlgeschlagene Stufen stoesst die App selbst wieder an).
+
+| Aenderung | Wo |
+|---|---|
+| Tages-Deckel entfernt (`TagesBudget`, `email-budget.json`, `AVA_EMAIL_BUDGET_FILE`, `AVA_EMAIL_TAGES_DECKEL`); Entscheidung 4 in §8.1 ist damit hinfaellig. Geblieben: 2 s Abstand je RCPT, 5 Adressen je Verbindung, Prefetch 1. | `packages/email-muster`, `packages/company-email/config.ts`, `bootstrap.ts` |
+| **Einzelpruefung** (Schritt 5b in `ableitung.ts`): nach der Muster-Bestaetigung wird jede abgeleitete Adresse, jede zugeordnete Firmenadresse und jede bisher **offene** Ableitung der Firma einzeln per RCPT TO geprueft (Bloecke zu 5, `MAX_DURCHGAENGE` = 4 + 2·MAX_PERSONEN/5). Ergebnis je Adresse: `smtp` (verifiziert, gruen), `abgelehnt`, `offen` (4xx/unbekannt) — Catch-all-Domains und `kein_format` bleiben wie bisher ohne Einzelpruefung. Offene Ableitungen zaehlen jetzt im Live-Lauf als `nachpruefbar`; ein Treffer ersetzt die offene Adresse (409-Lockerung im Gateway). | `packages/email-muster/src/ableitung.ts` |
+| Hintergrund-Job entfernt: `supervisor.ts` (Tick, Nachzuegler, Verlauf, Statistik, Domains, Netzstatus) → `dienst.ts` mit Schaltern (`email-muster.json`, liest der Producer weiter), Vorschau und Funktionsadressen-Pruefung. Chat-Werkzeuge `email_muster_verlauf` und `email_muster_jetzt` entfallen; `email_muster_status` zeigt nur die Schalter. Einstellungen → Automatisierungen → E-Mail-Ableitung: nur noch die drei Schalter plus Verweis auf die Status-Matrix. | `services/desktop/src/main/contacts/email-muster/dienst.ts`, `tools/email-muster.ts`, `EmailMusterSection.tsx`, IPC/Preload ohne `runNow`/`verlauf` |
+| Badge: unveraendert `AbgeleitetBadge` in `CompanyDetail.tsx` — `pattern:smtp` / `zuordnung:smtp` = „abgeleitet · verifiziert“ (gruen). Durch die Einzelpruefung erreichen jetzt alle Personen einer Firma diesen Stand, sobald die Stufe „E-Mail“ erneut laeuft („neu verarbeiten“ oder `retry_stage companyEmail`). | – |
+
+Risiko, bewusst in Kauf genommen: bei grossen Importen gehen aus dem Nutzernetz
+hunderte RCPT TO je Tag an fremde Mailserver (Reputation). Schutz bleibt der
+2-s-Abstand und das Abbrechen je Domain bei Sperre/4xx.
+

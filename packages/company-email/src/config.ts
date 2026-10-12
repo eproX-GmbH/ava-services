@@ -10,9 +10,6 @@ export interface Config {
   gatewayToken: string | null;
   port: number;
   host: string;
-  /** Gemeinsame Zaehldatei fuer den Tages-Deckel (mit dem Hintergrund-Job). */
-  budgetDatei: string | null;
-  tagesDeckel: number;
   /** So lange auf den Persist des Contact-Laufs am Gateway warten. */
   persistWartenMs: number;
   /** userData/email-muster.json des Desktops (Schalter der E-Mail-Ableitung). */
@@ -37,8 +34,6 @@ export function ladeConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gatewayToken: env.PRODUCER_GATEWAY_TOKEN ?? null,
     port: zahl(env.PORT, 51070),
     host: env.LISTEN_HOST ?? "127.0.0.1",
-    budgetDatei: env.AVA_EMAIL_BUDGET_FILE || null,
-    tagesDeckel: zahl(env.AVA_EMAIL_TAGES_DECKEL, 50),
     // Der Contact-Persist landet in Sekunden; bei einem Tier-Gate-Skip kommt er nie.
     // Laenger zu warten haelt nur die Queue (Prefetch 1) auf.
     persistWartenMs: zahl(env.AVA_EMAIL_PERSIST_WARTEN_MS, 60_000),

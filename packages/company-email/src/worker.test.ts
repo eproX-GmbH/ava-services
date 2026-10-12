@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TagesBudget, type AbleitungsErgebnis, type ermittleFirmenAdressen } from "@ava/email-muster";
+import { type AbleitungsErgebnis, type ermittleFirmenAdressen } from "@ava/email-muster";
 import type { GatewayClient } from "./gateway";
 import type { ProgressEingabe } from "./progress";
 import { makeWorker, type TriggerEreignis } from "./worker";
@@ -42,7 +42,6 @@ function aufbau(over: { gateway?: GatewayClient; ableiten?: typeof ermittleFirme
   const verarbeite = makeWorker({
     gateway: over.gateway ?? gateway(),
     netz: { ok: () => true, aktualisiere: async () => undefined, gesperrt: () => undefined },
-    budget: new TagesBudget(null, 50),
     urteil: null,
     persistWartenMs: over.persistWartenMs ?? 30_000,
     progress: async (p) => {
@@ -137,7 +136,6 @@ test("ausgeschaltet (Person oder Organisation): skipped, keine Ableitung", async
   const verarbeite = makeWorker({
     gateway: gateway(),
     netz: { ok: () => true, aktualisiere: async () => undefined, gesperrt: () => undefined },
-    budget: new TagesBudget(null, 50),
     urteil: null,
     persistWartenMs: 0,
     einstellungen: () => ({ aktiv: false, zuordnungAktiv: true, ungeprueftSpeichern: true }),

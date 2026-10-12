@@ -8,7 +8,7 @@
 // denselben MX.
 
 import * as yup from "yup";
-import { ermittleFirmenAdressen, kontakteAusAntwort, type TagesBudget, type Urteil } from "@ava/email-muster";
+import { ermittleFirmenAdressen, kontakteAusAntwort, type Urteil } from "@ava/email-muster";
 import type { GatewayClient } from "./gateway";
 import type { NetzStatus } from "./netz";
 import type { ProgressEingabe } from "./progress";
@@ -35,7 +35,6 @@ export interface TriggerEreignis {
 export interface WorkerDeps {
   gateway: GatewayClient;
   netz: Pick<NetzStatus, "ok" | "aktualisiere" | "gesperrt"> & Partial<Pick<NetzStatus, "pruefeErneut">>;
-  budget: TagesBudget;
   urteil: Urteil | null;
   progress: (p: ProgressEingabe) => Promise<void>;
   persistWartenMs: number;
@@ -128,7 +127,6 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
         netzOk: () => deps.netz.ok(),
         netzGesperrt: (grund) => deps.netz.gesperrt(grund),
         ...(deps.netz.pruefeErneut ? { netzPruefe: () => deps.netz.pruefeErneut!() } : {}),
-        budget: deps.budget,
         urteil: deps.urteil,
         holeMuster: (domain) => deps.gateway.holeMuster(domain),
         speichereMuster: (domain, body) => deps.gateway.speichereMuster(domain, body),

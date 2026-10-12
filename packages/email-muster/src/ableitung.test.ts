@@ -1,10 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { ermittleFirmenAdressen, type AbgeleiteteAdresse, type AbleitungDeps, type MusterSpeichern, type ServerMuster } from "./ableitung";
-import { TagesBudget } from "./budget";
 import type { FirmenKontakte } from "./kontakte";
 import type { PruefDetails, PruefOptionen } from "./smtp-verify";
 
@@ -52,7 +48,6 @@ function deps(over: Partial<AbleitungDeps> & { serverMuster?: ServerMuster | nul
   const log: string[] = [];
   const d: AbleitungDeps = {
     netzOk: () => true,
-    budget: new TagesBudget(null, 50),
     urteil: null,
     holeMuster: async () => over.serverMuster ?? null,
     speichereMuster: async (_dom, body) => {
@@ -84,15 +79,15 @@ test("ohne Beleg: Formate an EINER Person raten, Treffer auf alle anwenden", asy
   assert.equal(r.muster, "vorname.nachname");
   assert.equal(r.musterHerkunft, "smtp");
   assert.equal(r.urteil, "verifiziert");
-  assert.equal(s.aufrufe.length, 1, "genau eine SMTP-Verbindung");
-  assert.equal(r.smtpAnfragen, 1, "nach dem ersten Treffer Schluss");
+  assert.equal(s.aufrufe.length, 2, "Rate-Runde + Einzelpruefung der uebrigen Adressen");
+  assert.equal(r.smtpAnfragen, 1 + 2, "Treffer, dann die beiden anderen Adressen einzeln");
   const p1 = gespeichert.find((g) => g.personId === "p1")!;
   assert.equal(p1.art, "smtp");
   assert.equal(p1.smtpCode, 250);
   const p3 = gespeichert.find((g) => g.personId === "p3")!;
   assert.equal(p3.email, "juergen.mueller@muster.de");
-  assert.equal(p3.art, "offen", "nicht einzeln geprueft");
-  assert.match(p3.hinweis ?? "", /per SMTP bestaetigt/);
+  assert.equal(p3.art, "abgelehnt", "einzeln geprueft: der Testserver kennt sie nicht");
+  assert.equal(p3.smtpCode, 550);
   assert.equal(p3.beleg, "anna.meier@muster.de");
   assert.equal(geteilt.length, 1);
   assert.equal(geteilt[0]!.muster, "vorname.nachname");
@@ -105,7 +100,7 @@ test("Raten probiert der Reihe nach: vorname. → vorname → v.nachname", async
   const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
   assert.equal(r.muster, "v.nachname");
   assert.deepEqual(s.aufrufe[0], ["anna.meier@muster.de", "anna@muster.de", "a.meier@muster.de", "meier@muster.de"]);
-  assert.equal(r.smtpAnfragen, 3, "Treffer beim dritten RCPT");
+  assert.equal(r.smtpAnfragen, 3 + 2, "Treffer beim dritten RCPT, danach zwei Einzelpruefungen");
 });
 
 test("mit Beleg: Muster aus dem Katalog, einmal am Repraesentanten bestaetigt", async () => {
@@ -115,7 +110,7 @@ test("mit Beleg: Muster aus dem Katalog, einmal am Repraesentanten bestaetigt", 
   assert.equal(r.muster, "v.nachname");
   assert.equal(r.musterHerkunft, "beleg");
   assert.equal(r.urteil, "verifiziert");
-  assert.equal(s.aufrufe.length, 1);
+  assert.equal(s.aufrufe.length, 2, "Bestaetigung + Einzelpruefung der zweiten Person");
   assert.equal(s.aufrufe[0]!.length, 1, "nur der Repraesentant, keine Stichprobe bei 2 Personen");
   assert.equal(gespeichert.length, 2);
   assert.equal(gespeichert.find((g) => g.personId === "p3")?.email, "j.mueller@muster.de");
@@ -128,10 +123,10 @@ test("Stichprobe ab 5 Personen: zwei Adressen in derselben Verbindung", async ()
   const { d, gespeichert } = deps({ pruefe: s.pruefe });
   const r = await ermittleFirmenAdressen("c1", kontakte([{ id: "p0", name: "Hans Schmidt", emails: ["hans.schmidt@muster.de"] }, ...viele]), d);
   assert.equal(r.urteil, "verifiziert");
-  assert.equal(s.aufrufe.length, 1);
+  assert.equal(s.aufrufe.length, 2, "Stichprobe + Einzelpruefung der uebrigen drei");
   assert.equal(s.aufrufe[0]!.length, 2);
   assert.equal(gespeichert.filter((g) => g.art === "smtp").length, 2);
-  assert.equal(gespeichert.filter((g) => g.art === "offen").length, 3);
+  assert.equal(gespeichert.filter((g) => g.art === "abgelehnt").length, 3, "einzeln geprueft, vom Testserver abgelehnt");
 });
 
 test("Stichprobe widerspricht dem Muster: neu raten statt blind anwenden", async () => {
@@ -178,13 +173,14 @@ test("bekannter Catch-all am Gateway: keine SMTP-Verbindung", async () => {
   assert.ok(gespeichert.every((g) => g.art === "catchall"));
 });
 
-test("frisch verifiziertes Muster am Gateway: anwenden ohne Pruefung", async () => {
-  const s = server({});
+test("frisch verifiziertes Muster am Gateway: Muster uebernehmen, Adressen trotzdem einzeln pruefen", async () => {
+  const s = server({ existiert: ["a.meier@muster.de"] });
   const { d, gespeichert, geteilt } = deps({ pruefe: s.pruefe, serverMuster: { muster: "v.nachname", konfidenz: 0.8, catchAllAt: null, checkedAt: "2026-10-01T00:00:00Z", stats: { verifiziert: true, baseline: "x.y@muster.de" } } });
   const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
-  assert.equal(s.aufrufe.length, 0);
+  assert.equal(s.aufrufe.length, 1, "keine Muster-Bestaetigung, nur die Einzelpruefung");
   assert.equal(r.urteil, "verifiziert");
   assert.equal(gespeichert.find((g) => g.personId === "p1")?.email, "a.meier@muster.de");
+  assert.equal(gespeichert.find((g) => g.personId === "p1")?.art, "smtp");
   assert.equal(geteilt.length, 0, "nichts Neues zu teilen");
 });
 
@@ -206,16 +202,6 @@ test("Verbindung scheitert am Netz: gemeldet, alles offen", async () => {
   assert.ok(gemeldet);
   assert.equal(s.aufrufe.length, 1, "nach der Sperre keine zweite Verbindung");
   assert.ok(gespeichert.every((g) => g.art === "offen"));
-});
-
-test("Tages-Deckel erreicht: keine Pruefung, Grund im Hinweis", async () => {
-  const s = server({ existiert: ["anna.meier@muster.de"] });
-  const budget = new TagesBudget(null, 1);
-  budget.verbrauche(1);
-  const { d, gespeichert } = deps({ pruefe: s.pruefe, budget });
-  await ermittleFirmenAdressen("c1", kontakte([{ id: "p0", name: "Hans Schmidt", emails: ["hans.schmidt@muster.de"] }, ...TEAM]), d);
-  assert.equal(s.aufrufe.length, 0);
-  assert.ok(gespeichert.every((g) => /Tages-Deckel/.test(g.hinweis ?? "")));
 });
 
 test("alle Formate abgelehnt: nichts ableiten", async () => {
@@ -251,21 +237,17 @@ test("ohne Domain bzw. ohne unversorgte Personen: nichts zu tun", async () => {
   const { d } = deps();
   const ohneDomain = await ermittleFirmenAdressen("c1", { ...kontakte(TEAM), websiteUrl: null }, d);
   assert.equal(ohneDomain.status, "keine_domain");
-  const versorgt = await ermittleFirmenAdressen("c1", kontakte([{ id: "p1", name: "Anna Meier", emails: ["anna.meier@muster.de"] }, { id: "p2", name: "Bernd Kunz", offen: ["bernd.kunz@muster.de"] }]), d);
+  const versorgt = await ermittleFirmenAdressen("c1", kontakte([{ id: "p1", name: "Anna Meier", emails: ["anna.meier@muster.de"] }, { id: "p2", name: "Bernd Kunz", emails: ["bernd.kunz@muster.de"] }]), d);
   assert.equal(versorgt.status, "nichts_zu_tun");
 });
 
-test("Tages-Budget: zwei Prozesse zaehlen in dieselbe Datei, neuer Tag beginnt bei null", () => {
-  const datei = join(mkdtempSync(join(tmpdir(), "email-budget-")), "budget.json");
-  let tag = "2026-10-11";
-  const a = new TagesBudget(datei, 5, () => tag);
-  const b = new TagesBudget(datei, 5, () => tag);
-  a.verbrauche(2);
-  b.verbrauche(2);
-  assert.equal(a.verbraucht(), 4);
-  assert.equal(b.frei(), 1);
-  tag = "2026-10-12";
-  assert.equal(a.frei(), 5);
+test("bisher offene Ableitung wird im Lauf einzeln nachgeprueft und bei Treffer als verifiziert gespeichert", async () => {
+  const s = server({ existiert: ["bernd.kunz@muster.de"] });
+  const { d, gespeichert } = deps({ pruefe: s.pruefe, serverMuster: { muster: "vorname.nachname", konfidenz: 0.8, catchAllAt: null, checkedAt: "2026-10-01T00:00:00Z", stats: { verifiziert: true } } });
+  const r = await ermittleFirmenAdressen("c1", kontakte([{ id: "p1", name: "Anna Meier", emails: ["anna.meier@muster.de"] }, { id: "p2", name: "Bernd Kunz", offen: ["bernd.kunz@muster.de"] }, { id: "p3", name: "Clara Vogt", offen: ["clara.vogt@muster.de"] }]), d);
+  assert.equal(r.status, "fertig");
+  assert.deepEqual(s.aufrufe, [["bernd.kunz@muster.de", "clara.vogt@muster.de"]]);
+  assert.deepEqual(gespeichert.map((g) => [g.personId, g.art]), [["p2", "smtp"], ["p3", "abgelehnt"]]);
 });
 
 test("Einstellungen: ohne Zuordnung und ohne unverifizierte Adressen", async () => {

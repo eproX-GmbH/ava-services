@@ -7,7 +7,7 @@ import { escapeHtml as telegramEscapeHtml, getMe as telegramGetMe, getUpdates as
 import { join } from "node:path";
 import type { MailAccount, MailAllowlistEntry, MailCredentialsPayload, MailSnapshot, ScheduledJob, TelegramConfig, TelegramSnapshot } from "../../shared/types";
 import type { AuditEventInput } from "../audit/audit-types";
-import type { EmailMusterSupervisor } from "../contacts/email-muster/supervisor";
+import type { EmailMusterDienst } from "../contacts/email-muster/dienst";
 import type { MailSupervisor } from "../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../scheduler/supervisor";
 import type { TelegramStore } from "../telegram/store";
@@ -15,7 +15,7 @@ import type { TelegramStore } from "../telegram/store";
 export interface KommunikationIpcDeps {
   audit: (input: AuditEventInput) => void;
   broadcastMailSnapshot: (snapshot: MailSnapshot) => void;
-  emailMuster: { readonly current: EmailMusterSupervisor | null };
+  emailMuster: { readonly current: EmailMusterDienst | null };
   mailSupervisor: { readonly current: MailSupervisor | null };
   scheduledJobsSupervisor: { readonly current: ScheduledJobsSupervisor | null };
   telegramSnapshot: () => TelegramSnapshot;
@@ -25,7 +25,7 @@ export interface KommunikationIpcDeps {
 export function registerKommunikationIpc(deps: KommunikationIpcDeps): void {
   const { audit, broadcastMailSnapshot, emailMuster, mailSupervisor, scheduledJobsSupervisor, telegramSnapshot, telegramStore } = deps;
 
-  ipcMain.handle("emailMuster:status", () => emailMuster.current?.status() ?? null);
+  ipcMain.handle("emailMuster:status", () => emailMuster.current?.getConfig() ?? null);
 
   ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean }) =>
     emailMuster.current?.setConfig({
@@ -35,13 +35,9 @@ export function registerKommunikationIpc(deps: KommunikationIpcDeps): void {
     }) ?? null,
   );
 
-  ipcMain.handle("emailMuster:runNow", async () => ({ ergebnis: (await emailMuster.current?.runNow()) ?? "nicht initialisiert" }));
 
   ipcMain.handle("emailMuster:vorschau", (_e, companyId: string) => emailMuster.current?.vorschau(String(companyId)) ?? null);
 
-  ipcMain.handle("emailMuster:verlauf", (_e, opts: { nur?: string; companyId?: string; limit?: number } | undefined) =>
-    emailMuster.current?.verlauf({ nur: opts?.nur as never, companyId: opts?.companyId ? String(opts.companyId) : undefined, limit: typeof opts?.limit === "number" ? opts.limit : undefined }) ?? [],
-  );
 
   ipcMain.handle("telegram:snapshot", async (): Promise<TelegramSnapshot> => {
     return telegramSnapshot();

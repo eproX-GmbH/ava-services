@@ -1,4 +1,6 @@
-// M4 (docs/PLAN_EMAIL_MUSTER.md) — Typen der lokalen E-Mail-Ableitung (Main + Renderer).
+// Typen der E-Mail-Ableitung (Main + Renderer). Seit 2026-10-12 ohne
+// Hintergrund-Job: nur Schalter und Vorschau; die Verifizierung ist die
+// Pipeline-Stufe „E-Mail“ (docs/PLAN_EMAIL_VERIFIZIERUNG.md).
 
 export interface MusterBelegShared {
   fullName: string;
@@ -15,59 +17,24 @@ export interface MusterBefundShared {
   alternativen: string[];
 }
 
-/** Ergebnis einer einzelnen Adresspruefung (Verlauf in den Einstellungen / Chat). */
-export type VerlaufErgebnis = "verifiziert" | "abgelehnt" | "unklar" | "catch_all" | "gesperrt" | "zugeordnet";
-
-export interface VerlaufEintrag {
-  at: string;
-  companyId: string;
-  firma: string;
-  domain: string;
-  personId: string;
-  fullName: string;
-  email: string;
-  muster: string;
-  ergebnis: VerlaufErgebnis;
-  /** true = am Server als Fakt gespeichert (Stufe 2: auch unklar/abgelehnt, klar gekennzeichnet). */
-  gespeichert: boolean;
-  /** Stufe 2: Baseline-Adresse, aus der abgeleitet wurde. */
-  baseline?: string;
-  smtpCode?: number;
-  mx?: string | null;
-  fehler?: string;
-}
-
 export interface EmailMusterConfig {
   enabled: boolean;
-  /** Stufe 2 (docs/PLAN_EMAIL_MUSTER_2.md): Firmenadressen per Namensabgleich/Urteil Personen zuordnen. */
+  /** Firmenadressen per Namensabgleich/Urteil Personen zuordnen. */
   zuordnungAktiv?: boolean;
-  /** Stufe 2: Ableitungen auch speichern, wenn die Pruefung nicht moeglich war oder ablehnte (gekennzeichnet). */
+  /** Ableitungen auch speichern, wenn die Pruefung nicht moeglich war oder ablehnte (gekennzeichnet). */
   ungeprueftAnzeigen?: boolean;
-  /** Stufe 2: Wiederholungen offener Adressen (E-Mail → Versuche, letzter Versuch). */
-  offen?: Record<string, { versuche: number; at: string }>;
-  lastRunAt: string | null;
-  lastOutcome: string | null;
-  netz: { erreichbar: boolean; grund: string; at: string } | null;
-  tag: { day: string; count: number };
-  domains: Record<string, { at: string; muster: string | null; belege: number; catchAll: boolean; grund?: string; /** Stufe 2: noch Personen unversorgt → naechster Durchgang ohne Frist. */ offen?: boolean }>;
-  stats: { firmen: number; geprueft: number; verifiziert: number; unbestaetigt: number; abgelehnt: number; unbekannt: number; catchAll: number; zugeordnet?: number };
-  /** Juengste Pruefungen zuerst, begrenzt (VERLAUF_MAX). */
-  verlauf: VerlaufEintrag[];
 }
-
-export const VERLAUF_MAX = 500;
 
 export interface Vorschau {
   companyId: string;
   domain: string | null;
   befund: MusterBefundShared | null;
   kandidaten: Array<{ personId: string; fullName: string; email: string }>;
-  /** Stufe 2: Firmenadressen, die (deterministisch) einer Person zugeordnet wuerden. */
+  /** Firmenadressen, die (deterministisch) einer Person zugeordnet wuerden. */
   zuordnungen?: Array<{ personId: string; fullName: string; email: string; begruendung: string }>;
-  /** Stufe 2: Adresse, aus der das Muster abgeleitet wird. */
+  /** Adresse, aus der das Muster abgeleitet wird. */
   baseline?: string | null;
   personenMitMail: number;
   personenOhneMail: number;
   hinweis: string | null;
 }
-

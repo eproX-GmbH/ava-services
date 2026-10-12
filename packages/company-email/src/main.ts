@@ -2,16 +2,15 @@
 //
 // Laeuft als Node-Subprozess der AVA (ProducerSupervisor, PRODUCER_MODE=compute)
 // und wird vom Contact Producer ueber companyContact.createEmailVerification
-// angestossen. Je Firma: Domain → Muster (Katalog/KI-Urteil/Gateway) → EINE
-// SMTP-Pruefung je Domain → Muster auf alle Personen anwenden → speichern ueber
-// die Gateway-Routen email-patterns/derived-email. Zustandslos; Muster und
-// Catch-all-Befunde liegen geteilt am Gateway, der Tages-Deckel in der
-// gemeinsamen Zaehldatei mit dem Desktop-Hintergrund-Job.
+// angestossen. Je Firma: Domain → Muster (Katalog/KI-Urteil/Gateway) → Muster
+// per SMTP bestaetigen → JEDE abgeleitete, zugeordnete und bisher offene
+// Adresse einzeln per RCPT TO pruefen (seit 2026-10-12, ohne Tages-Deckel) →
+// speichern ueber die Gateway-Routen email-patterns/derived-email. Zustandslos;
+// Muster und Catch-all-Befunde liegen geteilt am Gateway.
 //
 // Der HTTP-Port dient nur dem Health-Probe des Supervisors (TCP-Connect).
 
 import http from "node:http";
-import { TagesBudget } from "@ava/email-muster";
 import { ladeConfig } from "./config";
 import { verbindeBus, type Bus } from "./amqp";
 import { makeGatewayClient } from "./gateway";
@@ -26,14 +25,12 @@ import { logger } from "./log";
 function main(): void {
   const cfg = ladeConfig();
   const netz = new NetzStatus();
-  const budget = new TagesBudget(cfg.budgetDatei, cfg.tagesDeckel);
   const gateway = makeGatewayClient({ url: cfg.gatewayUrl, token: cfg.gatewayToken });
   let bus: Bus | null = null;
 
   const verarbeite = makeWorker({
     gateway,
     netz,
-    budget,
     urteil: makeUrteil(),
     persistWartenMs: cfg.persistWartenMs,
     einstellungen: () => leseEinstellungen(cfg.einstellungenDatei, cfg.featureAktiv),
@@ -55,11 +52,11 @@ function main(): void {
   void netz.aktualisiere().then(() => logger.info(`Port 25: ${netz.ok() ? "erreichbar" : `gesperrt (${netz.grund()})`}`));
 
   const server = http.createServer((req, res) => {
-    const body = JSON.stringify({ ok: true, amqp: bus?.verbunden() ?? false, port25: netz.ok(), budgetFrei: budget.frei() });
+    const body = JSON.stringify({ ok: true, amqp: bus?.verbunden() ?? false, port25: netz.ok() });
     res.writeHead(req.url === "/health" || req.url === "/" ? 200 : 404, { "content-type": "application/json" });
     res.end(body);
   });
-  server.listen(cfg.port, cfg.host, () => logger.info(`Application running at http://${cfg.host}:${cfg.port} (Tages-Deckel ${cfg.tagesDeckel}, frei ${budget.frei()})`));
+  server.listen(cfg.port, cfg.host, () => logger.info(`Application running at http://${cfg.host}:${cfg.port}`));
 
   const beenden = (signal: string): void => {
     logger.info(`${signal} — beende`);

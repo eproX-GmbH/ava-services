@@ -46,8 +46,7 @@ import { praegeSitzung } from "../main/sprache/session";
 import { liveSitzungStarten } from "../main/sprache/live";
 import { faehigkeitenText, verfuegbareFaehigkeiten } from "../main/suggestions/faehigkeiten";
 import { pruefeModellstufe } from "../main/workflows/modellstufe";
-import { EmailMusterSupervisor } from "../main/contacts/email-muster/supervisor";
-import { BUDGET_DATEI } from "../main/contacts/email-muster/budget";
+import { EmailMusterDienst } from "../main/contacts/email-muster/dienst";
 import { streamToText as hintergrundUrteil } from "../main/link-monitor/llm";
 import { handleSignedIn as accountSpaceSignedIn, listAccounts, spaceDirFor, readIdentity } from "../main/account-space";
 import { join } from "node:path";
@@ -688,11 +687,10 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
                   };
                 }
             : name === "company-email"
-              ? // docs/PLAN_EMAIL_VERIFIZIERUNG.md (V3): gemeinsamer Tages-Deckel
-                // mit dem Hintergrund-Job (eine Zaehldatei), dessen Schalter
+              ? // docs/PLAN_EMAIL_VERIFIZIERUNG.md (V3): Schalter der Person
                 // (email-muster.json, live gelesen) und das Feature "kontakte".
+                // Kein Tages-Deckel mehr (2026-10-12).
                 async (): Promise<Record<string, string>> => ({
-                  AVA_EMAIL_BUDGET_FILE: join(paths().get("userData"), BUDGET_DATEI),
                   AVA_EMAIL_MUSTER_CONFIG: join(paths().get("userData"), "email-muster.json"),
                   AVA_EMAIL_AKTIV: featureEnabled("kontakte") ? "1" : "0",
                 })
@@ -1350,7 +1348,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
   /** W1 — Workflows (docs/PLAN_WORKFLOWS.md). */
   let workflowService: WorkflowService | null = null;
-  let emailMuster: EmailMusterSupervisor | null = null;
+  let emailMuster: EmailMusterDienst | null = null;
   let personenAbgleich: PersonenAbgleich | null = null;
   // v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (PLAN_CHAT_VORSCHLAEGE V1).
   let nutzerstand: NutzerstandService | null = null;
@@ -3116,27 +3114,17 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   });
   transactionWatcher.start();
   workerModus.anmelden({ name: "Vorgaenge", anhalten: () => transactionWatcher.stop(), anlaufen: () => transactionWatcher.start() });
-  // M4 (docs/PLAN_EMAIL_MUSTER.md) — lokale E-Mail-Ableitung im Hintergrund.
-  emailMuster = new EmailMusterSupervisor(
+  // E-Mail-Ableitung: Schalter, Vorschau und Adresspruefung fuer Chat und
+  // Einstellungen. Die Verifizierung selbst ist die Pipeline-Stufe „E-Mail“
+  // des Producers company-email (docs/PLAN_EMAIL_VERIFIZIERUNG.md); der
+  // fruehere Hintergrund-Job entfiel am 2026-10-12.
+  emailMuster = new EmailMusterDienst(
     {
       gatewayRequest: (path, opts) => gatewayClient.request(path, opts as never),
-      isSignedIn: () => auth.getStatus().signedIn,
-      isLlmBusy: () => agent.getStatus().inFlightRequestId !== null,
-      isOnBattery: () => {
-        try {
-          return power().isOnBatteryPower();
-        } catch {
-          return false;
-        }
-      },
-      audit: ({ summary, severity, metadata }) =>
-        audit({ actorType: "system", actorId: null, category: "import", action: "email-muster.run", severity, subjectType: null, subjectId: (metadata.companyId as string) ?? null, summary, metadata }),
       log: (m) => console.log(m),
       onChanged: (cfg) => {
         windows().broadcast("emailMuster:changed", cfg);
       },
-      // Stufe 2 (docs/PLAN_EMAIL_MUSTER_2.md): KI-Urteil fuer Zuordnung und Muster,
-      // Hintergrund-Kanal (Budget der Organisation, zentrale KI-Sperre greift).
       urteil: async (system, user) => {
         try {
           const text = await hintergrundUrteil(
@@ -3156,7 +3144,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     },
     paths().get("userData"),
   );
-  emailMuster.start();
   // Doppelte Kontakte zusammenführen (Gateway: sichere Fälle; hier: KI-Urteil für „nur Vorname“).
   personenAbgleich = new PersonenAbgleich(
     {
@@ -3186,8 +3173,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     paths().get("userData"),
   );
   personenAbgleich.start();
-  workerModus.anmelden({ name: "E-Mail-Muster", anhalten: () => emailMuster?.stop(), anlaufen: () => emailMuster?.start() });
-  lifecycle().onBeforeQuit(() => quitStep("emailMuster.stop", () => emailMuster?.stop()));
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
     void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });
