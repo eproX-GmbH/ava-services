@@ -303,7 +303,14 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
           // Anderer SI-Fehler (Datei kam nicht, Treiber): unten auf den CD ausweichen.
           siFehler = err instanceof Error ? err.message : String(err);
           basis.abfragen++;
-          log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI fehlgeschlagen: ${siFehler}${cdAktiv ? " — versuche CD" : ""}`);
+          // Haengt der Renderer, bringt ein CD-Klick in derselben Sitzung nichts
+          // mehr; die naechste Firma startet ueber die Startseite neu.
+          if (/renderer|antwortet nicht|timed out/i.test(siFehler)) {
+            si.fehler++;
+            log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI fehlgeschlagen: ${siFehler.split("\n")[0]} — Sitzung haengt, kein CD-Versuch`);
+            continue;
+          }
+          log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI fehlgeschlagen: ${siFehler.split("\n")[0]}${cdAktiv ? " — versuche CD" : ""}`);
         } else {
         log(`refresh ${f.gericht} ${f.art} ${f.nummer}: ${err.message} — neue Suche, zweiter Versuch`);
         await warteTakt(o, 2);

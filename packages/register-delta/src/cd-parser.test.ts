@@ -125,3 +125,66 @@ test("Fortsetzung auf der Folgeseite gehoert zur letzten Eintragung", () => {
     ["Beispiel", "Folgeseite"],
   );
 });
+
+test("Berliner Schreibweise: Marken als eigene Textstuecke, Ort in der Folgezeile, Abgang ohne Geburtsdatum, Anschrift mit Zusatz", () => {
+  const t: CdText[] = [];
+  const z = (y: number, x: number, s: string) => t.push({ x, y, s });
+  z(24, 20, "Amtsgericht Charlottenburg");
+  z(24, 345, "Ausdruck Handelsregister B");
+  z(39, 342, "Abruf vom 12.10.2026, 14:23");
+  z(79, 24, "Num-");
+  z(93, 28, "mer");
+  z(64, 63, "a)");
+  z(64, 78, "Firma");
+  z(64, 207, "Grund- oder");
+  z(64, 290, "a)");
+  z(64, 305, "Allgemeine Vertretungsrege-");
+  z(64, 448, "Prokura");
+  z(64, 607, "a)");
+  z(64, 622, "Rechtsform, Beginn, Sat-");
+  z(64, 760, "a)");
+  z(64, 775, "Tag der Ein-");
+  // Eintragung 1
+  z(160, 30, "1");
+  z(160, 63, "a)");
+  z(160, 207, "25.000,00 EUR");
+  z(160, 290, "b)");
+  z(160, 607, "a)");
+  z(160, 760, "a)");
+  z(174, 78, "Midtown Interiors GmbH");
+  z(174, 305, "Geschäftsführer:");
+  z(174, 622, "Gesellschaft mit beschränkter");
+  z(174, 775, "05.01.2021");
+  z(188, 63, "b)");
+  z(188, 305, "1.");
+  z(188, 622, "Haftung");
+  z(202, 78, "Berlin");
+  z(202, 305, "Wainstejn, Zachi, *17.07.1979,");
+  z(216, 78, "Geschäftsanschrift:");
+  z(216, 305, "Berlin");
+  z(230, 78, "Hohenzollerndamm 111, Souterrain Seitenfl. rechts, 14199");
+  z(244, 78, "Berlin");
+  // Eintragung 2: Wechsel
+  z(320, 30, "2");
+  z(320, 290, "b)");
+  z(320, 760, "a)");
+  z(334, 305, "Nicht mehr Geschäftsführer:");
+  z(334, 775, "02.10.2025");
+  z(348, 305, "1. Wainstejn, Zachi");
+  z(362, 305, "Geschäftsführer:");
+  z(376, 305, "2.");
+  z(390, 305, "Wainstejn, Sviatlana, *10.07.1975,");
+  z(404, 305, "Berlin");
+  z(420, 305, "Seite 1 von 2");
+  const s = parseChronologischerAbdruck([{ breite: 842, hoehe: 595, texte: t }], "Midtown Interiors GmbH");
+  assert.ok(s);
+  assert.equal(s.legalForm, "Gesellschaft mit beschränkter Haftung");
+  assert.equal(s.street, "Hohenzollerndamm");
+  assert.equal(s.houseNumber, "111");
+  assert.equal(s.zipCode, "14199");
+  assert.equal(s.city, "Berlin");
+  assert.equal(s.shareCapital, 25000);
+  assert.equal(s.lastRegisterEntry, "2025-10-02");
+  assert.deepEqual(s.managingDirectors, [{ firstName: "Sviatlana", lastName: "Wainstejn", birthDay: "1975-07-10", city: "Berlin" }]);
+});
+

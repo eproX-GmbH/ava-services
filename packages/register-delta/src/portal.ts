@@ -303,7 +303,17 @@ export class RegisterPortal {
     }
     if (ausFenster) return ausFenster;
     if (!datei) {
-      const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
+      // Der Renderer kann nach dem Klick haengen (Fly, Chromium 149): dann darf
+      // die Diagnose selbst nicht 45 s blockieren.
+      let text = "";
+      try {
+        await d.manage().setTimeouts({ pageLoad: 8_000, script: 8_000 });
+        text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
+      } catch (err) {
+        throw new Error(`SI: weder Datei noch XML-Fenster innerhalb von 25 s, Seite antwortet nicht (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`);
+      } finally {
+        await d.manage().setTimeouts({ pageLoad: 45_000, script: 30_000 }).catch(() => undefined);
+      }
       if (SPERR_RE.test(text)) throw new PortalStoerung("SI: Portal gesperrt");
       // Diagnose fuer Fly: was liegt im Ordner, welche Seite, wie viele Fenster.
       let titel = "?";
@@ -366,7 +376,15 @@ export class RegisterPortal {
       }
     }
     if (!datei) {
-      const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
+      let text = "";
+      try {
+        await d.manage().setTimeouts({ pageLoad: 8_000, script: 8_000 });
+        text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
+      } catch {
+        throw new Error("CD: keine PDF innerhalb von 30 s, Seite antwortet nicht");
+      } finally {
+        await d.manage().setTimeouts({ pageLoad: 45_000, script: 30_000 }).catch(() => undefined);
+      }
       if (SPERR_RE.test(text)) throw new PortalStoerung("CD: Portal gesperrt");
       throw new Error("CD: keine PDF innerhalb von 30 s");
     }
