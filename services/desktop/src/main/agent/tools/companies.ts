@@ -7,6 +7,7 @@ import { read as readLinkedInSettings } from "../../linkedin/store";
 import { landText, statusWarnungText } from "../../firmen-status";
 import { kompakteKontakte } from "./kontakte-kompakt";
 import { ladeFirmenliste } from "../real-candidate-source";
+import { verarbeitungsstand, type MatrixZeile } from "../verarbeitungsstand";
 
 // Read-only company tools (Phase 8.b).
 //
@@ -35,7 +36,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const search = defineTool({
     name: "company_search",
     description:
-      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
+      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
     parameters: {
       type: "object",
       properties: {
@@ -887,7 +888,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
       "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
       "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). " +
-      "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug.",
+      "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. " +
+      "`verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.",
     parameters: {
       type: "object",
       properties: {
@@ -910,7 +912,21 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       // Status zuerst: Insolvenz, Loeschung, Liquidation muessen den Kontext dominieren.
       const warnung = statusWarnungText(r as never);
       const l = landText(r as never);
-      const stamm = { ...(warnung ? { statusWarnung: warnung } : {}), ...(l ? { land: l } : {}), ...r };
+      // Verarbeitungsstand aus Meine Firmen: ist die Firma aufbereitet? Ohne
+      // diesen Block musste das Modell aus leeren Bereichen raten und
+      // antwortete dann "dazu liegt nichts vor" statt zu verarbeiten.
+      let zeile: MatrixZeile | null = null;
+      try {
+        const m = await gateway.request<{ companies?: MatrixZeile[] }>("/v1/companies/matrix", {
+          query: { companyId: args.companyId, pageNumber: 1, pageSize: 1 },
+          signal: c.signal,
+        });
+        zeile = (m.companies ?? []).find((z) => z.companyId === args.companyId) ?? null;
+      } catch {
+        zeile = null;
+      }
+      const verarbeitung = verarbeitungsstand(args.companyId, zeile);
+      const stamm = { ...(warnung ? { statusWarnung: warnung } : {}), ...(l ? { land: l } : {}), verarbeitung, ...r };
       const gewuenscht = [...new Set(args.bereiche ?? [])] as Bereich[];
       if (gewuenscht.length === 0) return stamm;
       const ergebnisse = await Promise.all(
@@ -935,8 +951,9 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       );
       const w = (r as { statusWarnung?: string }).statusWarnung;
       const b = (r as { bereiche?: Record<string, unknown> }).bereiche;
+      const v = (r as { verarbeitung?: { stand?: string } }).verarbeitung?.stand;
       const teile = b ? ` (+ ${Object.keys(b).join(", ")})` : "";
-      return `${name ? `company: ${name}` : "company record"}${teile}${w ? ` — ${w.slice(0, 60)}` : ""}`;
+      return `${name ? `company: ${name}` : "company record"}${teile}${v && v !== "vollstaendig" ? ` — Verarbeitung ${v}` : ""}${w ? ` — ${w.slice(0, 60)}` : ""}`;
     },
   });
 

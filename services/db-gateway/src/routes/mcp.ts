@@ -17,6 +17,7 @@
 // (Standard an), `mcp.kontakte` (Standard aus).
 
 import { Hono } from "hono";
+import { verarbeitungsstand, juengsteTransaktion, type MatrixZeile } from "../lib/verarbeitungsstand";
 import type { Context } from "hono";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createMiddleware } from "hono/factory";
@@ -80,7 +81,7 @@ const TOOLS: ToolDef[] = [
     name: "firma_lesen",
     schalter: "lesen",
     description:
-      "Eine Firma lesen: Stammdaten plus gewuenschte Bereiche. bereiche: profil (KI-Kurzprofil, Website), register (Handelsregister: Geschaeftsfuehrung, Kapital, Gegenstand), publikationen (Jahres-/Konzernabschluesse mit Kennzahlen und Lagebericht), kunden (Kunden/Partner laut Website), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut Konzernabschluss), gesellschafter (Gesellschafterliste, nur DE/HRB), aenderungen (Geschaeftsfuehrer-/Stammdatenwechsel). Ohne bereiche nur Stammdaten. Die Daten stammen aus der lokalen Verarbeitung des Nutzers; fehlt ein Bereich, wurde die Firma noch nicht verarbeitet.",
+      "Eine Firma lesen: Stammdaten plus gewuenschte Bereiche. bereiche: profil (KI-Kurzprofil, Website), register (Handelsregister: Geschaeftsfuehrung, Kapital, Gegenstand), publikationen (Jahres-/Konzernabschluesse mit Kennzahlen und Lagebericht), kunden (Kunden/Partner laut Website), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut Konzernabschluss), gesellschafter (Gesellschafterliste, nur DE/HRB), aenderungen (Geschaeftsfuehrer-/Stammdatenwechsel). Ohne bereiche nur Stammdaten. `verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig) und was zu tun ist: bei fehlt SOFORT import_anlegen mit der companyId, bei unvollstaendig neu_verarbeiten, ohne Rueckfrage an den Nutzer. Fuer den Nutzer gibt es 'verarbeiten' nicht; leere Bereiche einer nicht aufbereiteten Firma sind kein Befund und nie 'liegt nicht vor'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -127,7 +128,7 @@ const TOOLS: ToolDef[] = [
     name: "import_anlegen",
     schalter: "auftraege",
     description:
-      "Firmen in AVA importieren und die Verarbeitung anstossen (Register, Website, Jahresabschluesse, Kontakte, Bewertung). Empfohlener Weg: zuerst firma_suchen (Registersuche), den Treffer dem Nutzer nennen und dann companyIds uebergeben; so wird genau die gefundene Firma importiert. Alternativ eine Liste {name, ort, land} (unscharfe Zuordnung zu den Stammdaten, kann daneben liegen) oder eine Excel-/CSV-Datei als Base64 (bis 5 MB) mit den Spaltennamen fuer Firma und Ort. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); das kann Stunden dauern. Antwort enthaelt die transactionId fuer auftrag_status. Zaehlt gegen das Kontingent des Nutzers wie ein Import in der App.",
+      "Firmen in AVA importieren und die Verarbeitung anstossen (Register, Website, Jahresabschluesse, Kontakte, Bewertung). Empfohlener Weg: zuerst firma_suchen (Registersuche) und bei eindeutigem Treffer companyIds uebergeben; so wird genau die gefundene Firma importiert. Meldet firma_lesen verarbeitung.stand = fehlt, sofort aufrufen, ohne den Nutzer zu fragen. Nur bei mehreren plausiblen Treffern vorher klaeren, welche Firma gemeint ist. Alternativ eine Liste {name, ort, land} (unscharfe Zuordnung zu den Stammdaten, kann daneben liegen) oder eine Excel-/CSV-Datei als Base64 (bis 5 MB) mit den Spaltennamen fuer Firma und Ort. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); das kann Stunden dauern. Antwort enthaelt die transactionId fuer auftrag_status. Zaehlt gegen das Kontingent des Nutzers wie ein Import in der App.",
     inputSchema: {
       type: "object",
       properties: {
@@ -217,6 +218,11 @@ function fehlerText(r: { status: number; json: unknown }): string {
   return `Gateway ${r.status}: ${j?.message ?? j?.error ?? (typeof r.json === "string" ? r.json.slice(0, 200) : "Fehler")}`;
 }
 
+function matrixZeile(json: unknown, companyId: string): MatrixZeile | null {
+  const rows = (json as { companies?: MatrixZeile[] } | null)?.companies ?? [];
+  return rows.find((z) => z?.companyId === companyId) ?? null;
+}
+
 function kompakt(v: unknown): string {
   const s = JSON.stringify(v, (_k, val) => (Array.isArray(val) && val.length > 200 && typeof val[0] === "number" ? undefined : val));
   return s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n… (gekuerzt, ${s.length} Zeichen)` : s;
@@ -243,9 +249,13 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
     case "firma_lesen": {
       const id = String(args.companyId ?? "").trim();
       if (!id) return { text: "companyId fehlt.", isError: true };
-      const basis = await api(app, token, "GET", `/v1/companies/${encodeURIComponent(id)}`);
+      const [basis, matrix] = await Promise.all([
+        api(app, token, "GET", `/v1/companies/${encodeURIComponent(id)}`),
+        api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: 1, pageSize: 1, companyId: id })}`),
+      ]);
       if (!basis.ok) return { text: fehlerText(basis), isError: true };
-      const out: Record<string, unknown> = { stammdaten: basis.json };
+      const zeile = matrixZeile(matrix.json, id);
+      const out: Record<string, unknown> = { stammdaten: basis.json, verarbeitung: verarbeitungsstand(id, zeile) };
       const bereiche = Array.isArray(args.bereiche) ? [...new Set(args.bereiche.filter((b): b is string => typeof b === "string"))] : [];
       for (const b of bereiche) {
         const pfad = BEREICH_ROUTEN[b];
@@ -254,7 +264,7 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
           continue;
         }
         const r = await api(app, token, "GET", `/v1/companies/${encodeURIComponent(id)}${pfad}`);
-        out[b] = r.ok ? r.json : { fehler: r.status === 404 ? "noch nicht verarbeitet" : fehlerText(r) };
+        out[b] = r.ok ? r.json : { fehler: r.status === 404 ? "noch nicht aufbereitet (siehe verarbeitung)" : fehlerText(r) };
       }
       return { text: kompakt(out) };
     }
@@ -274,8 +284,9 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
       let ids = Array.isArray(args.companyIds) ? args.companyIds.filter((x): x is string => typeof x === "string") : [];
       if (ids.length === 0) {
         const m = await api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: 1, pageSize: 200 })}`);
-        const j = m.json as { items?: Array<{ companyId?: string }> } | null;
-        ids = (j?.items ?? []).map((x) => x.companyId).filter((x): x is string => typeof x === "string");
+        // Die Matrix liefert `companies`, nicht `items` (vorher immer leer).
+        const j = m.json as { companies?: Array<{ companyId?: string }> } | null;
+        ids = (j?.companies ?? []).map((x) => x.companyId).filter((x): x is string => typeof x === "string");
       }
       if (ids.length === 0) return { text: "Keine Firmen in „Meine Firmen“ — zuerst importieren." };
       const seit = typeof args.seit === "string" && args.seit ? args.seit : new Date(Date.now() - 14 * 86_400_000).toISOString();
@@ -347,11 +358,13 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
       }
       // Die Verarbeitung haengt an der juengsten Transaktion der Firma.
       const m = await api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: 1, pageSize: 1, companyId: id })}`);
-      const zeile = ((m.json as { items?: Array<{ transactionId?: string | null; name?: string }> } | null)?.items ?? [])[0];
-      if (!zeile?.transactionId) return { text: "Die Firma steht nicht in „Meine Firmen“ oder wurde noch nie verarbeitet — zuerst import_anlegen.", isError: true };
-      const r = await api(app, token, "POST", `/v1/transactions/${encodeURIComponent(zeile.transactionId)}/entities/${encodeURIComponent(id)}/retry`, { stage: stufe, ...(zeile.name ? { companyName: zeile.name } : {}) });
+      // Die Matrix liefert `companies` mit Stand je Stufe; die Transaktion haengt an den Stufen.
+      const zeile = matrixZeile(m.json, id);
+      const transactionId = juengsteTransaktion(zeile);
+      if (!zeile || !transactionId) return { text: "Die Firma steht nicht in „Meine Firmen“ — zuerst import_anlegen mit der companyId.", isError: true };
+      const r = await api(app, token, "POST", `/v1/transactions/${encodeURIComponent(transactionId)}/entities/${encodeURIComponent(id)}/retry`, { stage: stufe, ...(zeile.name ? { companyName: zeile.name } : {}) });
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt({ transactionId: zeile.transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) }) };
+      return { text: kompakt({ transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) }) };
     }
     case "auftrag_status": {
       const id = String(args.transactionId ?? "").trim();

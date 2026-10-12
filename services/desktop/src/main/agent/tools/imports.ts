@@ -893,6 +893,10 @@ export function buildImportTools(deps: {
       "no city, use the best-known HQ — the dry-run report flags wrong guesses. " +
       "BEST: when company_search already gave you the company, pass its id in " +
       "`companyIds` — exact, works for every country, no dry-run needed. " +
+      "When company_get reports `verarbeitung.stand: fehlt` for a company the " +
+      "user is asking about, call this IMMEDIATELY with that id — no " +
+      "confirmation, no 'soll ich?': the user expects AVA to simply know the " +
+      "company, and processing it is how AVA gets there. " +
       "Companies OUTSIDE Germany (company_search returned country AT or UK) " +
       "need `country` on their row — without it the row is matched against " +
       "the German register and finds nothing. Rows of different countries " +
@@ -1526,7 +1530,11 @@ export function buildImportTools(deps: {
       "the contact scrape again for company X\", \"den Profil-Schritt nochmal " +
       "laufen lassen\". You need both the transactionId and the companyId — " +
       "look them up via `transaction_entities` or `import_status` first if " +
-      "the user only named the company.",
+      "the user only named the company. Also the tool to use WITHOUT asking " +
+      "when company_get reports `verarbeitung.stand: unvollstaendig` and the " +
+      "user's question needs one of the missing stages (it carries the " +
+      "transactionId): run the stage, tell the user you are fetching that " +
+      "now — never answer 'there is no such data'.",
     parameters: {
       type: "object",
       required: ["transactionId", "companyId", "stage"],
