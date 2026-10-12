@@ -529,9 +529,10 @@ Statt des Deckels eine **Rate je Stunde**, die die Person selbst einstellt
 (Abwaegung: eine Firma mit 20 Personen ist in rund vier Minuten durch, ein
 Import mit 100 Firmen in wenigen Stunden; je Mailserver bleiben es nur eine
 Handvoll Anfragen mit 2 s Abstand). Grenzen 10–3600. Umsetzung:
-`packages/email-muster/src/takt.ts` (`Taktgeber`, gleitendes Stundenfenster,
-`warten(n)` bucht eine Verbindung = Adressen + Catch-all-Probe und **wartet**
-statt Adressen offen zu lassen), `AbleitungDeps.takt`, Producer liest die Rate
+`packages/email-muster/src/takt.ts` (`Taktgeber`: **gleichmaessig ueber die
+Stunde gestreckt**, kein Burst — bei 300/h alle 12 s eine Anfrage, eine
+Verbindung mit 6 Anfragen reserviert 72 s; `warten(n)` wartet statt Adressen
+offen zu lassen; Nachtrag v0.1.818 auf Nachfrage des Operators), `AbleitungDeps.takt`, Producer liest die Rate
 je Trigger (`einstellungen.ts`) und zieht den Taktgeber nach (`setzeRate`).
 
 ### 8.6 Kontakt-E-Mails je Firma, keine Schein-Historie (v0.1.816, 2026-10-12)

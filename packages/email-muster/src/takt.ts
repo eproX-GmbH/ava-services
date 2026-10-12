@@ -1,10 +1,11 @@
-// Verifizierungsrate (docs/PLAN_EMAIL_VERIFIZIERUNG.md §8.5): hoechstens N
-// RCPT-TO-Anfragen je Stunde aus diesem Prozess, gleitendes Fenster. Die Rate
-// stellt die Person selbst ein (email-muster.json, `pruefungenJeStunde`); sie
-// ersetzt den frueheren festen Tages-Deckel. Erreicht die Stunde ihr Soll,
-// wartet der Lauf, statt Adressen als "offen" liegen zu lassen.
+// Verifizierungsrate (docs/PLAN_EMAIL_VERIFIZIERUNG.md §8.5): N RCPT-TO-Anfragen
+// je Stunde aus diesem Prozess, GLEICHMAESSIG ueber die Stunde verteilt (bei 300
+// alle 12 s eine Anfrage; eine Verbindung mit 6 Anfragen reserviert 72 s), kein
+// Burst mit anschliessender Pause. Die Rate stellt die Person selbst ein
+// (email-muster.json, `pruefungenJeStunde`); sie ersetzt den frueheren festen
+// Tages-Deckel. Statt Adressen "offen" liegen zu lassen, wartet der Lauf.
 
-/** Standardrate: schnell genug fuer einen Import (eine Firma mit 20 Personen in ~4 Minuten), unauffaellig je Mailserver. */
+/** Standardrate: alle 12 s eine Anfrage — eine Firma mit 20 Personen in ~6 Minuten, unauffaellig je Mailserver. */
 export const PRUEFUNGEN_JE_STUNDE_STANDARD = 300;
 export const PRUEFUNGEN_JE_STUNDE_MIN = 10;
 export const PRUEFUNGEN_JE_STUNDE_MAX = 3600;
@@ -22,7 +23,10 @@ export interface Takt {
 }
 
 export class Taktgeber implements Takt {
-  private readonly zeiten: number[] = [];
+  /** Zeitpunkt, ab dem die naechste Anfrage erlaubt ist. */
+  private freiAb = 0;
+  /** Gebuchte Anfragen (fuer Auskunft/Tests). */
+  private gebucht = 0;
 
   constructor(
     private jeStunde: number = PRUEFUNGEN_JE_STUNDE_STANDARD,
@@ -39,27 +43,31 @@ export class Taktgeber implements Takt {
     return this.jeStunde;
   }
 
-  /** Anfragen in der letzten Stunde. */
+  /** Abstand je Anfrage in ms (bei 300/h = 12 000). */
+  abstandMs(): number {
+    return Math.ceil(3_600_000 / Math.max(1, this.jeStunde));
+  }
+
   verbraucht(): number {
-    const grenze = this.jetzt() - 3_600_000;
-    while (this.zeiten.length && this.zeiten[0]! < grenze) this.zeiten.shift();
-    return this.zeiten.length;
+    return this.gebucht;
   }
 
-  frei(): number {
-    return Math.max(0, this.jeStunde - this.verbraucht());
+  /** Wartezeit bis zur naechsten erlaubten Anfrage (0 = sofort). */
+  wartezeitMs(): number {
+    return Math.max(0, this.freiAb - this.jetzt());
   }
 
+  /**
+   * Wartet, bis die naechste Anfrage erlaubt ist, und reserviert `n` Slots:
+   * die uebernaechste Verbindung darf erst nach n × Abstand. Die erste Anfrage
+   * eines Prozesses geht sofort; danach fliesst es gleichmaessig.
+   */
   async warten(n: number): Promise<void> {
-    const bedarf = Math.max(1, Math.min(n, this.jeStunde));
-    for (;;) {
-      if (this.frei() >= bedarf) break;
-      // So lange, bis genug alte Eintraege aus dem Fenster fallen.
-      const freizugeben = bedarf - this.frei();
-      const faelligAb = this.zeiten[freizugeben - 1]! + 3_600_000;
-      await this.schlafen(Math.max(1000, faelligAb - this.jetzt() + 500));
-    }
+    const bedarf = Math.max(1, n);
+    const wartezeit = this.wartezeitMs();
+    if (wartezeit > 0) await this.schlafen(wartezeit);
     const now = this.jetzt();
-    for (let i = 0; i < bedarf; i++) this.zeiten.push(now);
+    this.freiAb = Math.max(now, this.freiAb) + bedarf * this.abstandMs();
+    this.gebucht += bedarf;
   }
 }

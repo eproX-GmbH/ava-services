@@ -39,7 +39,7 @@ export function EmailMusterSection() {
         Eine eingehende Antwort bestätigt sie, eine Unzustellbarkeitsmeldung entfernt sie wieder. Das Ergebnis je Firma steht in der Status-Matrix (Spalte „E-Mail“);
         dort lässt sich die Stufe jederzeit neu starten.
       </p>
-      <div className="alerts-prefs__row">
+      <div className="alerts-prefs__row alerts-prefs__row--spalte">
         <label className="alerts-prefs__check">
           <input type="checkbox" checked={s.enabled} onChange={(e) => void window.api.emailMuster.setConfig({ enabled: e.target.checked }).then(() => reload())} />
           <span>E-Mail-Ableitung aktiv</span>
@@ -54,7 +54,7 @@ export function EmailMusterSection() {
         </label>
       </div>
       <div className="alerts-prefs__row">
-        <label className="alerts-prefs__check" title="Mail-Server-Anfragen (RCPT TO) je Stunde von diesem Rechner. Höher = schneller, aber mehr Last auf fremden Mailservern; ist die Rate erreicht, wartet der Lauf.">
+        <label className="alerts-prefs__check" title="Mail-Server-Anfragen (RCPT TO) je Stunde von diesem Rechner, gleichmäßig über die Stunde verteilt (bei 300 alle 12 Sekunden eine Anfrage). Höher = schneller, aber mehr Last auf fremden Mailservern.">
           <span>Verifizierungsrate</span>
           <input
             type="number"
@@ -70,7 +70,7 @@ export function EmailMusterSection() {
               if (e.key === "Enter") rateSpeichern();
             }}
           />
-          <span className="muted small" style={{ marginLeft: 6 }}>Anfragen je Stunde (Standard {PRUEFUNGEN_JE_STUNDE.standard})</span>
+          <span className="muted small" style={{ marginLeft: 6 }}>Anfragen je Stunde, gleichmäßig verteilt (Standard {PRUEFUNGEN_JE_STUNDE.standard})</span>
         </label>
       </div>
     </section>

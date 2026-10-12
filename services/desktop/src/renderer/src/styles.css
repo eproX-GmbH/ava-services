@@ -2999,6 +2999,8 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 
 /* ---- Alert preferences in Settings (Phase 8.f3) ------------------------ */
 .alerts-prefs__row { margin: 12px 0; }
+/* Schalter untereinander (E-Mail-Ableitung, 2026-10-12). */
+.alerts-prefs__row--spalte { display: flex; flex-direction: column; gap: 8px; }
 
 /* v0.1.256 — Watches-Liste im Datenquellen-Tab */
 .watches-list {
