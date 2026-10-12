@@ -319,7 +319,16 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
         if (r2.gesperrt) return { ...basis, gesperrt: true, si, unbearbeitet };
         const ziel2 = r2.treffer.find((t) => t.kopfGeparst && t.nummer === f.nummer && t.zusatz === ziel.zusatz && t.frueher === ziel.frueher);
         if (!ziel2) throw new Error("SI: Trefferzeile nach neuer Suche nicht gefunden");
-        xml = await o.portal.strukturierterInhalt!(r2.treffer.indexOf(ziel2)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        try {
+          xml = await o.portal.strukturierterInhalt!(r2.treffer.indexOf(ziel2)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        } catch (err2) {
+          // Liefert das Portal auch beim zweiten Mal nur seine Startseite, gibt es
+          // fuer dieses Blatt keinen SI (NRW, Duesseldorf HRB 106077): CD versuchen.
+          if (!(err2 instanceof SitzungAbgelaufen)) throw err2;
+          basis.abfragen++;
+          siFehler = err2.message;
+          log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI auch nach neuer Suche nicht lieferbar${cdAktiv ? " — versuche CD" : ""}`);
+        }
         }
       }
       if (xml !== null) {

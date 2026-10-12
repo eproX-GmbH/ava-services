@@ -275,8 +275,12 @@ export class RegisterPortal {
     const frist = Date.now() + 25_000;
     let datei: string | null = null;
     let ausFenster: string | null = null;
+    let kostenhinweisBestaetigt = false;
     while (Date.now() < frist && !datei && !ausFenster) {
       await schlafen(300);
+      // Manche Blaetter fuehren erst auf "Registerportal | Kostenhinweis" (Fly,
+      // 2026-10-12, Duesseldorf HRB 106077): dort einmal bestaetigen, dann kommt der Auszug.
+      if (!kostenhinweisBestaetigt) kostenhinweisBestaetigt = await this.kostenhinweisBestaetigen();
       const jetzt = fs.readdirSync(dir).filter((n) => !vorher.has(n));
       if (jetzt.some((n) => n.endsWith(".crdownload") || n.startsWith(".com.google"))) continue;
       const xml = jetzt.filter((n) => n.toLowerCase().endsWith(".xml"));
@@ -325,7 +329,13 @@ export class RegisterPortal {
         /* egal */
       }
       const ordner = fs.readdirSync(dir).filter((n) => !vorher.has(n));
-      throw new Error(`SI: weder Datei noch XML-Fenster innerhalb von 25 s (Titel "${titel}", ${fenster} Fenster, Ordner: ${ordner.join(", ") || "leer"}, Text: "${text.slice(0, 120)}")`);
+      let knoepfe = "";
+      try {
+        knoepfe = String(await d.executeScript("return [...document.querySelectorAll('button, input[type=submit], a.ui-commandlink')].map(b=>(b.textContent||b.value||'').trim()).filter(Boolean).slice(0,12).join(' | ')"));
+      } catch {
+        /* egal */
+      }
+      throw new Error(`SI: weder Datei noch XML-Fenster innerhalb von 25 s (Titel "${titel}", ${fenster} Fenster, Ordner: ${ordner.join(", ") || "leer"}, Knoepfe: "${knoepfe.slice(0, 300)}", Text: "${text.slice(0, 400)}")`);
     }
     const pfad = join(dir, datei);
     try {
@@ -397,6 +407,33 @@ export class RegisterPortal {
       return daten;
     } finally {
       for (const n of fs.readdirSync(dir).filter((n) => !vorher.has(n))) fs.rmSync(join(dir, n), { force: true });
+    }
+  }
+
+  /**
+   * Zeigt das Portal einen Kostenhinweis (Titel "Kostenhinweis"), den Weiter-Knopf
+   * druecken. true = bestaetigt (oder kein Hinweis mehr noetig).
+   */
+  private async kostenhinweisBestaetigen(): Promise<boolean> {
+    const d = this.d();
+    let titel = "";
+    try {
+      titel = await d.getTitle();
+    } catch {
+      return false;
+    }
+    if (!/Kostenhinweis|Hinweis/i.test(titel)) return false;
+    try {
+      const geklickt = (await d.executeScript(`
+        const k=[...document.querySelectorAll('button, input[type=submit], a.ui-commandlink, a[onclick]')]
+          .find(b=>/weiter|best[äa]tigen|zustimmen|abrufen|fortfahren|akzeptieren|^ok$/i.test((b.textContent||b.value||'').trim()));
+        if(!k) return [...document.querySelectorAll('button, input[type=submit], a.ui-commandlink')].map(b=>(b.textContent||b.value||'').trim()).filter(Boolean).slice(0,10).join(' | ');
+        setTimeout(()=>k.click(),0); return 'ok';`)) as string;
+      this.log(geklickt === "ok" ? `Kostenhinweis bestaetigt ("${titel}")` : `Kostenhinweis ohne bekannten Knopf ("${titel}": ${geklickt})`);
+      return geklickt === "ok";
+    } catch (err) {
+      this.log(`Kostenhinweis: Klick fehlgeschlagen (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`);
+      return false;
     }
   }
 
