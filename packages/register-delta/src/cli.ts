@@ -22,6 +22,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { GatewayClient, type JobArt } from "./gateway-client";
 import { browserProtokoll } from "./browser-lebenszyklus";
+import { starteWaisenWache } from "./waisen";
 import { RegisterPortal } from "./portal";
 import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
@@ -59,6 +60,9 @@ async function main() {
   const log = (z: string) => console.log(`${new Date().toISOString()} ${z}`);
   // Der Lebenszyklus der Browser meldet ueber dasselbe Protokoll.
   browserProtokoll(log);
+  // Verwaiste Browser frueherer Laeufe beenden (Start + alle 30 Min.), sonst
+  // fressen sie auf der 1-GB-Maschine den Speicher jedes neuen Chromium.
+  starteWaisenWache(log);
   const si = process.env.REGISTER_DELTA_SI !== "0";
   const worker = new RegisterWorker({
     workerId: process.env.WORKER_ID ?? `betreiber-${os.hostname()}`,

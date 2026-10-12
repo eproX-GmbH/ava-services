@@ -11,7 +11,17 @@ primary_region = 'fra'
   ABFRAGEN_JE_STUNDE = '60'
   # WORKER_ID wird aus dem Hostnamen (Maschinen-Id) gebildet.
 
+# DE-Worker faehrt Chromium: mit 1 GB blieben nach ein paar Tagen ~60 MB frei
+# und jeder Browserstart scheiterte ("DevToolsActivePort file doesn't exist",
+# 2026-10-12). worker_at kommt ohne Browser aus.
 [[vm]]
+  processes = ['worker']
+  memory = '2gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[[vm]]
+  processes = ['worker_at']
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1

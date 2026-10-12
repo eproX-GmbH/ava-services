@@ -222,10 +222,13 @@ export class CompaniesHouseClient {
    */
   async bulkTeilLesen(url: string, zeile: (t: TrefferUk) => Promise<void> | void): Promise<number> {
     const datei = path.join(this.o.tmpDir ?? os.tmpdir(), `ava-uk-${Date.now()}-${path.basename(url)}`);
-    const res = await this.f(url, { headers: { "user-agent": UA } });
-    if (!res.ok || !res.body) throw new Error(`companieshouse bulk ${res.status}`);
-    await pipeline(Readable.fromWeb(res.body as never), fs.createWriteStream(datei));
+    // Die Datei haengt von Anfang an im finally: ein abgebrochener Download
+    // (ENOSPC, Netz) darf keinen Rest auf der Platte lassen (Befund 2026-10-12:
+    // worker_at mit voller Platte, Endlosschleife seit dem 5. Oktober).
     try {
+      const res = await this.f(url, { headers: { "user-agent": UA } });
+      if (!res.ok || !res.body) throw new Error(`companieshouse bulk ${res.status}`);
+      await pipeline(Readable.fromWeb(res.body as never), fs.createWriteStream(datei));
       return await zipCsvLesen(datei, async (z) => {
         const t = bulkZeileZuTreffer(z);
         if (t) await zeile(t);
@@ -266,20 +269,32 @@ async function zipCsvLesen(datei: string, zeile: (z: Record<string, string>) => 
     yauzl.open(datei, { lazyEntries: true }, (err, zip) => {
       if (err || !zip) return reject(err ?? new Error("zip"));
       let n = 0;
+      // yauzl schliesst die Datei nur bei "end" von selbst. Auf jedem Fehlerpfad
+      // muss sie von Hand zu, sonst bleibt der Deskriptor offen und das
+      // anschliessende rmSync gibt den Platz nie frei (gelöschte, aber offene
+      // Dateien fuellten worker_at bis ENOSPC).
+      const abbruch = (e: unknown) => {
+        try {
+          zip.close();
+        } catch {
+          /* schon zu */
+        }
+        reject(e instanceof Error ? e : new Error(String(e)));
+      };
       zip.on("entry", (entry: yauzl.Entry) => {
         if (!/\.csv$/i.test(entry.fileName)) return zip.readEntry();
         zip.openReadStream(entry, (e2, stream) => {
-          if (e2 || !stream) return reject(e2 ?? new Error("zip entry"));
+          if (e2 || !stream) return abbruch(e2 ?? new Error("zip entry"));
           parseCsvStream(stream as AsyncIterable<Buffer>, zeile)
             .then((k) => {
               n += k;
               zip.readEntry();
             })
-            .catch(reject);
+            .catch(abbruch);
         });
       });
       zip.on("end", () => resolve(n));
-      zip.on("error", reject);
+      zip.on("error", abbruch);
       zip.readEntry();
     });
   });
