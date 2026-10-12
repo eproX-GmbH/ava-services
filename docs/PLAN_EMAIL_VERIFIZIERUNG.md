@@ -593,4 +593,9 @@ Richtlinie abgewiesen; der Verifizierer wertete jedes 550 als "existiert nicht".
   zeichenweise um). Jetzt Wert in Zeile 1, Meta (Badge, Quelle, Zuverlaessigkeit)
   umbrechend darunter; Badges kurz ("abgeleitet · verifiziert / ungeprüft /
   abgelehnt / unbestätigt"), Baseline und Datum nur im Tooltip.
+- Nachtrag v0.1.827 (Zimmer Group, 2026-10-12): Ein Befund "kein gaengiges
+  Adressformat" wird nur noch 7 Tage gecacht (`KEIN_FORMAT_RECHECK_MS`), nicht 30.
+  Ein einziger geblockter Lauf (alle 550) hatte fuer zimmer-group.com einen Monat
+  lang jede Ableitung gesperrt; die Domain ist in Wahrheit Catch-all
+  (Hornetsecurity, 250 auf alles). Befund im Gateway geloescht, Stufe neu starten.
 

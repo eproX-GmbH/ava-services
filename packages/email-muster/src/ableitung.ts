@@ -28,6 +28,12 @@ import type { Takt } from "./takt";
 import type { FirmenKontakte, PersonInfo } from "./kontakte";
 
 export const DOMAIN_RECHECK_MS = 30 * 86_400_000;
+/**
+ * "Kein gaengiges Adressformat" nur 7 Tage glauben (Befund Zimmer Group
+ * 2026-10-12: ein einziger geblockter Lauf sperrte die Ableitung fuer 99
+ * Personen einen Monat lang; die Domain war in Wahrheit Catch-all).
+ */
+export const KEIN_FORMAT_RECHECK_MS = 7 * 86_400_000;
 export const CATCHALL_RECHECK_MS = 90 * 86_400_000;
 /** Ab so vielen Personen ohne Adresse wird das Muster an einer zweiten Person gegengeprueft. */
 export const STICHPROBE_AB = 5;
@@ -251,7 +257,7 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   }
   const serverBestaetigt = serverFrisch && server?.stats?.verifiziert === true && !!muster && server.muster === muster;
   // Frischer Befund "kein Format bestaetigt": nicht bei jedem Contact-Lauf erneut raten.
-  if (!muster && serverFrisch && server?.stats?.keinFormat === true) {
+  if (!muster && server?.stats?.keinFormat === true && alterMs(server.checkedAt, jetzt) < KEIN_FORMAT_RECHECK_MS) {
     return { ...ergebnis, urteil: "kein_format", zusammenfassung: `${k.name} (${domain}): Mailserver bestaetigte zuletzt kein gaengiges Adressformat — nichts abgeleitet` };
   }
 
