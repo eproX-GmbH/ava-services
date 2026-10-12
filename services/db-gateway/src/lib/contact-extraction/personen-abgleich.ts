@@ -264,10 +264,10 @@ export async function zusammenfuehren(
     const prot: Protokoll = { faktenVerschoben: [], faktenGeloescht: [], faktenInaktiv: [], beobachtungen: [], signale: [], beschaeftigungenVerschoben: [], beschaeftigungenGeloescht: [], quellenVerschoben: [], titelVorher: [], nameVorher: B.fullName };
 
     // Fakten: verschieben, Doppelte (gleiches Feld und gleicher Wert) löschen und sichern.
-    const fakten = await c.query<Zeile & { id: string; field: string; normalized: string | null; entityType: string }>(`SELECT * FROM "Fact" WHERE "personId" = $1`, [A.id]);
+    const fakten = await c.query<Zeile & { id: string; field: string; normalized: string | null; entityType: string; scopeCompanyId: string }>(`SELECT * FROM "Fact" WHERE "personId" = $1`, [A.id]);
     for (const f of fakten.rows) {
       if (f.entityType !== "PERSON") continue;
-      const doppelt = await c.query(`SELECT 1 FROM "Fact" WHERE "entityType" = 'PERSON' AND "entityId" = $1 AND "field" = $2 AND "normalized" IS NOT DISTINCT FROM $3 LIMIT 1`, [B.id, f.field, f.normalized]);
+      const doppelt = await c.query(`SELECT 1 FROM "Fact" WHERE "entityType" = 'PERSON' AND "entityId" = $1 AND "field" = $2 AND "normalized" IS NOT DISTINCT FROM $3 AND "scopeCompanyId" = $4 LIMIT 1`, [B.id, f.field, f.normalized, f.scopeCompanyId ?? ""]);
       if (doppelt.rows[0]) {
         await c.query(`DELETE FROM "Fact" WHERE "id" = $1`, [f.id]);
         prot.faktenGeloescht.push(f);
@@ -281,7 +281,7 @@ export async function zusammenfuehren(
     const voll = [A.fullName, B.fullName, ...namen.rows.map((n) => n.value)].sort((x, y) => namensTokens(y).length - namensTokens(x).length || y.length - x.length)[0]!;
     for (const n of namen.rows) {
       if (namensTokens(n.value).length < namensTokens(voll).length) {
-        await c.query(`UPDATE "Fact" SET "status" = 'INACTIVE' WHERE "id" = $1`, [n.id]);
+        await c.query(`UPDATE "Fact" SET "status" = 'INACTIVE', "deactivatedAt" = now(), "deactivatedReason" = 'zusammengefuehrt' WHERE "id" = $1`, [n.id]);
         prot.faktenInaktiv.push(n.id);
       }
     }

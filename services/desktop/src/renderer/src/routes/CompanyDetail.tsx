@@ -273,6 +273,13 @@ interface Fact {
   confidence?: number;
   status?: "ACTIVE" | "INACTIVE" | string;
   lastSeen?: string;
+  /** 2026-10-12: Firmenbezug im Schluessel (Kontakt-/Rollenfakten je Firma, "" = firmenuebergreifend). */
+  scopeCompanyId?: string;
+  deactivatedAt?: string | null;
+  /** ersetzt | bounce | ttl | fremde-domain | zusammengefuehrt */
+  deactivatedReason?: string | null;
+  /** Quelle der letzten Beobachtung (z. B. pattern:smtp), vom Gateway mitgeliefert. */
+  lastSource?: string | null;
   [k: string]: unknown;
 }
 /**
@@ -282,7 +289,9 @@ interface Fact {
  * Abteilung und Beginn duerfen aber nur von DIESER Firma stammen: Sonst
  * stand bei Joyce (AI Solutions Engineer bei Strategic IT) die Position
  * „Founder & Managing Director“ ihrer eigenen Firma QUIKK. Identitaets-
- * fakten (Name, LinkedIn, XING, E-Mail, Telefon) bleiben firmenuebergreifend.
+ * fakten (Name, LinkedIn, XING) bleiben firmenuebergreifend; E-Mail und
+ * Telefon gelten seit 2026-10-12 ebenfalls je Firma (Fact.scopeCompanyId),
+ * das Gateway liefert von anderen Firmen nur Adressen passender Domain.
  */
 const ROLLENFELDER = new Set(["jobTitle", "department", "employmentSince", "seniority"]);
 function nurRollenDieserFirma(facts: Fact[], companyId: string | undefined): Fact[] {
@@ -2107,7 +2116,7 @@ function FactGroup({
                 const url = obsId ? belege?.get(obsId) : undefined;
                 return url ? <QuellenLink url={url} /> : null;
               })()}
-              <StatusPill status={f.status} lastSeen={f.lastSeen} />
+              <StatusPill status={f.status} lastSeen={f.lastSeen} reason={f.deactivatedReason} />
               <ConfidenceBar confidence={f.confidence} />
             </span>
           </li>
@@ -2276,7 +2285,11 @@ function PersonCard({
       ].includes(f.field ?? "")
   );
   const activeFacts = visibleFacts.filter((f) => f.status === "ACTIVE");
-  const inactiveFacts = visibleFacts.filter((f) => f.status !== "ACTIVE");
+  // 2026-10-12: deaktivierte Ableitungen (Bounce, fremde Domain, ersetzt) sind
+  // keine Historie fuer die Karte; das Gateway filtert sie schon, hier zur Sicherheit.
+  const inactiveFacts = visibleFacts.filter(
+    (f) => f.status !== "ACTIVE" && !(f.field === "email" && (/^(pattern|zuordnung):/.test(String(f.lastSource ?? "")) || ["bounce", "fremde-domain", "zusammengefuehrt"].includes(String(f.deactivatedReason ?? "")))),
+  );
 
   const activeGroups = (() => {
     const groups = new Map<string, Fact[]>();
@@ -2719,20 +2732,31 @@ function relTimeDe(iso?: string): string | null {
 
 // Ehrliches Badge statt "ACTIVE": Der Status ist keine Verifikation,
 // sondern nur "zuletzt auf der Website gesehen und nicht verdraengt".
+const DEAKTIVIERT_LABEL: Record<string, [string, string]> = {
+  ersetzt: ["ersetzt", "Durch einen neueren Wert derselben Firma ersetzt."],
+  bounce: ["unzustellbar", "Eine Unzustellbarkeitsmeldung hat diese Adresse entfernt."],
+  ttl: ["nicht mehr gefunden", "Beim letzten Website-Crawl nicht mehr gefunden."],
+  "fremde-domain": ["falsche Domain", "Abgeleitet aus der Adresse einer anderen Firma; bei der Bereinigung entfernt."],
+  zusammengefuehrt: ["zusammengeführt", "Beim Zusammenführen doppelter Personen durch die vollere Angabe ersetzt."],
+};
+
 function StatusPill({
   status,
   lastSeen,
+  reason,
 }: {
   status?: string;
   lastSeen?: string;
+  reason?: string | null;
 }) {
   if (!status) return null;
   const active = status === "ACTIVE";
   const rel = relTimeDe(lastSeen);
-  const label = active ? (rel ? `gesehen ${rel}` : "aktuell") : "veraltet";
+  const grund = !active && reason ? DEAKTIVIERT_LABEL[reason] : undefined;
+  const label = active ? (rel ? `gesehen ${rel}` : "aktuell") : (grund?.[0] ?? "veraltet");
   const title = active
     ? "Zuletzt beim Website-Crawl gefunden — keine inhaltliche Verifikation."
-    : "Beim letzten Crawl nicht mehr gefunden oder durch einen neueren Wert ersetzt.";
+    : (grund?.[1] ?? "Beim letzten Crawl nicht mehr gefunden oder durch einen neueren Wert ersetzt.");
   return (
     <span className={`badge ${active ? "ok" : "warn"}`} title={title}>
       {label}

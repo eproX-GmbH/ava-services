@@ -534,3 +534,41 @@ Handvoll Anfragen mit 2 s Abstand). Grenzen 10–3600. Umsetzung:
 statt Adressen offen zu lassen), `AbleitungDeps.takt`, Producer liest die Rate
 je Trigger (`einstellungen.ts`) und zieht den Taktgeber nach (`setzeRate`).
 
+### 8.6 Kontakt-E-Mails je Firma, keine Schein-Historie (v0.1.816, 2026-10-12)
+
+Befund (Operator): falsche Ableitungen (`vorname@quikk.de` bei Strategic IT) standen
+nach der Bereinigung vom 2026-10-10 noch als "Frühere Angaben" auf der Karte, und
+eine Person mit Adressen in mehreren Firmen (joyce@quikk.de bei QUIKK,
+joyce.rafflenbeul@strategic-it.de bei Strategic IT) liess sich nicht abbilden:
+der 409-Schutz der derived-email-Route sah alle aktiven Adressen der Person
+ohne Firmenbezug, und der Eindeutigkeitsschluessel von `Fact` kannte keine Firma.
+
+**Stufe 1 (Gateway, ohne Schema):**
+- `GET /companies/{id}/contacts` liefert inaktive Personen-E-Mails/-Telefone nicht
+  mehr, wenn sie Ableitungen sind (`pattern:*`/`zuordnung:*`) oder per Bounce,
+  Bereinigung oder Zusammenfuehrung deaktiviert wurden; dazu kommt `lastSource`
+  je Fakt. Die Karte filtert dieselben Faelle zur Sicherheit nochmals.
+- derived-email: der 409-Schutz prueft nur Adressen DIESER Firma.
+- Bounce-Rueckmeldung deaktiviert alle Fakten der Adresse (nicht mehr `LIMIT 1`).
+
+**Stufe 2 (Schema `ava_company_contact`, Migration
+`company-contact/prisma/migrations/20261012120000_fact_scope_company`):**
+- `Fact.scopeCompanyId` (Default `""`) im Schluessel
+  `(entityType, entityId, field, normalized, scopeCompanyId)`; fuer Personen-
+  Kontakt- und Rollenfakten (`email, phone, jobTitle, department, employmentSince,
+  websiteBeschreibung, seniority`) = companyId, sonst `""` (Identitaet, Firmenfakten).
+  Bestand: 6.504 Fakten umgeschluesselt, keine Kollision.
+- `Fact.deactivatedAt` / `deactivatedReason` (`ersetzt | bounce | ttl | fremde-domain |
+  zusammengefuehrt`); die 36 Altfaelle vom 2026-10-10 erhalten `fremde-domain`.
+- Gateway (`lib/contact-extraction/scope.ts`): Fakt-Suche, Anlegen, "inaktiv bei
+  neuem Wert" und Signal-Dedup je Firmenbezug; Observation-Hash enthaelt den
+  Firmenbezug (alte Hashes ohne Bezug bleiben gueltig, es entsteht je Fakt
+  hoechstens eine neue Beobachtung); Zusammenfuehrung dedupliziert je Firmenbezug.
+- Karte: Badge zeigt den Grund (ersetzt, unzustellbar, nicht mehr gefunden,
+  falsche Domain, zusammengeführt) statt pauschal "veraltet".
+- Die Migration laeuft NICHT ueber das Gateway (`prisma-company-contact` ist nur
+  Spiegel): Ausfuehrung von Hand gegen MPG `ava_company_contact` in einer
+  Transaktion samt Eintrag in `_prisma_migrations` (wie `20260511120000`), danach
+  Gateway-Deploy. Lokale PGlite-Datenbanken des Producers ziehen sie beim
+  naechsten `prisma migrate deploy` nach.
+

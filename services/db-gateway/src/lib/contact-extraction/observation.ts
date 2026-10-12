@@ -2,6 +2,7 @@ import type { PrismaClient, EntityType, FactStatus } from "../../../generated/co
 import { normalizeValue } from "./normalize-value";
 import { cleanContactValueForDisplay } from "./presentation";
 import { buildObservationHash, buildSignalDedupKey } from "./hashing";
+import { factScope } from "./scope";
 
 export type CreateObservationInput = {
   entityType: EntityType;
@@ -44,6 +45,7 @@ export async function createObservationIdempotent(
     normalized,
     source: input.source,
     evidenceUrl: input.evidenceUrl ?? null,
+    scopeCompanyId: factScope(input.entityType, input.field, input.companyId),
   });
 
   const observedAt = input.observedAt ?? new Date();
@@ -105,6 +107,7 @@ export async function applyObservation(
   },
 ): Promise<ApplyObservationResult> {
   const observedAt = args.observedAt ?? new Date();
+  const scopeCompanyId = factScope(args.entityType, args.field, args.companyId);
 
   const existingFact = await prisma.fact.findFirst({
     where: {
@@ -112,6 +115,7 @@ export async function applyObservation(
       entityId: args.entityId,
       field: args.field,
       normalized: args.normalized,
+      scopeCompanyId,
     },
   });
 
@@ -137,6 +141,7 @@ export async function applyObservation(
         lastObsId: args.observationId,
         companyId: args.companyId ?? null,
         personId: args.personId ?? null,
+        scopeCompanyId,
       },
     });
     createdFact = true;
@@ -148,6 +153,8 @@ export async function applyObservation(
         lastObsId: args.observationId,
         status: "ACTIVE",
         lastSeen: observedAt,
+        deactivatedAt: null,
+        deactivatedReason: null,
       },
     });
   }
@@ -218,6 +225,7 @@ export async function applyObservation(
         type,
         field: args.field,
         afterNorm: args.normalized,
+        scopeCompanyId,
       });
 
       const signal = await prisma.signalEvent.upsert({
@@ -265,15 +273,18 @@ export async function applyObservation(
   }
 
   if (!multiValue && inactiveOnNew) {
+    // Nur innerhalb desselben Firmenbezugs: die Position bei QUIKK verdraengt
+    // nicht die Position bei Strategic IT (scope.ts).
     await prisma.fact.updateMany({
       where: {
         entityType: args.entityType,
         entityId: args.entityId,
         field: args.field,
+        scopeCompanyId,
         id: { not: fact.id },
         status: "ACTIVE",
       },
-      data: { status: "INACTIVE" as FactStatus },
+      data: { status: "INACTIVE" as FactStatus, deactivatedAt: observedAt, deactivatedReason: "ersetzt" },
     });
 
     if (isChangeField) {
@@ -282,6 +293,7 @@ export async function applyObservation(
           entityType: args.entityType,
           entityId: args.entityId,
           field: args.field,
+          scopeCompanyId,
           id: { not: fact.id },
         },
         orderBy: { lastSeen: "desc" },
@@ -307,6 +319,7 @@ export async function applyObservation(
             type,
             field: args.field,
             afterNorm: args.normalized,
+            scopeCompanyId,
           });
 
           const signal = await prisma.signalEvent.upsert({

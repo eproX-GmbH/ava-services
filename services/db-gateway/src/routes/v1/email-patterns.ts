@@ -204,11 +204,13 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
   if (!emp.rows[0]) throw new HTTPException(404, { message: "person_not_in_company" });
   // Stufe 2 (2026-10-07): Eine "offene"/"abgelehnte" Ableitung darf durch eine bessere
   // Pruefung ersetzt werden. Eine gefundene, zugeordnete oder verifizierte Adresse bleibt (409).
+  // 2026-10-12: nur Adressen DIESER Firma zaehlen (scope.ts) — joyce@quikk.de bei QUIKK
+  // blockiert nicht mehr die Ableitung von joyce.rafflenbeul@strategic-it.de bei Strategic IT.
   const vorhanden = await pool.query<{ value: string; source: string | null }>(
     `SELECT f."value", o."source"
        FROM "Fact" f LEFT JOIN "Observation" o ON o."id" = f."lastObsId"
-      WHERE f."personId" = $1 AND f."field" = 'email' AND f."status" = 'ACTIVE'`,
-    [b.personId],
+      WHERE f."personId" = $1 AND f."field" = 'email' AND f."status" = 'ACTIVE' AND f."scopeCompanyId" = $2`,
+    [b.personId, companyId],
   );
   const fest = vorhanden.rows.find((r) => !/^(pattern|zuordnung):(offen|abgelehnt)$/.test(r.source ?? ""));
   if (fest) throw new HTTPException(409, { message: "email_exists", cause: fest.value });
@@ -307,19 +309,20 @@ emailPatternsRouter.openapi(feedbackRoute, async (c) => {
   const email = b.email.toLowerCase().trim();
   const pool = getProducerPool("company-contact");
   // Nur abgeleitete Adressen (Quelle pattern:*) — gefundene Adressen bleiben unangetastet.
+  // Dieselbe Adresse kann seit 2026-10-12 bei mehreren Firmen stehen: alle Treffer behandeln.
   const r = await pool.query(
     `SELECT f."id", f."personId", f."companyId", o."source"
        FROM "Fact" f JOIN "Observation" o ON o."id" = f."lastObsId"
-      WHERE f."field" = 'email' AND f."status" = 'ACTIVE' AND lower(f."value") = $1 AND (o."source" LIKE 'pattern:%' OR o."source" LIKE 'zuordnung:%')
-      LIMIT 1`,
+      WHERE f."field" = 'email' AND f."status" = 'ACTIVE' AND lower(f."value") = $1 AND (o."source" LIKE 'pattern:%' OR o."source" LIKE 'zuordnung:%')`,
     [email],
   );
-  const row = r.rows[0] as { id: string; personId: string | null; companyId: string | null; source: string } | undefined;
+  const rows = r.rows as Array<{ id: string; personId: string | null; companyId: string | null; source: string }>;
+  const row = rows[0];
   if (!row) return c.json({ gefunden: false, aktion: "keine" as const, factId: null }, 200);
   const prisma = getContactPrismaClient();
   if (b.ergebnis === "bounce") {
-    await prisma.fact.update({ where: { id: row.id }, data: { status: "INACTIVE" } });
-    logger.info({ factId: row.id, email, actorId: auth?.actorId }, "derived-email nach Bounce deaktiviert");
+    await prisma.fact.updateMany({ where: { id: { in: rows.map((x) => x.id) } }, data: { status: "INACTIVE", deactivatedAt: new Date(), deactivatedReason: "bounce" } });
+    logger.info({ factIds: rows.map((x) => x.id), email, actorId: auth?.actorId }, "derived-email nach Bounce deaktiviert");
     return c.json({ gefunden: true, aktion: "deaktiviert" as const, factId: row.id }, 200);
   }
   if (row.source === "pattern:reply") return c.json({ gefunden: true, aktion: "keine" as const, factId: row.id }, 200);

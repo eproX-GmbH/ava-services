@@ -89,7 +89,7 @@ export async function emitRemovalsByTTL(
 
     await prisma.fact.update({
       where: { id: f.id },
-      data: { status: "INACTIVE" },
+      data: { status: "INACTIVE", deactivatedAt: new Date(), deactivatedReason: "ttl" },
     });
     emitted.push(signal.id);
   }

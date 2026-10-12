@@ -148,6 +148,16 @@ model Fact {
   companyId   String?
   personId    String?
 
+  /// 2026-10-12: Firmenbezug im Schluessel. "" = firmenuebergreifend (Identitaet,
+  /// Firmenfakten); fuer Kontakt- und Rollenfakten einer Person (email, phone,
+  /// jobTitle, department, employmentSince, websiteBeschreibung, seniority) die
+  /// companyId. Damit kann dieselbe Person je Firma eigene Adressen tragen und
+  /// dieselbe Adresse bei zwei Firmen stehen.
+  scopeCompanyId    String    @default("")
+  /// Wann und warum ein Fakt INACTIVE wurde (ersetzt, bounce, ttl, fremde-domain, zusammengefuehrt).
+  deactivatedAt     DateTime?
+  deactivatedReason String?
+
   company     Company?    @relation("CompanyFacts", fields: [companyId], references: [id], onDelete: Cascade)
   person      Person?     @relation("PersonFacts", fields: [personId], references: [id], onDelete: Cascade)
 
@@ -157,7 +167,7 @@ model Fact {
   @@index([entityType, entityId, field])
   @@index([companyId])
   @@index([personId])
-  @@unique([entityType, entityId, field, normalized])
+  @@unique([entityType, entityId, field, normalized, scopeCompanyId])
 }
 
 model Observation {

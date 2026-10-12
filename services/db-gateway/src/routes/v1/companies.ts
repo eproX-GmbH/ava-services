@@ -927,13 +927,14 @@ companiesRouter.openapi(contactsRoute, async (c) => {
       // mehreren Firmen eine Position, soll die hiesige gewinnen; die
       // Oberflaeche nimmt den ersten passenden Eintrag.
       pool.query(
-        `SELECT * FROM "Fact"
-          WHERE "companyId" = $1
-             OR ("entityType" = 'PERSON' AND "entityId" IN (
+        `SELECT f.*, (SELECT o."source" FROM "Observation" o WHERE o."id" = f."lastObsId") AS "lastSource"
+           FROM "Fact" f
+          WHERE f."companyId" = $1
+             OR (f."entityType" = 'PERSON' AND f."entityId" IN (
                   SELECT DISTINCT "entityId" FROM "Fact"
                    WHERE "companyId" = $1 AND "entityType" = 'PERSON'
                 ))
-          ORDER BY ("companyId" = $1) DESC, "lastSeen" DESC`,
+          ORDER BY (f."companyId" = $1) DESC, f."lastSeen" DESC`,
         [companyId],
       ),
       pool.query(`SELECT * FROM "Observation" WHERE "companyId" = $1`, [companyId]),
@@ -963,7 +964,17 @@ companiesRouter.openapi(contactsRoute, async (c) => {
     // E-Mail, Telefon, Position usw. nur, wenn sie zu DIESER Firma gespeichert sind,
     // eine E-Mail ausserdem, wenn ihre Domain zur Website dieser Firma passt.
     const website = await firmenWebsite(companyId, company.websiteUrl);
+    // 2026-10-12: Inaktive Ableitungen (pattern:*/zuordnung:*) und per Bounce,
+    // Bereinigung oder Zusammenfuehrung deaktivierte Kontaktangaben sind keine
+    // nuetzliche Historie — sie bleiben in der Datenbank (Herkunftsnachweis),
+    // kommen aber nicht mehr auf die Kontaktkarte.
+    const VERBORGENE_GRUENDE = new Set(["bounce", "fremde-domain", "zusammengefuehrt"]);
     const eigeneFakten = (facts.rows as Array<Record<string, unknown>>).filter((f) => {
+      if (f.entityType === "PERSON" && f.status !== "ACTIVE") {
+        const quelle = typeof f.lastSource === "string" ? f.lastSource : "";
+        const grund = typeof f.deactivatedReason === "string" ? f.deactivatedReason : "";
+        if ((f.field === "email" || f.field === "phone") && (/^(pattern|zuordnung):/.test(quelle) || VERBORGENE_GRUENDE.has(grund))) return false;
+      }
       if (f.entityType !== "PERSON" || f.companyId === companyId) return true;
       const feld = String(f.field ?? "");
       if (PERSON_IDENTITAET.has(feld)) return true;

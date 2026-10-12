@@ -11,6 +11,8 @@ export function buildObservationHash(args: {
   normalized: string;
   source: string;
   evidenceUrl?: string | null;
+  /** Firmenbezug (scope.ts); "" oder fehlend = wie bisher, damit alte Hashes gueltig bleiben. */
+  scopeCompanyId?: string | null;
 }): string {
   const s = [
     args.entityType,
@@ -19,6 +21,7 @@ export function buildObservationHash(args: {
     args.normalized,
     args.source,
     args.evidenceUrl ?? "",
+    ...(args.scopeCompanyId ? [args.scopeCompanyId] : []),
   ].join("|");
   return sha256(s);
 }
@@ -29,6 +32,7 @@ export function buildSignalDedupKey(args: {
   type: string;
   field?: string | null;
   afterNorm?: string | null;
+  scopeCompanyId?: string | null;
 }): string {
   const s = [
     args.entityType,
@@ -36,6 +40,7 @@ export function buildSignalDedupKey(args: {
     args.type,
     args.field ?? "",
     args.afterNorm ?? "",
+    ...(args.scopeCompanyId ? [args.scopeCompanyId] : []),
   ].join("|");
   return sha256(s);
 }
