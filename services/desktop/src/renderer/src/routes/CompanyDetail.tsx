@@ -2850,17 +2850,37 @@ const KPI_CATEGORY_ORDER: KpiCategory[] = [
  *   - KPI has no period string → keep (assume current year)
  *   - period doesn't contain a 4-digit year → keep
  */
-function filterKpisToYear<T extends { period?: string | null }>(
+function filterKpisToYear<T extends { name: string; value: string; period?: string | null }>(
   kpis: T[],
   pubYear: number | null
 ): T[] {
-  if (pubYear == null) return kpis;
-  return kpis.filter((k) => {
-    if (!k.period) return true;
-    const m = String(k.period).match(/(?:19|20)\d{2}/);
-    if (!m) return true;
-    return parseInt(m[0], 10) === pubYear;
-  });
+  // 2026-10-12: Vorjahreswerte stehen nicht mehr als eigene Zeile daneben
+  // ("Konzern: Verbindlichkeiten gesamt" zweimal mit verschiedenen Betraegen),
+  // sondern haengen an der Zeile des Berichtsjahres: "… (Vorjahr: …)". Die
+  // Periode erkennt das Vorjahr am Jahr (Berichtsjahr − 1) oder am Wort
+  // "Vorjahr" ("Vorjahr (Jahr nicht genannt)").
+  const jahrVon = (k: T): number | null => {
+    const m = String(k.period ?? "").match(/(?:19|20)\d{2}/g);
+    return m ? parseInt(m[m.length - 1]!, 10) : null;
+  };
+  const istVorjahr = (k: T) => {
+    const j = jahrVon(k);
+    if (j != null) return pubYear != null && j < pubYear;
+    return /vorjahr|vorperiode|previous/i.test(String(k.period ?? ""));
+  };
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const vorjahr = new Map<string, string>();
+  for (const k of kpis) if (istVorjahr(k) && !vorjahr.has(norm(k.name))) vorjahr.set(norm(k.name), k.value);
+  return kpis
+    .filter((k) => {
+      if (istVorjahr(k)) return false;
+      const j = jahrVon(k);
+      return pubYear == null || j == null || j === pubYear;
+    })
+    .map((k) => {
+      const v = vorjahr.get(norm(k.name));
+      return v && !/vorjahr/i.test(k.value) ? { ...k, value: `${k.value} (Vorjahr: ${v})` } : k;
+    });
 }
 
 function sortKpisByCategory<
