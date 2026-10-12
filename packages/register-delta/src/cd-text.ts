@@ -1,7 +1,7 @@
 // PDF des chronologischen Abdrucks → Textstuecke mit Position (cd-parser.ts).
-// pdfjs-dist (Legacy-Build, CommonJS) laeuft ohne native Abhaengigkeit im
-// Betreiber-Worker (Alpine) und in der Desktop-App; gerendert wird nichts,
-// nur der Textinhalt gelesen.
+// pdfjs-dist 5 (Legacy-Build, ESM) laeuft ohne native Abhaengigkeit im
+// Betreiber-Worker (Alpine, Node 20) und in der Desktop-App; gerendert wird
+// nichts, nur der Textinhalt gelesen.
 
 import type { CdSeite } from "./cd-parser";
 
@@ -10,7 +10,7 @@ export const CD_MAX_BYTES = 20 * 1024 * 1024;
 const MAX_SEITEN = 60;
 
 type PdfjsModul = {
-  getDocument(src: { data: Uint8Array; useSystemFonts?: boolean; isEvalSupported?: boolean }): {
+  getDocument(src: { data: Uint8Array; useSystemFonts?: boolean; isEvalSupported?: boolean; disableFontFace?: boolean }): {
     promise: Promise<{
       numPages: number;
       getPage(n: number): Promise<{
@@ -22,12 +22,14 @@ type PdfjsModul = {
   };
 };
 
-let pdfjs: PdfjsModul | null = null;
-function ladePdfjs(): PdfjsModul {
-  if (!pdfjs) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    pdfjs = require("pdfjs-dist/legacy/build/pdf.js") as PdfjsModul;
-  }
+// pdfjs-dist 5 ist reines ESM. Unter module=commonjs wuerde tsc ein `import()`
+// in `require()` verwandeln; deshalb der echte dynamische Import ueber Function.
+// (pdfjs-dist 3 brachte die native Abhaengigkeit `canvas` mit — die liess den
+// Desktop-Build am electron-rebuild scheitern, v0.1.821.)
+const dynamischerImport = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
+let pdfjs: Promise<PdfjsModul> | null = null;
+function ladePdfjs(): Promise<PdfjsModul> {
+  if (!pdfjs) pdfjs = dynamischerImport("pdfjs-dist/legacy/build/pdf.mjs").then((m) => m as PdfjsModul);
   return pdfjs;
 }
 
@@ -38,7 +40,7 @@ export function istPdf(daten: Buffer): boolean {
 export async function pdfZuSeiten(daten: Buffer): Promise<CdSeite[]> {
   if (!istPdf(daten)) throw new Error("CD: Datei ist keine PDF");
   if (daten.length > CD_MAX_BYTES) throw new Error(`CD: Datei zu gross (${daten.length} Bytes)`);
-  const doc = await ladePdfjs().getDocument({ data: new Uint8Array(daten), useSystemFonts: true, isEvalSupported: false }).promise;
+  const doc = await (await ladePdfjs()).getDocument({ data: new Uint8Array(daten), useSystemFonts: true, isEvalSupported: false, disableFontFace: true }).promise;
   const seiten: CdSeite[] = [];
   try {
     for (let n = 1; n <= Math.min(doc.numPages, MAX_SEITEN); n++) {
