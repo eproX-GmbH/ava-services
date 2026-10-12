@@ -36,6 +36,15 @@ try {
       writeFileSync(toml, ""); // fly config save schreibt nur in eine vorhandene Datei
       fly(["config", "save", "-a", app, "-c", toml, "-y"], { still: true });
       fly(["deploy", dir, "-c", toml, "-a", app, "--image", imageRef(version), "--now", "--yes"]);
+      // Befund 2026-10-11/12: nach dem Image-Wechsel blieb die Maschine "stopped"
+      // (auto_start aus, kein HTTP-Verkehr). Der Kopf soll immer laufen — also starten.
+      const st = fly(["machine", "list", "-a", app, "--json"], { still: true });
+      for (const m of JSON.parse(st.out || "[]")) {
+        if (m.state === "stopped" && !m.config?.standby) {
+          console.log(`  Maschine ${m.id} war gestoppt — starte`);
+          fly(["machine", "start", m.id, "-a", app], { darfScheitern: true });
+        }
+      }
     } catch (err) {
       console.error(`  ✗ ${err.message}`);
       fehler.push(app);
