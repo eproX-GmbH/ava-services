@@ -20,6 +20,7 @@ import { browserProtokoll, neuesProfilVerzeichnis, profilArgumente, ueberwache }
 import { portalGericht } from "./ids";
 import { parseErgebnis, SPERR_RE, trefferzahl, type RohZeile, type Treffer } from "./parser";
 import { istSiXml, SI_MAX_BYTES } from "./si-parser";
+import { CD_MAX_BYTES, istPdf } from "./cd-text";
 
 export const PORTAL_URL = "https://www.handelsregister.de/rp_web/welcome.xhtml";
 
@@ -288,8 +289,9 @@ export class RegisterPortal {
         const namen = [...jetzt];
         for (const n of namen) fs.rmSync(join(dir, n), { force: true });
         if (namen.every((n) => /\.x?html?$/i.test(n))) {
-          this.log(`SI: Portal lieferte eine Seite statt eines Auszugs (${namen.join(", ")})`);
-          return null;
+          // 2026-10-12: nicht mehr als "kein Link" werten — die Sitzung ist weg,
+          // der Aufrufer sucht erneut und versucht es einmal wieder.
+          throw new SitzungAbgelaufen(`SI: Portal lieferte eine Seite statt eines Auszugs (${namen.join(", ")})`);
         }
         throw new Error(`SI: unerwarteter Download (${namen.join(", ")})`);
       }
@@ -310,6 +312,71 @@ export class RegisterPortal {
       return text;
     } finally {
       for (const n of fs.readdirSync(dir).filter((n) => !vorher.has(n))) fs.rmSync(join(dir, n), { force: true });
+    }
+  }
+
+  /**
+   * Chronologischer Abdruck (CD) der Trefferzeile als PDF (Fallback, wenn es
+   * keinen SI gibt; docs/PLAN_STAMMDATEN_DELTA.md S9). Klickt "CD", wartet auf
+   * die PDF im Download-Verzeichnis, liest und loescht sie. null = kein CD-Link.
+   */
+  async chronologischerAbdruck(zeile: number): Promise<Buffer | null> {
+    const d = this.d();
+    const dir = this.downloadDir;
+    if (!dir) throw new Error("Downloads nicht freigegeben");
+    const vorher = new Set(fs.readdirSync(dir));
+    const geklickt = (await d.executeScript(
+      `const tr=[...document.querySelectorAll('tr[data-ri]')][arguments[0]]; if(!tr) return 'zeile';
+       const a=[...tr.querySelectorAll('a')].find(a=>(a.textContent||'').trim()==='CD'); if(!a) return 'link';
+       a.click(); return 'ok';`,
+      zeile,
+    )) as "ok" | "zeile" | "link";
+    if (geklickt === "zeile") throw new Error(`CD: Trefferzeile ${zeile} nicht mehr auf der Seite`);
+    if (geklickt === "link") return null;
+    this.anfragen++;
+    const frist = Date.now() + 30_000;
+    let datei: string | null = null;
+    while (Date.now() < frist && !datei) {
+      await schlafen(300);
+      const jetzt = fs.readdirSync(dir).filter((n) => !vorher.has(n));
+      if (jetzt.some((n) => n.endsWith(".crdownload") || n.startsWith(".com.google"))) continue;
+      const pdf = jetzt.find((n) => n.toLowerCase().endsWith(".pdf"));
+      if (pdf) {
+        datei = pdf;
+        break;
+      }
+      if (jetzt.length > 0) {
+        for (const n of jetzt) fs.rmSync(join(dir, n), { force: true });
+        if (jetzt.every((n) => /\.x?html?$/i.test(n))) throw new SitzungAbgelaufen(`CD: Portal lieferte eine Seite statt eines Abdrucks (${jetzt.join(", ")})`);
+        throw new Error(`CD: unerwarteter Download (${jetzt.join(", ")})`);
+      }
+    }
+    if (!datei) {
+      const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
+      if (SPERR_RE.test(text)) throw new PortalStoerung("CD: Portal gesperrt");
+      throw new Error("CD: keine PDF innerhalb von 30 s");
+    }
+    const pfad = join(dir, datei);
+    try {
+      const groesse = fs.statSync(pfad).size;
+      if (groesse > CD_MAX_BYTES) throw new Error(`CD: Datei zu gross (${groesse} Bytes)`);
+      const daten = fs.readFileSync(pfad);
+      if (!istPdf(daten)) throw new Error("CD: Datei ist keine PDF");
+      return daten;
+    } finally {
+      for (const n of fs.readdirSync(dir).filter((n) => !vorher.has(n))) fs.rmSync(join(dir, n), { force: true });
+    }
+  }
+
+  /**
+   * Lebenszeichen an den Treiber. Befund 2026-10-12: ohne Aufrufe starb die
+   * Browser-Sitzung im Leerlauf des Takts (60 s) zwischen Suche und SI-Klick.
+   */
+  async lebenszeichen(): Promise<void> {
+    try {
+      await this.d().getTitle();
+    } catch {
+      /* der naechste richtige Aufruf meldet den Fehler */
     }
   }
 
@@ -387,6 +454,8 @@ export class RegisterPortal {
 }
 
 export class PortalStoerung extends Error {}
+/** Die Portal-Sitzung ist abgelaufen (Antwort war die Startseite); neu suchen und einmal wiederholen. */
+export class SitzungAbgelaufen extends Error {}
 
 function schlafen(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

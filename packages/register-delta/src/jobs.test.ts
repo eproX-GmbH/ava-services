@@ -215,3 +215,59 @@ test("refresh: Firmen ueber dem Abfragebudget kommen als unbearbeitet zurueck; o
   assert.equal(ohneSi.si, undefined);
   assert.equal(ohneSi.unbearbeitet, undefined);
 });
+
+test("refresh: ohne SI-Link liefert der chronologische Abdruck den Stand (CD-Fallback, eine weitere Abfrage)", async () => {
+  const takte: number[] = [];
+  const portal = {
+    async suche(_g: string, _a: string, n: number | string) {
+      return { gesperrt: false, treffer: [treffer(Number(n))], trefferRoh: 1, dauerMs: 1 };
+    },
+    async bekanntmachungenText() {
+      return { gesperrt: false, text: "" };
+    },
+    async strukturierterInhalt() {
+      return null;
+    },
+    async chronologischerAbdruck() {
+      return Buffer.from("%PDF-1.4 fake");
+    },
+  };
+  const t = { warten: async () => { takte.push(Date.now()); }, frei: () => 60 };
+  const e = await fuehreJobAus(refreshJob([{ gericht: "Bad Oeynhausen", art: "HRB", nummer: 7 }]), {
+    workerId: "w1",
+    portal,
+    takt: t,
+    si: true,
+    cdLesen: async (pdf, name) => ({ name, legalForm: "GmbH", street: "", houseNumber: "", zipCode: "", city: "Herford", foundingYear: 2001, corporatePurpose: null, shareCapital: 25000, lastRegisterEntry: null, lastRegisterModification: null, managingDirectors: [] }),
+  });
+  assert.equal(e.abfragen, 2, "Suche + CD (der fehlende SI kostet nichts)");
+  assert.equal(takte.length, 3, "zwei Slots vor der Suche, einer vor dem CD");
+  assert.deepEqual(e.si, { geladen: 1, ohneLink: 0, fehler: 0 });
+  assert.equal(e.treffer[0]?.si?.shareCapital, 25000);
+});
+
+test("refresh: abgelaufene Sitzung beim SI → neue Suche und zweiter Versuch", async () => {
+  const { SitzungAbgelaufen } = await import("./portal");
+  let versuche = 0;
+  let suchen = 0;
+  const portal = {
+    async suche(_g: string, _a: string, n: number | string) {
+      suchen++;
+      return { gesperrt: false, treffer: [treffer(Number(n))], trefferRoh: 1, dauerMs: 1 };
+    },
+    async bekanntmachungenText() {
+      return { gesperrt: false, text: "" };
+    },
+    async strukturierterInhalt() {
+      versuche++;
+      if (versuche === 1) throw new SitzungAbgelaufen("SI: Portal lieferte eine Seite statt eines Auszugs (welcome.xhtml)");
+      return SI_XML;
+    },
+  };
+  const e = await fuehreJobAus(refreshJob([{ gericht: "Bad Oeynhausen", art: "HRB", nummer: 7 }]), { workerId: "w1", portal, takt, si: true });
+  assert.equal(suchen, 2);
+  assert.equal(versuche, 2);
+  assert.deepEqual(e.si, { geladen: 1, ohneLink: 0, fehler: 0 });
+  assert.equal(e.abfragen, 3, "zwei Suchen und ein SI");
+});
+

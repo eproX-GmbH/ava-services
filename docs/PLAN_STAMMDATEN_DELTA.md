@@ -335,3 +335,49 @@ XML-Datei, kein Modell nötig.
   durch ist (dann reicht ein Start je Nacht).
 - Zusätze weiterer Gerichte prüfen, falls das Portal Kürzel anders anzeigt
   als der Bestand (bisher nur Bremen bekannt).
+
+## 8b. SI-Ausfaelle und chronologischer Abdruck als Fallback (S9, 2026-10-12)
+
+**Befund (Fly-Worker, 8 Refresh-Laeufe):** 21 SI geladen, 50 "ohne Link",
+21 Fehler (je zur Haelfte "weder Datei noch XML-Fenster innerhalb von 25 s" und
+"Timed out receiving message from renderer: 45.000", dazu welcome.xhtml).
+Reproduziert: zwischen Suche und SI-Klick stand `takt.warten()` (~60 s ohne
+Treiberaufruf); in diesem Leerlauf starb die Browser-Sitzung ("session deleted
+as the browser has closed the connection"). Mit einem Lebenszeichen alle 10 s
+ueberlebte dieselbe Sitzung 70 s Leerlauf, der SI kam danach in 3 s; sofort
+nach der Suche kam der SI jedes Mal (10.803 Zeichen, 3 s). welcome.xhtml wurde
+ausserdem als "kein Link" gezaehlt.
+
+**SI-Fix (`jobs.ts`, `portal.ts`):**
+- Alle Takt-Slots einer Firma VOR der Suche (`warteTakt`), SI direkt danach;
+  waehrend jeder Wartezeit `portal.lebenszeichen()` alle 10 s.
+- welcome.xhtml → `SitzungAbgelaufen`; der Job sucht einmal neu und wiederholt
+  den SI (wenn das Budget reicht) statt "ohne Link" zu zaehlen.
+
+**CD-Fallback (S9):** Ohne SI-Link oder bei unlesbarem SI klickt der Worker
+"CD" (chronologischer Abdruck, eine weitere Abfrage). Der CD ist eine Text-PDF
+(iTextSharp), keine Scan-Seite; `cd-text.ts` liest die Textstuecke mit Position
+ueber pdfjs-dist (Legacy-Build, ohne Rendering), `cd-parser.ts` baut daraus
+deterministisch denselben Stand wie der SI-Parser: Spalten ueber Kopfzeile und
+linke Inhaltskanten (zentrierte Ueberschriften Prokura/Kapital korrigiert),
+Eintragungen ueber die Nummernspalte (Folgeseiten per y-Versatz), Abschnitte
+a)/b)/c), juengster Wert je Feld, Personen ueber "Nachname, Vorname, Ort,
+*TT.MM.JJJJ" mit Zu-/Abgang nach Aktionsueberschrift (Ausgeschieden/Bestellt/
+geaendert nun), Rechtsform ueber Vokabular, Anschrift aus "Geschaeftsanschrift:".
+Kein Modell noetig; Firmenname der Trefferzeile schuetzt wie beim SI. Zaehlt in
+`si.geladen` (Log: "davon n per CD"). Schalter `REGISTER_DELTA_CD=0`.
+Getestet an HRB 17559 (Bad Oeynhausen) und HRA 1817 (Stadthagen, 3 Seiten,
+12 Eintragungen): Name, Rechtsform, Anschrift, Kapital, Gruendungsjahr,
+letzte Eintragung, Personen korrekt (riha: keine natuerliche Person mehr
+aktiv, die letzte Prokura ist erloschen).
+
+**structured-content:** Vendor-Kopie unter `src/infrastructure/utils/cd/`
+(cd-parser, cd-text, si-types, cd-abruf); nach allen SI-Wegen (neuer Tab,
+Download, rp-download) greift der CD und liefert dasselbe Ergebnisobjekt.
+Pflege: im Worker aendern, hierher kopieren.
+
+**Offen:** Modellgestuetzte Nachlese des CD (Chronologie, Kommanditisten mit
+Einlagen, Konzernverweise wie "(AG Stadthagen HRB 2119)") — nur lokal/Desktop,
+nie im Fly-Worker. Geburtsdaten uebernimmt der CD wie der SI; Speicherung
+unveraendert.
+

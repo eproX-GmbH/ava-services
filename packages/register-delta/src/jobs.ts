@@ -5,8 +5,10 @@
 import type { Ergebnis, InsolvenzMeldung, Job, TrefferMeldung } from "./gateway-client";
 import { bereinigeText, kategorieAusText, type InsolvenzZeile } from "./insolvenz-parser";
 import { parseBekanntmachungen, type Treffer } from "./parser";
-import { parseStrukturierterInhalt, siBauplan } from "./si-parser";
-import type { Suchergebnis } from "./portal";
+import { parseStrukturierterInhalt, siBauplan, type StrukturierterInhalt } from "./si-parser";
+import { SitzungAbgelaufen, type Suchergebnis } from "./portal";
+import { parseChronologischerAbdruck } from "./cd-parser";
+import { pdfZuSeiten } from "./cd-text";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
 import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, type BulkTeil, type FirmaUk, type GazetteEintrag, type InsolvenzFallUk, type TrefferUk } from "./uk-companies-house";
@@ -16,6 +18,10 @@ export type PortalSchnittstelle = {
   bekanntmachungenText(): Promise<{ gesperrt: boolean; text: string }>;
   /** SI-XML der Trefferzeile der letzten Suche; null = kein SI-Link (portal.ts). */
   strukturierterInhalt?(zeile: number): Promise<string | null>;
+  /** Chronologischer Abdruck als PDF (Fallback ohne SI); null = kein CD-Link. */
+  chronologischerAbdruck?(zeile: number): Promise<Buffer | null>;
+  /** Treiber am Leben halten, waehrend der Takt wartet. */
+  lebenszeichen?(): Promise<void>;
 };
 
 export type InsolvenzSchnittstelle = {
@@ -70,6 +76,10 @@ export type AusfuehrungsOptionen = {
    * Registertreffer unberuehrt und brechen den Job nicht ab.
    */
   si?: boolean;
+  /** refresh: ohne SI den chronologischen Abdruck lesen (Default an). */
+  cd?: boolean;
+  /** CD-PDF → Stand (Tests ersetzen das; Standard: pdfjs + cd-parser). */
+  cdLesen?: (pdf: Buffer, erwarteterName: string) => Promise<StrukturierterInhalt | null>;
 };
 
 export const MAX_ABFRAGEN_JE_JOB = 15;
@@ -250,7 +260,10 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
   // refresh
   const p = job.payload as unknown as RefreshPayload;
   const siAktiv = o.si === true && typeof o.portal.strukturierterInhalt === "function";
+  const cdAktiv = siAktiv && o.cd !== false && typeof o.portal.chronologischerAbdruck === "function";
+  const cdLesen = o.cdLesen ?? (async (pdf: Buffer, name: string) => parseChronologischerAbdruck(await pdfZuSeiten(pdf), name));
   const si = { geladen: 0, ohneLink: 0, fehler: 0 };
+  let cdGeladen = 0;
   const unbearbeitet: RefreshPayload["firmen"] = [];
   const kostenJeFirma = siAktiv ? 2 : 1;
   for (const f of p.firmen) {
@@ -258,7 +271,10 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
       unbearbeitet.push(f);
       continue;
     }
-    await o.takt.warten();
+    // Befund 2026-10-12: Die Browser-Sitzung starb im Leerlauf des Takts
+    // zwischen Suche und SI-Klick (Renderer-Timeout, welcome.xhtml). Deshalb
+    // alle Takt-Slots VOR der Suche nehmen und den SI sofort danach klicken.
+    await warteTakt(o, kostenJeFirma);
     const r = await o.portal.suche(f.gericht, f.art, f.nummer);
     basis.abfragen++;
     if (r.gesperrt) return { ...basis, gesperrt: true, unbearbeitet: [f, ...unbearbeitet] };
@@ -274,23 +290,56 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
     const ziel = passend.find((t) => !t.frueher) ?? passend[0];
     const meldung = meldungen.find((m) => m.zusatz === ziel.zusatz && m.frueher === ziel.frueher);
     if (!meldung) continue;
+    const zeile = r.treffer.indexOf(ziel);
     try {
-      await o.takt.warten();
-      const xml = await o.portal.strukturierterInhalt!(r.treffer.indexOf(ziel)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
-      if (xml === null) {
+      let xml: string | null;
+      try {
+        xml = await o.portal.strukturierterInhalt!(zeile); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+      } catch (err) {
+        // Sitzung abgelaufen: einmal neu suchen und wiederholen, wenn das Budget reicht.
+        if (!(err instanceof SitzungAbgelaufen) || basis.abfragen + 2 > max) throw err;
+        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: ${err.message} — neue Suche, zweiter Versuch`);
+        await warteTakt(o, 2);
+        const r2 = await o.portal.suche(f.gericht, f.art, f.nummer);
+        basis.abfragen++;
+        if (r2.gesperrt) return { ...basis, gesperrt: true, si, unbearbeitet };
+        const ziel2 = r2.treffer.find((t) => t.kopfGeparst && t.nummer === f.nummer && t.zusatz === ziel.zusatz && t.frueher === ziel.frueher);
+        if (!ziel2) throw new Error("SI: Trefferzeile nach neuer Suche nicht gefunden");
+        xml = await o.portal.strukturierterInhalt!(r2.treffer.indexOf(ziel2)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+      }
+      if (xml !== null) {
+        basis.abfragen++;
+        // Firmenname der Trefferzeile als Schutz gegen verwechselte Rechtstraeger.
+        const inhalt = parseStrukturierterInhalt(xml, meldung.name);
+        if (inhalt) {
+          meldung.si = inhalt;
+          si.geladen++;
+          continue;
+        }
+        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar (${xml.length} Zeichen, Aufbau: ${siBauplan(xml)}) — versuche CD`);
+      }
+      // Kein SI-Link oder unlesbar: chronologischer Abdruck (eine weitere Abfrage).
+      if (!cdAktiv || basis.abfragen + 1 > max) {
+        if (xml === null) si.ohneLink++;
+        else si.fehler++;
+        continue;
+      }
+      await warteTakt(o, 1);
+      const pdf = await o.portal.chronologischerAbdruck!(zeile); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+      if (pdf === null) {
         si.ohneLink++;
         continue;
       }
       basis.abfragen++;
-      // Firmenname der Trefferzeile als Schutz gegen verwechselte Rechtstraeger.
-      const inhalt = parseStrukturierterInhalt(xml, meldung.name);
+      const inhalt = await cdLesen(pdf, meldung.name);
       if (!inhalt) {
         si.fehler++;
-        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar (${xml.length} Zeichen, Aufbau: ${siBauplan(xml)})`);
+        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: CD nicht lesbar (${pdf.length} Bytes)`);
         continue;
       }
       meldung.si = inhalt;
       si.geladen++;
+      cdGeladen++;
     } catch (err) {
       const grund = err instanceof Error ? err.message : String(err);
       if (/gesperrt/i.test(grund)) return { ...basis, gesperrt: true, si, unbearbeitet };
@@ -298,7 +347,7 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
       log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI fehlgeschlagen: ${grund}`);
     }
   }
-  log(`refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${basis.treffer.length} Treffer${siAktiv ? `, SI ${si.geladen} geladen / ${si.ohneLink} ohne Link / ${si.fehler} Fehler` : ""}${unbearbeitet.length ? `, ${unbearbeitet.length} unbearbeitet` : ""}`);
+  log(`refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${basis.treffer.length} Treffer${siAktiv ? `, SI ${si.geladen} geladen${cdGeladen ? ` (davon ${cdGeladen} per CD)` : ""} / ${si.ohneLink} ohne Link / ${si.fehler} Fehler` : ""}${unbearbeitet.length ? `, ${unbearbeitet.length} unbearbeitet` : ""}`);
   return { ...basis, ...(siAktiv ? { si } : {}), ...(unbearbeitet.length ? { unbearbeitet } : {}) };
 }
 
@@ -489,3 +538,15 @@ async function fuehreUkJobAus(job: Job, o: AusfuehrungsOptionen, uk: UkSchnittst
   log(`uk_insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Meldungen, ${basis.abfragen} Abfragen`);
   return { ...basis, insolvenz: { meldungen, geprueft } };
 }
+
+/** Takt-Slots nehmen und dabei den Treiber am Leben halten (Lebenszeichen alle 10 s). */
+async function warteTakt(o: AusfuehrungsOptionen, slots: number): Promise<void> {
+  const zeiger = o.portal.lebenszeichen ? setInterval(() => void o.portal.lebenszeichen?.(), 10_000) : null;
+  zeiger?.unref?.();
+  try {
+    for (let i = 0; i < slots; i++) await o.takt.warten();
+  } finally {
+    if (zeiger) clearInterval(zeiger);
+  }
+}
+

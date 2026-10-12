@@ -27,6 +27,8 @@ export type WorkerOptionen = {
   onZustand?: (zustand: WorkerStatus) => void;
   /** refresh: strukturierten Registerinhalt mitladen (Portal muss mit siDownloads geoeffnet sein). */
   si?: boolean;
+  /** refresh: ohne SI den chronologischen Abdruck lesen (Default an). */
+  cd?: boolean;
 };
 
 export type WorkerStatus = {
@@ -148,6 +150,7 @@ export class RegisterWorker {
             takt: this.takt,
             maxAbfragenJeJob: MAX_ABFRAGEN_JE_JOB,
             si: this.o.si === true,
+            cd: this.o.cd !== false,
             log: this.log,
             abbrechen: () => this.stopSignal || Boolean(this.o.pausiert?.()),
           });

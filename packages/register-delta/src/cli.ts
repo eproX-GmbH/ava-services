@@ -17,6 +17,7 @@
 //   REGISTER_DELTA_AT=0      Oesterreich-Jobs (JustizOnline, Ediktsdatei) nicht bedienen (Default: an)
 //   REGISTER_DELTA_UK=0      UK-Jobs (Companies House, Gazette) nicht bedienen (Default: an)
 //   REGISTER_DELTA_SI=0      refresh ohne strukturierten Registerinhalt (Default: an, S8)
+//   REGISTER_DELTA_CD=0      ohne SI nicht auf den chronologischen Abdruck ausweichen (Default: an, S9)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -74,6 +75,7 @@ async function main() {
       return p;
     },
     si,
+    cd: process.env.REGISTER_DELTA_CD !== "0",
     insolvenz: async () => {
       const p = new InsolvenzPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
       await p.oeffnen();
