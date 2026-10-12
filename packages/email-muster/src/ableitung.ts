@@ -24,6 +24,7 @@ import { MUSTER, bildeAdresse, domainVon, erkenneMuster, nameVarianten, type Mus
 import { firmenDomain } from "./domain";
 import { beurteileMuster, bildeAdresseAllgemein, ordneFirmenadressen, type Urteil, type Zuordnung } from "./zuordnung";
 import { pruefeAdressen, zufallsAdresse, type PruefDetails, type PruefErgebnis, type PruefOptionen } from "./smtp-verify";
+import type { Takt } from "./takt";
 import type { FirmenKontakte, PersonInfo } from "./kontakte";
 
 export const DOMAIN_RECHECK_MS = 30 * 86_400_000;
@@ -98,6 +99,8 @@ export interface AbleitungDeps {
    *  Fehler lag am Mailserver der Domain, nicht am Netz. Ohne diese Funktion gilt
    *  jeder Verbindungsfehler als Netzsperre. */
   netzPruefe?: () => Promise<boolean>;
+  /** Verifizierungsrate (takt.ts): wartet vor jeder Verbindung, bis die Anfragen erlaubt sind. Ohne: ungebremst. */
+  takt?: Takt;
   urteil?: Urteil | null;
   holeMuster: (domain: string) => Promise<ServerMuster | null>;
   speichereMuster: (domain: string, body: MusterSpeichern) => Promise<void>;
@@ -262,6 +265,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     if (ergebnis.smtpVerbindungen >= MAX_DURCHGAENGE || gesperrt || !deps.netzOk()) return null;
     const liste = adressen.slice(0, JE_VERBINDUNG);
     if (liste.length === 0) return null;
+    // Eine Verbindung = die Adressen plus die Catch-all-Probe.
+    if (deps.takt) await deps.takt.warten(liste.length + 1);
     ergebnis.smtpVerbindungen++;
     const r = await pruefe(domain, liste, { catchAllProbe: probe(domain), log: deps.log, bisErsterTreffer });
     const werte = [...r.values()];

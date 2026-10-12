@@ -8,7 +8,7 @@
 // denselben MX.
 
 import * as yup from "yup";
-import { ermittleFirmenAdressen, kontakteAusAntwort, type Urteil } from "@ava/email-muster";
+import { ermittleFirmenAdressen, kontakteAusAntwort, PRUEFUNGEN_JE_STUNDE_STANDARD, Taktgeber, type Urteil } from "@ava/email-muster";
 import type { GatewayClient } from "./gateway";
 import type { NetzStatus } from "./netz";
 import type { ProgressEingabe } from "./progress";
@@ -40,6 +40,8 @@ export interface WorkerDeps {
   persistWartenMs: number;
   /** Schalter der Person/Organisation, je Trigger frisch gelesen. */
   einstellungen?: () => Einstellungen;
+  /** Verifizierungsrate je Prozess (Standard: Taktgeber mit der Einstellung der Person). */
+  takt?: Taktgeber;
   ableiten?: typeof ermittleFirmenAdressen;
   schlafe?: (ms: number) => Promise<void>;
   jetzt?: () => number;
@@ -103,7 +105,9 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
       logger.error(`runId=${runId} Trigger mit ungueltigen Nutzdaten verworfen: ${e instanceof Error ? e.message : String(e)}`);
       return "ungueltig";
     }
-    const schalter = deps.einstellungen?.() ?? { aktiv: true, zuordnungAktiv: true, ungeprueftSpeichern: true };
+    const schalter = deps.einstellungen?.() ?? { aktiv: true, zuordnungAktiv: true, ungeprueftSpeichern: true, pruefungenJeStunde: PRUEFUNGEN_JE_STUNDE_STANDARD };
+    const takt = deps.takt ?? (deps.takt = new Taktgeber(schalter.pruefungenJeStunde));
+    takt.setzeRate(schalter.pruefungenJeStunde);
     if (!schalter.aktiv) {
       laufendeRuns.delete(runId);
       logger.info(`runId=${runId} uebersprungen — E-Mail-Ableitung ist ausgeschaltet`);
@@ -134,6 +138,7 @@ export function makeWorker(deps: WorkerDeps): (ereignis: TriggerEreignis) => Pro
         log: (m) => logger.info(`runId=${runId} ${m}`),
         zuordnungAktiv: schalter.zuordnungAktiv,
         ungeprueftSpeichern: schalter.ungeprueftSpeichern,
+        takt,
       });
       logger.info(`runId=${runId} done — ${r.zusammenfassung}`);
       if (r.status === "fehler") {

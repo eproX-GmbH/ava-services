@@ -17,12 +17,17 @@ export interface MusterBefundShared {
   alternativen: string[];
 }
 
+/** Grenzen der Verifizierungsrate (Spiegel von packages/email-muster/src/takt.ts; der Renderer importiert das Paket nicht). */
+export const PRUEFUNGEN_JE_STUNDE = { min: 10, max: 3600, standard: 300 } as const;
+
 export interface EmailMusterConfig {
   enabled: boolean;
   /** Firmenadressen per Namensabgleich/Urteil Personen zuordnen. */
   zuordnungAktiv?: boolean;
   /** Ableitungen auch speichern, wenn die Pruefung nicht moeglich war oder ablehnte (gekennzeichnet). */
   ungeprueftAnzeigen?: boolean;
+  /** Verifizierungsrate: RCPT-TO-Anfragen je Stunde (Standard 300, 10–3600). Einstellung der Person, nicht der Organisation. */
+  pruefungenJeStunde?: number;
 }
 
 export interface Vorschau {

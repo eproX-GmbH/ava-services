@@ -1,11 +1,20 @@
 // Einstellungen: E-Mail-Ableitung. Seit 2026-10-12 ohne Hintergrund-Job; die
 // Verifizierung laeuft als Pipeline-Stufe „E-Mail“ je Firma (Status-Matrix).
 import { useEffect, useState } from "react";
-import type { EmailMusterConfig } from "../../../../shared/email-muster-types";
+import { PRUEFUNGEN_JE_STUNDE, type EmailMusterConfig } from "../../../../shared/email-muster-types";
 
 export function EmailMusterSection() {
   const [s, setS] = useState<EmailMusterConfig | null>(null);
-  const reload = () => void window.api.emailMuster.status().then(setS);
+  const [rate, setRate] = useState<string>("");
+  const reload = () => void window.api.emailMuster.status().then((c) => {
+    setS(c);
+    setRate(String(c?.pruefungenJeStunde ?? PRUEFUNGEN_JE_STUNDE.standard));
+  });
+  const rateSpeichern = () => {
+    const n = Number(rate);
+    if (!Number.isFinite(n) || n === (s?.pruefungenJeStunde ?? PRUEFUNGEN_JE_STUNDE.standard)) return;
+    void window.api.emailMuster.setConfig({ pruefungenJeStunde: n }).then(() => reload());
+  };
   useEffect(() => {
     reload();
     const off = window.api.emailMuster.onChanged(() => reload());
@@ -42,6 +51,26 @@ export function EmailMusterSection() {
         <label className="alerts-prefs__check">
           <input type="checkbox" disabled={!s.enabled} checked={s.ungeprueftAnzeigen !== false} onChange={(e) => void window.api.emailMuster.setConfig({ ungeprueftAnzeigen: e.target.checked }).then(() => reload())} />
           <span>Unverifizierte Ableitungen anzeigen</span>
+        </label>
+      </div>
+      <div className="alerts-prefs__row">
+        <label className="alerts-prefs__check" title="Mail-Server-Anfragen (RCPT TO) je Stunde von diesem Rechner. Höher = schneller, aber mehr Last auf fremden Mailservern; ist die Rate erreicht, wartet der Lauf.">
+          <span>Verifizierungsrate</span>
+          <input
+            type="number"
+            min={PRUEFUNGEN_JE_STUNDE.min}
+            max={PRUEFUNGEN_JE_STUNDE.max}
+            step={10}
+            value={rate}
+            disabled={!s.enabled}
+            style={{ width: 90, marginLeft: 8 }}
+            onChange={(e) => setRate(e.target.value)}
+            onBlur={rateSpeichern}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") rateSpeichern();
+            }}
+          />
+          <span className="muted small" style={{ marginLeft: 6 }}>Anfragen je Stunde (Standard {PRUEFUNGEN_JE_STUNDE.standard})</span>
         </label>
       </div>
     </section>

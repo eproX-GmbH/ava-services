@@ -20,9 +20,10 @@ import { bildeAdresseAllgemein, ordneFirmenadressen, type Urteil } from "./zuord
 import type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
 export type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
 import { pruefeAdressen, zufallsAdresse, type PruefErgebnis } from "./smtp-verify";
+import { pruefungenJeStunde } from "../../../../../../packages/email-muster/src/takt";
 import { kontakteAusAntwort, type FirmenKontakte, type KontakteAntwort, type PersonInfo } from "./kontakte";
 
-const DEFAULT: EmailMusterConfig = { enabled: true, zuordnungAktiv: true, ungeprueftAnzeigen: true };
+const DEFAULT: EmailMusterConfig = { enabled: true, zuordnungAktiv: true, ungeprueftAnzeigen: true, pruefungenJeStunde: pruefungenJeStunde(undefined) };
 
 export interface EmailMusterDeps {
   gatewayRequest: <T>(path: string, opts?: { method?: string; body?: unknown }) => Promise<T>;
@@ -45,7 +46,7 @@ export class EmailMusterDienst {
     try {
       // Aeltere Dateien tragen noch Verlauf/Statistik des frueheren Hintergrund-Jobs; nur die Schalter zaehlen.
       const raw = existsSync(this.path) ? (JSON.parse(readFileSync(this.path, "utf8")) as Partial<EmailMusterConfig>) : {};
-      this.cfg = { enabled: raw.enabled !== false, zuordnungAktiv: raw.zuordnungAktiv !== false, ungeprueftAnzeigen: raw.ungeprueftAnzeigen !== false };
+      this.cfg = { enabled: raw.enabled !== false, zuordnungAktiv: raw.zuordnungAktiv !== false, ungeprueftAnzeigen: raw.ungeprueftAnzeigen !== false, pruefungenJeStunde: pruefungenJeStunde(raw.pruefungenJeStunde) };
     } catch {
       this.cfg = { ...DEFAULT };
     }
@@ -54,6 +55,7 @@ export class EmailMusterDienst {
 
   setConfig(patch: Partial<EmailMusterConfig>): EmailMusterConfig {
     const next = { ...this.getConfig(), ...patch };
+    if (patch.pruefungenJeStunde !== undefined) next.pruefungenJeStunde = pruefungenJeStunde(patch.pruefungenJeStunde);
     this.cfg = next;
     try {
       mkdirSync(join(this.path, ".."), { recursive: true });

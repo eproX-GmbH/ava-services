@@ -4,15 +4,18 @@
 // Fehlt die Datei oder ist sie unlesbar, gelten die Standards (alles an).
 
 import { readFileSync } from "node:fs";
+import { pruefungenJeStunde } from "@ava/email-muster";
 
 export interface Einstellungen {
   aktiv: boolean;
   zuordnungAktiv: boolean;
   ungeprueftSpeichern: boolean;
+  /** RCPT-TO-Anfragen je Stunde (Verifizierungsrate), Einstellung der Person. */
+  pruefungenJeStunde: number;
 }
 
 export function leseEinstellungen(datei: string | null, featureAktiv: boolean): Einstellungen {
-  let roh: { enabled?: unknown; zuordnungAktiv?: unknown; ungeprueftAnzeigen?: unknown } = {};
+  let roh: { enabled?: unknown; zuordnungAktiv?: unknown; ungeprueftAnzeigen?: unknown; pruefungenJeStunde?: unknown } = {};
   if (datei) {
     try {
       roh = JSON.parse(readFileSync(datei, "utf8")) as typeof roh;
@@ -24,5 +27,6 @@ export function leseEinstellungen(datei: string | null, featureAktiv: boolean): 
     aktiv: featureAktiv && roh.enabled !== false,
     zuordnungAktiv: roh.zuordnungAktiv !== false,
     ungeprueftSpeichern: roh.ungeprueftAnzeigen !== false,
+    pruefungenJeStunde: pruefungenJeStunde(roh.pruefungenJeStunde),
   };
 }

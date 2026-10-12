@@ -520,3 +520,17 @@ Risiko, bewusst in Kauf genommen: bei grossen Importen gehen aus dem Nutzernetz
 hunderte RCPT TO je Tag an fremde Mailserver (Reputation). Schutz bleibt der
 2-s-Abstand und das Abbrechen je Domain bei Sperre/4xx.
 
+### 8.5 Verifizierungsrate je Person (v0.1.815, 2026-10-12)
+
+Statt des Deckels eine **Rate je Stunde**, die die Person selbst einstellt
+(nicht die Organisation): `pruefungenJeStunde` in `email-muster.json`
+(Einstellungen → Automatisierungen → E-Mail-Ableitung, Chat-Werkzeug
+`email_muster_config`). Standard **300** RCPT-TO-Anfragen je Stunde
+(Abwaegung: eine Firma mit 20 Personen ist in rund vier Minuten durch, ein
+Import mit 100 Firmen in wenigen Stunden; je Mailserver bleiben es nur eine
+Handvoll Anfragen mit 2 s Abstand). Grenzen 10–3600. Umsetzung:
+`packages/email-muster/src/takt.ts` (`Taktgeber`, gleitendes Stundenfenster,
+`warten(n)` bucht eine Verbindung = Adressen + Catch-all-Probe und **wartet**
+statt Adressen offen zu lassen), `AbleitungDeps.takt`, Producer liest die Rate
+je Trigger (`einstellungen.ts`) und zieht den Taktgeber nach (`setzeRate`).
+

@@ -27,11 +27,12 @@ export function registerKommunikationIpc(deps: KommunikationIpcDeps): void {
 
   ipcMain.handle("emailMuster:status", () => emailMuster.current?.getConfig() ?? null);
 
-  ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean }) =>
+  ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean; pruefungenJeStunde?: number }) =>
     emailMuster.current?.setConfig({
       ...(patch.enabled !== undefined ? { enabled: patch.enabled === true } : {}),
       ...(patch.zuordnungAktiv !== undefined ? { zuordnungAktiv: patch.zuordnungAktiv === true } : {}),
       ...(patch.ungeprueftAnzeigen !== undefined ? { ungeprueftAnzeigen: patch.ungeprueftAnzeigen === true } : {}),
+      ...(typeof patch.pruefungenJeStunde === "number" ? { pruefungenJeStunde: patch.pruefungenJeStunde } : {}),
     }) ?? null,
   );
 

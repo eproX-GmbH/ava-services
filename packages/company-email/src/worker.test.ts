@@ -138,7 +138,7 @@ test("ausgeschaltet (Person oder Organisation): skipped, keine Ableitung", async
     netz: { ok: () => true, aktualisiere: async () => undefined, gesperrt: () => undefined },
     urteil: null,
     persistWartenMs: 0,
-    einstellungen: () => ({ aktiv: false, zuordnungAktiv: true, ungeprueftSpeichern: true }),
+    einstellungen: () => ({ aktiv: false, zuordnungAktiv: true, ungeprueftSpeichern: true, pruefungenJeStunde: 300 }),
     progress: async (p) => {
       progress.push(p);
     },

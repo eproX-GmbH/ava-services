@@ -1852,7 +1852,7 @@ const api = {
   },
   emailMuster: {
     status: (): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:status"),
-    setConfig: (patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),
+    setConfig: (patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean; pruefungenJeStunde?: number }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),
     vorschau: (companyId: string): Promise<import("../shared/email-muster-types").Vorschau | null> => ipcRenderer.invoke("emailMuster:vorschau", companyId),
     onChanged: (cb: (cfg: unknown) => void): (() => void) => {
       const h = (_e: unknown, cfg: unknown): void => cb(cfg);
