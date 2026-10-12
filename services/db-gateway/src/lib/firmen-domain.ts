@@ -34,16 +34,19 @@ export function passtZurFirma(email: string, websiteUrl: string | null | undefin
 }
 
 /**
- * Website der Firma: Company.websiteUrl (Kontakt-Datenbank) ist meist leer, die
- * ermittelte Website steht im Firmenprofil (CompanyProfile.url).
+ * Website der Firma: massgeblich ist die vom Website-Dienst ermittelte Adresse
+ * im Firmenprofil (CompanyProfile.url). Company.websiteUrl in der
+ * Kontakt-Datenbank ist ein Altbestand (13 Zeilen, nie aktualisiert) und nur
+ * noch Rueckfall. 2026-10-12: eproX GmbH trug dort seit Mai "herford.de",
+ * das Profil laengst "eprox-gmbh.de" — die Ableitung lieferte @herford.de.
  */
 export async function firmenWebsite(companyId: string, gespeichert?: string | null): Promise<string | null> {
-  if (gespeichert) return gespeichert;
   try {
     const { getProducerPool } = await import("./producer-pools");
     const r = await getProducerPool("company-profile").query<{ url: string | null }>(`SELECT url FROM "CompanyProfile" WHERE id = $1 LIMIT 1`, [companyId]);
-    return r.rows[0]?.url ?? null;
+    if (r.rows[0]?.url) return r.rows[0].url;
   } catch {
-    return null;
+    // Profil nicht erreichbar: Rueckfall unten.
   }
+  return gespeichert ?? null;
 }
