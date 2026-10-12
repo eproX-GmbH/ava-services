@@ -41,7 +41,7 @@ const SPALTEN_KOPF: Array<[Spalte, RegExp]> = [
 /** Sieht der Text nach einem Registerabdruck aus? */
 export function istCdSeite(seite: CdSeite): boolean {
   const kopf = seite.texte.filter((t) => t.y < seite.hoehe * 0.2).map((t) => t.s).join(" ");
-  return /Handelsregister|Genossenschaftsregister|Partnerschaftsregister|Vereinsregister/.test(kopf) && /Abdruck/.test(kopf) && /Nummer/.test(kopf);
+  return /Handelsregister|Genossenschaftsregister|Partnerschaftsregister|Vereinsregister/.test(kopf) && /Nummer der Firma|Abdruck|Abruf vom/.test(kopf);
 }
 
 /**
@@ -62,7 +62,12 @@ export function spaltenErkennen(seite: CdSeite, alle: CdSeite[] = [seite]): Arra
   // Zentrierte Ueberschriften (Prokura, Kapital) stehen rechts von der linken
   // Kante ihres Inhalts: die Kante ist die kleinste Inhalts-x zwischen der
   // vorigen Spalte und der Ueberschrift, wenn sie mindestens zweimal vorkommt.
-  const inhalt = alle.flatMap((s) => s.texte.filter((t) => t.y > nummer.y + 40));
+  // Nur echter Inhalt zaehlt als Kante: nicht die Spaltennummern-Zeile ("1 2 3 …",
+  // auf jeder Seite, Befund Hamburg HRA 121775) und keine reinen Ziffern.
+  const inhalt = alle.flatMap((s) => {
+    const n = s.texte.find((t) => /^Nummer$/.test(t.s.trim()) && t.x < 60);
+    return n ? s.texte.filter((t) => t.y > n.y + 60 && !/^\d{1,3}$/.test(t.s.trim())) : [];
+  });
   const zaehl = new Map<number, number>();
   for (const t of inhalt) zaehl.set(t.x, (zaehl.get(t.x) ?? 0) + 1);
   return koepfe.map((k, i) => {

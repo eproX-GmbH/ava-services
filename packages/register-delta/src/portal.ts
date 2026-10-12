@@ -253,10 +253,14 @@ export class RegisterPortal {
     if (!dir) throw new Error("SI-Downloads nicht freigegeben");
     const vorher = new Set(fs.readdirSync(dir));
     const fensterVorher = await d.getAllWindowHandles();
+    // Der Klick laeuft entkoppelt (setTimeout): executeScript kehrt zurueck, bevor
+    // der JSF-Link die Antwort (Download) anstoesst. Sonst wartete chromedriver auf
+    // das Laden der Seite und meldete auf Fly "Timed out receiving message from
+    // renderer: 45.000" (Befund 2026-10-12, auch nach dem Takt-Fix).
     const geklickt = (await d.executeScript(
       `const tr=[...document.querySelectorAll('tr[data-ri]')][arguments[0]]; if(!tr) return 'zeile';
        const a=[...tr.querySelectorAll('a')].find(a=>(a.textContent||'').trim()==='SI'); if(!a) return 'link';
-       a.click(); return 'ok';`,
+       setTimeout(() => a.click(), 0); return 'ok';`,
       zeile,
     )) as "ok" | "zeile" | "link";
     if (geklickt === "zeile") throw new Error(`SI: Trefferzeile ${zeile} nicht mehr auf der Seite`);
@@ -328,7 +332,7 @@ export class RegisterPortal {
     const geklickt = (await d.executeScript(
       `const tr=[...document.querySelectorAll('tr[data-ri]')][arguments[0]]; if(!tr) return 'zeile';
        const a=[...tr.querySelectorAll('a')].find(a=>(a.textContent||'').trim()==='CD'); if(!a) return 'link';
-       a.click(); return 'ok';`,
+       setTimeout(() => a.click(), 0); return 'ok';`,
       zeile,
     )) as "ok" | "zeile" | "link";
     if (geklickt === "zeile") throw new Error(`CD: Trefferzeile ${zeile} nicht mehr auf der Seite`);
