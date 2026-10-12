@@ -30,8 +30,7 @@ type StageId =
   | "website"
   | "companyProfile"
   | "companyContact"
-  | "companyEmail"
-  | "companyEvaluation";
+  | "companyEmail";
 
 type CellState = "completed" | "failed" | "skipped" | "pending" | "in_progress";
 
@@ -96,7 +95,6 @@ const STAGE_LABEL: Record<StageId, string> = {
   companyProfile: "Profil",
   companyContact: "Kontakt",
   companyEmail: "E-Mail",
-  companyEvaluation: "Bewertung",
 };
 
 const CELL_STATE_LABEL: Record<CellState, string> = {
@@ -117,7 +115,6 @@ const SERVICE_TO_STAGE: Record<string, StageId> = {
   "company-profile": "companyProfile",
   "company-contact": "companyContact",
   "company-email": "companyEmail",
-  "company-evaluation": "companyEvaluation",
 };
 
 // Inverse mapping — drives the diagnostics panel which addresses
@@ -131,7 +128,6 @@ const STAGE_TO_PRODUCER: Partial<Record<StageId, string>> = {
   companyProfile: "company-profile",
   companyContact: "company-contact",
   companyEmail: "company-email",
-  companyEvaluation: "company-evaluation",
 };
 
 export function TransactionDetail() {
@@ -286,7 +282,6 @@ export function TransactionDetail() {
                 companyProfile: blank,
                 companyContact: blank,
                 companyEmail: blank,
-                companyEvaluation: blank,
               };
               cells[stage] = {
                 state: evState,
@@ -352,7 +347,6 @@ export function TransactionDetail() {
     "companyProfile",
     "companyContact",
     "companyEmail",
-    "companyEvaluation",
   ];
 
   const openRow = useMemo(
@@ -375,8 +369,6 @@ export function TransactionDetail() {
           </h2>
           <p className="ct-page-header__lede">
             <Link to={`/transactions/${id}/stream`}>Roh-Eventprotokoll</Link>
-            {" · "}
-            <Link to={`/transactions/${id}/evaluations`}>Bewertungen</Link>
           </p>
         </header>
 
@@ -558,7 +550,6 @@ export function TransactionDetail() {
               "company-profile",
               "company-contact",
               "company-email",
-              "company-evaluation",
             ];
             const interesting = (() => {
               for (const s of stages) {

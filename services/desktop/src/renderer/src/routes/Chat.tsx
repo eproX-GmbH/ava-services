@@ -3500,7 +3500,6 @@ const SPA_WURZELN = new Set([
   "alle-firmen",
   "radar",
   "icp-assistent",
-  "evaluations",
 ]);
 
 // Interner SPA-Pfad (z. B. `/transactions`, `#/meldungen`) → normalisiert

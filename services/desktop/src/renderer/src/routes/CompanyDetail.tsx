@@ -446,7 +446,6 @@ const STAGE_LABEL: Record<string, string> = {
   "company-profile": "Profil",
   "company-contact": "Kontakt",
   "company-email": "E-Mail",
-  "company-evaluation": "Bewertung",
 };
 /** Map tier 1..4 onto the `.dot.<class>` palette. */
 const TIER_DOT: Record<number, string> = {
@@ -878,7 +877,7 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   management: [],
   contacts: ["company-contact"],
   kunden: ["company-contact"],
-  insights: ["website", "company-evaluation"],
+  insights: ["website"],
   jobs: ["website"],
   verflechtungen: ["structured-content"],
   buyingcenter: [],

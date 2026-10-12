@@ -47,8 +47,7 @@ export type RetryStageId =
   | "website"
   | "companyProfile"
   | "companyContact"
-  | "companyEmail"
-  | "companyEvaluation";
+  | "companyEmail";
 
 export const RETRY_STAGES: Array<{ id: RetryStageId; label: string }> = [
   { id: "structuredContent", label: "Structured Content" },
@@ -57,7 +56,6 @@ export const RETRY_STAGES: Array<{ id: RetryStageId; label: string }> = [
   { id: "companyProfile", label: "Company Profile" },
   { id: "companyContact", label: "Company Contact" },
   { id: "companyEmail", label: "E-Mail-Adressen" },
-  { id: "companyEvaluation", label: "Company Evaluation" },
 ];
 
 interface RetryDispatch {

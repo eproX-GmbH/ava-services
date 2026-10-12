@@ -794,15 +794,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         databaseName: "company_publication",
         port: 51030,
       },
-      {
-        // Phase 2a: 8-listener fan-in compute-worker. Each inbound
-        // event becomes a partial persist event the gateway upserts.
-        // Embedding compute + ES indexing pending in Phase 2b.
-        name: "company-evaluation",
-        entry: "dist/web/api/server.js",
-        databaseName: "company_evaluation",
-        port: 51040,
-      },
+      // company-evaluation: abgeklemmt 2026-10-12 (docs/PLAN_BEWERTUNG_ABKLEMMEN.md) —
+      // wird nicht mehr gestartet, nicht mehr gebuendelt, bekommt keine Ereignisse.
       {
         // Phase 3: thin compute-worker. BFS website crawl + LLM
         // extracts + valueserp fallback all run here; DB writes

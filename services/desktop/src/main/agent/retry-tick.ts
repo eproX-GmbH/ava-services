@@ -59,7 +59,6 @@ const SERVICE_TO_STAGE: Record<string, string> = {
   "company-profile": "companyProfile",
   "company-contact": "companyContact",
   "company-email": "companyEmail",
-  "company-evaluation": "companyEvaluation",
 };
 
 export interface RetryTickOptions {

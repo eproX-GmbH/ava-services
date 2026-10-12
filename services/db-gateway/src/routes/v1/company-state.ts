@@ -74,7 +74,6 @@ const KNOWN_STAGES = [
   "company-profile",
   "company-contact",
   "company-email",
-  "company-evaluation",
 ] as const;
 
 companyStateRouter.openapi(stateRoute, async (c) => {

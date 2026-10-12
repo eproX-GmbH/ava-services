@@ -175,7 +175,7 @@ export function buildImportTools(deps: {
       "(\"import this\", \"Durchlauf starten\", \"process all rows\", \"alle Firmen anlegen\"). " +
       "Do NOT iterate `company_search` over rows for this — that's slow, " +
       "wasteful, and skips the master-data pipeline (profile, website, " +
-      "contacts, evaluations are auto-fanned out by the importer). " +
+      "contacts are auto-fanned out by the importer). " +
       "You must have already confirmed the column mapping with the user " +
       "(via `ask_user_choice` or by stating the inferred mapping and " +
       "getting a 'go'). Returns a `transactionId` you can hand back to " +
@@ -878,7 +878,7 @@ export function buildImportTools(deps: {
     description:
       "Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, " +
       "kicking off the full master-data pipeline (profile, website, " +
-      "publications, contacts, evaluations). This is THE import tool when the " +
+      "publications, contacts). This is THE import tool when the " +
       "user names or pastes companies in chat (no file attachment): a single " +
       "company (\"leg mir Foo GmbH aus Berlin an\") is just a one-item list, a " +
       "pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL " +
@@ -1550,7 +1550,6 @@ export function buildImportTools(deps: {
             "companyProfile",
             "companyContact",
             "companyEmail",
-            "companyEvaluation",
             // v0.1.243 — Sub-Pipelines des Website-Producers.
             // `deepResearch` umfasst Ausschreibungen + Expansion +
             // Beschaffung, `jobPostings` deckt Stellenanzeigen ab.
@@ -1559,7 +1558,7 @@ export function buildImportTools(deps: {
             "jobPostings",
           ],
           description:
-            "Which stage to re-run. `companyEvaluation` fans out across all 5 evaluation producers in parallel.",
+            "Which stage to re-run.",
         },
         companyName: {
           type: "string",
@@ -1582,7 +1581,6 @@ export function buildImportTools(deps: {
             "companyProfile",
             "companyContact",
             "companyEmail",
-            "companyEvaluation",
             "deepResearch",
             "jobPostings",
           ]),

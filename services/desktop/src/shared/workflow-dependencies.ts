@@ -8,7 +8,7 @@ import type { WorkflowDefinition, WorkflowNode } from "./workflow-types";
 
 // companyEmail: E-Mail-Ableitung + Verifizierung, nachgelagert zu companyContact
 // (docs/PLAN_EMAIL_VERIFIZIERUNG.md, Producer company-email).
-export const PIPELINE_STAGES = ["masterData", "structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEmail", "companyEvaluation"] as const;
+export const PIPELINE_STAGES = ["masterData", "structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEmail"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 export const STAGE_LABELS: Record<PipelineStage, string> = {
@@ -19,7 +19,6 @@ export const STAGE_LABELS: Record<PipelineStage, string> = {
   companyProfile: "Firmenprofil",
   companyContact: "Kontakte",
   companyEmail: "E-Mail-Adressen",
-  companyEvaluation: "Bewertung",
 };
 
 /** Massgebliche Stufe: ohne sie ist eine Firma nicht „verarbeitet“. */
@@ -49,7 +48,6 @@ const KEYWORDS: Array<{ stage: PipelineStage; re: RegExp }> = [
   { stage: "companyEmail", re: /(e-?mail|mailadresse|^mail$)/i },
   { stage: "companyContact", re: /(ansprechpartner|kontakt|e-?mail|mail|telefon|tel$|durchwahl|linkedin|xing|vertriebsleit|einkaufsleit|leiter|leiterin|entscheider|position|rolle)/i },
   { stage: "website", re: /(website|webseite|homepage|impressum|produkt|dienstleistung|leistung|referenz|karriere|stellen)/i },
-  { stage: "companyEvaluation", re: /(bewertung|score|icp|signal|einschaetzung|einschätzung|fit)/i },
 ];
 
 const PH_RE = /\$([A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß]*)(?!\s*\()/g;

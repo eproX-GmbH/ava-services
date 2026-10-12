@@ -25,7 +25,6 @@ import { buildCompanyTools } from "./companies";
 import { buildResearchLaufTools } from "./research-lauf";
 import { buildSprachmodusTools } from "./sprachmodus";
 import { buildTransactionTools } from "./transactions";
-import { buildEvaluationTools } from "./evaluations";
 import { buildUiTools } from "./ui";
 import { buildSettingsTools } from "./settings";
 import type { FesteAnhaenge } from "../../mail-entwurf/feste-anhaenge";
@@ -254,7 +253,7 @@ export function buildReadOnlyRegistry(deps: {
   // O2 — Organisation (org_*).
   for (const t of buildOrganisationTools({ gateway: deps.gateway, refreshPolicy: deps.refreshPolicy })) registry.register(t);
   for (const t of buildTransactionTools(ctx)) registry.register(t);
-  for (const t of buildEvaluationTools(ctx)) registry.register(t);
+  // evaluation_*: Bewertungs-Producer abgeklemmt 2026-10-12 (docs/PLAN_BEWERTUNG_ABKLEMMEN.md).
   for (const t of buildUiTools()) registry.register(t);
   // v0.1.427 — PB3: Lazy-RAG-Suche ueber Jahresabschluss-Bloecke.
   for (const t of buildPublicationTools({

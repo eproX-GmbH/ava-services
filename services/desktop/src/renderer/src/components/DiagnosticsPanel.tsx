@@ -30,7 +30,6 @@ const PRODUCER_LABELS: Record<string, string> = {
   "structured-content": "Stamm-Daten",
   "company-publication": "Publikationen",
   "company-profile": "Firmenprofil",
-  "company-evaluation": "Bewertung",
   "company-contact": "Kontaktdaten",
   "company-email": "E-Mail-Adressen",
   website: "Website",

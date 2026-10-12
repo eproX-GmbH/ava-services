@@ -324,68 +324,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       }
     }
 
-    // v0.1.279 — companyEvaluation aus Upstreams DERIVEN, statt den
-    // rohen EntityProgress-Status zu nehmen. Sonst sahen Firmen, deren
-    // 5 Upstream-Producer alle completed sind, in der Matrix gelb aus
-    // (evaluation-Producer wurde noch nicht oder unsauber gefahren),
-    // während die Transactions-Detail-Ansicht denselben Datenstand als
-    // grün rendert (dort gibt es schon die identische Ableitung —
-    // siehe deriveEvaluationCell in transactions.ts). Wir spiegeln die
-    // Logik 1:1: alle Upstreams terminal + mind. eines completed →
-    // companyEvaluation completed.
-    if (stages["companyEvaluation"]) {
-      const upstreamNames = [
-        "structuredContent",
-        "companyPublication",
-        "website",
-        "companyProfile",
-        "companyContact",
-      ] as const;
-      const upstreams = upstreamNames
-        .map((n) => stages[n])
-        .filter((c): c is StageCell => Boolean(c));
-      const allTerminal =
-        upstreams.length === upstreamNames.length &&
-        upstreams.every(
-          (u) =>
-            u.state === "completed" ||
-            u.state === "failed" ||
-            u.state === "skipped",
-        );
-      const anyInProgress = upstreams.some((u) => u.state === "in_progress");
-      const anyCompleted = upstreams.some((u) => u.state === "completed");
-      const ts = upstreams
-        .map((u) => u.updatedAt)
-        .filter((t): t is string => typeof t === "string");
-      const lastTs =
-        ts.length > 0 ? ts.reduce((a, b) => (a > b ? a : b)) : null;
-      // Nur ableiten, wenn die rohe Bewertungs-Zelle NICHT schon "completed"
-      // ist — sonst respektieren wir den persistierten Erfolg.
-      if (stages["companyEvaluation"].state !== "completed") {
-        if (anyInProgress) {
-          stages["companyEvaluation"] = {
-            state: "in_progress",
-            updatedAt: lastTs,
-            errorMessage: null,
-            transactionId: null,
-          };
-        } else if (allTerminal && anyCompleted) {
-          stages["companyEvaluation"] = {
-            state: "completed",
-            updatedAt: lastTs,
-            errorMessage: null,
-            transactionId: null,
-          };
-        } else if (allTerminal) {
-          stages["companyEvaluation"] = {
-            state: "skipped",
-            updatedAt: lastTs,
-            errorMessage: null,
-            transactionId: null,
-          };
-        }
-      }
-    }
+    // companyEvaluation: Spalte entfernt (Bewertungs-Producer abgeklemmt 2026-10-12).
 
     return {
       held: heldSet.has(co.companyId),

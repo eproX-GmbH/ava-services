@@ -56,7 +56,6 @@ const ALL_PRODUCER_SERVICES = [
   "website",
   "company-profile",
   "company-contact",
-  "company-evaluation",
 ];
 
 function notFound(message: string): never {

@@ -61,7 +61,7 @@ jobs:
             exit 1
           fi
           git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
-          for sub in company-profile structured-content company-publication company-evaluation company-contact website; do
+          for sub in company-profile structured-content company-publication company-contact website; do
             git submodule update --init --depth=1 -- "$sub" \
               && echo "✓ $sub" \
               || echo "✗ $sub (uebersprungen)"

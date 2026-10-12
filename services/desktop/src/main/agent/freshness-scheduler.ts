@@ -47,7 +47,6 @@ const STAGE_ZU_PRODUCER: Record<FreshnessStage, string> = {
   website: "website",
   companyProfile: "company-profile",
   companyContact: "company-contact",
-  companyEvaluation: "company-evaluation",
 };
 interface MatrixZeile {
   companyId: string;
@@ -86,7 +85,6 @@ const ALL_STAGES: readonly FreshnessStage[] = [
   "website",
   "companyProfile",
   "companyContact",
-  "companyEvaluation",
 ];
 
 export interface FreshnessSchedulerOptions {
@@ -421,11 +419,6 @@ export class FreshnessScheduler extends EventEmitter {
       const irgendeineTx = Object.values(z.stages ?? {}).find((c) => c?.transactionId)?.transactionId ?? null;
       const rang = rangJeFirma.get(z.companyId) ?? null;
       for (const stage of ALL_STAGES) {
-        // 2026-10-05: Die Bewertung wird aus den Vorstufen abgeleitet und
-        // laeuft mit, sobald eine Vorstufe neu laeuft. Ein eigener Anstoss
-        // setzt nur "laeuft", das nie abgeschlossen wird (Zeitwaechter →
-        // failed, 29 Faelle an einem Tag). Nie einzeln auffrischen.
-        if (stage === "companyEvaluation") continue;
         const cad = prefs.cadenceDays[stage] ?? 0;
         if (cad <= 0) continue;
         const cell = z.stages?.[STAGE_ZU_PRODUCER[stage]];

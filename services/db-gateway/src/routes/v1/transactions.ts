@@ -999,7 +999,6 @@ const STAGE_UPSTREAMS: Array<{
   { stage: "companyProfile", upstream: "companyProfile", producer: "company-profile" },
   { stage: "companyContact", upstream: "companyContact", producer: "company-contact" },
   { stage: "companyEmail", upstream: null, producer: "company-email" },
-  { stage: "companyEvaluation", upstream: "companyEvaluation", producer: "company-evaluation" },
 ];
 
 /**
@@ -1080,7 +1079,6 @@ const ALL_STAGES: Array<z.infer<typeof PipelineStage>> = [
   "companyProfile",
   "companyContact",
   "companyEmail",
-  "companyEvaluation",
 ];
 
 const pipelineRoute = createRoute({
@@ -1250,77 +1248,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
 
   type Cell = z.infer<typeof PipelineCellShape>;
 
-  // v0.1.106 — companyEvaluation is a DERIVED cell.
-  //
-  // Why: companyEvaluation has no compute of its own under the new
-  // localized pipeline — its compute-worker is a fan-in normaliser
-  // that re-emits per-slice persist events from 8 upstream signals.
-  // In practice only a subset of those signals actually fires under
-  // the current compute path (structured-content, company-profile,
-  // company-publication, website). The seed-EntityProgress path
-  // creates a `pending` row for company-evaluation up front; if any
-  // expected upstream completes but the evaluation slice flow stalls,
-  // the cell would stay yellow forever.
-  //
-  // Fix (variant c — surgical config change, no producer / schema
-  // edits): derive the companyEvaluation cell from its upstream set
-  // {structuredContent, companyPublication, website, companyProfile,
-  // companyContact}. Rule:
-  //   - If ANY upstream cell is in_progress  → in_progress
-  //   - Else if ALL upstreams in terminal    → completed
-  //     (failed/skipped on an upstream don't block evaluation —
-  //     evaluation can run with whichever slices arrived; the agent's
-  //     downstream consumers tolerate partial data)
-  //   - Else if at least one upstream completed → in_progress
-  //   - Else pending
-  // The recorded EntityProgress row from the gateway persist-bus is
-  // ignored here (still written for audit trail / SSE compatibility).
-  const EVAL_UPSTREAMS = [
-    "structuredContent",
-    "companyPublication",
-    "website",
-    "companyProfile",
-    "companyContact",
-  ] as const;
-  const deriveEvaluationCell = (companyId: string): Cell => {
-    const upstreams = EVAL_UPSTREAMS.map((s) =>
-      cellFromRow(byStage.get(s)?.get(companyId)),
-    );
-    if (upstreams.some((u) => u.state === "in_progress")) {
-      const ts = upstreams
-        .map((u) => u.updatedAt)
-        .filter((t): t is string => typeof t === "string");
-      return {
-        state: "in_progress",
-        updatedAt: ts.length > 0 ? ts.reduce((a, b) => (a > b ? a : b)) : null,
-        errorCount: 0,
-      };
-    }
-    const allTerminal = upstreams.every(
-      (u) =>
-        u.state === "completed" ||
-        u.state === "failed" ||
-        u.state === "skipped",
-    );
-    const anyCompleted = upstreams.some((u) => u.state === "completed");
-    const ts = upstreams
-      .map((u) => u.updatedAt)
-      .filter((t): t is string => typeof t === "string");
-    const lastTs =
-      ts.length > 0 ? ts.reduce((a, b) => (a > b ? a : b)) : null;
-    if (allTerminal && anyCompleted) {
-      return { state: "completed", updatedAt: lastTs, errorCount: 0 };
-    }
-    if (anyCompleted) {
-      return { state: "in_progress", updatedAt: lastTs, errorCount: 0 };
-    }
-    if (allTerminal) {
-      // Every upstream failed/skipped — evaluation has nothing to
-      // aggregate. Surface as skipped so the matrix is not stuck.
-      return { state: "skipped", updatedAt: lastTs, errorCount: 0 };
-    }
-    return { state: "pending", errorCount: 0 };
-  };
+  // companyEvaluation: Stufe entfernt (Bewertungs-Producer abgeklemmt 2026-10-12).
 
   // v0.1.363 — company-profile / company-contact werden nur dispatcht,
   // wenn die website-Stage eine URL gefunden hat. Lief sie terminal OHNE
@@ -1378,7 +1306,6 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
       companyProfile: Cell;
       companyContact: Cell;
       companyEmail: Cell;
-      companyEvaluation: Cell;
     } = {
       // master-data is derived: appearing in any downstream stage proves its
       // upstream upsert event fanned out successfully for this company.
@@ -1418,7 +1345,6 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
         companyId,
         deriveEmailCell(companyId, deriveDependentOnWebsite("companyContact", companyId, websiteCell)),
       ),
-      companyEvaluation: deriveEvaluationCell(companyId),
     };
     // Most-recent activity across cells for sort order.
     const timestamps = Object.values(cells)
@@ -1625,13 +1551,6 @@ const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
   // Evaluation fan-out: each producer republishes the slice it owns.
   // companyContact + companyEvaluation are still fly-side until Phase 2/3,
   // so their slices keep hitting upstream.
-  companyEvaluation: [
-    { kind: "gateway", producer: "structured-content", stage: "companyEvaluation" },
-    { kind: "gateway", producer: "company-publication", stage: "companyEvaluation" },
-    { kind: "gateway", producer: "website", stage: "companyEvaluation" },
-    { kind: "gateway", producer: "company-profile", stage: "companyEvaluation" },
-    { kind: "gateway", producer: "company-contact", stage: "companyEvaluation" },
-  ],
 };
 
 const retryRoute = createRoute({
@@ -1643,7 +1562,7 @@ const retryRoute = createRoute({
     "Republishes the AMQP trigger event(s) for the given (transaction,",
     "company, stage) so the downstream consumer re-runs. The gateway maps",
     "stage → producer(s); the producers read their own persisted rows and",
-    "re-emit. `companyEvaluation` fans out across all 5 LLM producers.",
+    "re-emit.",
   ].join("\n"),
   request: {
     params: RetryParams,
@@ -2023,7 +1942,6 @@ const STAGE_TO_SERVICE: Record<z.infer<typeof RetryStage>, string> = {
   companyProfile: "company-profile",
   companyContact: "company-contact",
   companyEmail: "company-email",
-  companyEvaluation: "company-evaluation",
   // v0.1.243 — beide Stages laufen IM Website-Producer; das
   // ContentFreshness-Clear muss den Website-Producer-Slice
   // invalidieren, damit das tier-Gate beim nächsten Persist die

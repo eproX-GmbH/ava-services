@@ -42,7 +42,6 @@ const DEFAULT_PREFS: FreshnessPrefs = {
     website: 7,
     companyProfile: 7,
     companyContact: 7,
-    companyEvaluation: 0,
   },
   throttle: {
     perStagePerHour: 3,
@@ -58,7 +57,6 @@ const ALL_STAGES: readonly FreshnessStage[] = [
   "website",
   "companyProfile",
   "companyContact",
-  "companyEvaluation",
 ];
 
 export interface FreshnessPrefsStoreEvents {
@@ -145,8 +143,8 @@ export class FreshnessPrefsStore extends EventEmitter {
     // Standard 30. Nur den unveraenderten alten Standard ersetzen; eigene
     // Werte des Nutzers bleiben.
     if (cadenceDays.companyPublication === 75) cadenceDays.companyPublication = 30;
-    // 2026-10-05: Bewertung wird abgeleitet, eigener Takt sinnlos (alter Standard 14 → 0).
-    if (cadenceDays.companyEvaluation === 14) cadenceDays.companyEvaluation = 0;
+    // 2026-10-12: Bewertungs-Producer abgeklemmt; ein alter Takt-Eintrag wird verworfen.
+    delete (cadenceDays as Record<string, number>).companyEvaluation;
     const throttleIn: Partial<FreshnessPrefs["throttle"]> =
       input.throttle ?? {};
     const perStagePerHour =

@@ -113,13 +113,7 @@ const PRODUCERS = [
     entry: "dist/web/api/server.js",
     databaseName: "company_publication",
   },
-  {
-    name: "company-evaluation",
-    dir: "ev",
-    workspaceDir: "company-evaluation",
-    entry: "dist/web/api/server.js",
-    databaseName: "company_evaluation",
-  },
+  // company-evaluation: abgeklemmt 2026-10-12, wird nicht mehr gebuendelt.
   {
     name: "company-contact",
     dir: "ct",

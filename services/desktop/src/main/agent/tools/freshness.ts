@@ -19,7 +19,6 @@ const ALL_STAGES: readonly FreshnessStage[] = [
   "website",
   "companyProfile",
   "companyContact",
-  "companyEvaluation",
 ];
 
 export interface FreshnessToolDeps {
@@ -137,7 +136,6 @@ export function buildFreshnessTools(deps: FreshnessToolDeps): Tool[] {
             website: { type: "integer", minimum: 0 },
             companyProfile: { type: "integer", minimum: 0 },
             companyContact: { type: "integer", minimum: 0 },
-            companyEvaluation: { type: "integer", minimum: 0 },
           },
         },
         throttle: {
@@ -165,7 +163,6 @@ export function buildFreshnessTools(deps: FreshnessToolDeps): Tool[] {
             website: yup.number().integer().min(0).optional(),
             companyProfile: yup.number().integer().min(0).optional(),
             companyContact: yup.number().integer().min(0).optional(),
-            companyEvaluation: yup.number().integer().min(0).optional(),
           })
           .optional()
           .noUnknown(true),

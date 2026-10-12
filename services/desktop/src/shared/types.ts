@@ -1444,8 +1444,7 @@ export type FreshnessStage =
   | "companyPublication"
   | "website"
   | "companyProfile"
-  | "companyContact"
-  | "companyEvaluation";
+  | "companyContact";
 
 /**
  * Per-stage cadence in days. `0` = never auto-refresh (manual retries

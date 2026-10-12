@@ -111,7 +111,6 @@ const PRODUCERS = [
   "company-profile",
   "company-contact",
   "company-email",
-  "company-evaluation",
 ] as const;
 
 const PRODUCER_LABEL: Record<(typeof PRODUCERS)[number], string> = {
@@ -121,7 +120,6 @@ const PRODUCER_LABEL: Record<(typeof PRODUCERS)[number], string> = {
   "company-profile": "Profil",
   "company-contact": "Kontakt",
   "company-email": "E-Mail",
-  "company-evaluation": "Bewertung",
 };
 
 const STATE_LABEL: Record<StageState, string> = {
@@ -596,7 +594,6 @@ export function AllCompanies() {
               "company-profile": "companyProfile",
               "company-contact": "companyContact",
               "company-email": "companyEmail",
-              "company-evaluation": "companyEvaluation",
             };
             const byStage: Partial<Record<RetryStageId, string>> = {};
             for (const p of PRODUCERS) {

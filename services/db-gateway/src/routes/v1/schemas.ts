@@ -825,7 +825,6 @@ export const PipelineStage = z.enum([
   // docs/PLAN_EMAIL_VERIFIZIERUNG.md V5: E-Mail-Ableitung + Verifizierung,
   // nachgelagert zu companyContact (Producer company-email).
   "companyEmail",
-  "companyEvaluation",
 ]);
 
 export const PipelineCellState = z.enum([
@@ -865,7 +864,6 @@ export const PipelineRowShape = z
       companyProfile: PipelineCellShape,
       companyContact: PipelineCellShape,
       companyEmail: PipelineCellShape,
-      companyEvaluation: PipelineCellShape,
     }),
     lastActivityAt: z.string().nullable().optional(),
   })
@@ -911,7 +909,6 @@ export const RetryStage = z.enum([
   "companyProfile",
   "companyContact",
   "companyEmail",
-  "companyEvaluation",
   // v0.1.243 — Sub-Pipelines des Website-Producers, die bislang nicht
   // via Retry erreichbar waren. Beide triggern den vollen
   // structured-content -> website chain neu (inkl. SERP-Crawl), weil

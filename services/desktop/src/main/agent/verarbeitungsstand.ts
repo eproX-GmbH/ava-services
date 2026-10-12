@@ -24,7 +24,6 @@ export const STUFE_VON_PRODUCER: Record<string, string> = {
   "company-profile": "companyProfile",
   "company-contact": "companyContact",
   "company-email": "companyEmail",
-  "company-evaluation": "companyEvaluation",
 };
 
 /** Laeuft eine Stufe laenger als das, gilt sie als haengend, nicht als laufend. */
@@ -48,7 +47,7 @@ export function verarbeitungsstand(companyId: string, zeile: MatrixZeile | null 
       laufendeStufen: [],
       transactionId: null,
       hinweis:
-        `Die Firma ${companyId} ist noch nicht im Bestand des Nutzers aufbereitet; Profil, Website, Finanzen, Kontakte und Bewertung fehlen. ` +
+        `Die Firma ${companyId} ist noch nicht im Bestand des Nutzers aufbereitet; Profil, Website, Finanzen und Kontakte fehlen. ` +
         "JETZT ohne Rueckfrage import_companies mit companyIds=[\"" + companyId + "\"] aufrufen. Dem Nutzer nur sagen, dass du die Firma jetzt vollstaendig aufbereitest und dich meldest, sobald sie fertig ist. " +
         "Keine Antwort aus den Stammdaten allein, nie 'dazu liegt nichts vor' oder 'soll ich die Firma verarbeiten?'.",
     };
