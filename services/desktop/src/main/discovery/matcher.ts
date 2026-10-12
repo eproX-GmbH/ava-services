@@ -95,14 +95,15 @@ const judgeSchema = yup.array().of(
   }),
 );
 
-/** Ein Batch Kandidaten gegen das ICP bewerten. */
-async function judgeBatch(
+/** Allgemeines ICP-Urteil fuer beliebige Firmen-Texte (Radar-Kandidaten wie
+ *  Bestandsfirmen): score 0-100 + Ein-Satz-Begruendung je id. Wird vom Radar
+ *  (judgeBatch) und vom Bestands-Abgleich (icp_bestand_abgleich) geteilt,
+ *  damit beide gleich urteilen. */
+export async function icpUrteil(
   providers: LlmProviderManager,
   icpText: string,
-  feedbackText: string,
-  batch: ProfiledCandidate[],
-  /** I5 — discoveryId → Hinweis-Zeile ("sehr aehnlich zu Bestandskunde X"). */
-  hints: Map<string, string>,
+  items: Array<{ id: string; text: string; hinweis?: string }>,
+  feedbackText = "",
 ): Promise<Map<string, { score: number; begruendung: string }>> {
   const out = new Map<string, { score: number; begruendung: string }>();
   const system =
@@ -120,14 +121,8 @@ async function judgeBatch(
     `ICP:\n${icpText}\n` +
     (feedbackText ? `\nFruehere Verwerf-Gruende des Nutzers:\n${feedbackText}\n` : "") +
     `\nFirmen:\n` +
-    batch
-      .map((c) => {
-        const hint = hints.get(c.discoveryId);
-        return (
-          `- id: ${c.discoveryId}\n  ${c.profileText?.slice(0, 1200) ?? c.name}` +
-          (hint ? `\n  Hinweis: ${hint}` : "")
-        );
-      })
+    items
+      .map((c) => `- id: ${c.id}\n  ${c.text.slice(0, 1200)}` + (c.hinweis ? `\n  Hinweis: ${c.hinweis}` : ""))
       .join("\n");
   try {
     const raw = await streamToText(
@@ -151,6 +146,23 @@ async function judgeBatch(
     console.warn("[discovery-match] Urteil-Batch fehlgeschlagen:", err);
   }
   return out;
+}
+
+/** Ein Batch Kandidaten gegen das ICP bewerten. */
+async function judgeBatch(
+  providers: LlmProviderManager,
+  icpText: string,
+  feedbackText: string,
+  batch: ProfiledCandidate[],
+  /** I5 — discoveryId → Hinweis-Zeile ("sehr aehnlich zu Bestandskunde X"). */
+  hints: Map<string, string>,
+): Promise<Map<string, { score: number; begruendung: string }>> {
+  return icpUrteil(
+    providers,
+    icpText,
+    batch.map((c) => ({ id: c.discoveryId, text: c.profileText ?? c.name, hinweis: hints.get(c.discoveryId) })),
+    feedbackText,
+  );
 }
 
 // ---- I5: Top-Kunden-Aehnlichkeit -------------------------------------------

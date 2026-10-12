@@ -659,6 +659,104 @@ companiesRouter.openapi(linkedinProfilesRoute, async (c) => {
   return c.json({ items: r.rows }, 200);
 });
 
+// ---- POST /v1/companies/icp-felder -----------------------------------------
+//
+// docs/PLAN_BEWERTUNG_ABKLEMMEN.md (2026-10-12): kompakte Felder je Firma fuer
+// den lokalen ICP-Abgleich des Bestands (Desktop-Werkzeug icp_bestand_abgleich).
+// Profil, Gegenstand, Stichworte aus company-profile, juengste Kennzahlen aus
+// company-publication — in EINEM Aufruf fuer bis zu 300 Firmen, damit der
+// Desktop nicht je Firma drei Abschnitte laden muss. Name/Ort kommen aus der
+// Matrix, die der Desktop ohnehin hat.
+
+const IcpFelderShape = z.object({
+  companyId: z.string(),
+  profil: z.string().nullable(),
+  gegenstand: z.string().nullable(),
+  stichworte: z.array(z.string()),
+  mitarbeiter: z.number().int().nullable(),
+  umsatz: z.number().nullable(),
+  jahr: z.number().int().nullable(),
+});
+
+const icpFelderRoute = createRoute({
+  method: "post",
+  path: "/companies/icp-felder",
+  tags: [tag],
+  summary: "Kompakte Profil- und Kennzahlfelder je Firmen-Liste (ICP-Abgleich des Bestands)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ companyIds: z.array(z.string().min(2)).min(1).max(300) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ items: z.array(IcpFelderShape) }) } },
+      description: "Felder je Firma; Firmen ohne Profil und Kennzahlen fehlen in der Liste",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(icpFelderRoute, async (c) => {
+  const { companyIds } = c.req.valid("json");
+  const PROFIL_MAX = 700;
+  const GEGENSTAND_MAX = 300;
+  const [profile, stichworte, kennzahlen] = await Promise.all([
+    getProducerPool("company-profile").query<{ id: string; profile: string; businessPurpose: string | null }>(
+      `SELECT cp.id, left(cp.profile, $2) AS profile, left(cbp."businessPurpose", $3) AS "businessPurpose"
+         FROM "CompanyProfile" cp
+         LEFT JOIN "CompanyBusinessPurpose" cbp ON cbp.id = cp."businessPurposeId"
+        WHERE cp.id = ANY($1::text[])`,
+      [companyIds, PROFIL_MAX, GEGENSTAND_MAX],
+    ),
+    getProducerPool("company-profile").query<{ companyId: string; keyword: string }>(
+      `SELECT "companyId", keyword FROM "CompanyKeyword" WHERE "companyId" = ANY($1::text[]) ORDER BY "companyId", keyword`,
+      [companyIds],
+    ),
+    // Juengster Abschluss je Firma, Einzelabschluss vor Konzernabschluss.
+    getProducerPool("company-publication").query<{ companyId: string; year: number | null; employeeCount: number | null; umsatz: string | null }>(
+      `SELECT DISTINCT ON (cp."companyId")
+              cp."companyId", cp.year, cp."employeeCount",
+              COALESCE(rv.value, sv.value)::text AS umsatz
+         FROM "CompanyPublication" cp
+         LEFT JOIN "RevenueVolume" rv ON rv."companyPublicationId" = cp.id
+         LEFT JOIN "SalesVolume" sv ON sv."companyPublicationId" = cp.id
+        WHERE cp."companyId" = ANY($1::text[])
+        ORDER BY cp."companyId", cp.year DESC NULLS LAST, (cp.name ILIKE '%konzern%') ASC`,
+      [companyIds],
+    ),
+  ]);
+  const je = new Map<string, z.infer<typeof IcpFelderShape>>();
+  const hole = (id: string) => {
+    let x = je.get(id);
+    if (!x) {
+      x = { companyId: id, profil: null, gegenstand: null, stichworte: [], mitarbeiter: null, umsatz: null, jahr: null };
+      je.set(id, x);
+    }
+    return x;
+  };
+  for (const r of profile.rows) {
+    const x = hole(r.id);
+    x.profil = r.profile || null;
+    x.gegenstand = r.businessPurpose || null;
+  }
+  for (const r of stichworte.rows) {
+    const x = hole(r.companyId);
+    if (x.stichworte.length < 12) x.stichworte.push(r.keyword);
+  }
+  for (const r of kennzahlen.rows) {
+    const x = hole(r.companyId);
+    x.mitarbeiter = r.employeeCount ?? null;
+    x.umsatz = r.umsatz != null && Number.isFinite(Number(r.umsatz)) ? Number(r.umsatz) : null;
+    x.jahr = r.year ?? null;
+  }
+  return c.json({ items: [...je.values()] }, 200);
+});
+
 // ---- POST /v1/companies/tech-stack -----------------------------------------
 //
 // T5 (v0.1.510) — firmenuebergreifende Abfrage der eingesetzten Systeme

@@ -28,17 +28,31 @@ nirgends gebaut), die Datenbank `ava_company_evaluation`, das Pflichtmodell
 Alte `EntityProgress`-Zeilen mit `producer = 'company-evaluation'` bleiben stehen; der
 Fortschritt (`/fortschritt`) übersprang sie schon vorher, die Matrix listet sie nicht mehr.
 
-## Übergangsregel im Chat
+## Übergangsregel im Chat (abgelöst durch icp_bestand_abgleich, v0.1.830)
 
-Bis es eine neue Antwort gibt, sagt der Prompt: Es gibt kein Bewertungswerkzeug; bei
+Zwischen v0.1.829 und v0.1.830 sagte der Prompt: Es gibt kein Bewertungswerkzeug; bei
 „welche Firma passt zu meinem ICP“ liest AVA `icp_get`, nimmt die Kandidaten aus Meine
 Firmen und `company_get` (profil, register, publikationen), wägt selbst ab und nennt eine
 kurze Rangliste mit Begründung aus den gelesenen Daten. Keine erfundenen Scores, keine
 angekündigte „laufende Analyse“.
 
-## Offen: „Welche Firma passt am besten zu meinem ICP?“ richtig beantworten
+## Umgesetzt (v0.1.830): `icp_bestand_abgleich`
 
-Vorschlag zur Diskussion (noch nicht umgesetzt):
+Freigabe Joyce 2026-10-12. Desktop-Werkzeug `icp_bestand_abgleich` (tools/icp-abgleich.ts):
+Bestand aus Meine Firmen (bis 1.000 Firmen, optional `suche`), kompakte Felder je Firma
+ueber `POST /v1/companies/icp-felder` (Profil, Gegenstand, Stichworte, Mitarbeiter, Umsatz,
+Jahr; 300 je Aufruf), deterministischer Vorfilter (tools/icp-abgleich-vorfilter.ts:
+Branchenbegriffe, Groessenspanne aus `groesse`, Ausschluesse, ICP-Orte, Registerstatus,
+Insolvenz), dann das lokale KI-Urteil `icpUrteil` aus discovery/matcher.ts (dieselbe
+Funktion wie der Radar) fuer die Top-K (Standard 15, max 30). Optional `anfrage`
+(Angebot/Ausschreibung) als zusaetzliches Kriterium mit Vorrang. Antwort synchron:
+Rangliste mit Score, Begruendung, Belegfeldern, Zahl der geprueften Firmen, Hinweise
+(z. B. Firmen ohne Profil). Nicht ueber MCP: braucht das lokale Modell des Nutzers.
+Offen: Relevanz-Gewicht als zweiter Faktor (docs/PLAN_RELEVANZ.md).
+
+## Urspruenglicher Vorschlag
+
+Vorschlag (umgesetzt wie oben):
 
 1. **Daten statt Embedding-Job.** Der Bestand des Nutzers ist klein (Dutzende bis wenige
    Tausend Firmen). Statt Vektorsuche: ein deterministischer Vorfilter im Gateway über
