@@ -44,7 +44,9 @@ export type AppEreignis =
   | { art: "gestartet"; warteId: string; requestId: string; conversationId: string }
   | { art: "verworfen"; warteId: string; conversationId: string; grund: string }
   | { art: "warteschlange"; laenge: number }
-  | { art: "meldungen"; ungelesen: number };
+  | { art: "meldungen"; ungelesen: number }
+  /** Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md) haben sich geaendert; die App laedt ihre Liste neu. */
+  | { art: "aufgaben"; conversationIds: string[] };
 
 /** Optionale Fähigkeiten (P3–P7); fehlt eine, antwortet der Kanal „nicht verfügbar“. */
 export interface AppKanalExtras {
@@ -68,6 +70,11 @@ export interface AppKanalExtras {
     rueckfrage: (choiceId: string, wert: string) => unknown;
     abbrechen: () => void;
     verbrauch: (v: { model: string; latencyMs?: number; usage: Record<string, number>; sekunden?: number }) => Promise<unknown>;
+  };
+  /** Hintergrundaufgaben fuer die Vorgangskarten im Chat der App. */
+  aufgaben?: {
+    alle: (conversationId?: string) => unknown[];
+    abbrechen: (id: string) => boolean;
   };
   meldungen?: {
     liste: (limit: number) => unknown[];
@@ -139,6 +146,10 @@ export class AppKanal {
   }
 
   /** Meldungen haben sich geändert (neu, gelesen, verworfen). */
+  aufgabenGeaendert(conversationIds: string[]): void {
+    if (this.deps.extras?.aufgaben && this.abo()) this.deps.senden({ kanal: "app", ereignis: { art: "aufgaben", conversationIds } });
+  }
+
   meldungenGeaendert(): void {
     const m = this.deps.extras?.meldungen;
     if (m && this.abo()) this.deps.senden({ kanal: "app", ereignis: { art: "meldungen", ungelesen: m.ungelesen() } });
@@ -317,6 +328,10 @@ export class AppKanal {
       case "sprache_verbrauch":
         return this.extra("sprache").verbrauch(daten as { model: string; usage: Record<string, number> });
       // ---- P7 Meldungen und Push
+      case "aufgaben":
+        return { aufgaben: this.extra("aufgaben").alle(typeof daten.conversationId === "string" ? daten.conversationId : undefined) };
+      case "aufgabe_abbrechen":
+        return { ok: this.extra("aufgaben").abbrechen(String(daten.id ?? "")) };
       case "meldungen": {
         const m = this.extra("meldungen");
         return { meldungen: m.liste(Math.min(200, Number(daten.limit) || 100)), ungelesen: m.ungelesen() };

@@ -2271,6 +2271,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   });
   hintergrundAufgaben.on("aenderung", (liste) => {
     windows().broadcast("aufgaben:aenderung", liste);
+    appKanalRef?.aufgabenGeaendert([...new Set((liste as Array<{ conversationId: string }>).map((a) => a.conversationId))]);
   });
   hintergrundAufgaben.start();
 
@@ -4086,6 +4087,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     instanzName: () => instanz.get().name,
     log: (z) => writeLineSync("INFO ", z),
     extras: {
+      aufgaben: { alle: (c) => hintergrundAufgaben.alle(c), abbrechen: (id) => hintergrundAufgaben.abbrechen(id) },
       anhang: (input) => anhangAufbereiten(attachments, input),
       bild: (b, kante) => bildVerkleinern(b, kante),
       mailEml: async (roh) => {
