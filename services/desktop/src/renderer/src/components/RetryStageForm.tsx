@@ -6,8 +6,10 @@
 // (Pflichtfeld des Kontakt-Producers), bleibt aber editierbar.
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useFeature } from "../store/policy";
 import { gatewayFetch, GatewayError } from "../api/gateway";
+import { useIstAdmin } from "../api/org-rolle";
 
 /** v0.1.504 — verstaendliche Fehlertexte statt "gateway 403". Der
  *  Status allein sagt Nutzern nichts; jede Zeile nennt Ursache UND
@@ -125,7 +127,9 @@ export function RetryStageForm({
     setErr(null);
     setResult(null);
     try {
-      const body: { stage: RetryStageId; companyName?: string } = { stage };
+      // Z10 — der Admin-Knopf erzwingt: Frische-Markierung weg, Stufe rechnet
+      // neu, die Firma zaehlt in diesem Monat zum Stufensatz.
+      const body: { stage: RetryStageId; companyName?: string; erzwingen: boolean } = { stage, erzwingen: true };
       if (stage === "companyContact" && companyName.trim()) {
         body.companyName = companyName.trim();
       }
@@ -174,6 +178,9 @@ export function RetryStageForm({
       <button type="button" onClick={onClick} disabled={busy}>
         {busy ? "Wird ausgelöst…" : "Schritt erneut starten"}
       </button>
+      <p className="muted small">
+        Nur für Owner und Admins. Der Schritt rechnet auf jeden Fall neu; die Firma zählt in diesem Monat zum Stufensatz.
+      </p>
       {err && <p className="bad">Fehler: {err}</p>}
       {result && (
         <div className={`retry-result ${result.ok ? "ok" : "warn"}`}>
@@ -197,5 +204,55 @@ export function RetryStageForm({
         </div>
       )}
     </div>
+  );
+}
+
+/** Z10 — Für alle Rollen: die ganze Firma erneut verarbeiten (kostenpflichtig,
+ *  Frische-Markierungen aller Stufen weg). Admins sehen zusätzlich das
+ *  Schritt-Formular; alle anderen nur diesen Knopf. */
+export function FirmaKomplettNeuVerarbeiten({ companyId, companyName, onDispatched }: { companyId: string; companyName?: string | null; onDispatched?: () => void }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [meldung, setMeldung] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const onClick = async () => {
+    if (!window.confirm(`${companyName ?? companyId} komplett neu verarbeiten? Alle Schritte laufen erneut; die Firma zählt in diesem Monat zum Stufensatz (1,00 bis 3,50 €).`)) return;
+    setBusy(true);
+    setErr(null);
+    setMeldung(null);
+    try {
+      const r = await gatewayFetch<{ transactionId: string }>("/v1/imports/by-ids", {
+        method: "POST",
+        body: { companyIds: [companyId], transactionName: `${(companyName ?? companyId).trim()} (erneut verarbeitet)`, erzwingen: true },
+      });
+      setMeldung(`Verarbeitung angestoßen (Vorgang ${r.transactionId.slice(0, 8)}…).`);
+      void qc.invalidateQueries({ queryKey: ["inMeinenFirmen", companyId] });
+      onDispatched?.();
+    } catch (e) {
+      setErr(fehlertext(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="retry-form">
+      <button type="button" onClick={onClick} disabled={busy}>
+        {busy ? "Wird angestoßen…" : "Firma komplett neu verarbeiten"}
+      </button>
+      <p className="muted small">Alle Schritte laufen erneut. Kostenpflichtig zum Stufensatz, höchstens einmal je Monat.</p>
+      {meldung && <p className="muted">{meldung}</p>}
+      {err && <p className="bad">Fehler: {err}</p>}
+    </div>
+  );
+}
+
+/** Z10 — Admins: Schritt-Formular plus Komplett-Knopf; alle anderen nur den Knopf. */
+export function ErneutVerarbeiten(props: Parameters<typeof RetryStageForm>[0]) {
+  const istAdmin = useIstAdmin();
+  return (
+    <>
+      {istAdmin && <RetryStageForm {...props} />}
+      <FirmaKomplettNeuVerarbeiten companyId={props.companyId} companyName={props.defaultCompanyName} onDispatched={props.onDispatched} />
+    </>
   );
 }

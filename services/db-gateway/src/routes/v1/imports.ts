@@ -658,6 +658,9 @@ const byIdsRoute = createRoute({
           schema: z.object({
             companyIds: z.array(z.string().trim().min(1).max(64)).min(1).max(500),
             transactionName: z.string().trim().min(1).max(200).optional(),
+            /** Z10 — ganze Firma erneut verarbeiten: Frische-Markierungen aller
+             *  Pool-Stufen loeschen (kostenpflichtig zum Stufensatz). Nur Admins. */
+            erzwingen: z.boolean().optional(),
           }),
         },
       },
@@ -684,8 +687,19 @@ const byIdsRoute = createRoute({
 });
 
 importsRouter.openapi(byIdsRoute, async (c) => {
-  const { companyIds, transactionName } = c.req.valid("json");
+  const { companyIds, transactionName, erzwingen } = c.req.valid("json");
   const name = transactionName ?? `Liste: ${companyIds.length} ${companyIds.length === 1 ? "Firma" : "Firmen"}`;
+  if (erzwingen) {
+    const auth = c.get("auth");
+    const { darfErzwingen, frischeLoeschen } = await import("../../lib/rollen");
+    if (!(await darfErzwingen(getGatewayPool(), auth.tenantId, auth.actorId))) {
+      throw new HTTPException(403, { message: "Erneute Verarbeitung erzwingen duerfen nur Owner oder Admins." });
+    }
+    const n = await frischeLoeschen(getGatewayPool(), companyIds);
+    const { erzwingen: gesellschafterErzwingen } = await import("../../lib/verflechtungen");
+    for (const id of companyIds) await gesellschafterErzwingen(getGatewayPool(), id).catch(() => undefined);
+    logger.info({ companyIds: companyIds.length, geloescht: n, actorId: auth.actorId }, "[imports] by-ids erzwungen: Frische geloescht");
+  }
   let r: { transactionId?: string; companyCount?: number; nichtGefunden?: string[] };
   try {
     r = await callUpstream(c, "masterData", "/api/v1/data-care/companies", { method: "POST", body: { companyIds, name } });

@@ -1594,9 +1594,18 @@ const retryRoute = createRoute({
 
 transactionsRouter.openapi(retryRoute, async (c) => {
   const { transactionId, companyId } = c.req.valid("param");
-  const { stage, companyName } = c.req.valid("json");
+  const { stage, companyName, erzwingen: erzwungen } = c.req.valid("json");
 
   await assertTransactionOwnershipById(c, transactionId, { allowShared: false });
+
+  // Z10 — Erzwingen (Frische loeschen) nur fuer Admins; sonst 403 mit Klartext.
+  if (erzwungen) {
+    const auth = c.get("auth");
+    const { darfErzwingen } = await import("../../lib/rollen");
+    if (!(await darfErzwingen(getGatewayPool(), auth.tenantId, auth.actorId))) {
+      throw new HTTPException(403, { message: "Einzelne Schritte neu erzwingen duerfen nur Owner oder Admins. Du kannst die ganze Firma erneut verarbeiten lassen." });
+    }
+  }
 
   // v0.1.430 — P2: Firma ausgesetzt? Dann keinerlei Wiederanlauf. Dieser
   // Endpunkt ist der Chokepoint fuer ALLE Retry-Ausloeser (Agent-Tool,
@@ -1646,10 +1655,14 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   // refused" verwarf (Live-Befund 2026-08-31, BADOEYNHAUSEN_HRB_5591:
   // people=2 extrahiert, alle Persists verworfen). STAGE_TO_SERVICE
   // deckt auch die Sub-Pipelines ab (deepResearch/jobPostings → website).
-  const producersToClear = new Set<string>([STAGE_TO_SERVICE[stage]]);
-  // Firmen-Verflechtungen: manueller Retry der Registerstufe liest auch die
+  // Z10 (2026-10-13): Die Frische wird NUR noch bei `erzwingen` (Admin-Knopf)
+  // geloescht. Chat-Werkzeug retry_stage, MCP, Heartbeat, Auffrischung und
+  // Wiederaufnahme respektieren die Markierung — frische Stufen werden vom
+  // Tier-Gate uebersprungen, kosten nichts und werden nicht berechnet.
+  const producersToClear = new Set<string>(erzwungen ? [STAGE_TO_SERVICE[stage]] : []);
+  // Firmen-Verflechtungen: erzwungener Retry der Registerstufe liest auch die
   // Gesellschafterliste erneut (hebt die 30-Tage-Sperre einmalig auf).
-  if (STAGE_TO_SERVICE[stage] === "structured-content") {
+  if (erzwungen && STAGE_TO_SERVICE[stage] === "structured-content") {
     await erzwingen(getGatewayPool(), companyId).catch((err: unknown) =>
       logger.warn({ companyId, err: err instanceof Error ? err.message : String(err) }, "verflechtungen: erzwingen fehlgeschlagen"),
     );

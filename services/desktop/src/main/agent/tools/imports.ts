@@ -1534,7 +1534,9 @@ export function buildImportTools(deps: {
       "when company_get reports `verarbeitung.stand: unvollstaendig` and the " +
       "user's question needs one of the missing stages (it carries the " +
       "transactionId): run the stage, tell the user you are fetching that " +
-      "now — never answer 'there is no such data'.",
+      "now — never answer 'there is no such data'. Respects freshness: a stage that is " +
+      "already up to date is skipped by the gateway (no cost, not billed); only failed or " +
+      "missing stages actually run. Forcing a fresh stage to recompute is admin-only in the app, not available here.",
     parameters: {
       type: "object",
       required: ["transactionId", "companyId", "stage"],

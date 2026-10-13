@@ -80,6 +80,9 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
   if (!companyId && (!name?.trim() || !ort?.trim() || !IMPORTIERBAR.includes(land))) return null;
 
   const anstossen = async () => {
+    // Z10 — "Neu verarbeiten" erzwingt alle Stufen (kostenpflichtig zum
+    // Stufensatz); Uebernehmen respektiert die Frische wie jeder Import.
+    if (uebernommen && !window.confirm(`${(name ?? companyId ?? "").trim()} komplett neu verarbeiten? Alle Schritte laufen erneut; die Firma zählt in diesem Monat zum Stufensatz (1,00 bis 3,50 €).`)) return;
     setLaeuft(true);
     setMeldung(null);
     setFehler(null);
@@ -88,7 +91,7 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
       const r = companyId
         ? await gatewayFetch<{ transactionId: string; companyCount: number }>("/v1/imports/by-ids", {
             method: "POST",
-            body: { companyIds: [companyId], transactionName: titel },
+            body: { companyIds: [companyId], transactionName: titel, ...(uebernommen ? { erzwingen: true } : {}) },
           })
         : await gatewayFetch<{ transactionId: string; companyCount: number }>("/v1/imports/from-list", {
             method: "POST",
@@ -136,7 +139,7 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
           onClick={() => void anstossen()}
           title={
             uebernommen === true
-              ? "Alle Daten dieser Firma erneut holen und bewerten"
+              ? "Alle Schritte erneut ausführen (kostenpflichtig zum Stufensatz)"
               : "Die Firma in den eigenen Bestand holen und alle Daten erheben"
           }
         >

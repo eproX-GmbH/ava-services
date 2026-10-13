@@ -9,7 +9,7 @@ import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { ProcessingToggle } from "../components/ProcessingToggle";
 import { ProcessingFeedButton } from "../components/ProcessingFeedPanel";
 import {
-  RetryStageForm,
+  ErneutVerarbeiten,
   type RetryStageId,
 } from "../components/RetryStageForm";
 
@@ -628,7 +628,7 @@ export function AllCompanies() {
             return (
               <>
                 <h4>Erneut versuchen</h4>
-                <RetryStageForm
+                <ErneutVerarbeiten
                   transactionId={fallbackTx}
                   transactionIdByStage={byStage}
                   companyId={openCompanyId}

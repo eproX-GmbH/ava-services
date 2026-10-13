@@ -923,6 +923,10 @@ export const RetryStageBody = z
   .object({
     stage: RetryStage,
     companyName: z.string().optional(),
+    /** Z10 — Frische-Markierung loeschen und die Stufe auf jeden Fall neu rechnen
+     *  (kostenpflichtig, nur Admins). Ohne das Flag respektiert der Wiederanlauf
+     *  die Frische wie jeder Hintergrundweg. */
+    erzwingen: z.boolean().optional(),
   })
   .openapi("RetryStageBody");
 

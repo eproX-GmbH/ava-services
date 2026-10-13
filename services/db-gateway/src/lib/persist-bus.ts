@@ -521,7 +521,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     // apply doesn't leave an orphan freshness row claiming the write
     // happened.
     await inner(pool, event, log);
-    if (stage === "company-profile") await aufnahmeNachProfil(event, "company-profile", log);
+    if (VERBUCHTE_STUFEN.has(stage)) await aufnahmeNachProfil(event, stage, log);
     try {
       // Non-LLM stages (structured-content, company-publication) clear
       // both tier and model so the row is unambiguously "scrape-only".
@@ -1030,13 +1030,26 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
   // verhindern damit keine Abrechnung mehr.
 };
 
-/** Z8 — verarbeitete Firma verbuchen, sobald das Firmenprofil fuer den Tenant
- *  tatsaechlich gespeichert wurde (nicht bei uebersprungen). Best-effort. */
+const VERBUCHTE_STUFEN = new Set<string>(["website", "company-profile", "company-contact", "company-email", "company-publication", "structured-content"]);
+
+/** Z8/Z10 — verarbeitete Firma verbuchen, sobald eine Pool-Stufe fuer den
+ *  Tenant tatsaechlich gespeichert wurde (nicht bei uebersprungen). Andere
+ *  Stufen als das Profil zaehlen nur, wenn ein Firmenprofil existiert (ohne
+ *  erreichbare Website wird nichts berechnet). Best-effort. */
 async function aufnahmeNachProfil(event: CloudEvent<PersistEvent<unknown>>, source: string, log: typeof logger): Promise<void> {
   const data = event.data as PersistEvent<{ companyId?: string }> | undefined;
   const tenantId = data?.tenantId;
   const companyId = data?.result?.companyId;
   if (!tenantId || !companyId) return;
+  if (source !== "company-profile") {
+    try {
+      const r = await getProducerPool("company-profile").query(`SELECT 1 FROM "CompanyProfile" WHERE id = $1 LIMIT 1`, [companyId]);
+      if ((r.rowCount ?? 0) === 0) return;
+    } catch (err) {
+      log.warn({ companyId, err: err instanceof Error ? err.message : String(err) }, "[aufnahme] Profil-Pruefung fehlgeschlagen");
+      return;
+    }
+  }
   await recordUsage(getGatewayPool(), log, {
     tenantId,
     actorId: (data as { actorId?: string | null } | undefined)?.actorId ?? null,

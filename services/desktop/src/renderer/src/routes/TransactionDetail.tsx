@@ -7,7 +7,7 @@ import { gatewayFetch, gatewaySSE } from "../api/gateway";
 import { fmtDate } from "../lib/format";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { CrmBadgeRow } from "../components/CrmBadge";
-import { RetryStageForm, RETRY_STAGES } from "../components/RetryStageForm";
+import { ErneutVerarbeiten, RETRY_STAGES } from "../components/RetryStageForm";
 
 // W3 — pipeline matrix view.
 //
@@ -531,7 +531,7 @@ export function TransactionDetail() {
           )}
 
           <h4>Erneut versuchen</h4>
-          <RetryStageForm
+          <ErneutVerarbeiten
             transactionId={id!}
             companyId={openCompanyId}
             defaultCompanyName={companyNames.data?.map.get(openCompanyId) ?? null}
