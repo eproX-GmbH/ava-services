@@ -36,6 +36,13 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] closeCompletedPeriods failed");
   }
   try {
+    const { bestandVerbuchen } = await import("./bestand");
+    const b = await bestandVerbuchen(pool, now);
+    if (b.konten > 0) logger.info(b, "[billing-cron] Bestand verbucht");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] bestandVerbuchen failed");
+  }
+  try {
     await zugangUeberschreitungEinzelabo(now);
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] zugangUeberschreitung failed");

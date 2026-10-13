@@ -179,7 +179,7 @@ export function RetryStageForm({
         {busy ? "Wird ausgelöst…" : "Schritt erneut starten"}
       </button>
       <p className="muted small">
-        Nur für Owner und Admins. Der Schritt rechnet auf jeden Fall neu; die Firma zählt in diesem Monat zum Stufensatz.
+        Nur für Owner und Admins. Der Schritt rechnet auf jeden Fall neu, auch wenn der Datensatz noch frisch ist.
       </p>
       {err && <p className="bad">Fehler: {err}</p>}
       {result && (
@@ -216,7 +216,7 @@ export function FirmaKomplettNeuVerarbeiten({ companyId, companyName, onDispatch
   const [meldung, setMeldung] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const onClick = async () => {
-    if (!window.confirm(`${companyName ?? companyId} komplett neu verarbeiten? Alle Schritte laufen erneut; die Firma zählt in diesem Monat zum Stufensatz (1,00 bis 3,50 €).`)) return;
+    if (!window.confirm(`${companyName ?? companyId} komplett neu verarbeiten? Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Das dauert einige Minuten.`)) return;
     setBusy(true);
     setErr(null);
     setMeldung(null);
@@ -239,7 +239,7 @@ export function FirmaKomplettNeuVerarbeiten({ companyId, companyName, onDispatch
       <button type="button" onClick={onClick} disabled={busy}>
         {busy ? "Wird angestoßen…" : "Firma komplett neu verarbeiten"}
       </button>
-      <p className="muted small">Alle Schritte laufen erneut. Kostenpflichtig zum Stufensatz, höchstens einmal je Monat.</p>
+      <p className="muted small">Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Im Monatsbetrag der Firma enthalten.</p>
       {meldung && <p className="muted">{meldung}</p>}
       {err && <p className="bad">Fehler: {err}</p>}
     </div>

@@ -1,5 +1,9 @@
 # Prompt für den Website-Agenten (ava.bi): Nachtrag Abrechnung „Zugang zum Ergebnis“
 
+> **Überholt am 13.10.2026 abends:** Abrechnung je Firma im Bestand und Monat mit den Preisen
+> 0,50 / 1,00 / 1,50 €; gültig ist docs/WEBSITE_PROMPT_KORREKTUR_2026-10-13.md. Die Abschnitte
+> unten zu Stufenpreisen, „verarbeitet“, Guthaben und Deckeln sind nicht mehr maßgeblich.
+
 Stand 2026-10-13, Desktop v0.1.840, Gateway mit Betreiber-Spur (Z1–Z8 aus
 docs/PLAN_ABRECHNUNG_ZUGANG.md: ein Plan Pro, Ausgabenlimit, Aufnahme beim Firmenprofil). Ergänzt docs/WEBSITE_PROMPT_UPDATE_2026-09-07.md
 (Abschnitt 4 „Preise und Abrechnung“ wird durch diesen Text ersetzt). Ton wie gehabt:

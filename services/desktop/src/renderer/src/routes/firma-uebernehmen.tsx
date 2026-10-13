@@ -82,7 +82,7 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
   const anstossen = async () => {
     // Z10 — "Neu verarbeiten" erzwingt alle Stufen (kostenpflichtig zum
     // Stufensatz); Uebernehmen respektiert die Frische wie jeder Import.
-    if (uebernommen && !window.confirm(`${(name ?? companyId ?? "").trim()} komplett neu verarbeiten? Alle Schritte laufen erneut; die Firma zählt in diesem Monat zum Stufensatz (1,00 bis 3,50 €).`)) return;
+    if (uebernommen && !window.confirm(`${(name ?? companyId ?? "").trim()} komplett neu verarbeiten? Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind.`)) return;
     setLaeuft(true);
     setMeldung(null);
     setFehler(null);
@@ -139,7 +139,7 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
           onClick={() => void anstossen()}
           title={
             uebernommen === true
-              ? "Alle Schritte erneut ausführen (kostenpflichtig zum Stufensatz)"
+              ? "Alle Schritte erneut ausführen, auch wenn die Daten noch frisch sind"
               : "Die Firma in den eigenen Bestand holen und alle Daten erheben"
           }
         >

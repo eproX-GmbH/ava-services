@@ -71,6 +71,15 @@ export async function seedEntityProgressForTransaction(
     return;
   }
 
+  // Z11 — bezahlte Konten: die Firmen zaehlen ab Aufnahme im laufenden Monat.
+  {
+    const auth = c.get("auth") as { tenantId?: string; actorId?: string | null } | undefined;
+    if (auth?.tenantId) {
+      const { bestandAufnahme } = await import("./bestand");
+      void bestandAufnahme(getGatewayPool(), { tenantId: auth.tenantId, actorId: auth.actorId ?? null, companyIds });
+    }
+  }
+
   if (companyIds.length === 0) {
     // Pre-§8.v3 transaction or genuinely empty import. Either way
     // there's nothing to seed.

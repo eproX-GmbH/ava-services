@@ -27,13 +27,13 @@ interface Usage {
   };
 }
 
-const STUFEN_TEXT = "Stufen je verarbeiteter Firma und Monat: klein 1,00 € (kein LinkedIn-Firmenprofil), mittel 2,00 € (LinkedIn-Profil, unter 50 Personen), gross 3,50 € (50 oder mehr Personen). Gezaehlt wird jede Firma, die AVA im Abrechnungsmonat nachweislich verarbeitet hat (Firmenprofil gespeichert, auch Auffrischung); uebersprungene Firmen nicht. Die Stufe steht nach dem Lauf fest.";
+const STUFEN_TEXT = "Stufen je Firma im Bestand und Monat: klein 0,50 € (kein LinkedIn-Firmenprofil), mittel 1,00 € (LinkedIn-Profil, unter 50 Personen), gross 1,50 € (50 oder mehr Personen). Gezaehlt wird jede Firma, die im Abrechnungsmonat in Meine Firmen steht (Monat der Aufnahme und jeder Monat, an dessen Ende sie noch im Bestand ist), einmal je Organisation; Entfernen wirkt ab dem Folgemonat. Aufbereitung, Auffrischung, Alarme und Waechter sind enthalten. Die Stufe steht nach dem Lauf fest.";
 const eur = (cents: number) => Math.round(cents) / 100;
 
 export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
   const status = defineTool({
     name: "abrechnung_status",
-    summary: "Plan, Aufnahmen dieser Periode nach Stufe (klein/mittel/gross), voraussichtliche Kosten und Ausgabenlimit lesen.",
+    summary: "Plan, Firmen im Bestand dieser Periode nach Stufe (klein/mittel/gross), voraussichtliche Kosten und Ausgabenlimit lesen.",
     category: "abrechnung plan kosten ausgabenlimit kontingent preise stufe abo free pro",
     description:
       "Liest den Abrechnungsstand des Nutzers: Plan (free/pro/enterprise), Aufnahmen der Periode nach Stufe, voraussichtliche Kosten " +
@@ -66,13 +66,13 @@ export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
           ? { zugeordnetEur: eur(z.verbrauchtCents), voraussichtlichEur: eur(erwartet), enthaltenEur: z.guthabenCents > 0 ? eur(Math.min(z.verbrauchtCents, z.guthabenCents)) : 0 }
           : null,
         ausgabenlimit: u.tier === "free" ? null : limit == null ? { gesetzt: false } : { gesetzt: true, limitEur: eur(limit), erreicht: erwartet >= limit },
-        preiseJeStufe: { klein: 1.0, mittel: 2.0, gross: 3.5 },
+        preiseJeStufe: { klein: 0.5, mittel: 1.0, gross: 1.5 },
         hinweis:
           u.tier === "free"
-            ? "Free: 25 Firmen lebenslang, Kontakte nur von der Website (kein LinkedIn). Mehr Firmen und LinkedIn-Kontakte mit Pro (49 € je Nutzer und Monat plus Stufenpreis je Firma)."
+            ? "Free: 25 Firmen lebenslang, Kontakte nur von der Website (kein LinkedIn). Mehr Firmen und LinkedIn-Kontakte mit Pro (49 € je Nutzer und Monat plus 0,50 bis 1,50 € je Firma im Bestand und Monat)."
             : limit != null && erwartet >= limit
               ? "Das Ausgabenlimit ist erreicht: neue Firmen warten, bis das Limit erhoeht wird (abrechnung_limit_setzen) oder der Monat wechselt."
-              : "Aufnahmen werden zum Stufenpreis mit der naechsten Rechnung berechnet. Ein Ausgabenlimit je Monat laesst sich mit abrechnung_limit_setzen setzen.",
+              : "Jede Firma im Bestand wird je Monat zum Stufensatz berechnet; wer nicht mehr zahlen will, entfernt die Firma aus Meine Firmen (wirkt ab dem Folgemonat). Ein Ausgabenlimit je Monat laesst sich mit abrechnung_limit_setzen setzen.",
       };
     },
   });

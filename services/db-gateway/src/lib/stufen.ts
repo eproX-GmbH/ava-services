@@ -24,9 +24,12 @@ function cents(env: string | undefined, fallback: number): number {
 
 export function stufenPreise(): Record<Stufe, { preisCents: number; direktkostenCents: number }> {
   return {
-    klein: { preisCents: cents(process.env.STUFE_PREIS_KLEIN_CENTS, 100), direktkostenCents: cents(process.env.STUFE_KOSTEN_KLEIN_CENTS, 11) },
-    mittel: { preisCents: cents(process.env.STUFE_PREIS_MITTEL_CENTS, 200), direktkostenCents: cents(process.env.STUFE_KOSTEN_MITTEL_CENTS, 59) },
-    gross: { preisCents: cents(process.env.STUFE_PREIS_GROSS_CENTS, 350), direktkostenCents: cents(process.env.STUFE_KOSTEN_GROSS_CENTS, 77) },
+    // Z11 (2026-10-13): Preis je Firma im Bestand und Monat. Direktkosten je
+    // Monat = Erstverarbeitung auf 12 Monate umgelegt plus Auffrischung
+    // (Website 30 Tage, Kontakte 90 Tage, Betreiber-Modell): ≈ 5 / 25 / 31 ct.
+    klein: { preisCents: cents(process.env.STUFE_PREIS_KLEIN_CENTS, 50), direktkostenCents: cents(process.env.STUFE_KOSTEN_KLEIN_CENTS, 5) },
+    mittel: { preisCents: cents(process.env.STUFE_PREIS_MITTEL_CENTS, 100), direktkostenCents: cents(process.env.STUFE_KOSTEN_MITTEL_CENTS, 25) },
+    gross: { preisCents: cents(process.env.STUFE_PREIS_GROSS_CENTS, 150), direktkostenCents: cents(process.env.STUFE_KOSTEN_GROSS_CENTS, 31) },
   };
 }
 
