@@ -81,6 +81,7 @@ export const AUTO_WERKZEUGE: Record<string, string> = {
   import_excel: "Excel-Import",
   import_companies: "Firmen-Import",
   import_companies_from_crm: "CRM-Import",
+  firma_finden: "Firma anlegen",
 };
 
 const TAKT_MS = 20_000;

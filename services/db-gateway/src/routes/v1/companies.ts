@@ -659,6 +659,169 @@ companiesRouter.openapi(linkedinProfilesRoute, async (c) => {
   return c.json({ items: r.rows }, 200);
 });
 
+// ---- POST /v1/companies/web -------------------------------------------------
+//
+// docs/PLAN_FIRMEN_OHNE_REGISTER.md §2.2/§2.3 (F3): Firma ohne Registereintrag
+// aus einem Google-Eintrag mit eigener, vom Desktop geprüfter Website anlegen.
+// Die Kern-Domain ist die ID (WEB_…). Das Gateway prüft die Sperrliste erneut,
+// legt die Firma in den Stammdaten an (registerType WEB, source google-places),
+// sät den Website-Kanon (CompanySerp) und die Stammdaten-Zeile in
+// structured-content mit Frische, damit die Pipeline die Registerstufe
+// überspringt und Website → Profil → Kontakt → E-Mail mit der bekannten URL
+// laufen. Eine zweite Firma mit derselben Domain entsteht nie: bestehende
+// WEB-Firma → dieselbe ID; Register-Firma mit dieser Website → Konflikt.
+
+const WebFirmaEingabe = z.object({
+  name: z.string().trim().min(2).max(300),
+  website: z.string().trim().min(4).max(500),
+  ort: z.string().trim().min(1).max(200),
+  plz: z.string().trim().max(20).optional(),
+  strasse: z.string().trim().max(200).optional(),
+  land: z.enum(["DE", "AT", "CH", "UK"]).default("DE"),
+  bundesland: z.string().trim().max(100).optional(),
+  telefon: z.string().trim().max(60).optional(),
+  kategorie: z.string().trim().max(120).optional(),
+  adresse: z.string().trim().max(300).optional(),
+  bewertung: z.number().min(0).max(5).optional(),
+  bewertungen: z.number().int().nonnegative().optional(),
+  lat: z.number().optional(),
+  lon: z.number().optional(),
+  quelle: z.string().trim().max(40).default("google-places"),
+  urteil: z.object({ konfidenz: z.number().min(0).max(1), begruendung: z.string().max(600) }).optional(),
+});
+
+const webFirmaRoute = createRoute({
+  method: "post",
+  path: "/companies/web",
+  tags: [tag],
+  summary: "Firma ohne Registereintrag anlegen (Kern-Domain als ID)",
+  request: { body: { content: { "application/json": { schema: WebFirmaEingabe } } } },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            companyId: z.string(),
+            domain: z.string(),
+            neu: z.boolean(),
+            konflikt: z.array(z.object({ companyId: z.string(), name: z.string().nullable() })).optional(),
+          }),
+        },
+      },
+      description: "angelegt oder vorhanden; konflikt = Register-Firmen mit derselben Website",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(webFirmaRoute, async (c) => {
+  const auth = c.get("auth") as { actorId?: string | null; tenantId?: string | null } | undefined;
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const e = c.req.valid("json");
+  const { webKernDomain, webSperrgrund, webCompanyId, rechtsformAusName } = await import("../../lib/web-firma");
+  const domain = webKernDomain(e.website);
+  if (!domain) throw new HTTPException(400, { message: "website_ungueltig" });
+  const sperre = webSperrgrund(domain);
+  if (sperre) throw new HTTPException(400, { message: `domain_gesperrt:${sperre}` });
+  const companyId = webCompanyId(domain);
+
+  // Register-Firma mit dieser Website? Dann keine Doppelanlage, sondern Konflikt.
+  const konflikt: Array<{ companyId: string; name: string | null }> = [];
+  try {
+    const r = await getProducerPool("company-profile").query<{ id: string }>(
+      `SELECT id FROM "CompanyProfile" WHERE url ILIKE $1 AND id NOT LIKE 'WEB_%' LIMIT 3`,
+      [`%${domain}%`],
+    );
+    for (const row of r.rows) {
+      const { normalizeDomain } = await import("../../lib/discovery");
+      const u = await getProducerPool("company-profile").query<{ url: string | null }>(`SELECT url FROM "CompanyProfile" WHERE id = $1`, [row.id]);
+      if (normalizeDomain(u.rows[0]?.url ?? null) !== domain) continue;
+      let name: string | null = null;
+      try {
+        const m = await callUpstream<{ name?: string }>(c, "masterData", `/api/germany/v1/companies/${encodeURIComponent(row.id)}`);
+        name = m?.name ?? null;
+      } catch { /* Name ist Komfort */ }
+      konflikt.push({ companyId: row.id, name });
+    }
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err), domain }, "[web-firma] Konfliktpruefung uebersprungen");
+  }
+  if (konflikt.length > 0) return c.json({ companyId: konflikt[0]!.companyId, domain, neu: false, konflikt }, 200);
+
+  // Stammdaten: Zeile wie beim Register-Delta, nur mit WEB als Registerart.
+  const { masterData, nameNormalisiert } = await import("../../lib/register-jobs");
+  const strasse = e.strasse ?? "";
+  const delta = await masterData<{ neu: number; geaendert: number; unveraendert: number }>("POST", "/internal/companies/register-delta", {
+    companies: [
+      {
+        companyId,
+        name: e.name,
+        nameNormalized: nameNormalisiert(e.name),
+        registerType: "WEB",
+        registerNumber: domain,
+        location: e.ort,
+        districtCourt: "",
+        state: e.bundesland ?? "",
+        registerStatus: "ACTIVE",
+        formerCourt: null,
+        country: e.land,
+        legalForm: rechtsformAusName(e.name),
+        street: strasse || null,
+        zipCode: e.plz ?? null,
+        history: [],
+      },
+    ],
+    source: e.quelle,
+    gesehenAt: new Date().toISOString(),
+  });
+  const neu = delta.neu > 0;
+
+  // Website-Kanon: die geprüfte URL ist die Website — der Website-Producer
+  // sucht für WEB-Firmen nicht mehr selbst.
+  const jetzt = new Date();
+  await getProducerPool("website").query(
+    `INSERT INTO "CompanySerp" ("companyId", url, "companyNickname", category, latitude, longitude, address, phone, rating, "reviewCount", "createdAt", "updatedAt")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW(), $11)
+     ON CONFLICT ("companyId") DO UPDATE SET url = EXCLUDED.url, "companyNickname" = EXCLUDED."companyNickname", category = EXCLUDED.category,
+       latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, address = EXCLUDED.address, phone = EXCLUDED.phone,
+       rating = EXCLUDED.rating, "reviewCount" = EXCLUDED."reviewCount", "updatedAt" = EXCLUDED."updatedAt"`,
+    [companyId, e.website, e.name, e.kategorie ?? null, e.lat ?? null, e.lon ?? null, e.adresse ?? null, e.telefon ?? null, e.bewertung ?? null, e.bewertungen ?? null, jetzt],
+  );
+
+  // Stammdaten-Zeile in structured-content mit Frische: der Producer nimmt
+  // den Frisch-Pfad (kein Register-Scrape) und stößt Website/Profil/Kontakt an.
+  try {
+    const { recordFreshness, schreibeStructuredContent } = await import("../../lib/persist-bus");
+    const m = /^(.*?)\s+(\d+[a-zA-Z]?(?:\s?[-/]\s?\d+[a-zA-Z]?)?)$/.exec(strasse);
+    await schreibeStructuredContent(
+      getProducerPool("structured-content"),
+      {
+        companyId,
+        name: e.name,
+        legalForm: rechtsformAusName(e.name) ?? "",
+        street: m ? m[1]! : strasse,
+        houseNumber: m ? m[2]! : "",
+        zipCode: e.plz ?? "",
+        city: e.ort,
+        corporatePurpose: null,
+        shareCapital: null,
+        foundingYear: null,
+        managingDirectors: [],
+        lastRegisterEntry: null,
+        lastRegisterModification: null,
+      } as never,
+      jetzt,
+      logger,
+      { runId: `web-firma:${auth.actorId ?? "?"}`, tenantId: auth.tenantId },
+    );
+    await recordFreshness(companyId, "structured-content", null, null, "web-firma");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err), companyId }, "[web-firma] Stammdaten-Zeile fuer structured-content nicht geschrieben");
+  }
+  logger.info({ companyId, domain, neu, actorId: auth.actorId ?? null, konfidenz: e.urteil?.konfidenz ?? null }, "[web-firma] angelegt");
+  return c.json({ companyId, domain, neu }, 200);
+});
+
 // ---- POST /v1/companies/icp-felder -----------------------------------------
 //
 // docs/PLAN_BEWERTUNG_ABKLEMMEN.md (2026-10-12): kompakte Felder je Firma fuer

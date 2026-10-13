@@ -85,6 +85,8 @@ export function registerKennung(c: { country?: string | null; registerType?: str
   const nr = (c.registerNumber ?? "").trim();
   if (!nr) return null;
   const art = (c.registerType ?? "").trim();
+  // Firma ohne Registereintrag (docs/PLAN_FIRMEN_OHNE_REGISTER.md): ID ist die Domain.
+  if (art === "WEB") return `ohne Registereintrag · Website ${nr}`;
   if (c.country === "CH") return nr;
   return art ? `${art} ${nr}` : nr; // UK: "CRN 00077570" (Company Registration Number)
 }

@@ -67,6 +67,7 @@ import { buildWatchlistTools } from "./watchlist";
 import { buildLinkedInSelfserviceTools } from "./linkedin-selfservice";
 import { buildIcpTools } from "./icp";
 import { buildIcpAbgleichTools } from "./icp-abgleich";
+import { buildFirmaFindenTools } from "./firma-finden";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
@@ -300,6 +301,7 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildIcpAbgleichTools({ gateway: deps.gateway, providers: deps.providers, icp: deps.icp })) registry.register(t);
+  for (const t of buildFirmaFindenTools({ gateway: deps.gateway, providers: deps.providers })) registry.register(t);
   for (const t of buildIcpTools({
     icp: deps.icp,
     gateway: deps.gateway,

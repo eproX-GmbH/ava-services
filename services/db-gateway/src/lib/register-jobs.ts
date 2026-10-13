@@ -273,7 +273,7 @@ export async function gerichtBestand(name: string): Promise<string> {
   return gerichteCache.map.get(idTeil(name)) ?? name;
 }
 
-function nameNormalisiert(name: string): string {
+export function nameNormalisiert(name: string): string {
   return name.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
