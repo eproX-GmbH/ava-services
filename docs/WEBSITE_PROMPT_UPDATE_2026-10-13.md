@@ -48,6 +48,35 @@ gelegt wird. Firmen ohne erreichbare Website kosten nichts, auch wenn Registerda
 Jahresabschlüsse vorliegen. Fehlende Jahresabschlüsse, Publikationen oder Kontakte
 ändern am Preis nichts, sie gehören zum Ergebnis, soweit es sie gibt.
 
+## 2a. Preiskarte Pro und Stufen-Erklärung (Nachtrag nach Sichtung der Seite, 2026-10-13)
+
+Die Spanne „1,00 € bis 3,50 € je aufgenommener Firma“ allein lässt zwei Fragen offen:
+welche Stufen es gibt und ob der Betrag monatlich anfällt. Deshalb:
+
+**Auf der Pro-Karte** statt des ersten Stichpunkts: „Dazu einmalig je neu aufgenommener
+Firma 1,00 € (klein), 2,00 € (mittel) oder 3,50 € (groß), siehe Stufen“ mit Sprung zur
+Erklärung unter den Karten. Den Stichpunkt „Auffrischung, Alarme und Wächter inklusive“
+ersetzen durch „Jede Firma zählt nur einmal; Auffrischung, Alarme und Wächter inklusive“.
+Unter dem Preis „49 €“ bleibt „je Nutzer und Monat, netto“.
+
+**Unter den Karten** ein Block „Was eine Firma kostet“ mit diesem Satz und der Tabelle:
+
+„Die Stufe hängt davon ab, wie aufwendig die Suche nach Ansprechpartnern war. Sie steht
+nach der Aufbereitung fest und wird dir in deinem Bestand und am Vorgang angezeigt;
+vorher siehst du die Spanne. Der Betrag fällt einmal an, wenn die Firma neu in deinen
+Bestand kommt, und steht auf der nächsten Monatsrechnung. Danach kostet die Firma nichts
+mehr, egal wie oft AVA sie auffrischt oder du sie erneut verarbeitest.“
+
+| Stufe | Preis, einmalig | Woran AVA das festmacht |
+|---|---|---|
+| Klein | 1,00 € | Kein LinkedIn-Firmenprofil zuordenbar; Ansprechpartner nur von der Website. |
+| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, bis 100 Personen dort gelistet. |
+| Groß | 3,50 € | LinkedIn-Firmenprofil mit über 100 Personen, zweiter Durchlauf nötig. |
+
+Rechenbeispiel, das die Seite nennen darf: „Ein Nutzer nimmt im Monat 40 Firmen neu auf,
+30 klein und 10 mittel: 49 € plus 30 × 1,00 € plus 10 × 2,00 € = 99 € netto. Im Folgemonat
+ohne neue Firmen: 49 €.“
+
 ## 3. Sätze, die die Seite so sagen darf
 
 - „49 € je Nutzer und Monat, dazu 1,00 bis 3,50 € je aufgenommener Firma. Du bestimmst
@@ -75,7 +104,8 @@ Jahresabschlüsse vorliegen. Fehlende Jahresabschlüsse, Publikationen oder Kont
 - Keine Aussage, dass Jahresabschlüsse oder Kontakte für jede Firma vorliegen; der
   Preis hängt nur an Website und Firmenprofil, nicht am Umfang der Registerdaten.
 - Nicht „je Monat“ oder „je Auffrischung“ beim Preis je Firma; eine Firma wird einmal
-  berechnet.
+  berechnet. Die Spanne „1,00 bis 3,50 €“ nie ohne das Wort „einmalig“ und ohne Hinweis
+  auf die Stufen zeigen.
 - „Du zahlst für das Ergebnis, nicht für die Arbeit“ ist kein Werbesatz; er gehört nur in
   FAQ und AGB (siehe unten).
 - Keine automatische Rechnungsstellung für Sammelabrechnungen versprechen, solange

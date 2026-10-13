@@ -5216,9 +5216,10 @@ const PLAN_CARDS: PlanCard[] = [
     name: "Pro",
     price: "49 €",
     cadence: "/Monat je Nutzer",
-    quota: "plus 1,00 bis 3,50 € je aufgenommener Firma, nach Stufe",
+    quota: "dazu einmalig je neu aufgenommener Firma 1,00 € (klein), 2,00 € (mittel) oder 3,50 € (groß)",
     features: [
-      "So viele Firmen, wie du brauchst",
+      "Jede Firma zählt nur einmal, Auffrischung inklusive",
+      "Stufe nach dem Lauf: LinkedIn-Profil ja/nein, Personenzahl",
       "Eigenes Ausgabenlimit je Monat",
       "LinkedIn-Kontakte inklusive",
       "Aufbereitung mit AVAs Modell, kein Schlüssel nötig",
