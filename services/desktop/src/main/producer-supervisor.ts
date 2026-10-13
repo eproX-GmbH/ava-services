@@ -781,7 +781,7 @@ export class ProducerSupervisor extends EventEmitter {
     const llmEnv: Record<string, string> = betreiberSpur
       ? {
           LLM_PROVIDER: "openai",
-          LLM_MODEL: betreiberSpur.modell ?? "gpt-6.1-sol",
+          LLM_MODEL: betreiberSpur.modell ?? "gpt-6-luna",
           AVA_LLM_VIA_GATEWAY: "1",
           AVA_LLM_LANE: "betreiber",
           AVA_LLM_QUELLE: this.opts.config.name,

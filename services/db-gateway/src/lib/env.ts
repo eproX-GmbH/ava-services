@@ -67,7 +67,7 @@ const schema = z.object({
   // OpenAI-Schluessel mit festem Modell; der Apify-Token liegt zentral hier.
   // Nie an Geraete der Nutzer ausgeliefert.
   OPERATOR_OPENAI_API_KEY: z.string().optional(),
-  OPERATOR_POOL_MODEL: z.string().default("gpt-6.1-sol"),
+  OPERATOR_POOL_MODEL: z.string().default("gpt-6-luna"),
   OPERATOR_APIFY_TOKEN: z.string().optional(),
   // valueserp config defaults applied by the proxy when the caller
   // doesn't override. These are operator-deployment config, not
