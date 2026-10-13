@@ -297,7 +297,7 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
       if (Object.keys(patch).length === 0) {
         return {
           automatik: vorher.enabled,
-          tokenHinterlegt: ks.hasKey(),
+          tokenHinterlegt: false,
           intervalHours: vorher.intervalHours,
           maxItemsPerProfile: vorher.maxItemsPerProfile,
           bestandRotationEnabled: vorher.bestandRotationEnabled,
@@ -309,8 +309,8 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
             "companyWindow kostet im Extremfall (companyWindow x 4 $ / 1000) je Firmenlauf.",
         };
       }
-      if (patch.enabled === true && !ks.hasKey() && !(await deps.hatApifyZugang?.())) {
-        return "Automatik braucht einen Apify-Zugang — eigenen Token im Signale-Panel setzen (Tokens gehen nie ueber den Chat) oder einen Organisationsschluessel fuer Apify.";
+      if (patch.enabled === true && !(await deps.hatApifyZugang?.())) {
+        return "Automatik braucht den Apify-Zugang, den AVA zentral bereitstellt — er ist gerade nicht erreichbar (angemeldet?).";
       }
       const beschreibung = Object.entries(patch)
         .map(([k, v]) => `${k} → ${String(v)}`)

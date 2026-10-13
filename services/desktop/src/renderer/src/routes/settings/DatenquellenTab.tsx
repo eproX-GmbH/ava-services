@@ -1,6 +1,5 @@
 import { LinkedInSection, CrmSection } from "../Settings";
 import { MailAccountSection } from "./MailAccountSection";
-import { ApifySection } from "./ApifySection";
 import { MailEntwurfSection } from "./MailEntwurfSection";
 import { useFeature } from "../../store/policy";
 
@@ -14,18 +13,10 @@ export function DatenquellenTab() {
   // O3 — Organisationsvorgaben blenden ganze Abschnitte aus.
   const linkedin = useFeature("linkedin.beobachter");
   const mail = useFeature("mail");
-  const kontakte = useFeature("kontakte");
-  // Apify braucht auch, wer nur Watchlist oder Personen-Radar nutzt —
-  // seit 2026-09-21 wird der Token NUR noch hier gesetzt.
-  const watchlist = useFeature("linkedin.watchlist");
-  const radar = useFeature("linkedin.radar");
   return (
     <>
       {linkedin && <LinkedInSection />}
-      {/* Apify gehoert zu "wo kommen Daten her": es liefert die
-          Ansprechpartner. Der Token war bisher nur im LinkedIn-Bereich
-          setzbar und dort nicht zu finden. */}
-      {(kontakte || watchlist || radar) && <ApifySection />}
+      {/* 2026-10-13: Apify laeuft zentral ueber AVA — keine Einstellung mehr. */}
       <CrmSection />
       {mail && <MailAccountSection />}
       {/* Mail-Entwürfe gelten auch ohne AVAs eigenes Postfach. */}

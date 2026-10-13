@@ -460,10 +460,9 @@ export class LlmProviderManager extends EventEmitter {
    * die Anbieter fuer die Sprachmodelle; fuer Apify gibt es seit 2026-09-18
    * diese eigene, genauere Vorgabe, und die gilt.
    */
-  apifyUeberOrganisation(hatEigenen: boolean): boolean {
-    if (!this.org.providers.apify) return false;
-    if (!this.apifyEigenerErlaubt()) return true;
-    return !hatEigenen;
+  apifyUeberOrganisation(_hatEigenen: boolean): boolean {
+    // 2026-10-13: Apify laeuft nur noch zentral ueber das Gateway.
+    return Boolean(this.org.providers.apify);
   }
 
   /** Vorgabe der Organisation; ohne Angabe erlaubt (bisheriges Verhalten). */

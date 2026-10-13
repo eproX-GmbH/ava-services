@@ -85,6 +85,18 @@ function proxyOpts(provider: LLMProvider): { apiKey: string; baseURL: string; he
   const gw = process.env.GATEWAY_URL;
   const token = process.env.PRODUCER_GATEWAY_TOKEN;
   if (!gw || !token) return null;
+  // Betreiber-Spur (docs/PLAN_ABRECHNUNG_ZUGANG.md Z2): Pool-Stufen laufen ueber
+  // GATEWAY_URL/v1/llm/betreiber mit dem Betreiber-Schluessel und festem Modell;
+  // die Stufe (AVA_LLM_QUELLE) geht als Kopfzeile mit, damit das Metering sie
+  // zuordnen kann. Gilt nur fuer OpenAI-kompatible Aufrufe.
+  if (process.env.AVA_LLM_LANE === "betreiber" && provider === "openai") {
+    const quelle = (process.env.AVA_LLM_QUELLE ?? "").replace(/[^a-z0-9._:-]/gi, "").slice(0, 80);
+    return {
+      apiKey: token,
+      baseURL: `${gw.replace(/\/+$/, "")}/v1/llm/betreiber`,
+      headers: { authorization: `Bearer ${token}`, "x-ava-llm-channel": "background", ...(quelle ? { "x-ava-llm-quelle": quelle } : {}) },
+    };
+  }
   const base = gatewayProxyBaseURL(gw, provider);
   if (!base) return null;
   return { apiKey: token, baseURL: base, headers: { authorization: `Bearer ${token}` } };

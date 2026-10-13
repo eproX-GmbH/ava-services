@@ -88,32 +88,7 @@ export function registerPersonenIpc(deps: PersonenIpcDeps): void {
     },
   );
 
-  ipcMain.handle("watchlist:setKey", async (_e, key: string) => {
-    if (!watchlistKeyStore.current) return { ok: false, error: "nicht initialisiert" };
-    const r = watchlistKeyStore.current.setKey(String(key ?? ""));
-    if (r.ok) {
-      cycleCompanyContact();
-      audit({
-        actorType: "user", actorId: null, category: "linkedin",
-        action: "watchlist.key.set", severity: "info",
-        subjectType: "credential", subjectId: null,
-        summary: "Watchlist: Anbieter-Token hinterlegt", metadata: {},
-      });
-    }
-    return r;
-  });
-
-  ipcMain.handle("watchlist:clearKey", () => {
-    watchlistKeyStore.current?.clearKey();
-    cycleCompanyContact();
-    audit({
-      actorType: "user", actorId: null, category: "linkedin",
-      action: "watchlist.key.clear", severity: "warning",
-      subjectType: "credential", subjectId: null,
-      summary: "Watchlist: Anbieter-Token geloescht (Automatik aus)", metadata: {},
-    });
-    return { ok: true };
-  });
+  // 2026-10-13: Apify-Token werden nicht mehr auf dem Geraet hinterlegt (zentral im Gateway).
 
   ipcMain.handle("watchlist:verifyKey", async () => {
     const key = await resolveApifyAccess();

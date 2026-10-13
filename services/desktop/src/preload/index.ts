@@ -1987,10 +1987,6 @@ const api = {
       }> => ipcRenderer.invoke("watchlist:getState"),
       setConfig: (patch: Record<string, unknown>): Promise<unknown> =>
         ipcRenderer.invoke("watchlist:setConfig", patch),
-      setKey: (key: string): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke("watchlist:setKey", key),
-      clearKey: (): Promise<{ ok: boolean }> =>
-        ipcRenderer.invoke("watchlist:clearKey"),
       verifyKey: (): Promise<{ ok: boolean; detail?: string }> =>
         ipcRenderer.invoke("watchlist:verifyKey"),
       add: (input: {

@@ -109,9 +109,8 @@ export function WatchlistPanel(): JSX.Element {
       {/* Stand auf einen Blick: Zugang, Automatik, letzter Lauf, Plaetze. */}
       <div className="wl__stand">
         <span className={`ct-pill ${zugang ? "ct-pill--accent" : "ct-pill--muted"}`}>
-          {zugang ? (ueberOrg ? "Apify über Organisation" : "Apify: eigener Token") : "Kein Apify-Zugang"}
+          {zugang ? (ueberOrg ? "Apify über AVA" : "Apify") : "Apify gerade nicht verfügbar"}
         </span>
-        <Link to="/settings#apify-section" className="link small">Zugang in den Einstellungen</Link>
         <span className="wl__stand-trenner" aria-hidden="true" />
         <span className={`ct-pill ${cfg.enabled ? "ct-pill--accent" : "ct-pill--muted"}`}>
           {cfg.enabled ? `Automatik ${cfg.intervalHours === 168 ? "wöchentlich" : "täglich"}` : "Automatik aus"}
@@ -129,9 +128,8 @@ export function WatchlistPanel(): JSX.Element {
 
       {!zugang && (
         <p className="wl__hinweis">
-          Ohne Apify-Zugang läuft die Watchlist nicht. Hinterlege einen eigenen Token unter{" "}
-          <Link to="/settings#apify-section" className="link">Einstellungen → Datenquellen</Link>
-          {" "}oder lass dir den Organisationsschlüssel freischalten.
+          Der Apify-Zugang wird von AVA zentral bereitgestellt und ist gerade nicht erreichbar.
+          Bitte anmelden bzw. später erneut versuchen.
         </p>
       )}
 

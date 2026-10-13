@@ -62,6 +62,13 @@ const schema = z.object({
   // attaches the key server-side. Lets the operator rotate without
   // redeploying every desktop.
   VALUESERP_API_KEY: z.string().optional(),
+  // docs/PLAN_ABRECHNUNG_ZUGANG.md (Z1): Betreiber-Spur. Pool-Stufen der Producer
+  // (Website-Judge, Profil, Kontakt, E-Mail, Publikationen) laufen ueber diesen
+  // OpenAI-Schluessel mit festem Modell; der Apify-Token liegt zentral hier.
+  // Nie an Geraete der Nutzer ausgeliefert.
+  OPERATOR_OPENAI_API_KEY: z.string().optional(),
+  OPERATOR_POOL_MODEL: z.string().default("gpt-6.1-sol"),
+  OPERATOR_APIFY_TOKEN: z.string().optional(),
   // valueserp config defaults applied by the proxy when the caller
   // doesn't override. These are operator-deployment config, not
   // tenant-specific, so they live on the gateway side too.

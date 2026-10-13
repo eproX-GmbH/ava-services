@@ -6,7 +6,6 @@
 // mit (W7). Der Key wird NIE ueber die IPC-Grenze gespiegelt; der
 // Renderer sieht nur hasKey.
 
-import { credentials, paths } from "../../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -85,7 +84,6 @@ const KONFIG_STAND = 1;
 export class WatchlistKeyStore {
   private readonly dir: string;
   private configCache: WatchlistConfig | null = null;
-  private keyCache: string | null = null;
 
   constructor(dir?: string) {
     this.dir = dir ?? join(paths().get("userData"), "linkedin");
@@ -93,9 +91,6 @@ export class WatchlistKeyStore {
 
   private configPath(): string {
     return join(this.dir, "watchlist-config.json");
-  }
-  private keyPath(): string {
-    return join(this.dir, "watchlist-key.enc");
   }
 
   getConfig(): WatchlistConfig {
@@ -199,7 +194,6 @@ export class WatchlistKeyStore {
       Math.min(1000, Math.round(Number(next.companyWindow) || 100)),
     );
     // Ohne Key keine Automatik.
-    if (next.enabled && !this.hasKey()) next.enabled = false;
     try {
       mkdirSync(this.dir, { recursive: true });
       const tmp = `${this.configPath()}.tmp`;
@@ -212,55 +206,8 @@ export class WatchlistKeyStore {
     return { ...next };
   }
 
+  /** 2026-10-13: Apify-Token liegen zentral im Gateway; auf dem Geraet gibt es keinen. */
   hasKey(): boolean {
-    return this.keyCache !== null || existsSync(this.keyPath());
-  }
-
-  setKey(key: string): { ok: boolean; error?: string } {
-    const trimmed = key.trim();
-    if (trimmed.length < 10) return { ok: false, error: "Token zu kurz." };
-    if (!credentials().isEncryptionAvailable()) {
-      return {
-        ok: false,
-        error: "System-Schluesselbund nicht verfuegbar — Token kann nicht sicher gespeichert werden.",
-      };
-    }
-    try {
-      mkdirSync(this.dir, { recursive: true });
-      writeFileSync(this.keyPath(), credentials().encryptString(trimmed), {
-        mode: 0o600,
-      });
-      this.keyCache = trimmed;
-      return { ok: true };
-    } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
-
-  /** Nur main-seitig aufrufen — NIE ueber IPC spiegeln. */
-  getKey(): string | null {
-    if (this.keyCache) return this.keyCache;
-    try {
-      if (!existsSync(this.keyPath())) return null;
-      this.keyCache = credentials().decryptString(readFileSync(this.keyPath()));
-      return this.keyCache;
-    } catch (err) {
-      console.warn("[watchlist] key decrypt failed:", err);
-      return null;
-    }
-  }
-
-  clearKey(): void {
-    this.keyCache = null;
-    try {
-      rmSync(this.keyPath(), { force: true });
-    } catch {
-      /* best-effort */
-    }
-    // Automatik ohne Key abschalten.
-    this.setConfig({ enabled: false });
+    return false;
   }
 }

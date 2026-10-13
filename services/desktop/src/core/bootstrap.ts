@@ -540,6 +540,23 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     port: number;
   }> = [];
 
+  // docs/PLAN_ABRECHNUNG_ZUGANG.md (Z1/Z2): Betreiber-Spuren laut Gateway. Pool-
+  // Producer laufen damit ueber das Betreiber-Modell, Apify liegt zentral.
+  let betreiberSpuren: import("../main/producer-supervisor").BetreiberSpuren | null = null;
+  const POOL_PRODUCER = new Set(["website", "company-profile", "company-contact", "company-email", "company-publication", "structured-content"]);
+  async function ladeBetreiberSpuren(): Promise<boolean> {
+    try {
+      const neu = await gatewayClient.request<import("../main/producer-supervisor").BetreiberSpuren>("/v1/betreiber/spuren");
+      const geaendert = JSON.stringify(neu) !== JSON.stringify(betreiberSpuren);
+      betreiberSpuren = neu;
+      return geaendert;
+    } catch (err) {
+      console.warn("[betreiber-spuren] nicht ladbar:", err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }
+  const apifyZentral = (): boolean => Boolean(betreiberSpuren?.apify.verfuegbar) || Boolean(providers.getOrgProviders().apify);
+
   function buildProducer(
     name: string,
     entry: string,
@@ -662,26 +679,16 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
                 // Main→Child-env beim Spawn (Renderer-IPC bleibt tabu).
                 // Kein Token = leeres env, Producer faellt auf SERP zurueck.
                 async (): Promise<Record<string, string>> => {
-                  const apifyKey = watchlistKeyStore?.getKey();
-                  // O3 — Organisationsvorgabe „Kontakt-Recherche aus": kein
-                  // Apify-Token → keine Mitarbeiter-Suche im Producer.
+                  // O3 — Organisationsvorgabe „Kontakt-Recherche aus": keine
+                  // Mitarbeiter-Suche im Producer.
                   if (!featureEnabled("kontakte")) return {};
-                  // O5 — Organisations-Token bleibt im Gateway: Producer ruft
-                  // /v1/proxy/apify mit dem Nutzer-JWT.
-                  if (providers.apifyUeberOrganisation(Boolean(apifyKey))) {
-                    return {
-                      AVA_APIFY_VIA_GATEWAY: "1",
-                      APIFY_COMPANY_FENSTER: String(watchlistKeyStore?.getConfig().companyWindow ?? 100),
-                      APIFY_PROFIL_MODUS:
-                        watchlistKeyStore?.getConfig().profilModus === "voll" ? "full" : "short",
-                    };
-                  }
-                  if (!apifyKey) return {};
+                  // 2026-10-13: Der Apify-Token liegt zentral beim Betreiber (oder
+                  // bei der Organisation) und bleibt im Gateway; der Producer ruft
+                  // /v1/proxy/apify mit dem Nutzer-JWT. Nie ein Token auf dem Geraet.
+                  if (!apifyZentral()) return {};
                   return {
-                    APIFY_TOKEN: apifyKey,
-                    APIFY_COMPANY_FENSTER: String(
-                      watchlistKeyStore?.getConfig().companyWindow ?? 100,
-                    ),
+                    AVA_APIFY_VIA_GATEWAY: "1",
+                    APIFY_COMPANY_FENSTER: String(watchlistKeyStore?.getConfig().companyWindow ?? 100),
                     APIFY_PROFIL_MODUS:
                       watchlistKeyStore?.getConfig().profilModus === "voll" ? "full" : "short",
                   };
@@ -709,7 +716,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
                 })
               : undefined;
     return new ProducerSupervisor({
-      config: { name, entry, databaseName, port, llmOptional },
+      config: { name, entry, databaseName, port, llmOptional, poolStufe: POOL_PRODUCER.has(name) },
+      betreiberSpuren: () => betreiberSpuren,
       // Eigener Browser statt der Chrome-Installation der Person, sobald eine
       // Fassung bereitliegt (docs/ANALYSE_CHROME_PROZESSE.md, L5).
       browserPfad: () => eigenerBrowser?.browserPfad() ?? null,
@@ -1355,34 +1363,19 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
    *  eigener Token gewinnt (ausser unter Anbieter-Sperre), sonst der
    *  Organisationsschluessel ueber den Gateway-Proxy mit dem Nutzer-JWT. */
   async function resolveApifyAccess(): Promise<import("../main/linkedin/apify-access").ApifyAccess | null> {
-    const { eigenerApifyZugang, organisationsApifyZugang } = await import("../main/linkedin/apify-access");
-    const eigener = watchlistKeyStore?.getKey() ?? null;
-    if (providers.apifyUeberOrganisation(Boolean(eigener))) {
-      const gw = providers.getOrgGateway();
-      const jwt = await gw.getToken();
-      if (gw.gatewayUrl && jwt) return organisationsApifyZugang(gw.gatewayUrl, jwt);
-      // Hat die Organisation den eigenen Token ausdruecklich untersagt, darf er
-      // auch dann nicht einspringen, wenn der Weg ueber die Organisation gerade
-      // nicht zustande kommt. Sonst waere die Vorgabe umgehbar.
-      if (!providers.apifyEigenerErlaubt()) return null;
-    }
-    return eigener ? eigenerApifyZugang(eigener) : null;
+    // 2026-10-13: Nur noch der zentrale Weg ueber das Gateway (Betreiber- oder
+    // Organisations-Token). Eigene Token auf dem Geraet gibt es nicht mehr.
+    const { organisationsApifyZugang } = await import("../main/linkedin/apify-access");
+    if (!apifyZentral()) return null;
+    const gw = providers.getOrgGateway();
+    const jwt = await gw.getToken();
+    return gw.gatewayUrl && jwt ? organisationsApifyZugang(gw.gatewayUrl, jwt) : null;
   }
 
   /** Fuer die UI: woher der Apify-Zugang kommt (ohne Token-Inhalte). */
   function apifyZugangInfo(): { apifyQuelle: "eigen" | "organisation" | null; apifyVerfuegbar: boolean; eigenerTokenErlaubt: boolean } {
-    const eigener = watchlistKeyStore?.hasKey() ?? false;
-    const org = providers.apifyUeberOrganisation(eigener) && Boolean(providers.getOrgGateway().gatewayUrl);
-    const quelle = org ? "organisation" : eigener ? "eigen" : null;
-    // Nur die Apify-Vorgabe zaehlt (Korrektur 2026-09-19). Die Anbieter-Sperre
-    // stand hier mit drin und blendete das Eingabefeld aus, obwohl die
-    // Organisation eigene Token ausdruecklich erlaubt hatte — siehe
-    // apifyUeberOrganisation in agent/providers/manager.ts.
-    return {
-      apifyQuelle: quelle,
-      apifyVerfuegbar: quelle !== null,
-      eigenerTokenErlaubt: providers.apifyEigenerErlaubt(),
-    };
+    const verfuegbar = apifyZentral() && Boolean(providers.getOrgGateway().gatewayUrl);
+    return { apifyQuelle: verfuegbar ? "organisation" : null, apifyVerfuegbar: verfuegbar, eigenerTokenErlaubt: false };
   }
   // v0.1.490 — Bruecke: das Chat-Tool linkedin_watchlist_config aendert
   // companyWindow und muss den company-contact-Producer recyceln; die
@@ -3796,6 +3789,10 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         apifyEigenerErlaubt: getOrgPolicy().apifyEigenerErlaubt !== false,
         chatgptPlanErlaubt: getOrgPolicy().chatgptPlanErlaubt !== false,
         chatgptPlanProducer: getOrgPolicy().chatgptPlanProducer === true,
+      });
+      // Betreiber-Spuren nachladen; aendern sie sich, Producer neu starten.
+      void ladeBetreiberSpuren().then((geaendert) => {
+        if (geaendert) scheduleCredentialCycle("betreiber-spuren");
       });
       // Deep Research ueber den OpenAI-Schluessel der Organisation.
       ResearchFeaturesStore.shared().setOrgOpenaiAvailable(Boolean(provs.openai));

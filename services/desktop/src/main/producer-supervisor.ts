@@ -86,6 +86,14 @@ export interface ProducerConfig {
   port: number;
   /** true = laeuft auch ohne LLM-Konfiguration (company-email: KI-Urteil ist Zusatz). */
   llmOptional?: boolean;
+  /** docs/PLAN_ABRECHNUNG_ZUGANG.md (Z2): Pool-Stufe — das Modell stellt der
+   *  Betreiber ueber die Gateway-Spur /v1/llm/betreiber; kein Nutzerschluessel. */
+  poolStufe?: boolean;
+}
+
+export interface BetreiberSpuren {
+  pool: { verfuegbar: boolean; modell: string | null };
+  apify: { verfuegbar: boolean };
 }
 
 export interface ProducerSupervisorOptions {
@@ -95,6 +103,8 @@ export interface ProducerSupervisorOptions {
   treiberVerzeichnis?: () => string | null;
 
   config: ProducerConfig;
+  /** Betreiber-Spuren laut Gateway (/v1/betreiber/spuren); null = unbekannt. */
+  betreiberSpuren?: () => BetreiberSpuren | null;
   /**
    * DATABASE_URL for the producer — pulled from the gateway via
    * `/v1/local-credentials`. Each producer hits the cloud-managed
@@ -727,9 +737,14 @@ export class ProducerSupervisor extends EventEmitter {
     const databaseUrl = this.opts.config.databaseName === null ? null : await this.opts.databaseUrl();
     if (this.opts.config.databaseName !== null && !databaseUrl) return null;
     const llm = await this.opts.llmConfig();
+    // Pool-Stufe (Z2): Betreiber-Modell ueber die Gateway-Spur — unabhaengig von
+    // den Schluesseln des Nutzers; private Funktionen bleiben beim Nutzermodell.
+    const spur = this.opts.config.poolStufe ? this.opts.betreiberSpuren?.()?.pool : undefined;
+    const betreiberSpur = spur?.verfuegbar ? spur : null;
     // Ohne LLM-Konfiguration startet ein Producer nicht ("nicht konfiguriert"),
-    // ausser er braucht das Modell nur als Zusatz (llmOptional, company-email).
-    if (!llm && !this.opts.config.llmOptional) return null;
+    // ausser er braucht das Modell nur als Zusatz (llmOptional, company-email)
+    // oder laeuft ueber die Betreiber-Spur.
+    if (!llm && !this.opts.config.llmOptional && !betreiberSpur) return null;
     // v0.1.170 — remember the active config so getStatus() can compute
     // featureWarnings based on which provider keys are absent.
     this.lastLlmConfig = !llm ? {} : {
@@ -763,7 +778,15 @@ export class ProducerSupervisor extends EventEmitter {
     // Fassung, bleibt alles wie bisher.
     const eigenerBrowser = this.opts.browserPfad?.() ?? null;
     const eigenerTreiber = this.opts.treiberVerzeichnis?.() ?? null;
-    const llmEnv: Record<string, string> = !llm ? {} : {
+    const llmEnv: Record<string, string> = betreiberSpur
+      ? {
+          LLM_PROVIDER: "openai",
+          LLM_MODEL: betreiberSpur.modell ?? "gpt-6.1-sol",
+          AVA_LLM_VIA_GATEWAY: "1",
+          AVA_LLM_LANE: "betreiber",
+          AVA_LLM_QUELLE: this.opts.config.name,
+        }
+      : !llm ? {} : {
       LLM_PROVIDER: llm.provider,
       ...(llm.model ? { LLM_MODEL: llm.model } : {}),
       ...(llm.openaiApiKey ? { OPENAI_API_KEY: llm.openaiApiKey } : {}),

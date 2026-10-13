@@ -69,6 +69,15 @@ Reihenfolge: Z1 → Z2 (ab dann zahlt der Betreiber die Pool-Modellkosten, Messu
 beginnt) → Z3 → Z4/Z5 → Z6. Nach vier Wochen Messung in Z3 die Stufenpreise gegen die echten
 Direktkosten prüfen.
 
+## Stand
+
+- Z1 (v0.1.835, Gateway deployt): Betreiber-Spur `/v1/llm/betreiber/*` (Secret `OPERATOR_OPENAI_API_KEY`, Modell `OPERATOR_POOL_MODEL`, Standard gpt-6.1-sol, im Gateway fest gesetzt), Metering `LlmUsage.kind = betreiber` mit `quelle` = Producer-Stufe, kein Organisations-Budget; zentraler Apify-Token `OPERATOR_APIFY_TOKEN` fuer `/v1/proxy/apify/*` (Organisations-Token nur noch Rueckfall); Abfrage `GET /v1/betreiber/spuren`.
+- Z2 (v0.1.835): `@ava/ai-provider` kennt `AVA_LLM_LANE=betreiber` (+ `AVA_LLM_QUELLE`), die Desktop-App startet website, company-profile, company-contact, company-email, company-publication und structured-content ueber die Betreiber-Spur, sobald das Gateway sie meldet; Nutzerschluessel/ChatGPT-Abo bleiben fuer Chat, Radar, Recherche (Stellen, Ausschreibungen, Deep Research), Alarme, Workflows.
+- Apify zentral (v0.1.835): kein Token mehr auf dem Geraet (Einstellungen-Abschnitt, IPC setKey/clearKey, Org-Werkzeug `org_apify_eigener_set` entfernt); Producer und Personen-Radar/Watchlist nur noch ueber `/v1/proxy/apify` mit Nutzer-JWT.
+- Z3–Z6 offen. Noetig vor Wirkung: `fly secrets set OPERATOR_OPENAI_API_KEY=… OPERATOR_APIFY_TOKEN=… -a ava-db-gateway` (Betreiber).
+
+Recherche (Stellenanzeigen, Ausschreibungen/Expansion, Deep Research) bleibt bewusst beim Kundenmodell, auch wenn die Ergebnisse im Pool landen (Joyce, 2026-10-13): die Daten sind nur frisch wertvoll. Offen: Sichtbarkeit der Rechercheergebnisse nur fuer den zahlenden Nutzer und seine Organisation (Tenant-Kennzeichen an JobPosting/DeepResearch, Filter beim Lesen) — bewusst noch nicht umgesetzt.
+
 ## 4. Offene Entscheidungen
 
 1. Pool-Modell: gpt-6.1-sol für alles oder luna für Profil/Kontakt-Extraktion (Qualität vs. 2,3× Kosten)?

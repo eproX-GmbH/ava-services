@@ -29,6 +29,7 @@ import {
   type ProviderKind,
 } from "../../lib/tenant-providers";
 import { estimateMicroUsd, estimateRealtimeMicroUsd } from "../../lib/llm-pricing";
+import { loadEnv } from "../../lib/env";
 import { parseUsageFromJson, parseUsageFromSse, extractTextFromSse, type UsageCounts } from "../../lib/llm-usage-parse";
 import { checkQuota, getQuota, parseChannel, setQuota, usageSummary, type LlmChannel } from "../../lib/quota";
 
@@ -44,6 +45,18 @@ const UPSTREAM: Record<Exclude<ProviderKind, "apify">, string> = {
   qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 };
 const APIFY_UPSTREAM = "https://api.apify.com";
+// docs/PLAN_ABRECHNUNG_ZUGANG.md (Z1) — Betreiber-Spur: Pool-Stufen der Producer
+// laufen ueber den Betreiber-Schluessel mit festem Modell; Metering unter
+// kind "betreiber" (quelle = Producer-Stufe). Kein Organisations-Budget, keine
+// Organisationsschluessel noetig. Der Apify-Token liegt ebenfalls zentral.
+type ProxyKind = ProviderKind | "betreiber";
+function betreiberPool(): { key: string; modell: string } | null {
+  const env = loadEnv();
+  return env.OPERATOR_OPENAI_API_KEY ? { key: env.OPERATOR_OPENAI_API_KEY, modell: env.OPERATOR_POOL_MODEL } : null;
+}
+function betreiberApify(): string | null {
+  return loadEnv().OPERATOR_APIFY_TOKEN ?? null;
+}
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const AUDIT_MAX_CHARS = 200_000;
@@ -186,7 +199,7 @@ const HOP_BY_HOP = new Set([
 ]);
 const RESPONSE_DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection", "set-cookie"]);
 
-function authHeaders(kind: ProviderKind, key: string): Record<string, string> {
+function authHeaders(kind: ProxyKind, key: string): Record<string, string> {
   if (kind === "anthropic") return { "x-api-key": key };
   if (kind === "google") return { "x-goog-api-key": key };
   return { authorization: `Bearer ${key}` };
@@ -199,12 +212,24 @@ async function readBody(c: Context): Promise<Buffer | null> {
   return buf;
 }
 
-async function passthrough(c: Context, kind: ProviderKind, basis: string, rest: string, meter: boolean): Promise<Response> {
+async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: string, meter: boolean): Promise<Response> {
   let base = basis;
   const auth = c.get("auth");
   const pool = getGatewayPool();
-  if (!secretsConfigured()) throw new HTTPException(503, { message: "secrets_unconfigured" });
-  const zugang = await getProviderZugang(pool, auth.tenantId, kind);
+  // Betreiber-Spur und zentraler Apify-Token brauchen keine Organisationsschluessel.
+  let zugang: { key: string; azure: null | { endpoint: string; deployments: Record<string, string> } } | null = null;
+  let festesModell: string | null = null;
+  if (kind === "betreiber") {
+    const b = betreiberPool();
+    if (!b) throw new HTTPException(404, { message: "provider_not_configured:betreiber" });
+    zugang = { key: b.key, azure: null };
+    festesModell = b.modell;
+  } else if (kind === "apify" && betreiberApify()) {
+    zugang = { key: betreiberApify()!, azure: null };
+  } else {
+    if (!secretsConfigured()) throw new HTTPException(503, { message: "secrets_unconfigured" });
+    zugang = await getProviderZugang(pool, auth.tenantId, kind);
+  }
   if (!zugang) throw new HTTPException(404, { message: `provider_not_configured:${kind}` });
   const key = zugang.key;
   // Azure OpenAI als Organisationsschluessel: Ziel ist die Azure-Ressource
@@ -215,11 +240,12 @@ async function passthrough(c: Context, kind: ProviderKind, basis: string, rest: 
   // Producer und aeltere Desktop-Versionen nichts (= background).
   const channel: LlmChannel = parseChannel(c.req.header("x-ava-llm-channel"));
   // Ausloesende Funktion (Desktop setzt sie fuer Hintergrundaufrufe).
-  const quelle = (c.req.header("x-ava-llm-quelle") ?? "").replace(/[^a-z0-9._-]/gi, "").slice(0, 40) || null;
+  const quelle = (c.req.header("x-ava-llm-quelle") ?? "").replace(/[^a-z0-9._:-]/gi, "").slice(0, 80) || null;
 
-  // O6 — Vorabpruefung des Limits (nur messbare Stellvertreter-Aufrufe).
+  // O6 — Vorabpruefung des Limits (nur messbare Stellvertreter-Aufrufe ueber
+  // Organisationsschluessel; die Betreiber-Spur hat ihr eigenes Budget, Z4).
   let quotaWarnung: string | null = null;
-  if (meter) {
+  if (meter && kind !== "betreiber") {
     const q = await checkQuota(pool, auth.tenantId, auth.actorId, channel);
     if (!q.allowed) {
       const info = { error: "org_quota_exceeded", scope: q.scope, channel: q.channel, limitCents: q.limitCents, usedCents: q.usedCents, resetAt: q.resetAt, hardStop: q.hardStop };
@@ -271,6 +297,12 @@ async function passthrough(c: Context, kind: ProviderKind, basis: string, rest: 
   if (zugang.azure && model && requestJson && typeof requestJson === "object") {
     sendeBody = Buffer.from(JSON.stringify({ ...(requestJson as Record<string, unknown>), model: azureDeployment(zugang.azure, model) }), "utf8");
     delete headers["content-length"];
+  }
+  // Betreiber-Spur: Modell ist vorgegeben, was der Producer schickt, zaehlt nicht.
+  if (festesModell && requestJson && typeof requestJson === "object") {
+    sendeBody = Buffer.from(JSON.stringify({ ...(requestJson as Record<string, unknown>), model: festesModell }), "utf8");
+    delete headers["content-length"];
+    model = festesModell;
   }
 
   const start = Date.now();
@@ -342,12 +374,12 @@ async function promptAuditAktiv(pool: ReturnType<typeof getGatewayPool>, tenantI
 
 async function recordUsage(
   pool: ReturnType<typeof getGatewayPool>,
-  e: { tenantId: string; actorId: string; kind: ProviderKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean; quelle?: string | null },
+  e: { tenantId: string; actorId: string; kind: ProxyKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean; quelle?: string | null },
 ): Promise<void> {
   const input = e.usage?.inputTokens ?? 0;
   const output = e.usage?.outputTokens ?? 0;
   const cache = e.usage?.cacheReadTokens ?? 0;
-  const cost = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
+  const cost = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind === "betreiber" ? "openai" : e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
   try {
     await pool.query(
       `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel", "quelle")
@@ -426,6 +458,28 @@ llmProxyRouter.all("/llm/:kind/*", async (c) => {
   const rest = c.req.path.replace(/^\/v1\/llm\/[^/]+\/?/, "");
   return passthrough(c, kind, UPSTREAM[kind], rest, true);
 });
+
+// Betreiber-Spur (Z1): Pool-Stufen der Producer. Modell wird im Gateway gesetzt.
+llmProxyRouter.all("/llm/betreiber/*", async (c) => {
+  const rest = c.req.path.replace(/^\/v1\/llm\/betreiber\/?/, "");
+  return passthrough(c, "betreiber", UPSTREAM.openai, rest, true);
+});
+
+// Welche Betreiber-Spuren gibt es? Der Desktop entscheidet damit, ob Pool-Producer
+// ohne Nutzerschluessel laufen und ob Apify zentral verfuegbar ist.
+llmProxyRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/betreiber/spuren",
+    tags: ["tenants"],
+    summary: "Betreiber-Spuren: Pool-Modell fuer die Producer-Stufen und zentraler Apify-Token.",
+    responses: { 200: { content: { "application/json": { schema: z.object({ pool: z.object({ verfuegbar: z.boolean(), modell: z.string().nullable() }), apify: z.object({ verfuegbar: z.boolean() }) }) } }, description: "ok" } },
+  }),
+  async (c) => {
+    const b = betreiberPool();
+    return c.json({ pool: { verfuegbar: Boolean(b), modell: b?.modell ?? null }, apify: { verfuegbar: Boolean(betreiberApify()) } }, 200);
+  },
+);
 
 llmProxyRouter.all("/proxy/apify/*", async (c) => {
   const rest = c.req.path.replace(/^\/v1\/proxy\/apify\/?/, "");

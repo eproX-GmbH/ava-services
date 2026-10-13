@@ -68,15 +68,13 @@ export function PersonenRadarPanel(): JSX.Element {
       <p className="muted small">
         AVA löst reagierende Personen zu ihrer Firma auf — über Berufserfahrung und
         Unternehmensseite, nie geraten — und legt passende Firmen samt Auslöser-Person als
-        Kandidaten in dein <Link to="/radar">Firmen-Radar</Link>. Kosten: ~1 Cent je aufgelöster
-        Person (dein Apify-Guthaben).
+        Kandidaten in dein <Link to="/radar">Firmen-Radar</Link>.
       </p>
 
       {!(state.apifyVerfuegbar ?? state.hasKey) ? (
         <p className="wl__hinweis">
-          Ohne Apify-Zugang läuft der Personen-Radar nicht. Hinterlege einen Token unter{" "}
-          <Link to="/settings#apify-section" className="link">Einstellungen → Datenquellen</Link>
-          {" "}— der Radar nutzt denselben Zugang wie die Watchlist.
+          Der Apify-Zugang wird von AVA zentral bereitgestellt und ist gerade nicht erreichbar.
+          Bitte anmelden bzw. später erneut versuchen.
         </p>
       ) : (
         <>

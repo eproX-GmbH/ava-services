@@ -1142,7 +1142,7 @@ function labelFor(kind: LlmProviderKind): string {
 //     Organisation weiter. Eine offene Anfrage wirkt erst nach Admin-Freigabe,
 //     bis dahin muss der Anbieter selbst gewaehlt werden.
 const LLM_KINDS = ["openai", "anthropic", "google", "mistral", "deepseek", "xai", "qwen"] as const;
-const LLM_LABEL: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", google: "Google", mistral: "Mistral", deepseek: "DeepSeek", xai: "xAI", qwen: "Qwen", apify: "Apify" };
+const LLM_LABEL: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", google: "Google", mistral: "Mistral", deepseek: "DeepSeek", xai: "xAI", qwen: "Qwen" };
 
 function OrgStep({
   onWeiterOhne,
