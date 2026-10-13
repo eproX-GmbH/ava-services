@@ -10,6 +10,7 @@
 // BILLING_CRON_DISABLED=1 schaltet alles ab (Tests, souveraener Betrieb
 // ohne Stripe laesst nur den Abgleich aus).
 
+import type { ZugangStand } from "./billing";
 import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { applyScheduledSeatChanges, closeCompletedPeriods } from "./seat-billing";
@@ -40,6 +41,12 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] zugangUeberschreitung failed");
   }
   try {
+    const { stripeRechnungenNachholen } = await import("./seat-billing");
+    await stripeRechnungenNachholen(getGatewayPool());
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Stripe-Rechnungen nachholen failed");
+  }
+  try {
     await suspendOverdue(now);
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] suspendOverdue failed");
@@ -55,9 +62,11 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
   }
 }
 
-/** Z4 — Einzelabos: Aufnahmen des Vormonats ueber das Guthaben hinaus als
- *  Stripe-Rechnungsposten (landet auf der naechsten Abo-Rechnung). Idempotent
- *  ueber BillingEvent kind zugang_ueberschreitung je Periode. */
+/** Z4/Z7 — Einzelabos: Aufnahmen des Vormonats als Stripe-Rechnungsposten
+ *  (landen auf der naechsten Abo-Rechnung). Buchhaltungssauber: je Stufe ein
+ *  Posten mit Menge × Einzelpreis, Metadaten periodKey/stufe und Idempotenz-
+ *  Schluessel; ein etwaiges Guthaben (Altvertraege, Env) als negativer Posten.
+ *  Idempotent ueber BillingEvent kind zugang_ueberschreitung je Periode. */
 async function zugangUeberschreitungEinzelabo(now: Date): Promise<void> {
   if (!process.env.STRIPE_SECRET_KEY) return;
   const pool = getGatewayPool();
@@ -78,16 +87,10 @@ async function zugangUeberschreitungEinzelabo(now: Date): Promise<void> {
     const tier = row.tier as "starter" | "pro";
     const z = await zugangStand(pool, row.tenantId, periodKey, guthabenCents(tier));
     const aufnahmen = z.stufen.klein + z.stufen.mittel + z.stufen.gross;
-    let stripeItemId: string | null = null;
+    let stripeItemIds: string[] = [];
     if (z.ueberschreitungCents > 0) {
       try {
-        const item = await stripe.invoiceItems.create({
-          customer: row.stripeCustomerId,
-          amount: z.ueberschreitungCents,
-          currency: "eur",
-          description: `AVA: Aufnahmen ueber das Guthaben hinaus, ${periodKey} (${aufnahmen} Firmen, ${(z.verbrauchtCents / 100).toFixed(2)} EUR gesamt, Guthaben ${(z.guthabenCents / 100).toFixed(2)} EUR)`,
-        });
-        stripeItemId = item.id;
+        stripeItemIds = await stufenPostenAnlegen(stripe, { customer: row.stripeCustomerId, tenantId: row.tenantId, periodKey, z });
       } catch (err) {
         logger.warn({ tenantId: row.tenantId, periodKey, err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Stripe-Rechnungsposten fehlgeschlagen");
         continue;
@@ -97,10 +100,63 @@ async function zugangUeberschreitungEinzelabo(now: Date): Promise<void> {
       billingAccountId: row.tenantId,
       kind: "zugang_ueberschreitung",
       source: "cron",
-      payload: { periodKey, aufnahmen, stufen: z.stufen, verbrauchtCents: z.verbrauchtCents, guthabenCents: z.guthabenCents, ueberschreitungCents: z.ueberschreitungCents, stripeItemId },
+      payload: { periodKey, aufnahmen, stufen: z.stufen, verbrauchtCents: z.verbrauchtCents, guthabenCents: z.guthabenCents, ueberschreitungCents: z.ueberschreitungCents, stripeItemIds },
     });
-    if (z.ueberschreitungCents > 0) logger.info({ tenantId: row.tenantId, periodKey, cents: z.ueberschreitungCents }, "[billing-cron] Zugang-Ueberschreitung berechnet");
+    if (z.ueberschreitungCents > 0) logger.info({ tenantId: row.tenantId, periodKey, cents: z.ueberschreitungCents, posten: stripeItemIds.length }, "[billing-cron] Aufnahmen des Vormonats berechnet");
   }
+}
+
+/** Z7 — Stripe-Rechnungsposten je Stufe (Menge × Einzelpreis) fuer eine Periode.
+ *  `invoice` gesetzt: Posten haengen an genau dieser Rechnung (Seats); sonst
+ *  landen sie auf der naechsten Abo-Rechnung des Kunden (Einzelabo). Der
+ *  Idempotenz-Schluessel verhindert doppelte Posten bei Wiederholungen. */
+export async function stufenPostenAnlegen(
+  stripe: import("stripe").default,
+  p: { customer: string; tenantId: string; periodKey: string; z: ZugangStand; invoice?: string },
+): Promise<string[]> {
+  const preise = (await import("./stufen")).stufenPreise();
+  const ids: string[] = [];
+  const stufen: Array<{ stufe: "klein" | "mittel" | "gross"; label: string }> = [
+    { stufe: "klein", label: "Aufnahme klein (ohne LinkedIn-Firmenprofil)" },
+    { stufe: "mittel", label: "Aufnahme mittel (LinkedIn-Profil, bis 100 Personen)" },
+    { stufe: "gross", label: "Aufnahme gross (LinkedIn-Profil, ueber 100 Personen)" },
+  ];
+  for (const s of stufen) {
+    const n = p.z.stufen[s.stufe];
+    if (n <= 0) continue;
+    const unit = preise[s.stufe].preisCents;
+    const item = await stripe.invoiceItems.create(
+      {
+        customer: p.customer,
+        ...(p.invoice ? { invoice: p.invoice } : {}),
+        currency: "eur",
+        quantity: n,
+        unit_amount: unit,
+        description: `AVA ${s.label}, ${p.periodKey}: ${n} × ${(unit / 100).toFixed(2)} EUR`,
+        metadata: { tenantId: p.tenantId, periodKey: p.periodKey, stufe: s.stufe, art: "aufnahme" },
+      },
+      { idempotencyKey: `ava-aufnahme-${p.tenantId}-${p.periodKey}-${s.stufe}` },
+    );
+    ids.push(item.id);
+  }
+  // Altvertraege mit Guthaben: enthaltener Anteil als Abzug, damit die Posten die
+  // tatsaechlichen Aufnahmen zeigen und die Summe trotzdem stimmt.
+  const abzug = p.z.verbrauchtCents - p.z.ueberschreitungCents;
+  if (abzug > 0) {
+    const item = await stripe.invoiceItems.create(
+      {
+        customer: p.customer,
+        ...(p.invoice ? { invoice: p.invoice } : {}),
+        currency: "eur",
+        amount: -abzug,
+        description: `AVA enthaltenes Zugangsguthaben, ${p.periodKey}`,
+        metadata: { tenantId: p.tenantId, periodKey: p.periodKey, art: "guthaben" },
+      },
+      { idempotencyKey: `ava-guthaben-${p.tenantId}-${p.periodKey}` },
+    );
+    ids.push(item.id);
+  }
+  return ids;
 }
 
 /** K7 — past_due laenger als graceDays → suspended (Importe/Scans pausieren). */

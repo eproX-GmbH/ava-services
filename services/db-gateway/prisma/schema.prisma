@@ -287,6 +287,8 @@ model TenantBilling {
   seatBillingEndsAt    DateTime?
   maxSeats             Int?
   karenzTag            Int?
+  /// Z7 — Ausgabenlimit je Monat fuer Aufnahmen in Cent (NULL = keins). Setzt der Kunde selbst.
+  ausgabenLimitCents   Int?
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
 }

@@ -95,6 +95,39 @@ usageRouter.openapi(stufenRoute, async (c) => {
   return c.json({ stufen }, 200);
 });
 
+// Z7 — Ausgabenlimit je Monat (Cent), setzt der Kunde selbst. Bei Seats nur
+// Owner/Admin der Organisation (das Limit gilt fuer das Abrechnungskonto).
+const ausgabenlimitRoute = createRoute({
+  method: "put",
+  path: "/usage/ausgabenlimit",
+  tags: ["billing"],
+  summary: "Monatliches Ausgabenlimit fuer Aufnahmen setzen (null = keins)",
+  request: { body: { content: { "application/json": { schema: z.object({ ausgabenLimitCents: z.number().int().min(0).max(100_000_000).nullable() }) } }, required: true } },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ ausgabenLimitCents: z.number().int().nullable() }) } }, description: "gesetzt" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+    403: { content: { "application/json": { schema: ErrorShape } }, description: "kein Admin des Abrechnungskontos" },
+  },
+});
+usageRouter.openapi(ausgabenlimitRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const { ausgabenLimitCents } = c.req.valid("json");
+  const pool = getGatewayPool();
+  const { resolveBillingAccountId } = await import("../../lib/billing");
+  const billingAccountId = await resolveBillingAccountId(pool, { tenantId: auth.tenantId, actorId: auth.actorId });
+  if (billingAccountId !== auth.tenantId) {
+    const me = await pool.query<{ role: string }>(`SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [billingAccountId, auth.actorId]);
+    if (me.rows[0]?.role !== "owner" && me.rows[0]?.role !== "admin") throw new HTTPException(403, { message: "Nur Owner oder Admin der Organisation setzen das Ausgabenlimit." });
+  }
+  await pool.query(`UPDATE "TenantBilling" SET "ausgabenLimitCents" = $2, "updatedAt" = NOW() WHERE "tenantId" = $1`, [billingAccountId, ausgabenLimitCents]);
+  const { invalidateBillingResolution } = await import("../../lib/billing");
+  invalidateBillingResolution(billingAccountId);
+  const { recordBillingEvent } = await import("../../lib/billing-events");
+  await recordBillingEvent(pool, { billingAccountId, kind: "ausgabenlimit_gesetzt", source: "admin", actorId: auth.actorId, payload: { ausgabenLimitCents } });
+  return c.json({ ausgabenLimitCents }, 200);
+});
+
 // Z5 — Betreiber-Uebersicht: Direktkosten der Betreiber-Spur und Stufenverteilung je
 // Monat. Nur fuer den Betreiber-Tenant (OPERATOR_TENANT_ID), sonst 404.
 const betreiberKostenRoute = createRoute({

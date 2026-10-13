@@ -19,12 +19,11 @@ Modell: lokal, mit eigenem Schlüssel oder mit Deinem ChatGPT-Abo.
 
 ## 2. Preistabelle (netto, zzgl. 19 % MwSt.)
 
-| Plan | Preis | Enthalten | Kontakte | Deckel |
+| Plan | Preis | Aufnahmen | Kontakte | Grenze |
 |---|---|---|---|---|
 | Kostenlos | 0 € | 25 Firmen, lebenslang (kein monatlicher Reset) | von der Website der Firma | 25 Firmen |
-| Starter | 49 € je Monat und Nutzer | 40 € Zugangsguthaben je Monat | Website und LinkedIn | 500 Firmen je Monat |
-| Pro | 149 € je Monat und Nutzer | 130 € Zugangsguthaben je Monat | Website und LinkedIn | 2.000 Firmen je Monat |
-| Enterprise | individuell | nach Vereinbarung, eigene Cloud-Instanz möglich | Website und LinkedIn | kein Deckel |
+| Pro | 49 € je Monat und Nutzer | 1,00 bis 3,50 € je aufgenommener Firma, nach Stufe | Website und LinkedIn | eigenes Ausgabenlimit je Monat, frei wählbar |
+| Enterprise | individuell | nach Vereinbarung, eigene Cloud-Instanz möglich | Website und LinkedIn | nach Vereinbarung |
 
 **Preis je aufgenommener Firma (Stufe steht nach der Aufbereitung fest):**
 
@@ -34,16 +33,18 @@ Modell: lokal, mit eigenem Schlüssel oder mit Deinem ChatGPT-Abo.
 | Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, bis 100 Personen |
 | Groß | 3,50 € | LinkedIn-Firmenprofil, über 100 Personen |
 
-Das Guthaben wird monatlich mit den Stufenpreisen verrechnet. Was darüber hinausgeht,
-kommt zum Stufenpreis auf die nächste Rechnung (Pay-as-you-go). Der Deckel bleibt als
-Sicherheitsgrenze, kein Leistungsversprechen. Im Kostenlos-Plan gibt es kein Guthaben:
-25 Firmen, einmal, für immer. Aufgefrischte Daten (Website alle 30 Tage, Kontakte alle
+Pro ist der einzige bezahlte Plan: 49 € je Nutzer und Monat, dazu jede aufgenommene Firma
+zum Stufenpreis, abgerechnet mit der Monatsrechnung (Pay-as-you-go). Es gibt kein
+enthaltenes Guthaben und keinen festen Firmen-Deckel; stattdessen setzt sich jeder Kunde
+in den Einstellungen (oder im Chat) ein Ausgabenlimit je Monat. Ist es erreicht, warten
+neue Firmen bis zum nächsten Monat oder bis das Limit erhöht wird. Im Kostenlos-Plan gibt
+es 25 Firmen, einmal, für immer. Aufgefrischte Daten (Website alle 30 Tage, Kontakte alle
 90 Tage, Alarme, Register- und Insolvenzwächter) sind im Plan enthalten.
 
 ## 3. Sätze, die die Seite so sagen darf
 
-- „Du zahlst für das Ergebnis, nicht für die Arbeit. Ob AVA eine Firma gerade neu
-  aufbereitet oder den aktuellen Datensatz schon kennt, kostet dasselbe.“
+- „49 € je Nutzer und Monat, dazu 1,00 bis 3,50 € je aufgenommener Firma. Du bestimmst
+  mit Deinem Ausgabenlimit, wie viel es im Monat maximal wird.“
 - „Öffentliche Firmendaten (Register, Website, Jahresabschlüsse, Ansprechpartner)
   bereitet AVA einmal auf und hält sie für alle Kunden aktuell. Deshalb sind die
   Daten frischer und der Preis niedriger, als wenn jeder allein rechnen müsste.“
@@ -61,7 +62,11 @@ Sicherheitsgrenze, kein Leistungsversprechen. Im Kostenlos-Plan gibt es kein Gut
 - Keine Angabe eines Modellnamens für die Aufbereitung (das Modell gibt AVA vor und
   kann es wechseln).
 - Keine Rückerstattung oder Gutschrift, wenn andere Kunden dieselbe Firma nutzen.
-- Nicht „unbegrenzt“ für Starter oder Pro; der Deckel gilt.
+- Nicht „unbegrenzt“ für Pro: es gibt eine hohe technische Notbremse je Monat, die nicht
+  beworben wird.
+- Kein „Starter“-Plan, kein „Zugangsguthaben“, keine Firmenzahl „inklusive“ bei Pro.
+- „Du zahlst für das Ergebnis, nicht für die Arbeit“ ist kein Werbesatz; er gehört nur in
+  FAQ und AGB (siehe unten).
 - Keine automatische Rechnungsstellung für Sammelabrechnungen versprechen, solange
   sie als „in Einführung“ gekennzeichnet ist.
 - Nicht „LinkedIn-Kontakte im Kostenlos-Plan“.
@@ -78,10 +83,14 @@ ob ein LinkedIn-Firmenprofil zugeordnet werden konnte und wie viele Ansprechpart
 gibt. Daraus ergibt sich Klein, Mittel oder Groß. Vorher siehst Du die Spanne 1,00 bis
 3,50 €, danach den genauen Preis in Deinem Bestand und am Vorgang.
 
-**Was passiert, wenn mein Guthaben aufgebraucht ist?** AVA arbeitet weiter bis zum
-Deckel Deines Plans. Aufnahmen über das Guthaben hinaus kommen zum Stufenpreis auf die
-nächste Rechnung. In den Einstellungen und im Chat („Wie steht mein Guthaben?“) siehst Du
-jederzeit den Stand.
+**Warum zahle ich für die Arbeit nicht?** Du zahlst für das Ergebnis, nicht für die
+Arbeit. Ob AVA eine Firma gerade neu aufbereitet oder den aktuellen Datensatz schon kennt,
+kostet dasselbe.
+
+**Wie behalte ich die Kosten im Griff?** Mit dem Ausgabenlimit je Monat in den
+Einstellungen (oder im Chat: „Setz mein Ausgabenlimit auf 100 €“). Ist es erreicht, warten
+neue Firmen bis zum nächsten Monat oder bis Du es erhöhst. Im Chat („Wie stehen meine
+Kosten?“) und in den Einstellungen siehst Du jederzeit, was in diesem Monat angefallen ist.
 
 **Was kostet die Auffrischung?** Nichts extra. Website, Kontakte, Register- und
 Insolvenzwächter laufen für Firmen in Deinem Bestand im Plan mit.
@@ -91,9 +100,10 @@ Insolvenzwächter laufen für Firmen in Deinem Bestand im Plan mit.
 **AGB, Leistungsbeschreibung:** „Der Anbieter stellt dem Kunden Zugang zu aufbereiteten
 Firmendaten bereit. Die Vergütung richtet sich nach der Anzahl der in den Bestand des
 Kunden aufgenommenen Firmen und ihrer Stufe (Klein, Mittel, Groß) gemäß Preisliste.
-Enthaltene Guthaben verfallen zum Ende des Abrechnungsmonats. Aufnahmen über das
-Guthaben hinaus werden zum jeweils gültigen Stufenpreis mit der nächsten Rechnung
-abgerechnet. Die Stufe wird nach Abschluss der Aufbereitung anhand objektiver Merkmale
+Die Grundgebühr wird je Nutzer und Monat berechnet; Aufnahmen werden zum jeweils gültigen
+Stufenpreis mit der Rechnung des Folgemonats abgerechnet. Der Kunde kann ein monatliches
+Ausgabenlimit festlegen; bei Erreichen werden keine weiteren Firmen aufgenommen. Der
+Kunde zahlt für den Zugang zum Ergebnis, nicht für die Rechenarbeit. Die Stufe wird nach Abschluss der Aufbereitung anhand objektiver Merkmale
 festgelegt und dem Kunden in der Anwendung angezeigt.“
 
 **AGB, Datenpool:** „Öffentlich zugängliche Firmendaten werden vom Anbieter einmalig

@@ -44,6 +44,10 @@ export interface UsageSnapshot {
     guthabenCents: number;
     uebrigCents: number;
     ueberschreitungCents: number;
+    /** Z7 — Ausgabenlimit des Abrechnungskontos je Monat (Cent), null = keins. */
+    ausgabenLimitCents?: number | null;
+    /** Z7 — zugeordnete Aufnahmen plus offene (zu 2,00 €). */
+    erwartetCents?: number;
   };
 }
 

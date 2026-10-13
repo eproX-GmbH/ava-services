@@ -559,13 +559,15 @@ export async function closePeriod(
         [idFor("sl"), id, l.tier, l.seats, l.unitPriceCents, l.amountCents],
       );
     }
-    // Z4 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Aufnahmen ueber das Seat-Guthaben hinaus
-    // als eigene Zeile "zugang" (Pay-as-you-go zum Stufenpreis).
+    // Z4/Z7 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Aufnahmen der Periode als eigene
+    // Zeile "zugang" (Pay-as-you-go zum Stufenpreis; Guthaben nur Altvertraege/Env).
+    let zugang: import("./billing").ZugangStand | null = null;
     {
       const { guthabenCents } = await import("./billing-plans");
       const { zugangStand } = await import("./billing");
       const guthaben = comp.lines.reduce((s, l) => (l.tier === "starter" || l.tier === "pro" ? s + l.seats * guthabenCents(l.tier) : s), 0);
       const z = await zugangStand(client, tenantId, periodKey, guthaben);
+      zugang = z;
       if (z.ueberschreitungCents > 0) {
         const aufnahmen = z.stufen.klein + z.stufen.mittel + z.stufen.gross;
         await client.query(
@@ -590,6 +592,14 @@ export async function closePeriod(
       payload: { periodKey, invoiceId: id, seatCount: comp.seatCount, subtotalCents: comp.subtotalCents, status, computeHash: comp.computeHash },
     });
     await client.query("COMMIT");
+    // Z7 — Stripe-Rechnung fuer Sammelabrechnungen (PLAN_ABRECHNUNG_SEATS §6.5):
+    // nach dem Commit, damit der Datensatz auch bei Stripe-Fehlern steht; der
+    // naechste Cron-Lauf holt die Rechnung ueber stripeInvoiceId IS NULL nach.
+    if (status === "recorded") {
+      await stripeRechnungErstellen(pool, tenantId, periodKey, id, comp, zugang).catch((err) =>
+        logger.warn({ tenantId, periodKey, err: err instanceof Error ? err.message : String(err) }, "[seat-billing] Stripe-Rechnung fehlgeschlagen (wird nachgeholt)"),
+      );
+    }
     return { created: true, invoiceId: id, seatCount: comp.seatCount, subtotalCents: comp.subtotalCents };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -597,6 +607,113 @@ export async function closePeriod(
   } finally {
     client.release();
   }
+}
+
+/** Z7 — Stripe-Rechnung fuer einen SeatInvoice-Datensatz: Kunde anlegen falls
+ *  noetig (Owner-E-Mail), je Seat-Zeile und je Stufe ein Posten (Menge ×
+ *  Einzelpreis, Metadaten, Idempotenz), Rechnung per Ueberweisung
+ *  (send_invoice) finalisieren. Ohne STRIPE_SECRET_KEY bleibt es beim Datensatz. */
+export async function stripeRechnungErstellen(
+  pool: pg.Pool,
+  tenantId: string,
+  periodKey: string,
+  invoiceId: string,
+  comp: Pick<SeatComputation, "lines" | "seatCount">,
+  zugang: import("./billing").ZugangStand | null,
+): Promise<string | null> {
+  if (!process.env.STRIPE_SECRET_KEY) return null;
+  if (comp.seatCount === 0 && (!zugang || zugang.ueberschreitungCents <= 0)) return null;
+  const { getStripe } = await import("./stripe-client");
+  const { stufenPostenAnlegen } = await import("./billing-cron");
+  const stripe = getStripe();
+  const acc = await readBillingAccount(pool, tenantId);
+  if (!acc) return null;
+  let customer = acc.stripeCustomerId;
+  if (!customer) {
+    const owner = await pool.query<{ email: string | null; name: string | null }>(
+      `SELECT "email", "name" FROM "TenantMember" WHERE "tenantId" = $1 AND "role" = 'owner' AND "email" IS NOT NULL ORDER BY "joinedAt" LIMIT 1`,
+      [tenantId],
+    );
+    const t = await pool.query<{ name: string | null }>(`SELECT "name" FROM "Tenant" WHERE "id" = $1`, [tenantId]);
+    if (!owner.rows[0]?.email) {
+      logger.warn({ tenantId }, "[seat-billing] kein Owner mit E-Mail — keine Stripe-Rechnung");
+      return null;
+    }
+    const c = await stripe.customers.create(
+      { email: owner.rows[0].email, name: t.rows[0]?.name ?? owner.rows[0].name ?? undefined, metadata: { tenantId, kind: "organisation" } },
+      { idempotencyKey: `ava-customer-${tenantId}` },
+    );
+    customer = c.id;
+    await pool.query(`UPDATE "TenantBilling" SET "stripeCustomerId" = $2, "updatedAt" = NOW() WHERE "tenantId" = $1 AND "stripeCustomerId" IS NULL`, [tenantId, customer]);
+  }
+  const daysUntilDue = Number(process.env.SEAT_INVOICE_DAYS_UNTIL_DUE ?? 14) || 14;
+  const inv = await stripe.invoices.create(
+    {
+      customer,
+      collection_method: "send_invoice",
+      days_until_due: daysUntilDue,
+      auto_advance: true,
+      currency: "eur",
+      description: `AVA Sammelabrechnung ${periodKey}`,
+      metadata: { tenantId, periodKey, seatInvoiceId: invoiceId },
+      pending_invoice_items_behavior: "exclude",
+    },
+    { idempotencyKey: `ava-seat-invoice-${tenantId}-${periodKey}` },
+  );
+  for (const l of comp.lines) {
+    if (l.seats <= 0) continue;
+    await stripe.invoiceItems.create(
+      {
+        customer,
+        invoice: inv.id,
+        currency: "eur",
+        quantity: l.seats,
+        unit_amount: l.unitPriceCents,
+        description: `AVA ${l.tier === "pro" ? "Pro" : "Starter"}-Seat, ${periodKey}: ${l.seats} × ${(l.unitPriceCents / 100).toFixed(2)} EUR`,
+        metadata: { tenantId, periodKey, tier: l.tier, art: "seat" },
+      },
+      { idempotencyKey: `ava-seat-${tenantId}-${periodKey}-${l.tier}` },
+    );
+  }
+  if (zugang && zugang.ueberschreitungCents > 0) {
+    await stufenPostenAnlegen(stripe, { customer, tenantId, periodKey, z: zugang, invoice: inv.id });
+  }
+  const fin = await stripe.invoices.finalizeInvoice(inv.id, {}, { idempotencyKey: `ava-seat-finalize-${tenantId}-${periodKey}` });
+  await pool.query(`UPDATE "SeatInvoice" SET "status" = 'issued', "stripeInvoiceId" = $2, "issuedAt" = NOW(), "totalCents" = $3 WHERE "id" = $1`, [invoiceId, fin.id, fin.total ?? 0]);
+  await recordBillingEvent(pool, {
+    billingAccountId: tenantId,
+    kind: "seat_invoice_issued",
+    source: "cron",
+    payload: { periodKey, invoiceId, stripeInvoiceId: fin.id, totalCents: fin.total ?? 0, hostedInvoiceUrl: fin.hosted_invoice_url ?? null },
+  });
+  logger.info({ tenantId, periodKey, stripeInvoiceId: fin.id }, "[seat-billing] Stripe-Rechnung ausgestellt");
+  return fin.id;
+}
+
+/** Z7 — Datensaetze ohne Stripe-Rechnung nachholen (Stripe-Ausfall beim Abschluss). */
+export async function stripeRechnungenNachholen(pool: pg.Pool): Promise<number> {
+  if (!process.env.STRIPE_SECRET_KEY) return 0;
+  const r = await pool.query<{ id: string; tenantId: string; periodKey: string }>(
+    `SELECT "id", "tenantId", "periodKey" FROM "SeatInvoice" WHERE "status" = 'recorded' AND "stripeInvoiceId" IS NULL AND "totalCents" > 0 ORDER BY "computedAt" LIMIT 20`,
+  );
+  let n = 0;
+  for (const row of r.rows) {
+    const lines = await pool.query<{ tier: string; seats: number; unitPriceCents: number; amountCents: number }>(
+      `SELECT "tier", "seats", "unitPriceCents", "amountCents" FROM "SeatInvoiceLine" WHERE "invoiceId" = $1`,
+      [row.id],
+    );
+    const seatLines: LineRow[] = lines.rows.filter((l) => isSeatTier(l.tier)).map((l) => ({ tier: l.tier as SeatTier, seats: l.seats, unitPriceCents: l.unitPriceCents, amountCents: l.amountCents }));
+    const hatZugang = lines.rows.some((l) => l.tier === "zugang");
+    const { zugangStand } = await import("./billing");
+    const z = hatZugang ? await zugangStand(pool, row.tenantId, row.periodKey, 0) : null;
+    try {
+      const id = await stripeRechnungErstellen(pool, row.tenantId, row.periodKey, row.id, { lines: seatLines, seatCount: seatLines.reduce((s, l) => s + l.seats, 0) }, z);
+      if (id) n++;
+    } catch (err) {
+      logger.warn({ tenantId: row.tenantId, periodKey: row.periodKey, err: err instanceof Error ? err.message : String(err) }, "[seat-billing] Nachholen fehlgeschlagen");
+    }
+  }
+  return n;
 }
 
 /** Alle Organisationen mit Tier-Zeitachse: fehlende Datensaetze fuer

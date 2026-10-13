@@ -5170,10 +5170,11 @@ function formatRelativeDate(ts: number): string {
 // Each card lists the differentiating features so the user sees what
 // the upgrade actually buys. The Pro card carries an "Empfohlen" badge.
 // CTAs adapt to the current tier:
-//   - free      → Starter + Pro + Enterprise contact, no Verwalten
-//                 (no Stripe customer yet)
-//   - starter   → Pro + Enterprise contact + Verwalten
+//   - free      → Pro + Enterprise contact, no Verwalten (no Stripe customer yet)
+//   - starter   → Altvertrag: Pro + Enterprise contact + Verwalten
 //   - pro       → Enterprise contact + Verwalten (cancellation via portal)
+// Z7 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Pro ist der einzige bezahlte Plan,
+// Aufnahmen laufen Pay-as-you-go zum Stufenpreis; Starter wird nicht mehr angeboten.
 //   - enterprise → section hidden entirely
 //
 // Section id `plan-section` is the deep-link target for the topbar
@@ -5211,31 +5212,17 @@ const PLAN_CARDS: PlanCard[] = [
     ],
   },
   {
-    tier: "starter",
-    name: "Starter",
-    price: "49 €",
-    cadence: "/Monat",
-    quota: "40 € Zugangsguthaben je Monat, bis 500 Firmen",
-    features: [
-      "Aufnahme je Firma 1,00 bis 3,50 € nach Stufe",
-      "LinkedIn-Kontakte inklusive",
-      "Aufbereitung mit AVAs Modell, kein Schlüssel nötig",
-      "Vorrang-Support",
-      "Monatliche Abrechnung",
-    ],
-  },
-  {
     tier: "pro",
     name: "Pro",
-    price: "149 €",
-    cadence: "/Monat",
-    quota: "130 € Zugangsguthaben je Monat, bis 2 000 Firmen",
+    price: "49 €",
+    cadence: "/Monat je Nutzer",
+    quota: "plus 1,00 bis 3,50 € je aufgenommener Firma, nach Stufe",
     features: [
-      "Aufnahme je Firma 1,00 bis 3,50 € nach Stufe",
+      "So viele Firmen, wie du brauchst",
+      "Eigenes Ausgabenlimit je Monat",
       "LinkedIn-Kontakte inklusive",
       "Aufbereitung mit AVAs Modell, kein Schlüssel nötig",
       "Vorrang-Support",
-      "Früher Zugang zu Beta-Features",
       "Monatliche Abrechnung",
     ],
     recommended: true,
@@ -5245,7 +5232,7 @@ const PLAN_CARDS: PlanCard[] = [
     name: "Enterprise",
     price: "Auf Anfrage",
     cadence: null,
-    quota: "Guthaben nach Vereinbarung, kein Deckel",
+    quota: "Konditionen nach Vereinbarung, kein Deckel",
     features: [
       "Eigene Cloud-Instanz möglich",
       "Custom-Integrationen",
@@ -5258,11 +5245,32 @@ const PLAN_CARDS: PlanCard[] = [
 const ENTERPRISE_CONTACT_URL = "https://ava.bi/kontakt";
 
 
-/** Z4 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Aufnahmen der Periode nach Stufe und
- *  Verbrauch gegen das Zugangsguthaben. Free: nur Zaehlung. */
-function ZugangStand({ zugang, tier }: { zugang: UsageSnapshot["zugang"]; tier: string }) {
+/** Z4/Z7 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Aufnahmen der Periode nach Stufe,
+ *  voraussichtliche Kosten und das eigene Ausgabenlimit. Free: nur Zaehlung.
+ *  `limitAenderbar`: Einzelabo oder Owner/Admin der Organisation. */
+function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSnapshot["zugang"]; tier: string; limitAenderbar?: boolean }) {
+  const qc = useQueryClient();
+  const [limitEntwurf, setLimitEntwurf] = useState<string | null>(null);
+  const [limitFehler, setLimitFehler] = useState<string | null>(null);
+  const speichern = useMutation({
+    mutationFn: (cents: number | null) => gatewayFetch<{ ausgabenLimitCents: number | null }>("/v1/usage/ausgabenlimit", { method: "PUT", body: { ausgabenLimitCents: cents } }),
+    onSuccess: () => {
+      setLimitEntwurf(null);
+      setLimitFehler(null);
+      void qc.invalidateQueries({ queryKey: ["usage"] });
+    },
+    onError: (e: Error) => setLimitFehler(e.message),
+  });
   if (!zugang) return null;
   const eur = (c: number) => (c / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  const limitWert = limitEntwurf ?? (zugang.ausgabenLimitCents != null ? String(zugang.ausgabenLimitCents / 100) : "");
+  const limitSpeichern = () => {
+    const roh = (limitEntwurf ?? "").trim().replace(",", ".");
+    if (roh === "") { speichern.mutate(null); return; }
+    const n = Number(roh);
+    if (!Number.isFinite(n) || n < 0) { setLimitFehler("Bitte einen Betrag in Euro eingeben (leer = kein Limit)."); return; }
+    speichern.mutate(Math.round(n * 100));
+  };
   const n = zugang.stufen.klein + zugang.stufen.mittel + zugang.stufen.gross + zugang.stufen.offen;
   const stufen = [
     zugang.stufen.klein ? `${zugang.stufen.klein} klein` : "",
@@ -5277,8 +5285,38 @@ function ZugangStand({ zugang, tier }: { zugang: UsageSnapshot["zugang"]; tier: 
       </span>
       {tier !== "free" && zugang.guthabenCents !== -1 && (
         <span className="muted small">
-          Zugangsguthaben: {eur(zugang.verbrauchtCents)} von {eur(zugang.guthabenCents)} verbraucht
-          {zugang.ueberschreitungCents > 0 ? ` · ${eur(zugang.ueberschreitungCents)} darüber hinaus (wird mit der nächsten Rechnung berechnet)` : ""}
+          Aufnahmen in diesem Monat: {eur(zugang.verbrauchtCents)}
+          {zugang.stufen.offen > 0 ? ` zugeordnet, voraussichtlich ${eur(zugang.erwartetCents ?? zugang.verbrauchtCents)} mit den offenen` : ""}
+          {zugang.guthabenCents > 0 ? ` · davon ${eur(Math.min(zugang.verbrauchtCents, zugang.guthabenCents))} im Plan enthalten` : ""}
+          {" · "}kommt mit der nächsten Rechnung
+        </span>
+      )}
+      {tier !== "free" && zugang.guthabenCents !== -1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <label className="muted small" htmlFor="ausgabenlimit">Ausgabenlimit je Monat</label>
+          <input
+            id="ausgabenlimit"
+            type="text"
+            inputMode="decimal"
+            placeholder="kein Limit"
+            value={limitWert}
+            disabled={!limitAenderbar || speichern.isPending}
+            onChange={(e) => setLimitEntwurf(e.target.value)}
+            style={{ width: "7rem" }}
+          />
+          <span className="muted small">€</span>
+          {limitAenderbar && limitEntwurf !== null && (
+            <button type="button" disabled={speichern.isPending} onClick={limitSpeichern}>
+              {speichern.isPending ? "Speichert…" : "Speichern"}
+            </button>
+          )}
+          {!limitAenderbar && <span className="muted small">setzt der Owner oder Admin deiner Organisation</span>}
+          {limitFehler && <span className="error small">{limitFehler}</span>}
+        </div>
+      )}
+      {tier !== "free" && zugang.ausgabenLimitCents != null && (zugang.erwartetCents ?? zugang.verbrauchtCents) >= zugang.ausgabenLimitCents && (
+        <span className="small" style={{ color: "var(--color-warn)" }}>
+          Dein Ausgabenlimit ist erreicht. Neue Firmen warten, bis du es erhöhst oder der Monat wechselt.
         </span>
       )}
     </div>
@@ -5287,12 +5325,12 @@ function ZugangStand({ zugang, tier }: { zugang: UsageSnapshot["zugang"]; tier: 
 
 export function PlanSection() {
   const { data, isLoading, error, refetch } = useUsage();
-  const [busy, setBusy] = useState<"checkout-starter" | "checkout-pro" | "portal" | null>(
+  const [busy, setBusy] = useState<"checkout-pro" | "portal" | null>(
     null,
   );
   const [opError, setOpError] = useState<string | null>(null);
 
-  async function openCheckout(tier: "starter" | "pro") {
+  async function openCheckout(tier: "pro") {
     setOpError(null);
     setBusy(`checkout-${tier}`);
     try {
@@ -5352,7 +5390,7 @@ export function PlanSection() {
             )}
             {ent.seats?.endsAt && <span className="muted small">· Sammelabrechnung endet am {fmtDateShort(ent.seats.endsAt)}</span>}
           </div>
-          <ZugangStand zugang={data.zugang} tier={data.tier} />
+          <ZugangStand zugang={data.zugang} tier={data.tier} limitAenderbar={ent.role === "owner" || ent.role === "admin"} />
           {data.status === "suspended" && (
             <div className="error">
               Die Sammelabrechnung deiner Organisation ist wegen einer offenen Zahlung pausiert. Importe und Radar-Scans laufen
@@ -5377,8 +5415,8 @@ export function PlanSection() {
                 <div style={{ width: `${pct}%`, height: "100%", background: data.used >= data.limit ? "var(--color-err)" : pct >= 80 ? "var(--color-warn)" : "var(--color-indigo-500)" }} />
               </div>
               <small className="muted">
-                Gemeinsames Kontingent der Organisation ({ent.seats?.count ?? 1} Seat{(ent.seats?.count ?? 1) === 1 ? "" : "s"} ×{" "}
-                {ent.seats?.tier === "pro" ? "2 000" : "500"} Firmen pro Monat).
+                Notbremse der Organisation ({ent.seats?.count ?? 1} Seat{(ent.seats?.count ?? 1) === 1 ? "" : "s"}); das eigentliche
+                Limit ist das Ausgabenlimit oben.
               </small>
             </div>
           )}
@@ -5535,8 +5573,7 @@ export function PlanSection() {
             {PLAN_CARDS.map((p) => {
               const isCurrent = p.tier === currentTier;
               const canCheckout =
-                (currentTier === "free" && (p.tier === "starter" || p.tier === "pro")) ||
-                (currentTier === "starter" && p.tier === "pro");
+                (currentTier === "free" || currentTier === "starter") && p.tier === "pro";
               return (
                 <div
                   key={p.tier}
@@ -5589,7 +5626,7 @@ export function PlanSection() {
                         }
                         disabled={busy !== null}
                         onClick={() =>
-                          void openCheckout(p.tier as "starter" | "pro")
+                          void openCheckout("pro")
                         }
                       >
                         {busy === `checkout-${p.tier}`

@@ -44,15 +44,18 @@ die Antwort auf „warum zahle ich für andere“: niemand zahlt für die Arbeit
 Laufende Pflege (Auffrischung Website 30 Tage, Kontakte 90 Tage, Alarme, Register-/Insolvenz-
 Wächter) ist im Seat enthalten; Direktkosten ≈ 0,05–0,25 € je Bestandsfirma und Monat.
 
-| Plan | Preis/Monat | Zugangsguthaben | Pool-Modell | Apify/LinkedIn | Kontingent (Deckel) |
+| Plan | Preis/Monat je Nutzer | Aufnahmen | Pool-Modell | Apify/LinkedIn | Grenze |
 |---|---|---|---|---|---|
 | Free | 0 € | 25 Firmen lebenslang | ja, Stufe klein (ohne Apify) | nein | 25 |
-| Starter | 49 € | 40 € | ja | ja | 500/Monat |
-| Pro | 149 € | 130 € | ja | ja | 2.000/Monat |
+| Pro | 49 € | Stufenpreis je Firma (Pay-as-you-go) | ja | ja | eigenes Ausgabenlimit; Notbremse 5.000/Monat |
 | Enterprise | n. V. | n. V. | ja, optional eigenes Modell für den Pool-Anteil | ja | unbegrenzt |
 
-Free kostet uns je Nutzer maximal 25 × 0,30 € = 7,50 € einmalig. Über dem Guthaben:
-Pay-as-you-go zum Stufenpreis bis zum Kontingent.
+Z7 (2026-10-13, Joyce): nur noch ein bezahlter Plan. Starter (49 €/40 € Guthaben) und Pro
+(149 €/130 € Guthaben) sind durch Pro = 49 € plus Stufenpreis ersetzt; ein enthaltenes
+Guthaben gibt es nicht mehr (`guthabenCents` = 0, Env `GUTHABEN_*_CENTS` nur für Altfälle).
+Statt fester Deckel setzt der Kunde ein Ausgabenlimit (`TenantBilling.ausgabenLimitCents`),
+die Notbremse 5.000 bleibt technisch. Free kostet uns je Nutzer maximal 25 × 0,30 € = 7,50 €
+einmalig.
 
 ## 3. Umsetzung
 
@@ -79,7 +82,10 @@ Direktkosten prüfen.
 - Z4 (v0.1.836): Guthaben je Tier (`guthabenCents`: Starter 40 €, Pro 130 €, Free 0, Env `GUTHABEN_*_CENTS`); `/v1/usage` liefert `zugang` (Stufen, verbraucht, Guthaben, uebrig, Ueberschreitung); Monatsabschluss der Sammelabrechnung schreibt eine Zeile `zugang` mit der Ueberschreitung (Seats × Guthaben); Einzelabos bekommen die Ueberschreitung des Vormonats als Stripe-Rechnungsposten (Cron, idempotent ueber BillingEvent `zugang_ueberschreitung`); Free-Plan ohne Apify (Gateway 402 `apify_nicht_im_free_plan`, Desktop setzt den Apify-Weg im Free-Plan nicht); Anzeige in Einstellungen → Plan & Abrechnung. Das Kontingent (25/500/2.000) bleibt als Deckel.
 - Z5 (v0.1.838): Chat-Werkzeug `abrechnung_status` (Plan, Kontingent, Guthaben, Aufnahmen je Stufe, Preise; Vorschlagsgruppe „abrechnung“); Stufe als Pille in „Meine Firmen“ (Matrix liefert `zugang`) und in der Vorgangsansicht (`POST /v1/usage/stufen`); Betreiber-Uebersicht `GET /v1/betreiber/kosten` (Modellkosten der Pool-Spur je Stufe und Monat, valueserp-Aufrufe, Stufenverteilung) — sichtbar nur fuer den Tenant aus `OPERATOR_TENANT_ID`; die Seite dazu in der Admin-Konsole (Repo ava-admin) ist noch offen.
 - Z6 (v0.1.839): Plan-Karten in Einstellungen → Plan & Abrechnung auf das Zugangsmodell umgestellt; Website-Prompt docs/WEBSITE_PROMPT_UPDATE_2026-10-13.md mit Preistabelle, erlaubten Saetzen, Nicht-behaupten-Liste, FAQ und AGB-/Datenschutz-Bausteinen (Rechtsberatung prueft).
-- Offen: Betreiber-Seite in der Admin-Konsole (ava-admin), Sichtbarkeit der Rechercheergebnisse. Noetig vor Wirkung: `fly secrets set OPERATOR_OPENAI_API_KEY=… OPERATOR_APIFY_TOKEN=… -a ava-db-gateway` (Betreiber).
+- Betreiber-Seite in der Admin-Konsole (ava-admin, 2026-10-13): `/betreiber` mit Spuren und Kosten je Stufe/Monat.
+- Z7 (v0.1.840, Gateway-Migration `20261013_ausgabenlimit`): ein bezahlter Plan Pro (49 € je Nutzer, Stufenpreis je Aufnahme), Starter nur noch lesbar für Altvertraege (Checkout nur `pro`, Plan-Karten Free/Pro/Enterprise), Guthaben 0, Notbremse Pro 5.000; Ausgabenlimit je Abrechnungskonto (`PUT /v1/usage/ausgabenlimit`, Owner/Admin bei Seats; Pruefung in `assertQuotaAvailable` und `internal/quota/try-reserve` → 402 `ausgabenlimit_erreicht` bzw. `reason: ausgabenlimit`; offene Aufnahmen zaehlen mit 2,00 €, neue vorsichtig mit 3,50 €); Einstellungen-Feld + Chat-Werkzeug `abrechnung_limit_setzen` (confirmAction); `/v1/usage.zugang` mit `ausgabenLimitCents`, `erwartetCents`, `entitlement.role`.
+- Z7 Stripe, buchhaltungssauber: Einzelabo → Cron legt am Monatswechsel je Stufe einen Rechnungsposten an (Menge × Einzelpreis, Metadaten tenantId/periodKey/stufe, Idempotenz-Schluessel `ava-aufnahme-<tenant>-<periode>-<stufe>`), landet auf der naechsten Abo-Rechnung; Guthaben aus Altvertraegen als negativer Posten. Sammelabrechnung → `closePeriod` stellt nach dem Datensatz eine Stripe-Rechnung aus (`stripeRechnungErstellen`: Kunde aus Owner-E-Mail falls fehlt, Posten je Seat-Zeile und je Stufe, `send_invoice` mit `SEAT_INVOICE_DAYS_UNTIL_DUE` Tagen, finalisiert; SeatInvoice.status issued + stripeInvoiceId/issuedAt), Webhook `invoice.paid` setzt SeatInvoice paid/paidAt; Cron holt Datensaetze ohne Stripe-Rechnung nach (`stripeRechnungenNachholen`). Enterprise bleibt `enterprise_export` ohne Stripe.
+- Offen: Sichtbarkeit der Rechercheergebnisse; Stripe-Preis `STRIPE_PRICE_PRO` auf 49 € umstellen (Stripe-Dashboard, Betreiber); Altvertraege Starter manuell auf Pro migrieren. Noetig vor Wirkung: `fly secrets set OPERATOR_OPENAI_API_KEY=… OPERATOR_APIFY_TOKEN=… -a ava-db-gateway` (Betreiber).
 
 Recherche (Stellenanzeigen, Ausschreibungen/Expansion, Deep Research) bleibt bewusst beim Kundenmodell, auch wenn die Ergebnisse im Pool landen (Joyce, 2026-10-13): die Daten sind nur frisch wertvoll. Offen: Sichtbarkeit der Rechercheergebnisse nur fuer den zahlenden Nutzer und seine Organisation (Tenant-Kennzeichen an JobPosting/DeepResearch, Filter beim Lesen) — bewusst noch nicht umgesetzt.
 

@@ -37,7 +37,8 @@ import { recordBillingEvent } from "../../lib/billing-events";
 
 export const billingRouter = new OpenAPIHono();
 
-const CheckoutBody = z.object({ tier: z.enum(["starter", "pro"]) });
+// Z7 — Pro ist der einzige bezahlte Plan; Starter bleibt nur fuer Altvertraege lesbar.
+const CheckoutBody = z.object({ tier: z.enum(["pro"]) });
 // Response can be one of two shapes:
 //  (a) Checkout URL — tenant has no existing subscription, the
 //      renderer opens this in the system browser to complete payment.
@@ -461,12 +462,17 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           WHERE "tenantId" = $1 AND "status" IN ('past_due', 'suspended')`,
         [tenantId],
       );
+      // Z7 — Sammelabrechnung: Datensatz als bezahlt markieren.
+      const si = await getGatewayPool().query(
+        `UPDATE "SeatInvoice" SET "status" = 'paid', "paidAt" = NOW() WHERE "stripeInvoiceId" = $1 AND "paidAt" IS NULL`,
+        [inv.id],
+      );
       await recordBillingEvent(getGatewayPool(), {
         billingAccountId: tenantId,
         kind: "invoice_paid",
         source: "webhook",
         stripeEventId: event.id,
-        payload: { invoiceId: inv.id, amountPaid: inv.amount_paid, reactivated: (r.rowCount ?? 0) > 0 },
+        payload: { invoiceId: inv.id, amountPaid: inv.amount_paid, reactivated: (r.rowCount ?? 0) > 0, seatInvoicePaid: (si.rowCount ?? 0) > 0 },
       });
       if ((r.rowCount ?? 0) > 0) {
         logger.info({ tenantId, invoiceId: inv.id }, "stripe invoice paid → active (K8)");

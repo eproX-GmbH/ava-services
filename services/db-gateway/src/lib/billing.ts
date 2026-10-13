@@ -66,11 +66,13 @@ export interface BillingAccount {
   seatBillingEndsAt: Date | null;
   maxSeats: number | null;
   karenzTag: number | null;
+  /** Z7 — Ausgabenlimit je Monat fuer Aufnahmen (Cent), null = keins. */
+  ausgabenLimitCents: number | null;
 }
 
 const ACCOUNT_COLUMNS = `"tenantId", "kind", "mode", tier, "quotaLimit", "status", "pastDueSince", "suspendedAt", "graceDays",
   "stripeCustomerId", "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd", "seatTier", "seatBillingSince",
-  "seatBillingEndsAt", "maxSeats", "karenzTag"`;
+  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents"`;
 
 interface AccountRow {
   tenantId: string;
@@ -91,6 +93,7 @@ interface AccountRow {
   seatBillingEndsAt: Date | null;
   maxSeats: number | null;
   karenzTag: number | null;
+  ausgabenLimitCents: number | null;
 }
 
 function mapAccount(r: AccountRow): BillingAccount {
@@ -113,6 +116,7 @@ function mapAccount(r: AccountRow): BillingAccount {
     seatBillingEndsAt: r.seatBillingEndsAt,
     maxSeats: r.maxSeats,
     karenzTag: r.karenzTag,
+    ausgabenLimitCents: r.ausgabenLimitCents ?? null,
   };
 }
 
@@ -161,6 +165,7 @@ export async function ensureBillingAccount(
     seatBillingEndsAt: null,
     maxSeats: null,
     karenzTag: null,
+    ausgabenLimitCents: null,
   };
 }
 
@@ -345,6 +350,8 @@ export interface Entitlement {
   } | null;
   /** Persoenliches Stripe-Abo laeuft (noch), obwohl ein Seat traegt. */
   personalSubscription: { tier: BillingTier; cancelAtPeriodEnd: boolean; periodEnd: string | null } | null;
+  /** Z7 — Rolle des Nutzers im Abrechnungskonto (Organisation): owner | admin | member; null bei eigenem Konto. */
+  role: string | null;
 }
 
 /** Snapshot returned by `getUsageSnapshot` and shipped to clients
@@ -379,12 +386,23 @@ export interface ZugangStand {
   uebrigCents: number;
   /** Was ueber das Guthaben hinaus als Pay-as-you-go berechnet wuerde. */
   ueberschreitungCents: number;
+  /** Z7 — Ausgabenlimit des Kontos je Monat (Cent), null = keins. */
+  ausgabenLimitCents: number | null;
+  /** Z7 — voraussichtliche Kosten der Periode: zugeordnete Aufnahmen zum Stufenpreis plus offene zu 2,00 €. */
+  erwartetCents: number;
+}
+
+/** Z7 — Reicht das Ausgabenlimit fuer `anzahl` weitere Aufnahmen? Offene (noch
+ *  ohne Stufe) zaehlen mit 2,00 €, neue vorsichtig mit 3,50 €. */
+export function ausgabenlimitReicht(z: Pick<ZugangStand, "ausgabenLimitCents" | "erwartetCents">, anzahl: number): boolean {
+  if (z.ausgabenLimitCents == null) return true;
+  return z.erwartetCents + anzahl * 350 <= z.ausgabenLimitCents;
 }
 
 export const UNLIMITED = -1;
 
 /** Z4 — Stufen und Verbrauch einer Periode gegen das Guthaben rechnen. */
-export async function zugangStand(q: Q, billingAccountId: string, periodKey: string, guthaben: number): Promise<ZugangStand> {
+export async function zugangStand(q: Q, billingAccountId: string, periodKey: string, guthaben: number, ausgabenLimitCents: number | null = null): Promise<ZugangStand> {
   const r = await q.query<{ stufe: string | null; n: string; preis: string | null }>(
     `SELECT "stufe", COUNT(*)::text AS n, SUM("preisCents")::text AS preis FROM "UsageEntry"
       WHERE "billingAccountId" = $1 AND "periodKey" = $2 GROUP BY "stufe"`,
@@ -405,6 +423,8 @@ export async function zugangStand(q: Q, billingAccountId: string, periodKey: str
     guthabenCents: guthaben,
     uebrigCents: unbegrenzt ? UNLIMITED : Math.max(0, guthaben - verbraucht),
     ueberschreitungCents: unbegrenzt ? 0 : Math.max(0, verbraucht - guthaben),
+    ausgabenLimitCents,
+    erwartetCents: verbraucht + stufen.offen * 200,
   };
 }
 
@@ -451,13 +471,18 @@ export async function getUsageSnapshot(
   const { guthabenCents } = await import("./billing-plans");
   const guthabenJeSeat = guthabenCents(tier);
   const guthaben = guthabenJeSeat === UNLIMITED ? UNLIMITED : acc.mode === "seats" ? guthabenJeSeat * Math.max(1, await currentMemberCount(pool, acc.id)) : guthabenJeSeat;
-  const zugang = await zugangStand(pool, billingAccountId, periodKey, guthaben);
+  const zugang = await zugangStand(pool, billingAccountId, periodKey, guthaben, isUnlimited(tier) ? null : acc.ausgabenLimitCents);
 
   // Entitlement
   let paidBy: string | null = null;
   let seats: Entitlement["seats"] = null;
   let personalSubscription: Entitlement["personalSubscription"] = null;
+  let role: string | null = null;
   if (istOrgKonto) {
+    if (ctx.actorId) {
+      const m = await pool.query<{ role: string }>(`SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [billingAccountId, ctx.actorId]);
+      role = m.rows[0]?.role ?? null;
+    }
     const t = await pool.query<{ name: string | null }>(`SELECT "name" FROM "Tenant" WHERE "id" = $1`, [billingAccountId]);
     paidBy = t.rows[0]?.name ?? null;
     if (ctx.actorId) {
@@ -504,6 +529,7 @@ export async function getUsageSnapshot(
       mode: acc.mode,
       seats,
       personalSubscription,
+      role,
     },
   };
 }
@@ -525,6 +551,15 @@ export async function assertQuotaAvailable(
     });
   }
   if (snapshot.limit === UNLIMITED) return snapshot;
+  // Z7 — Ausgabenlimit des Kunden vor dem Kontingent-Deckel.
+  if (snapshot.tier !== "free" && !ausgabenlimitReicht(snapshot.zugang, Math.max(0, neededCount))) {
+    throw new HTTPException(402, {
+      res: new Response(
+        JSON.stringify({ error: "ausgabenlimit_erreicht", tier: snapshot.tier, ausgabenLimitCents: snapshot.zugang.ausgabenLimitCents, erwartetCents: snapshot.zugang.erwartetCents, neededCount }),
+        { status: 402, headers: { "content-type": "application/json" } },
+      ),
+    });
+  }
   const wouldUse = snapshot.used + Math.max(0, neededCount);
   if (wouldUse <= snapshot.limit) return snapshot;
   throw new HTTPException(402, {

@@ -256,6 +256,8 @@ export interface UsageEntitlement {
   } | null;
   /** Eigenes Stripe-Abo laeuft (noch), obwohl ein Seat traegt (A-5). */
   personalSubscription: { tier: string; cancelAtPeriodEnd: boolean; periodEnd: string | null } | null;
+  /** Z7 — Rolle im Abrechnungskonto der Organisation (owner | admin | member), null bei eigenem Konto. */
+  role?: string | null;
 }
 
 export interface OrgBillingSeatRow {

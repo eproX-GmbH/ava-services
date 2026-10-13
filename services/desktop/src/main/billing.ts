@@ -38,7 +38,7 @@ export function initBilling(d: BillingDeps): void {
 
   ipcMain.handle(
     "billing:openCheckout",
-    async (_e, tier: "starter" | "pro") => {
+    async (_e, tier: "pro") => {
       const result = await fetchBilling("/v1/billing/checkout", { tier });
       if (result.upgraded) {
         // In-place subscription upgrade — no Checkout to open. The

@@ -124,6 +124,11 @@ kippt die Marge unter 70 %.
 | **Free** | 0 € | 25 Firmen lebenslang (wie heute) | 25 | **nein** (nur Website-Crawl + SERP-Rückfall; Stufe klein) | Upgrade |
 | **Starter** | 49 € | 40 € Guthaben ≈ 20–80 Firmen | 20 | ja | Pay-as-you-go zum Stufenpreis, Deckel durch Kontingent (heute 500) |
 | **Pro** | 149 € | 130 € Guthaben ≈ 65–260 Firmen | 65 | ja | wie Starter, Kontingent 2.000 |
+
+**Entscheidung 2026-10-13 (Z7):** Starter/Pro mit Guthaben verworfen. Es gibt nur noch
+**Pro = 49 € je Nutzer und Monat plus Stufenpreis je Aufnahme** (Pay-as-you-go), kein
+Guthaben, kein fester Deckel; der Kunde setzt ein eigenes Ausgabenlimit je Monat, technisch
+bleibt eine Notbremse von 5.000 Firmen. Siehe docs/PLAN_ABRECHNUNG_ZUGANG.md.
 | **Enterprise** | nach Vereinbarung | Guthaben nach Vereinbarung, Cloud-Instanz + 40 € | | ja | |
 
 Warum so:

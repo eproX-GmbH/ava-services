@@ -264,6 +264,9 @@ master-data an; im Gateway-Persist-Pfad ergaenzen).
 4. 0 Seats → keine Rechnung, `SeatInvoice` mit 0 Zeilen fuer den Nachweis.
 5. Nachholen: Cron prueft taeglich alle Perioden ohne `SeatInvoice` seit `seatBillingSince` (Gateway-Ausfall am 1.).
 
+
+**Stand 2026-10-13 (Z7):** umgesetzt in `lib/seat-billing.ts` (`stripeRechnungErstellen`, `stripeRechnungenNachholen`) und Webhook `invoice.paid` → `SeatInvoice.paidAt`; siehe docs/PLAN_ABRECHNUNG_ZUGANG.md, Stand Z7.
+
 ### 6.6 Zahlung und Mahnwesen (fuer Seats und Einzel-Abo gleich)
 - Webhooks `invoice.paid`, `invoice.payment_failed`, `invoice.marked_uncollectible`, `invoice.voided`; Stripe Smart Retries konfiguriert.
 - Zustandsmaschine `BillingAccount.status`: `active → past_due` (erster Fehlschlag, Banner + Mail via Stripe) `→ suspended` (nach `graceDays`) `→ active` (bei `invoice.paid`); `canceled` bei `subscription.deleted` bzw. Deaktivierung.

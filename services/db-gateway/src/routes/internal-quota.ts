@@ -8,7 +8,7 @@
 
 import { Hono } from "hono";
 import { getGatewayPool } from "../lib/producer-pools";
-import { ensureBillingRowForQuota, periodKeyFor, isUnlimited, resolveBillingAccountId, UNLIMITED } from "../lib/billing";
+import { ensureBillingRowForQuota, periodKeyFor, isUnlimited, resolveBillingAccountId, UNLIMITED, readBillingAccount, zugangStand, ausgabenlimitReicht } from "../lib/billing";
 import { internalAuthMiddleware } from "../middleware/internal-auth";
 import { logger } from "../lib/logger";
 
@@ -95,7 +95,20 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
     const used = Number(usedRes.rows[0]?.used ?? 0);
     const parkedCount = Number(parkedRes.rows[0]?.parked ?? 0);
     const limit = billing.quotaLimit;
-    const granted = used + parkedCount + count <= limit;
+    let granted = used + parkedCount + count <= limit;
+    // Z7 — Ausgabenlimit des Kunden (nur bezahlte Plaene): geparkte Firmen zaehlen
+    // vorsichtig mit, damit das Limit nicht ueber die Warteschlange umgangen wird.
+    if (granted && billing.tier !== "free") {
+      const konto = await readBillingAccount(client, billingAccountId);
+      if (konto?.ausgabenLimitCents != null) {
+        const z = await zugangStand(client, billingAccountId, periodKey, 0, konto.ausgabenLimitCents);
+        if (!ausgabenlimitReicht(z, count + parkedCount)) {
+          granted = false;
+          await client.query("COMMIT");
+          return c.json({ granted: false, used, limit, parkedCount, reason: "ausgabenlimit" });
+        }
+      }
+    }
     await client.query("COMMIT");
     return c.json({ granted, used, limit, parkedCount });
   } catch (err) {

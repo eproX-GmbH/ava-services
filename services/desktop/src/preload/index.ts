@@ -1358,7 +1358,7 @@ const api = {
   // to know "did it open OK" (resolves) or "what error" (rejects with
   // the gateway's `message`).
   billing: {
-    openCheckout: (tier: "starter" | "pro"): Promise<void> =>
+    openCheckout: (tier: "pro"): Promise<void> =>
       ipcRenderer.invoke("billing:openCheckout", tier),
     openPortal: (): Promise<void> => ipcRenderer.invoke("billing:openPortal"),
     /** Fired by the `ava://billing/success` protocol handler so the

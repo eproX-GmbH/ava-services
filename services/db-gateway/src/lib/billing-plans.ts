@@ -13,10 +13,13 @@ import { UNLIMITED, type BillingTier } from "./billing";
 
 /** Quota limits applied when a webhook flips a tenant to a new tier.
  *  Matches the locked pricing in the monetization plan. */
+// Z7 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Pro ist der einzige bezahlte Plan, Aufnahmen
+// laufen Pay-as-you-go; der Deckel ist nur noch eine Notbremse. Starter bleibt
+// fuer Altvertraege lesbar, wird aber nicht mehr angeboten.
 export const TIER_LIMITS: Record<BillingTier, number> = {
   free: 25,
   starter: 500,
-  pro: 2000,
+  pro: 5000,
   enterprise: UNLIMITED,
 };
 
@@ -27,12 +30,13 @@ export type PaidTier = "starter" | "pro";
  *  darueber faellt Pay-as-you-go an. Free: 25 Firmen lebenslang, kein Guthaben;
  *  Enterprise: unbegrenzt. Per Env ohne Deploy aenderbar. */
 export function guthabenCents(tier: BillingTier): number {
+  // Z7: kein enthaltenes Guthaben mehr — jede Aufnahme wird zum Stufenpreis
+  // berechnet, Enterprise nach Vertrag. (Env bleibt fuer Sonderfaelle.)
   if (tier === "enterprise") return UNLIMITED;
   if (tier === "free") return 0;
   const env = tier === "starter" ? process.env.GUTHABEN_STARTER_CENTS : process.env.GUTHABEN_PRO_CENTS;
   const n = env ? Number(env) : NaN;
-  if (Number.isFinite(n) && n >= 0) return Math.round(n);
-  return tier === "starter" ? 4000 : 13000;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
 }
 
 /** Returns the env-configured Stripe price id for a paid tier, or
