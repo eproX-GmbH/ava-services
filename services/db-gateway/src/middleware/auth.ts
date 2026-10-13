@@ -27,7 +27,21 @@ export type AuthContext = {
   email?: string | null;
   /** Anzeigename aus dem Token (`name`, sonst Vor-/Nachname, sonst preferred_username). */
   name?: string | null;
+  /** Keycloak-Realm-Rollen (`realm_access.roles`); "admin" = Betreiber von AVA. */
+  roles: string[];
 };
+
+/** Betreiber-Pruefung (2026-10-13, Joyce): Realm-Rolle `admin` in Keycloak, nicht die
+ *  Rolle in der Organisation. Zusaetzlich muss der Daten-Tenant der Betreiber-Tenant
+ *  sein (OPERATOR_TENANT_ID), falls gesetzt — ein Kunde mit zufaellig gleicher Rolle
+ *  sieht so nichts. */
+export function istBetreiber(auth: AuthContext | undefined): boolean {
+  if (!auth) return false;
+  const rolle = process.env.OPERATOR_ROLE ?? "admin";
+  if (!auth.roles.includes(rolle)) return false;
+  const operator = process.env.OPERATOR_TENANT_ID;
+  return !operator || auth.tenantId === operator;
+}
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -163,6 +177,8 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     const str = (k: string) => (typeof payload[k] === "string" && (payload[k] as string).trim() ? (payload[k] as string).trim() : null);
     const vollName = [str("given_name"), str("family_name")].filter(Boolean).join(" ");
     const displayName = str("name") ?? (vollName || null) ?? str("preferred_username");
+    const realm = payload["realm_access"] as { roles?: unknown } | undefined;
+    const roles = Array.isArray(realm?.roles) ? (realm!.roles as unknown[]).filter((r): r is string => typeof r === "string") : [];
     // 2026-09-04 — Alt-Claim `tenant` (z. B. "pilot" aus der Keycloak-
     // Fruehzeit) zeigt auf einen fremden PERSOENLICHEN Tenant. Persoenliche
     // Tenants sind per Definition id = sub; ein solcher Claim wird
@@ -204,7 +220,7 @@ export const authMiddleware = createMiddleware(async (c, next) => {
       fallbackGeloggt.add(payload.sub);
       logger.info({ actorId: payload.sub, tenant_fallback: "sub" }, "tenantId aus sub abgeleitet (kein tenant_id-Claim)");
     }
-    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName });
+    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles });
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
     // Surface a useful `message` field too so the desktop's GatewayError

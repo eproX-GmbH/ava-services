@@ -21,6 +21,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { getUsageSnapshot } from "../../lib/billing";
+import { istBetreiber } from "../../middleware/auth";
 import { ErrorShape } from "./schemas";
 
 export const usageRouter = new OpenAPIHono();
@@ -142,8 +143,7 @@ const betreiberKalkulationRoute = createRoute({
 });
 usageRouter.openapi(betreiberKalkulationRoute, async (c) => {
   const auth = c.get("auth");
-  const operator = process.env.OPERATOR_TENANT_ID;
-  if (!auth?.tenantId || !operator || auth.tenantId !== operator) throw new HTTPException(404, { message: "not_found" });
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
   const { KOSTENPOSTEN, FIXKOSTEN, tarif, direktJeStufe } = await import("../../lib/kalkulation");
   const { stufenPreise, grossAb } = await import("../../lib/stufen");
   const preise = stufenPreise();
@@ -176,8 +176,7 @@ const betreiberKostenRoute = createRoute({
 });
 usageRouter.openapi(betreiberKostenRoute, async (c) => {
   const auth = c.get("auth");
-  const operator = process.env.OPERATOR_TENANT_ID;
-  if (!auth?.tenantId || !operator || auth.tenantId !== operator) throw new HTTPException(404, { message: "not_found" });
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
   const { monate } = c.req.valid("query");
   const pool = getGatewayPool();
   const [modell, serp, stufen, aufnahmen] = await Promise.all([
