@@ -5216,9 +5216,9 @@ const PLAN_CARDS: PlanCard[] = [
     name: "Pro",
     price: "49 €",
     cadence: "/Monat je Nutzer",
-    quota: "dazu einmalig je neu aufgenommener Firma 1,00 € (klein), 2,00 € (mittel) oder 3,50 € (groß)",
+    quota: "dazu je im Monat verarbeiteter Firma 1,00 € (klein), 2,00 € (mittel) oder 3,50 € (groß)",
     features: [
-      "Jede Firma zählt nur einmal, Auffrischung inklusive",
+      "Zählt nur, was AVA im Monat wirklich verarbeitet, Übersprungenes nicht",
       "Stufe nach dem Lauf: LinkedIn-Profil ja/nein, Personenzahl",
       "Eigenes Ausgabenlimit je Monat",
       "LinkedIn-Kontakte inklusive",
@@ -5286,7 +5286,7 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
       </span>
       {tier !== "free" && zugang.guthabenCents !== -1 && (
         <span className="muted small">
-          Aufnahmen in diesem Monat: {eur(zugang.verbrauchtCents)}
+          Verarbeitete Firmen in diesem Monat: {eur(zugang.verbrauchtCents)}
           {zugang.stufen.offen > 0 ? ` zugeordnet, voraussichtlich ${eur(zugang.erwartetCents ?? zugang.verbrauchtCents)} mit den offenen` : ""}
           {zugang.guthabenCents > 0 ? ` · davon ${eur(Math.min(zugang.verbrauchtCents, zugang.guthabenCents))} im Plan enthalten` : ""}
           {" · "}kommt mit der nächsten Rechnung

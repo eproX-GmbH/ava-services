@@ -512,9 +512,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
         decision.reason,
         log,
       );
-      // Z8: frisches Profil eines anderen Laufs → fuer diesen Tenant trotzdem
-      // eine Aufnahme (er bekommt Zugang zum Ergebnis).
-      if (stage === "company-profile") await aufnahmeNachProfil(event, "company-profile-frisch", log);
+      // Z8: uebersprungen (frisch) kostet nichts und wird nicht verbucht (Joyce, 2026-10-13).
       return;
     }
 
@@ -1026,14 +1024,14 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     log.warn({ companyId: result.companyId, err: (err as Error).message }, "[verflechtungen] Rollen-Spiegel fehlgeschlagen");
   }
 
-  // Z8 (2026-10-13): structured-content verbucht nichts mehr — die Aufnahme
+  // Z8 (2026-10-13): structured-content verbucht nichts mehr — die Verarbeitung
   // haengt am Firmenprofil (siehe withTierGate/company-profile). Register-
   // fehler, fehlende Jahresabschluesse oder Firmen ohne Register (AT/UK/WEB)
-  // verhindern damit keine Abrechnung mehr und Auffrischungen kosten nichts.
+  // verhindern damit keine Abrechnung mehr.
 };
 
-/** Z8 — Aufnahme verbuchen, sobald das Firmenprofil fuer den Tenant da ist
- *  (gespeichert oder frisch uebersprungen). Best-effort, nie blockierend. */
+/** Z8 — verarbeitete Firma verbuchen, sobald das Firmenprofil fuer den Tenant
+ *  tatsaechlich gespeichert wurde (nicht bei uebersprungen). Best-effort. */
 async function aufnahmeNachProfil(event: CloudEvent<PersistEvent<unknown>>, source: string, log: typeof logger): Promise<void> {
   const data = event.data as PersistEvent<{ companyId?: string }> | undefined;
   const tenantId = data?.tenantId;

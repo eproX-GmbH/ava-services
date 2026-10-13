@@ -4,14 +4,15 @@
 // Per-(account, period, company) usage tracking + per-account billing
 // state. Wired in three places:
 //
-//   - Aufnahme (Z8, 2026-10-13): `recordUsage(...)` laeuft, sobald das
-//     Firmenprofil da ist — persist-bus (company-profile gespeichert oder
-//     im Tier-Gate als frisch uebersprungen) und event-bus (Producer meldet
-//     company-profile completed/skipped "bereits verarbeitet"). Register,
-//     Jahresabschluesse, Publikationen und Kontakte sind Beiwerk: ihr
-//     Fehlen oder Scheitern verhindert keine Aufnahme. Ohne erreichbare
-//     Website (kein Profil) wird nichts berechnet. EINMAL je Firma und
-//     Konto — Auffrischung, Wiederholung und Nachlaeufe kosten nichts.
+//   - Verarbeitung (Z8, 2026-10-13, Joyce): `recordUsage(...)` laeuft, wenn
+//     das Firmenprofil NACHWEISLICH verarbeitet wurde — persist-bus (company-
+//     profile gespeichert) oder event-bus (Producer meldet company-profile
+//     completed). Uebersprungen (frisch, bereits verarbeitet) zaehlt nicht,
+//     weil keine Kosten entstehen. Register, Jahresabschluesse, Publikationen
+//     und Kontakte sind Beiwerk: ihr Fehlen oder Scheitern verhindert nichts.
+//     Ohne erreichbare Website (kein Profil) wird nichts berechnet. Je Firma
+//     und Abrechnungsmonat einmal — eine Auffrischung im Folgemonat zaehlt
+//     wieder (sie kostet uns erneut), innerhalb des Monats nicht doppelt.
 //
 //   - `GET /v1/usage` calls `getUsageSnapshot(...)` to return the
 //     `{tier, used, limit, remaining, periodEnd, entitlement}` envelope
@@ -285,10 +286,10 @@ export async function ensureBillingRowForQuota(
   };
 }
 
-/** Aufnahme einer Firma in den Bestand verbuchen (Z8): einmal je Firma und
- *  Abrechnungskonto, unabhaengig von der Periode. Die Periode der Zeile ist
- *  die des Zeitpunkts (Kontingent/Monatsrechnung). Danach wird die Stufe aus
- *  dem Pool-Datensatz zugeordnet (bleibt "offen", bis der Kontakt-Lauf durch ist). */
+/** Verarbeitete Firma verbuchen (Z8): einmal je Firma, Abrechnungskonto und
+ *  Periode (Monat bei bezahlten Plaenen, lebenslang bei Free). Danach wird die
+ *  Stufe aus dem Pool-Datensatz zugeordnet (bleibt "offen", bis der
+ *  Kontakt-Lauf durch ist). */
 export async function recordUsage(
   pool: Pool,
   log: Logger,
@@ -309,8 +310,7 @@ export async function recordUsage(
     const res = await pool.query(
       `INSERT INTO "UsageEntry"
          ("billingAccountId", "periodKey", "companyId", source, "createdAt")
-       SELECT $1, $2, $3, $4, NOW()
-        WHERE NOT EXISTS (SELECT 1 FROM "UsageEntry" u WHERE u."billingAccountId" = $1 AND u."companyId" = $3)
+       VALUES ($1, $2, $3, $4, NOW())
        ON CONFLICT ("billingAccountId", "periodKey", "companyId") DO NOTHING`,
       [billingAccountId, periodKey, args.companyId, args.source],
     );

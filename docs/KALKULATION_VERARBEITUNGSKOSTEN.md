@@ -128,7 +128,9 @@ kippt die Marge unter 70 %.
 **Entscheidung 2026-10-13 (Z7):** Starter/Pro mit Guthaben verworfen. Es gibt nur noch
 **Pro = 49 € je Nutzer und Monat plus Stufenpreis je Aufnahme** (Pay-as-you-go), kein
 Guthaben, kein fester Deckel; der Kunde setzt ein eigenes Ausgabenlimit je Monat, technisch
-bleibt eine Notbremse von 5.000 Firmen. Siehe docs/PLAN_ABRECHNUNG_ZUGANG.md.
+bleibt eine Notbremse von 5.000 Firmen. Berechnet wird je Firma und Monat, in dem AVA sie
+nachweislich verarbeitet hat (auch Auffrischung), Uebersprungenes nicht — so traegt jede
+Direktkostenrunde ihren Preis. Siehe docs/PLAN_ABRECHNUNG_ZUGANG.md.
 | **Enterprise** | nach Vereinbarung | Guthaben nach Vereinbarung, Cloud-Instanz + 40 € | | ja | |
 
 Warum so:

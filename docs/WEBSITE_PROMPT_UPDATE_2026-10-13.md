@@ -22,10 +22,10 @@ Modell: lokal, mit eigenem Schlüssel oder mit Deinem ChatGPT-Abo.
 | Plan | Preis | Aufnahmen | Kontakte | Grenze |
 |---|---|---|---|---|
 | Kostenlos | 0 € | 25 Firmen, lebenslang (kein monatlicher Reset) | von der Website der Firma | 25 Firmen |
-| Pro | 49 € je Monat und Nutzer | 1,00 bis 3,50 € je aufgenommener Firma, nach Stufe | Website und LinkedIn | eigenes Ausgabenlimit je Monat, frei wählbar |
+| Pro | 49 € je Monat und Nutzer | 1,00 bis 3,50 € je im Monat verarbeiteter Firma, nach Stufe | Website und LinkedIn | eigenes Ausgabenlimit je Monat, frei wählbar |
 | Enterprise | individuell | nach Vereinbarung, eigene Cloud-Instanz möglich | Website und LinkedIn | nach Vereinbarung |
 
-**Preis je aufgenommener Firma (Stufe steht nach der Aufbereitung fest):**
+**Preis je verarbeiteter Firma und Monat (Stufe steht nach der Aufbereitung fest):**
 
 | Stufe | Preis | Wann |
 |---|---|---|
@@ -33,49 +33,53 @@ Modell: lokal, mit eigenem Schlüssel oder mit Deinem ChatGPT-Abo.
 | Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, bis 100 Personen |
 | Groß | 3,50 € | LinkedIn-Firmenprofil, über 100 Personen |
 
-Pro ist der einzige bezahlte Plan: 49 € je Nutzer und Monat, dazu jede aufgenommene Firma
-zum Stufenpreis, abgerechnet mit der Monatsrechnung (Pay-as-you-go). Es gibt kein
+Pro ist der einzige bezahlte Plan: 49 € je Nutzer und Monat, dazu jede Firma, die AVA im
+Abrechnungsmonat für Dich verarbeitet hat, zum Stufenpreis, abgerechnet mit der
+Monatsrechnung (Pay-as-you-go). Es gibt kein
 enthaltenes Guthaben und keinen festen Firmen-Deckel; stattdessen setzt sich jeder Kunde
 in den Einstellungen (oder im Chat) ein Ausgabenlimit je Monat. Ist es erreicht, warten
 neue Firmen bis zum nächsten Monat oder bis das Limit erhöht wird. Im Kostenlos-Plan gibt
-es 25 Firmen, einmal, für immer. Aufgefrischte Daten (Website alle 30 Tage, Kontakte alle
-90 Tage, Alarme, Register- und Insolvenzwächter) sind im Plan enthalten.
+es 25 Firmen, einmal, für immer. Alarme, Register- und Insolvenzwächter sind im Plan
+enthalten.
 
-**Wann eine Aufnahme zählt:** Eine Firma gilt als aufgenommen, sobald AVA ihr
-Firmenprofil von der erreichbaren Website erstellt hat. Jede Firma zählt einmal je
-Konto, egal wie oft sie aufgefrischt, erneut verarbeitet oder wieder in eine Liste
-gelegt wird. Firmen ohne erreichbare Website kosten nichts, auch wenn Registerdaten oder
-Jahresabschlüsse vorliegen. Fehlende Jahresabschlüsse, Publikationen oder Kontakte
-ändern am Preis nichts, sie gehören zum Ergebnis, soweit es sie gibt.
+**Wann eine Firma zählt:** Eine Firma zählt in dem Monat, in dem AVA sie für Dich
+wirklich verarbeitet hat, also ihr Firmenprofil von der erreichbaren Website neu
+erstellt hat. Das gilt für die erste Aufbereitung und für jede Auffrischung (Website
+alle 30 Tage). Innerhalb eines Monats zählt eine Firma höchstens einmal. Nicht gezählt
+wird, was AVA überspringt, weil der Datensatz schon aktuell ist. Firmen ohne erreichbare
+Website kosten nichts, auch wenn Registerdaten oder Jahresabschlüsse vorliegen. Fehlende
+Jahresabschlüsse, Publikationen oder Kontakte ändern am Preis nichts, sie gehören zum
+Ergebnis, soweit es sie gibt.
 
 ## 2a. Preiskarte Pro und Stufen-Erklärung (Nachtrag nach Sichtung der Seite, 2026-10-13)
 
 Die Spanne „1,00 € bis 3,50 € je aufgenommener Firma“ allein lässt zwei Fragen offen:
-welche Stufen es gibt und ob der Betrag monatlich anfällt. Deshalb:
+welche Stufen es gibt und wie oft der Betrag anfällt. Deshalb:
 
-**Auf der Pro-Karte** statt des ersten Stichpunkts: „Dazu einmalig je neu aufgenommener
+**Auf der Pro-Karte** statt des ersten Stichpunkts: „Dazu je im Monat verarbeiteter
 Firma 1,00 € (klein), 2,00 € (mittel) oder 3,50 € (groß), siehe Stufen“ mit Sprung zur
 Erklärung unter den Karten. Den Stichpunkt „Auffrischung, Alarme und Wächter inklusive“
-ersetzen durch „Jede Firma zählt nur einmal; Auffrischung, Alarme und Wächter inklusive“.
-Unter dem Preis „49 €“ bleibt „je Nutzer und Monat, netto“.
+ersetzen durch „Zählt nur, was AVA im Monat wirklich verarbeitet; Alarme und Wächter
+inklusive“. Unter dem Preis „49 €“ bleibt „je Nutzer und Monat, netto“.
 
 **Unter den Karten** ein Block „Was eine Firma kostet“ mit diesem Satz und der Tabelle:
 
 „Die Stufe hängt davon ab, wie aufwendig die Suche nach Ansprechpartnern war. Sie steht
 nach der Aufbereitung fest und wird dir in deinem Bestand und am Vorgang angezeigt;
-vorher siehst du die Spanne. Der Betrag fällt einmal an, wenn die Firma neu in deinen
-Bestand kommt, und steht auf der nächsten Monatsrechnung. Danach kostet die Firma nichts
-mehr, egal wie oft AVA sie auffrischt oder du sie erneut verarbeitest.“
+vorher siehst du die Spanne. Der Betrag fällt in jedem Monat an, in dem AVA die Firma
+für dich neu verarbeitet: bei der ersten Aufbereitung und bei jeder Auffrischung,
+höchstens einmal je Monat. Was AVA überspringt, weil der Datensatz aktuell ist, kostet
+nichts. Alles steht auf der nächsten Monatsrechnung.“
 
-| Stufe | Preis, einmalig | Woran AVA das festmacht |
+| Stufe | Preis je verarbeitetem Monat | Woran AVA das festmacht |
 |---|---|---|
 | Klein | 1,00 € | Kein LinkedIn-Firmenprofil zuordenbar; Ansprechpartner nur von der Website. |
 | Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, bis 100 Personen dort gelistet. |
 | Groß | 3,50 € | LinkedIn-Firmenprofil mit über 100 Personen, zweiter Durchlauf nötig. |
 
-Rechenbeispiel, das die Seite nennen darf: „Ein Nutzer nimmt im Monat 40 Firmen neu auf,
-30 klein und 10 mittel: 49 € plus 30 × 1,00 € plus 10 × 2,00 € = 99 € netto. Im Folgemonat
-ohne neue Firmen: 49 €.“
+Rechenbeispiel, das die Seite nennen darf: „Ein Nutzer lässt im Monat 40 Firmen
+verarbeiten, 30 klein und 10 mittel: 49 € plus 30 × 1,00 € plus 10 × 2,00 € = 99 € netto.
+Im Folgemonat frischt AVA 20 davon auf (15 klein, 5 mittel): 49 € plus 25 € = 74 €.“
 
 ## 3. Sätze, die die Seite so sagen darf
 
@@ -103,9 +107,9 @@ ohne neue Firmen: 49 €.“
 - Kein „Starter“-Plan, kein „Zugangsguthaben“, keine Firmenzahl „inklusive“ bei Pro.
 - Keine Aussage, dass Jahresabschlüsse oder Kontakte für jede Firma vorliegen; der
   Preis hängt nur an Website und Firmenprofil, nicht am Umfang der Registerdaten.
-- Nicht „je Monat“ oder „je Auffrischung“ beim Preis je Firma; eine Firma wird einmal
-  berechnet. Die Spanne „1,00 bis 3,50 €“ nie ohne das Wort „einmalig“ und ohne Hinweis
-  auf die Stufen zeigen.
+- Nicht „einmalig“ und nicht „Auffrischung inklusive“ beim Preis je Firma; die
+  Auffrischung ist eine Verarbeitung und zählt im jeweiligen Monat. Die Spanne „1,00 bis
+  3,50 €“ nie ohne „je im Monat verarbeiteter Firma“ und ohne Hinweis auf die Stufen.
 - „Du zahlst für das Ergebnis, nicht für die Arbeit“ ist kein Werbesatz; er gehört nur in
   FAQ und AGB (siehe unten).
 - Keine automatische Rechnungsstellung für Sammelabrechnungen versprechen, solange
@@ -133,16 +137,18 @@ Einstellungen (oder im Chat: „Setz mein Ausgabenlimit auf 100 €“). Ist es 
 neue Firmen bis zum nächsten Monat oder bis Du es erhöhst. Im Chat („Wie stehen meine
 Kosten?“) und in den Einstellungen siehst Du jederzeit, was in diesem Monat angefallen ist.
 
-**Wann zahle ich für eine Firma?** Sobald AVA das Firmenprofil von ihrer Website
-erstellt hat. Hat eine Firma keine erreichbare Website, kostet sie nichts. Jede Firma
-wird einmal berechnet, auch wenn Du sie später erneut verarbeitest oder in mehrere
-Listen aufnimmst.
+**Wann zahle ich für eine Firma?** In jedem Monat, in dem AVA ihr Firmenprofil von der
+Website neu erstellt: bei der ersten Aufbereitung und bei jeder Auffrischung, höchstens
+einmal je Monat. Hat eine Firma keine erreichbare Website, kostet sie nichts. Was AVA
+überspringt, weil der Datensatz schon aktuell ist, kostet ebenfalls nichts; mehrere
+Listen mit derselben Firma zählen nicht doppelt.
 
 **Was, wenn es keine Jahresabschlüsse gibt?** Gerade bei kleinen Firmen ist das üblich.
 Der Preis bleibt derselbe, Du bekommst Profil, Website-Inhalte, Register- und
 Kontaktdaten, soweit vorhanden.
 
-**Was kostet die Auffrischung?** Nichts extra. Website, Kontakte, Register- und
+**Was kostet die Auffrischung?** Die Auffrischung der Website und des Profils (alle 30
+Tage) ist eine Verarbeitung und zählt in dem Monat zum Stufenpreis. Alarme, Register- und
 Insolvenzwächter laufen für Firmen in Deinem Bestand im Plan mit.
 
 ## 6. Bausteine für AGB und Datenschutzerklärung (zur Prüfung durch die Rechtsberatung)
@@ -152,10 +158,11 @@ Firmendaten bereit. Die Vergütung richtet sich nach der Anzahl der in den Besta
 Kunden aufgenommenen Firmen und ihrer Stufe (Klein, Mittel, Groß) gemäß Preisliste.
 Die Grundgebühr wird je Nutzer und Monat berechnet; Aufnahmen werden zum jeweils gültigen
 Stufenpreis mit der Rechnung des Folgemonats abgerechnet. Der Kunde kann ein monatliches
-Ausgabenlimit festlegen; bei Erreichen werden keine weiteren Firmen aufgenommen. Eine
-Firma gilt als aufgenommen, sobald der Anbieter ihr Firmenprofil aus der öffentlich
-erreichbaren Website erstellt hat; sie wird je Kundenkonto einmalig berechnet. Firmen
-ohne erreichbare Website werden nicht berechnet. Umfang und Verfügbarkeit weiterer
+Ausgabenlimit festlegen; bei Erreichen werden keine weiteren Firmen verarbeitet. Eine
+Firma gilt in einem Abrechnungsmonat als verarbeitet, wenn der Anbieter ihr Firmenprofil
+aus der öffentlich erreichbaren Website in diesem Monat erstellt oder aktualisiert hat;
+je Kundenkonto und Monat wird sie höchstens einmal berechnet. Firmen ohne erreichbare
+Website werden nicht berechnet. Umfang und Verfügbarkeit weiterer
 öffentlicher Daten (Registerauszüge, Jahresabschlüsse, Ansprechpartner) sind nicht
 Gegenstand der Vergütung. Der Kunde zahlt für den Zugang zum Ergebnis, nicht für die
 Rechenarbeit. Die Stufe wird nach Abschluss der Aufbereitung anhand objektiver Merkmale

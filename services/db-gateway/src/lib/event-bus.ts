@@ -44,15 +44,11 @@ async function writeEntityProgressFromEvent(
   if (payload.service === "company-contact" && (state === "skipped" || state === "failed")) {
     void import("./stufen").then(({ stufeZuordnen }) => stufeZuordnen(getGatewayPool(), payload.companyId, `kontakt-${state}`));
   }
-  // Z8: Producer hat das Firmenprofil fertig oder als "bereits verarbeitet"
-  // uebersprungen (Vorpruefung im Producer, kein Persist-Ereignis) → Aufnahme.
-  if (
-    payload.service === "company-profile" &&
-    payload.tenantId &&
-    (state === "completed" || (state === "skipped" && /bereits verarbeitet|fresh/i.test(payload.errorMessage ?? "")))
-  ) {
+  // Z8: Producer meldet das Firmenprofil als nachweislich verarbeitet (completed)
+  // → verbuchen. "skipped" (bereits verarbeitet/frisch) zaehlt bewusst nicht.
+  if (payload.service === "company-profile" && payload.tenantId && state === "completed") {
     void import("./billing").then(({ recordUsage }) =>
-      recordUsage(getGatewayPool(), logger, { tenantId: payload.tenantId, actorId: null, companyId: payload.companyId, source: state === "completed" ? "company-profile" : "company-profile-frisch" }),
+      recordUsage(getGatewayPool(), logger, { tenantId: payload.tenantId, actorId: null, companyId: payload.companyId, source: "company-profile" }),
     );
   }
   // 2026-10-03: Zeitpunkt des Ereignisses statt Eingangszeit. Nach einer
