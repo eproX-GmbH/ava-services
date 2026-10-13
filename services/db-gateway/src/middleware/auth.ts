@@ -27,11 +27,11 @@ export type AuthContext = {
   email?: string | null;
   /** Anzeigename aus dem Token (`name`, sonst Vor-/Nachname, sonst preferred_username). */
   name?: string | null;
-  /** Keycloak-Realm-Rollen (`realm_access.roles`); "admin" = Betreiber von AVA. */
+  /** Keycloak-Rollen (realm_access.roles und resource_access.*.roles); "admin" = Betreiber von AVA. */
   roles: string[];
 };
 
-/** Betreiber-Pruefung (2026-10-13, Joyce): Realm-Rolle `admin` in Keycloak, nicht die
+/** Betreiber-Pruefung (2026-10-13, Joyce): Keycloak-Rolle `admin` (Realm- oder Client-Rolle, z. B. Client "ava"), nicht die
  *  Rolle in der Organisation. Zusaetzlich muss der Daten-Tenant der Betreiber-Tenant
  *  sein (OPERATOR_TENANT_ID), falls gesetzt — ein Kunde mit zufaellig gleicher Rolle
  *  sieht so nichts. */
@@ -177,8 +177,15 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     const str = (k: string) => (typeof payload[k] === "string" && (payload[k] as string).trim() ? (payload[k] as string).trim() : null);
     const vollName = [str("given_name"), str("family_name")].filter(Boolean).join(" ");
     const displayName = str("name") ?? (vollName || null) ?? str("preferred_username");
-    const realm = payload["realm_access"] as { roles?: unknown } | undefined;
-    const roles = Array.isArray(realm?.roles) ? (realm!.roles as unknown[]).filter((r): r is string => typeof r === "string") : [];
+    // Rollen aus realm_access UND resource_access.<client>.roles (Client-Rollen wie
+    // "ava admin" liegen nur dort); Namen ohne Client-Praefix.
+    const rollenAus = (v: unknown): string[] => {
+      const r = (v as { roles?: unknown } | undefined)?.roles;
+      return Array.isArray(r) ? (r as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    };
+    const roles = new Set<string>(rollenAus(payload["realm_access"]));
+    const resource = payload["resource_access"];
+    if (resource && typeof resource === "object") for (const v of Object.values(resource as Record<string, unknown>)) for (const r of rollenAus(v)) roles.add(r);
     // 2026-09-04 — Alt-Claim `tenant` (z. B. "pilot" aus der Keycloak-
     // Fruehzeit) zeigt auf einen fremden PERSOENLICHEN Tenant. Persoenliche
     // Tenants sind per Definition id = sub; ein solcher Claim wird
@@ -220,7 +227,7 @@ export const authMiddleware = createMiddleware(async (c, next) => {
       fallbackGeloggt.add(payload.sub);
       logger.info({ actorId: payload.sub, tenant_fallback: "sub" }, "tenantId aus sub abgeleitet (kein tenant_id-Claim)");
     }
-    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles });
+    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles: [...roles] });
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
     // Surface a useful `message` field too so the desktop's GatewayError
