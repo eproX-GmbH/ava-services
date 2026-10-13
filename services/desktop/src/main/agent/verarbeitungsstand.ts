@@ -93,7 +93,7 @@ export function verarbeitungsstand(companyId: string, zeile: MatrixZeile | null 
         (transactionId
           ? `Braucht die Frage eine davon, JETZT ohne Rueckfrage retry_stage(transactionId=\"${transactionId}\", companyId=\"${companyId}\", stage=…) aufrufen`
           : `Braucht die Frage eine davon, JETZT ohne Rueckfrage import_companies mit companyIds=[\"${companyId}\"] aufrufen`) +
-        " und dem Nutzer sagen, dass du das jetzt nachholst. Nie 'gibt es nicht' oder 'liegt nicht vor' sagen, solange die Stufe nicht gelaufen ist.",
+        " und dem Nutzer sagen, dass du das jetzt nachholst. Nie 'gibt es nicht' oder 'liegt nicht vor' sagen, solange die Stufe nicht erfolgreich gelaufen ist; ein Fehlschlag ist keine Aussage ueber die Firma.",
     };
   }
   return { imBestand: true, stand: "vollstaendig", fehlendeStufen: [], laufendeStufen: [], transactionId, hinweis: "" };

@@ -90,7 +90,7 @@ export function verarbeitungsstand(companyId: string, zeile: MatrixZeile | null 
       transactionId,
       hinweis:
         `Diese Stufen sind noch nicht gelaufen: ${fehlend.join(", ")}. Braucht die Frage eine davon, JETZT ohne Rueckfrage neu_verarbeiten(companyId, stufe) aufrufen ` +
-        "und dem Nutzer sagen, dass das nachgeholt wird. Nie 'gibt es nicht' sagen, solange die Stufe nicht gelaufen ist.",
+        "und dem Nutzer sagen, dass das nachgeholt wird. Nie 'gibt es nicht' sagen, solange die Stufe nicht erfolgreich gelaufen ist; ein Fehlschlag ist keine Aussage ueber die Firma.",
     };
   }
   return { imBestand: true, stand: "vollstaendig", fehlendeStufen: [], laufendeStufen: [], transactionId, hinweis: "" };
