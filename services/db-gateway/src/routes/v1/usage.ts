@@ -128,6 +128,39 @@ usageRouter.openapi(ausgabenlimitRoute, async (c) => {
   return c.json({ ausgabenLimitCents }, 200);
 });
 
+// Z11 — Kalkulation fuer die Betreiber-Seite "Verarbeitungskosten" in der Konsole:
+// Kostenposten je Stufe, Fixkosten, Preise (Env), Tarif (Seat, Instanz). Nur Betreiber.
+const betreiberKalkulationRoute = createRoute({
+  method: "get",
+  path: "/betreiber/kalkulation",
+  tags: ["billing"],
+  summary: "Betreiber: Kalkulation der Verarbeitungskosten (Kostenposten je Stufe, Fixkosten, Preise, Tarif)",
+  responses: {
+    200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber" },
+  },
+});
+usageRouter.openapi(betreiberKalkulationRoute, async (c) => {
+  const auth = c.get("auth");
+  const operator = process.env.OPERATOR_TENANT_ID;
+  if (!auth?.tenantId || !operator || auth.tenantId !== operator) throw new HTTPException(404, { message: "not_found" });
+  const { KOSTENPOSTEN, FIXKOSTEN, tarif, direktJeStufe } = await import("../../lib/kalkulation");
+  const { stufenPreise, grossAb } = await import("../../lib/stufen");
+  const preise = stufenPreise();
+  return c.json(
+    {
+      stand: "2026-10-13",
+      grossAb: grossAb(),
+      preise: (["klein", "mittel", "gross"] as const).map((stufe) => ({ stufe, preisEur: preise[stufe].preisCents / 100, direktkostenEurMonat: preise[stufe].direktkostenCents / 100 })),
+      direktJeStufe: direktJeStufe(),
+      tarif: tarif(),
+      kostenposten: KOSTENPOSTEN,
+      fixkosten: FIXKOSTEN,
+    },
+    200,
+  );
+});
+
 // Z5 — Betreiber-Uebersicht: Direktkosten der Betreiber-Spur und Stufenverteilung je
 // Monat. Nur fuer den Betreiber-Tenant (OPERATOR_TENANT_ID), sonst 404.
 const betreiberKostenRoute = createRoute({
