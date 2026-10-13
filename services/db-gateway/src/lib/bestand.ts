@@ -13,6 +13,7 @@
 //     Weg (Zeile bei der Verarbeitung, 25 lebenslang).
 import type { Pool } from "pg";
 import { logger } from "./logger";
+import { getProducerPool } from "./producer-pools";
 import { masterData } from "./register-jobs";
 import { readBillingAccount, effectiveTier, periodKeyFor, resolveBillingAccountId, ensureBillingAccount, recordUsage, tenantPaysForMembers } from "./billing";
 import { recordBillingEvent } from "./billing-events";
@@ -34,7 +35,16 @@ async function bestandJeKonto(pool: Pool, billingAccountId: string, kind: string
   const weg = new Set(tomb.rows.map((t) => `${t.userId}|${t.companyId}`));
   const ids = new Set<string>();
   for (const row of r.rows ?? []) if (!weg.has(`${row.userId}|${row.companyId}`)) ids.add(row.companyId);
-  return { userIds, companyIds: [...ids] };
+  return { userIds, companyIds: await nurMitProfil([...ids]) };
+}
+
+/** Ohne erreichbare Website (kein Firmenprofil) wird nichts berechnet (Joyce,
+ *  2026-10-13): nur Firmen, fuer die ein CompanyProfile existiert. */
+export async function nurMitProfil(companyIds: string[]): Promise<string[]> {
+  if (companyIds.length === 0) return [];
+  const r = await getProducerPool("company-profile").query<{ id: string }>(`SELECT id FROM "CompanyProfile" WHERE id = ANY($1::text[])`, [companyIds]);
+  const da = new Set(r.rows.map((x) => x.id));
+  return companyIds.filter((id) => da.has(id));
 }
 
 /** Monatslauf: fuer jedes bezahlte Konto den Bestand der laufenden Periode verbuchen. */
@@ -98,7 +108,9 @@ export async function bestandAufnahme(pool: Pool, args: { tenantId: string; acto
     const tier = effectiveTier(acc);
     if (tier === "free") return; // Free: Zeile entsteht bei der Verarbeitung (25 lebenslang)
     void periodKeyFor(tier);
-    for (const companyId of args.companyIds) {
+    // Nur Firmen, die schon ein Profil haben (frischer Pool-Datensatz); alle anderen
+    // bekommen ihre Zeile, sobald das Profil gespeichert ist (persist-bus-Hook).
+    for (const companyId of await nurMitProfil(args.companyIds)) {
       await recordUsage(pool, logger, { tenantId: args.tenantId, actorId: args.actorId, companyId, source: "aufnahme" });
     }
   } catch (err) {
