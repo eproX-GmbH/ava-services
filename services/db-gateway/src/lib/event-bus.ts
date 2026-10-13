@@ -44,6 +44,17 @@ async function writeEntityProgressFromEvent(
   if (payload.service === "company-contact" && (state === "skipped" || state === "failed")) {
     void import("./stufen").then(({ stufeZuordnen }) => stufeZuordnen(getGatewayPool(), payload.companyId, `kontakt-${state}`));
   }
+  // Z8: Producer hat das Firmenprofil fertig oder als "bereits verarbeitet"
+  // uebersprungen (Vorpruefung im Producer, kein Persist-Ereignis) → Aufnahme.
+  if (
+    payload.service === "company-profile" &&
+    payload.tenantId &&
+    (state === "completed" || (state === "skipped" && /bereits verarbeitet|fresh/i.test(payload.errorMessage ?? "")))
+  ) {
+    void import("./billing").then(({ recordUsage }) =>
+      recordUsage(getGatewayPool(), logger, { tenantId: payload.tenantId, actorId: null, companyId: payload.companyId, source: state === "completed" ? "company-profile" : "company-profile-frisch" }),
+    );
+  }
   // 2026-10-03: Zeitpunkt des Ereignisses statt Eingangszeit. Nach einer
   // Unterbrechung arbeitet der Bus einen Rueckstau ab; mit NOW() bekaemen
   // alte "laeuft"-Meldungen einen frischen Zeitstempel und sahen lebendig aus.

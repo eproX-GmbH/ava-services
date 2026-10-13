@@ -4,9 +4,14 @@
 // Per-(account, period, company) usage tracking + per-account billing
 // state. Wired in three places:
 //
-//   - persist-bus listener calls `recordUsage(...)` on every successful
-//     `tenant.persist.structured-content.v1`. Failures don't fire that
-//     event, so failed scrapes don't bill.
+//   - Aufnahme (Z8, 2026-10-13): `recordUsage(...)` laeuft, sobald das
+//     Firmenprofil da ist — persist-bus (company-profile gespeichert oder
+//     im Tier-Gate als frisch uebersprungen) und event-bus (Producer meldet
+//     company-profile completed/skipped "bereits verarbeitet"). Register,
+//     Jahresabschluesse, Publikationen und Kontakte sind Beiwerk: ihr
+//     Fehlen oder Scheitern verhindert keine Aufnahme. Ohne erreichbare
+//     Website (kein Profil) wird nichts berechnet. EINMAL je Firma und
+//     Konto — Auffrischung, Wiederholung und Nachlaeufe kosten nichts.
 //
 //   - `GET /v1/usage` calls `getUsageSnapshot(...)` to return the
 //     `{tier, used, limit, remaining, periodEnd, entitlement}` envelope
@@ -280,8 +285,10 @@ export async function ensureBillingRowForQuota(
   };
 }
 
-/** Record a usage credit for a successful structured-content persist.
- *  Idempotent on (billingAccountId, periodKey, companyId). */
+/** Aufnahme einer Firma in den Bestand verbuchen (Z8): einmal je Firma und
+ *  Abrechnungskonto, unabhaengig von der Periode. Die Periode der Zeile ist
+ *  die des Zeitpunkts (Kontingent/Monatsrechnung). Danach wird die Stufe aus
+ *  dem Pool-Datensatz zugeordnet (bleibt "offen", bis der Kontakt-Lauf durch ist). */
 export async function recordUsage(
   pool: Pool,
   log: Logger,
@@ -289,7 +296,8 @@ export async function recordUsage(
     tenantId: string;
     actorId?: string | null;
     companyId: string;
-    source: "structured-content";
+    /** Anlass, z. B. company-profile | company-profile-frisch | nachlauf */
+    source: string;
   },
 ): Promise<void> {
   try {
@@ -301,10 +309,15 @@ export async function recordUsage(
     const res = await pool.query(
       `INSERT INTO "UsageEntry"
          ("billingAccountId", "periodKey", "companyId", source, "createdAt")
-       VALUES ($1, $2, $3, $4, NOW())
+       SELECT $1, $2, $3, $4, NOW()
+        WHERE NOT EXISTS (SELECT 1 FROM "UsageEntry" u WHERE u."billingAccountId" = $1 AND u."companyId" = $3)
        ON CONFLICT ("billingAccountId", "periodKey", "companyId") DO NOTHING`,
       [billingAccountId, periodKey, args.companyId, args.source],
     );
+    if ((res.rowCount ?? 0) > 0) {
+      const { stufeZuordnen } = await import("./stufen");
+      void stufeZuordnen(pool, args.companyId, `aufnahme-${args.source}`);
+    }
     log.info(
       {
         tenantId: args.tenantId,

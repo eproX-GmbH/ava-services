@@ -512,6 +512,9 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
         decision.reason,
         log,
       );
+      // Z8: frisches Profil eines anderen Laufs → fuer diesen Tenant trotzdem
+      // eine Aufnahme (er bekommt Zugang zum Ergebnis).
+      if (stage === "company-profile") await aufnahmeNachProfil(event, "company-profile-frisch", log);
       return;
     }
 
@@ -520,6 +523,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     // apply doesn't leave an orphan freshness row claiming the write
     // happened.
     await inner(pool, event, log);
+    if (stage === "company-profile") await aufnahmeNachProfil(event, "company-profile", log);
     try {
       // Non-LLM stages (structured-content, company-publication) clear
       // both tier and model so the row is unambiguously "scrape-only".
@@ -1022,21 +1026,26 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     log.warn({ companyId: result.companyId, err: (err as Error).message }, "[verflechtungen] Rollen-Spiegel fehlgeschlagen");
   }
 
-  // M1 monetization — record a usage credit for this successful
-  // persist. Failed structured-content scrapes never reach here (they
-  // emit `transaction.progress` with state=failed but no persist
-  // event), which gives us the "failure doesn't bill" semantics for
-  // free. recordUsage is best-effort: a billing-table write failure
-  // must NEVER affect the producer's data path.
-  if (tenantId && result?.companyId) {
-    await recordUsage(getGatewayPool(), log, {
-      tenantId,
-      actorId: (event.data as { actorId?: string | null } | undefined)?.actorId ?? null,
-      companyId: result.companyId,
-      source: "structured-content",
-    });
-  }
+  // Z8 (2026-10-13): structured-content verbucht nichts mehr — die Aufnahme
+  // haengt am Firmenprofil (siehe withTierGate/company-profile). Register-
+  // fehler, fehlende Jahresabschluesse oder Firmen ohne Register (AT/UK/WEB)
+  // verhindern damit keine Abrechnung mehr und Auffrischungen kosten nichts.
 };
+
+/** Z8 — Aufnahme verbuchen, sobald das Firmenprofil fuer den Tenant da ist
+ *  (gespeichert oder frisch uebersprungen). Best-effort, nie blockierend. */
+async function aufnahmeNachProfil(event: CloudEvent<PersistEvent<unknown>>, source: string, log: typeof logger): Promise<void> {
+  const data = event.data as PersistEvent<{ companyId?: string }> | undefined;
+  const tenantId = data?.tenantId;
+  const companyId = data?.result?.companyId;
+  if (!tenantId || !companyId) return;
+  await recordUsage(getGatewayPool(), log, {
+    tenantId,
+    actorId: (data as { actorId?: string | null } | undefined)?.actorId ?? null,
+    companyId,
+    source,
+  });
+}
 
 /** `tenant.persist.website.v1` — emitted by the local website
  *  compute-worker. Carries both rows so this handler does a single
