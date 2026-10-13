@@ -32,7 +32,8 @@ export const seatBillingRouter = new OpenAPIHono();
 
 const Ok = z.object({ ok: z.literal(true) }).passthrough();
 const Any = z.object({}).passthrough();
-const SeatTierShape = z.enum(["starter", "pro"]);
+// Z7 — nur noch Pro waehlbar; Starter bleibt fuer Altvertraege lesbar.
+const SeatTierShape = z.enum(["pro"]);
 const PeriodKey = z.string().regex(/^\d{4}-\d{2}$/);
 
 function wrap<T>(fn: () => Promise<T>): Promise<T> {

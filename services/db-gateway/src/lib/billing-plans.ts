@@ -70,7 +70,8 @@ export function seatPriceCents(tier: SeatTier): number {
   const env = tier === "starter" ? process.env.SEAT_PRICE_STARTER_CENTS : process.env.SEAT_PRICE_PRO_CENTS;
   const n = env ? Number(env) : NaN;
   if (Number.isFinite(n) && n >= 0) return Math.round(n);
-  return tier === "starter" ? 4900 : 14900;
+  // Z7: Pro = 49 EUR je Nutzer und Monat plus Stufenpreis je Aufnahme; Starter nur Altvertraege.
+  return 4900;
 }
 
 export function isSeatTier(v: unknown): v is SeatTier {
