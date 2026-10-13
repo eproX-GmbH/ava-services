@@ -31,6 +31,13 @@ export function stufenPreise(): Record<Stufe, { preisCents: number; direktkosten
 }
 
 export const FENSTER_VOLL = 100;
+/** Schwelle fuer Stufe gross (Joyce, 2026-10-13): ab 50 Personen ueber Apify oder
+ *  50 aktuellen Personen — nicht erst bei vollem Suchfenster (100), sonst gaebe es
+ *  praktisch nie eine grosse Firma. Env STUFE_GROSS_AB. */
+export function grossAb(): number {
+  const n = Number(process.env.STUFE_GROSS_AB);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 50;
+}
 
 /** Stufe aus den Kontaktdaten der Firma (Apify-Beobachtungen, aktuelle Personen). */
 export async function stufeErmitteln(companyId: string): Promise<{ stufe: Stufe; grund: string; apify: number; personen: number }> {
@@ -44,7 +51,8 @@ export async function stufeErmitteln(companyId: string): Promise<{ stufe: Stufe;
   const apify = Number(r.rows[0]?.apify ?? 0);
   const personen = Number(r.rows[0]?.personen ?? 0);
   if (apify === 0) return { stufe: "klein", grund: `kein LinkedIn-Firmenprofil, ${personen} Personen`, apify, personen };
-  if (apify >= FENSTER_VOLL || personen >= FENSTER_VOLL) return { stufe: "gross", grund: `LinkedIn-Profil, ${apify} Personen ueber Apify (Fenster voll), ${personen} aktuell`, apify, personen };
+  const schwelle = grossAb();
+  if (apify >= schwelle || personen >= schwelle) return { stufe: "gross", grund: `LinkedIn-Profil, ${apify} Personen ueber Apify, ${personen} aktuell (ab ${schwelle} = gross)`, apify, personen };
   return { stufe: "mittel", grund: `LinkedIn-Profil, ${apify} Personen ueber Apify, ${personen} aktuell`, apify, personen };
 }
 

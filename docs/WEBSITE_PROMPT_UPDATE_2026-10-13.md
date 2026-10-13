@@ -30,8 +30,8 @@ Modell: lokal, mit eigenem Schlüssel oder mit Deinem ChatGPT-Abo.
 | Stufe | Preis | Wann |
 |---|---|---|
 | Klein | 1,00 € | kein LinkedIn-Firmenprofil zuordenbar, Kontakte nur von der Website |
-| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, unter 100 Personen |
-| Groß | 3,50 € | LinkedIn-Firmenprofil, 100 oder mehr Personen (Suchfenster voll) |
+| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, unter 50 Personen |
+| Groß | 3,50 € | LinkedIn-Firmenprofil, 50 oder mehr Personen |
 
 Pro ist der einzige bezahlte Plan: 49 € je Nutzer und Monat, dazu jede Firma, die AVA im
 Abrechnungsmonat für Dich verarbeitet hat, zum Stufenpreis, abgerechnet mit der
@@ -74,8 +74,8 @@ nichts. Alles steht auf der nächsten Monatsrechnung.“
 | Stufe | Preis je verarbeitetem Monat | Woran AVA das festmacht |
 |---|---|---|
 | Klein | 1,00 € | Kein LinkedIn-Firmenprofil zuordenbar; Ansprechpartner nur von der Website. |
-| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, unter 100 Personen dort gelistet. |
-| Groß | 3,50 € | LinkedIn-Firmenprofil mit 100 oder mehr Personen (Suchfenster voll, zweiter Durchlauf). |
+| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, unter 50 Personen. |
+| Groß | 3,50 € | LinkedIn-Firmenprofil mit 50 oder mehr Personen. |
 
 Rechenbeispiel, das die Seite nennen darf: „Ein Nutzer lässt im Monat 40 Firmen
 verarbeiten, 30 klein und 10 mittel: 49 € plus 30 × 1,00 € plus 10 × 2,00 € = 99 € netto.
