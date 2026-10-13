@@ -115,8 +115,6 @@ const PRODUCERS = [
   "company-email",
 ] as const;
 
-/** Z5 — Stufe der Aufnahme (docs/PLAN_ABRECHNUNG_ZUGANG.md). */
-const STUFE_LABEL: Record<string, string> = { klein: "Stufe klein", mittel: "Stufe mittel", gross: "Stufe groß" };
 
 const PRODUCER_LABEL: Record<(typeof PRODUCERS)[number], string> = {
   "structured-content": "Struktur",
@@ -402,11 +400,6 @@ export function AllCompanies() {
                     <LandBadge country={row.country} />
                     <RegisterStatusBadge status={row.registerStatus} />
                     <InsolvenzBadge status={row.insolvencyStatus} />
-                    {row.zugang?.stufe && (
-                      <span className="ct-pill ct-pill--muted" title={`Stufe der Aufnahme: ${STUFE_LABEL[row.zugang.stufe] ?? row.zugang.stufe} · ${(row.zugang.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}`}>
-                        {STUFE_LABEL[row.zugang.stufe] ?? row.zugang.stufe}
-                      </span>
-                    )}
                     <CrmBadgeRow
                       links={crmLinks.data?.links[row.companyId] ?? []}
                     />

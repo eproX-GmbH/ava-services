@@ -215,15 +215,6 @@ export function TransactionDetail() {
     staleTime: 5 * 60_000,
   });
 
-  // Z5 — Stufe der Aufnahme je Firma (docs/PLAN_ABRECHNUNG_ZUGANG.md).
-  const stufen = useQuery({
-    queryKey: ["usageStufen", companyIds],
-    queryFn: () => gatewayFetch<{ stufen: Record<string, { stufe: string; preisCents: number; grund: string | null }> }>("/v1/usage/stufen", { method: "POST", body: { companyIds } }),
-    enabled: companyIds.length > 0,
-    staleTime: 60_000,
-  });
-  const STUFE_LABEL: Record<string, string> = { klein: "Stufe klein", mittel: "Stufe mittel", gross: "Stufe groß" };
-
   // Workstream C4 — CRM badges next to each company name. One POST
   // resolves every visible row's CompanyCrmLink summary; tenants
   // who never imported from a CRM see no badges (empty response).
@@ -448,11 +439,6 @@ export function TransactionDetail() {
                       <LandBadge country={landFor(row.companyId)} />
                       <RegisterStatusBadge status={statusFor(row.companyId)} />
                       <InsolvenzBadge status={insolvenzFor(row.companyId)} />
-                      {stufen.data?.stufen[row.companyId] && (
-                        <span className="ct-pill ct-pill--muted" title={`${stufen.data.stufen[row.companyId]!.grund ?? "Stufe der Aufnahme"} · ${(stufen.data.stufen[row.companyId]!.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}`}>
-                          {STUFE_LABEL[stufen.data.stufen[row.companyId]!.stufe] ?? stufen.data.stufen[row.companyId]!.stufe}
-                        </span>
-                      )}
                       <CrmBadgeRow
                         links={crmLinks.data?.links[row.companyId] ?? []}
                       />
