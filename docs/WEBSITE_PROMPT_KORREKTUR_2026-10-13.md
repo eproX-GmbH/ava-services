@@ -27,8 +27,8 @@ angezeigt. Alles steht auf der nächsten Monatsrechnung.“
 | Stufe | Preis je Monat mit Verarbeitung | Woran AVA das festmacht |
 |---|---|---|
 | Klein | 1,00 € | Kein LinkedIn-Firmenprofil zuordenbar; Ansprechpartner nur von der Website. |
-| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, bis 100 Personen. |
-| Groß | 3,50 € | LinkedIn-Firmenprofil mit über 100 Personen. |
+| Mittel | 2,00 € | LinkedIn-Firmenprofil zugeordnet, unter 100 Personen. |
+| Groß | 3,50 € | LinkedIn-Firmenprofil mit 100 oder mehr Personen (Suchfenster voll). |
 
 Beispiel: „40 Firmen im Oktober, 30 klein und 10 mittel: 49 € + 30 € + 20 € = 99 € netto.
 Im November frischt AVA 20 davon auf, 15 klein und 5 mittel: 49 € + 25 € = 74 € netto.“

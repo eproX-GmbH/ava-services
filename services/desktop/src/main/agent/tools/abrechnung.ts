@@ -27,7 +27,7 @@ interface Usage {
   };
 }
 
-const STUFEN_TEXT = "Stufen je verarbeiteter Firma und Monat: klein 1,00 € (kein LinkedIn-Firmenprofil), mittel 2,00 € (LinkedIn-Profil, bis 100 Personen), gross 3,50 € (ueber 100 Personen). Gezaehlt wird jede Firma, die AVA im Abrechnungsmonat nachweislich verarbeitet hat (Firmenprofil gespeichert, auch Auffrischung); uebersprungene Firmen nicht. Die Stufe steht nach dem Lauf fest.";
+const STUFEN_TEXT = "Stufen je verarbeiteter Firma und Monat: klein 1,00 € (kein LinkedIn-Firmenprofil), mittel 2,00 € (LinkedIn-Profil, unter 100 Personen), gross 3,50 € (100 oder mehr Personen, Suchfenster voll). Gezaehlt wird jede Firma, die AVA im Abrechnungsmonat nachweislich verarbeitet hat (Firmenprofil gespeichert, auch Auffrischung); uebersprungene Firmen nicht. Die Stufe steht nach dem Lauf fest.";
 const eur = (cents: number) => Math.round(cents) / 100;
 
 export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
