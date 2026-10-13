@@ -317,6 +317,13 @@ model UsageEntry {
   companyId        String
   source           String
   createdAt        DateTime @default(now())
+  /// Z3 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Stufe nach dem Lauf — klein | mittel | gross.
+  stufe             String?
+  preisCents        Int?
+  direktkostenCents Int?
+  /// Kurzbegruendung der Zuordnung (Apify-Profil, Personenzahl).
+  grund             String?
+  zugeordnetAm      DateTime?
 
   @@id([billingAccountId, periodKey, companyId])
   // Counter window for /v1/usage: count(*) where (billingAccountId, periodKey).

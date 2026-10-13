@@ -39,6 +39,11 @@ async function writeEntityProgressFromEvent(
   if (payload.service === "website" && state === "failed") {
     void laufFehler(payload.companyId, payload.transactionId ?? null, payload.errorMessage ?? null);
   }
+  // Z3: Kontakt-Stufe uebersprungen (Frisch-Pfad, keine Website) oder gescheitert —
+  // dann gibt es kein Persist-Ereignis; Stufe aus dem vorhandenen Pool-Datensatz.
+  if (payload.service === "company-contact" && (state === "skipped" || state === "failed")) {
+    void import("./stufen").then(({ stufeZuordnen }) => stufeZuordnen(getGatewayPool(), payload.companyId, `kontakt-${state}`));
+  }
   // 2026-10-03: Zeitpunkt des Ereignisses statt Eingangszeit. Nach einer
   // Unterbrechung arbeitet der Bus einen Rueckstau ab; mit NOW() bekaemen
   // alte "laeuft"-Meldungen einen frischen Zeitstempel und sahen lebendig aus.

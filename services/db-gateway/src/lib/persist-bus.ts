@@ -2054,6 +2054,13 @@ const applyCompanyContact: ApplyFn = async (_pool, event, log) => {
     | undefined;
   if (!data) throw new Error("empty payload");
   await applyCompanyContactPersist(data, log);
+  // Z3: Das letzte Ereignis der Kontakt-Kette (cleanupTtlMs) schliesst den Lauf
+  // ab — danach steht fest, ob ein LinkedIn-Profil zugeordnet war und wie viele
+  // Personen es gibt: Stufe fuer die Abrechnung zuordnen.
+  if (data.result?.cleanupTtlMs && data.result.companyId) {
+    const { stufeZuordnen } = await import("./stufen");
+    void stufeZuordnen(getGatewayPool(), data.result.companyId, "kontakt-lauf");
+  }
 };
 
 /** Stub — for any future producer that lands without an apply yet. */
