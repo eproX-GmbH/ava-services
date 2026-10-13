@@ -68,6 +68,8 @@ const CompanyMatrixRowShape = z
     registerNumber: z.string().optional(),
     /** Firmen-Verflechtungen: "<listeDatum>|<Hash der Gesellschafter>" der neuesten Liste (Statuswaechter Gesellschafterwechsel). */
     gesellschafterStand: z.string().nullable().optional(),
+    /** Z5 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Stufe der juengsten Aufnahme dieser Firma. */
+    zugang: z.object({ stufe: z.string(), preisCents: z.number().int() }).nullable().optional(),
     /** Per-producer latest state. Keys match PRODUCER_NAMES. */
     stages: z.record(z.string(), StageStateShape),
   })
@@ -256,6 +258,18 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     upstream.companies.map((co) => co.companyId),
   );
 
+  // Z5 — Stufe je Firma aus der juengsten Zuordnung (konto-unabhaengig, die
+  // Stufe gehoert zum Pool-Datensatz).
+  const stufen = new Map<string, { stufe: string; preisCents: number }>();
+  if (upstream.companies.length > 0) {
+    const st = await getGatewayPool().query<{ companyId: string; stufe: string; preisCents: number | null }>(
+      `SELECT DISTINCT ON ("companyId") "companyId", "stufe", "preisCents" FROM "UsageEntry"
+        WHERE "companyId" = ANY($1::text[]) AND "stufe" IS NOT NULL
+        ORDER BY "companyId", "zugeordnetAm" DESC NULLS LAST`,
+      [upstream.companies.map((co) => co.companyId)],
+    );
+    for (const r of st.rows) stufen.set(r.companyId, { stufe: r.stufe, preisCents: r.preisCents ?? 0 });
+  }
   const companies = upstream.companies.map((co) => {
     type StageCell = {
       state: "pending" | "in_progress" | "completed" | "failed" | "skipped";
@@ -338,6 +352,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       registerType: co.registerType,
       registerNumber: co.registerNumber,
       gesellschafterStand: co.gesellschafterStand ?? null,
+      zugang: stufen.get(co.companyId) ?? null,
       stages,
     };
   });

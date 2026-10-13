@@ -69,6 +69,84 @@ const usageRoute = createRoute({
   },
 });
 
+// Z5 — Stufe je Firma fuer eine Liste (Vorgangsansicht).
+const stufenRoute = createRoute({
+  method: "post",
+  path: "/usage/stufen",
+  tags: ["billing"],
+  summary: "Stufe (klein | mittel | gross) und Preis der juengsten Aufnahme je Firma",
+  request: { body: { content: { "application/json": { schema: z.object({ companyIds: z.array(z.string().min(1)).min(1).max(500) }) } } } },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ stufen: z.record(z.string(), z.object({ stufe: z.string(), preisCents: z.number().int(), grund: z.string().nullable() })) }) } }, description: "ok" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+  },
+});
+usageRouter.openapi(stufenRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const { companyIds } = c.req.valid("json");
+  const r = await getGatewayPool().query<{ companyId: string; stufe: string; preisCents: number | null; grund: string | null }>(
+    `SELECT DISTINCT ON ("companyId") "companyId", "stufe", "preisCents", "grund" FROM "UsageEntry"
+      WHERE "companyId" = ANY($1::text[]) AND "stufe" IS NOT NULL ORDER BY "companyId", "zugeordnetAm" DESC NULLS LAST`,
+    [companyIds],
+  );
+  const stufen: Record<string, { stufe: string; preisCents: number; grund: string | null }> = {};
+  for (const row of r.rows) stufen[row.companyId] = { stufe: row.stufe, preisCents: row.preisCents ?? 0, grund: row.grund };
+  return c.json({ stufen }, 200);
+});
+
+// Z5 — Betreiber-Uebersicht: Direktkosten der Betreiber-Spur und Stufenverteilung je
+// Monat. Nur fuer den Betreiber-Tenant (OPERATOR_TENANT_ID), sonst 404.
+const betreiberKostenRoute = createRoute({
+  method: "get",
+  path: "/betreiber/kosten",
+  tags: ["billing"],
+  summary: "Betreiber: Modellkosten der Pool-Spur je Stufe/Monat, valueserp-Aufrufe, Stufenverteilung der Aufnahmen",
+  request: { query: z.object({ monate: z.coerce.number().int().min(1).max(12).default(3) }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber" },
+  },
+});
+usageRouter.openapi(betreiberKostenRoute, async (c) => {
+  const auth = c.get("auth");
+  const operator = process.env.OPERATOR_TENANT_ID;
+  if (!auth?.tenantId || !operator || auth.tenantId !== operator) throw new HTTPException(404, { message: "not_found" });
+  const { monate } = c.req.valid("query");
+  const pool = getGatewayPool();
+  const [modell, serp, stufen, aufnahmen] = await Promise.all([
+    pool.query(
+      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COALESCE(quelle, '?') AS stufe, COUNT(*)::int AS aufrufe,
+              COALESCE(SUM("costMicroUsd"), 0)::bigint AS "microUsd", COALESCE(SUM("inputTokens"), 0)::bigint AS "inputTokens", COALESCE(SUM("outputTokens"), 0)::bigint AS "outputTokens"
+         FROM "LlmUsage" WHERE kind = 'betreiber' AND "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1, 2 ORDER BY 1 DESC, 3 DESC`,
+      [String(monate)],
+    ),
+    pool.query(
+      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*)::int AS aufrufe, COUNT(*) FILTER (WHERE "cacheHit")::int AS cache
+         FROM "ProxyAudit" WHERE proxy = 'valueserp' AND "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1 ORDER BY 1 DESC`,
+      [String(monate)],
+    ),
+    pool.query(
+      `SELECT COALESCE("stufe", 'offen') AS stufe, COUNT(*)::int AS n, COALESCE(SUM("preisCents"), 0)::bigint AS "preisCents", COALESCE(SUM("direktkostenCents"), 0)::bigint AS "direktkostenCents"
+         FROM "UsageEntry" WHERE "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1 ORDER BY 1`,
+      [String(monate)],
+    ),
+    pool.query(
+      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*)::int AS n FROM "UsageEntry"
+         WHERE "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1 ORDER BY 1 DESC`,
+      [String(monate)],
+    ),
+  ]);
+  const num = (v: unknown) => Number(v ?? 0);
+  return c.json({
+    monate,
+    modell: modell.rows.map((r) => ({ monat: r.monat, stufe: r.stufe, aufrufe: r.aufrufe, usd: Math.round(num(r.microUsd) / 1e4) / 100, inputTokens: num(r.inputTokens), outputTokens: num(r.outputTokens) })),
+    valueserp: serp.rows,
+    stufen: stufen.rows.map((r) => ({ stufe: r.stufe, aufnahmen: r.n, preisEur: num(r.preisCents) / 100, direktkostenEur: num(r.direktkostenCents) / 100 })),
+    aufnahmenJeMonat: aufnahmen.rows,
+  }, 200);
+});
+
 usageRouter.openapi(usageRoute, async (c) => {
   const auth = c.get("auth");
   if (!auth?.tenantId) {
