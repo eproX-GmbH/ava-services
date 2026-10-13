@@ -3,6 +3,8 @@
 // der die Verarbeitung gestartet hat (ankerToolCallId), und scrollt mit. Sie
 // bleibt dort auch nach dem Abschluss stehen wie eine Nachricht.
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { INLINE_MAX_FIRMEN, VorgangInline } from "./VorgangInline";
 
 export interface AufgabeAnzeige {
   id: string;
@@ -90,6 +92,13 @@ export function AufgabenKarten({ liste }: { liste: AufgabeAnzeige[] }) {
                 <div className="auf-item__balken" aria-hidden>
                   <div style={{ width: `${a.status === "fertig" ? 100 : pct}%` }} />
                 </div>
+              )}
+              {/* 2026-10-13: bis fuenf Firmen die Stufen je Firma direkt im Chat,
+                  sonst nur die Zusammenfassung mit Verweis auf den Vorgang. */}
+              {s && s.total > 0 && s.total <= INLINE_MAX_FIRMEN && a.status !== "nicht_verfolgt" ? (
+                <VorgangInline transactionId={a.transactionId} laeuft={laeuft} />
+              ) : (
+                <Link className="vorgang-inline__link" to={`/transactions/${encodeURIComponent(a.transactionId)}`}>Vorgang öffnen</Link>
               )}
             </div>
             {laeuft && (

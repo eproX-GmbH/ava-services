@@ -8802,6 +8802,13 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .chat-msg-notiz .chat-content { background: transparent; padding: 0; border: 0; box-shadow: none; max-width: 100%; color: inherit; }
 /* 2026-10-04: Karten im Verlauf, eingerueckt wie die Werkzeug-Schritte */
 .auf-leiste--verlauf { margin: 6px 0 10px; max-width: 640px; }
+/* Vorgangs-Matrix in der Aufgabenkarte (bis 5 Firmen). */
+.vorgang-inline { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.vorgang-inline__tabelle { width: 100%; font-size: 12px; }
+.vorgang-inline__tabelle th, .vorgang-inline__tabelle td { padding: 3px 6px; }
+.vorgang-inline__tabelle tbody tr { cursor: default; }
+.vorgang-inline__tabelle .matrix-company { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vorgang-inline__link { font-size: 12px; align-self: flex-start; }
 
 /* Kunden-Reiter (docs/PLAN_KUNDEN.md). Gruppen sind eigene Tabellen mit
    festen Spaltenbreiten, damit die Kanten über alle Gruppen gleich sind.
