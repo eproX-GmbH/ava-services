@@ -1,7 +1,7 @@
 # Prompt für den Website-Agenten (ava.bi): Nachtrag Abrechnung „Zugang zum Ergebnis“
 
-Stand 2026-10-13, Desktop v0.1.839, Gateway mit Betreiber-Spur (Z1–Z5 aus
-docs/PLAN_ABRECHNUNG_ZUGANG.md). Ergänzt docs/WEBSITE_PROMPT_UPDATE_2026-09-07.md
+Stand 2026-10-13, Desktop v0.1.840, Gateway mit Betreiber-Spur (Z1–Z8 aus
+docs/PLAN_ABRECHNUNG_ZUGANG.md: ein Plan Pro, Ausgabenlimit, Aufnahme beim Firmenprofil). Ergänzt docs/WEBSITE_PROMPT_UPDATE_2026-09-07.md
 (Abschnitt 4 „Preise und Abrechnung“ wird durch diesen Text ersetzt). Ton wie gehabt:
 sachlich, Du-Form, keine Geviertstriche, keine Superlative, nichts versprechen, was
 nicht live ist.
@@ -41,6 +41,13 @@ neue Firmen bis zum nächsten Monat oder bis das Limit erhöht wird. Im Kostenlo
 es 25 Firmen, einmal, für immer. Aufgefrischte Daten (Website alle 30 Tage, Kontakte alle
 90 Tage, Alarme, Register- und Insolvenzwächter) sind im Plan enthalten.
 
+**Wann eine Aufnahme zählt:** Eine Firma gilt als aufgenommen, sobald AVA ihr
+Firmenprofil von der erreichbaren Website erstellt hat. Jede Firma zählt einmal je
+Konto, egal wie oft sie aufgefrischt, erneut verarbeitet oder wieder in eine Liste
+gelegt wird. Firmen ohne erreichbare Website kosten nichts, auch wenn Registerdaten oder
+Jahresabschlüsse vorliegen. Fehlende Jahresabschlüsse, Publikationen oder Kontakte
+ändern am Preis nichts, sie gehören zum Ergebnis, soweit es sie gibt.
+
 ## 3. Sätze, die die Seite so sagen darf
 
 - „49 € je Nutzer und Monat, dazu 1,00 bis 3,50 € je aufgenommener Firma. Du bestimmst
@@ -65,6 +72,10 @@ es 25 Firmen, einmal, für immer. Aufgefrischte Daten (Website alle 30 Tage, Kon
 - Nicht „unbegrenzt“ für Pro: es gibt eine hohe technische Notbremse je Monat, die nicht
   beworben wird.
 - Kein „Starter“-Plan, kein „Zugangsguthaben“, keine Firmenzahl „inklusive“ bei Pro.
+- Keine Aussage, dass Jahresabschlüsse oder Kontakte für jede Firma vorliegen; der
+  Preis hängt nur an Website und Firmenprofil, nicht am Umfang der Registerdaten.
+- Nicht „je Monat“ oder „je Auffrischung“ beim Preis je Firma; eine Firma wird einmal
+  berechnet.
 - „Du zahlst für das Ergebnis, nicht für die Arbeit“ ist kein Werbesatz; er gehört nur in
   FAQ und AGB (siehe unten).
 - Keine automatische Rechnungsstellung für Sammelabrechnungen versprechen, solange
@@ -92,6 +103,15 @@ Einstellungen (oder im Chat: „Setz mein Ausgabenlimit auf 100 €“). Ist es 
 neue Firmen bis zum nächsten Monat oder bis Du es erhöhst. Im Chat („Wie stehen meine
 Kosten?“) und in den Einstellungen siehst Du jederzeit, was in diesem Monat angefallen ist.
 
+**Wann zahle ich für eine Firma?** Sobald AVA das Firmenprofil von ihrer Website
+erstellt hat. Hat eine Firma keine erreichbare Website, kostet sie nichts. Jede Firma
+wird einmal berechnet, auch wenn Du sie später erneut verarbeitest oder in mehrere
+Listen aufnimmst.
+
+**Was, wenn es keine Jahresabschlüsse gibt?** Gerade bei kleinen Firmen ist das üblich.
+Der Preis bleibt derselbe, Du bekommst Profil, Website-Inhalte, Register- und
+Kontaktdaten, soweit vorhanden.
+
 **Was kostet die Auffrischung?** Nichts extra. Website, Kontakte, Register- und
 Insolvenzwächter laufen für Firmen in Deinem Bestand im Plan mit.
 
@@ -102,8 +122,13 @@ Firmendaten bereit. Die Vergütung richtet sich nach der Anzahl der in den Besta
 Kunden aufgenommenen Firmen und ihrer Stufe (Klein, Mittel, Groß) gemäß Preisliste.
 Die Grundgebühr wird je Nutzer und Monat berechnet; Aufnahmen werden zum jeweils gültigen
 Stufenpreis mit der Rechnung des Folgemonats abgerechnet. Der Kunde kann ein monatliches
-Ausgabenlimit festlegen; bei Erreichen werden keine weiteren Firmen aufgenommen. Der
-Kunde zahlt für den Zugang zum Ergebnis, nicht für die Rechenarbeit. Die Stufe wird nach Abschluss der Aufbereitung anhand objektiver Merkmale
+Ausgabenlimit festlegen; bei Erreichen werden keine weiteren Firmen aufgenommen. Eine
+Firma gilt als aufgenommen, sobald der Anbieter ihr Firmenprofil aus der öffentlich
+erreichbaren Website erstellt hat; sie wird je Kundenkonto einmalig berechnet. Firmen
+ohne erreichbare Website werden nicht berechnet. Umfang und Verfügbarkeit weiterer
+öffentlicher Daten (Registerauszüge, Jahresabschlüsse, Ansprechpartner) sind nicht
+Gegenstand der Vergütung. Der Kunde zahlt für den Zugang zum Ergebnis, nicht für die
+Rechenarbeit. Die Stufe wird nach Abschluss der Aufbereitung anhand objektiver Merkmale
 festgelegt und dem Kunden in der Anwendung angezeigt.“
 
 **AGB, Datenpool:** „Öffentlich zugängliche Firmendaten werden vom Anbieter einmalig
