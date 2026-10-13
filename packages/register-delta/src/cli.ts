@@ -55,7 +55,45 @@ function tokenQuelle(): () => Promise<string> {
   };
 }
 
+/** Ad-hoc-Namenssuche fuer die Desktop-App: `cli.js suche --name "…" [--ort "…"] [--exakt]`.
+ *  Kein Gateway, keine Queue: oeffnet das Portal, sucht, schreibt EINE Zeile
+ *  "__AVA_RD_SUCHE__{json}" auf stdout und beendet sich (docs/PLAN_FIRMEN_OHNE_REGISTER.md, F2). */
+async function sucheAdHoc(argv: string[]): Promise<void> {
+  const arg = (k: string): string | undefined => {
+    const i = argv.indexOf(k);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
+  const name = arg("--name")?.trim();
+  const ort = arg("--ort")?.trim().toLowerCase() ?? "";
+  const exakt = argv.includes("--exakt");
+  const log = (z: string) => console.error(`${new Date().toISOString()} ${z}`);
+  const antwort = (o: Record<string, unknown>) => console.log(`__AVA_RD_SUCHE__${JSON.stringify(o)}`);
+  if (!name) {
+    antwort({ fehler: "--name fehlt" });
+    process.exit(2);
+  }
+  browserProtokoll(log);
+  const portal = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
+  const t = setTimeout(() => {
+    antwort({ fehler: "Zeitueberschreitung (120 s)" });
+    void portal.schliessen().finally(() => process.exit(3));
+  }, 120_000);
+  try {
+    await portal.oeffnen();
+    const e = await portal.sucheName(name, exakt);
+    const treffer = e.treffer.map((x) => ({ ...x, ortTreffer: ort ? x.sitz.toLowerCase().includes(ort) : null }));
+    antwort({ gesperrt: e.gesperrt, trefferRoh: e.trefferRoh, dauerMs: e.dauerMs, treffer });
+  } catch (err) {
+    antwort({ fehler: err instanceof Error ? err.message : String(err) });
+  } finally {
+    clearTimeout(t);
+    await portal.schliessen().catch(() => undefined);
+  }
+  process.exit(0);
+}
+
 async function main() {
+  if (process.argv[2] === "suche") return sucheAdHoc(process.argv.slice(3));
   const baseUrl = process.env.GATEWAY_URL;
   if (!baseUrl) throw new Error("GATEWAY_URL fehlt");
   const log = (z: string) => console.log(`${new Date().toISOString()} ${z}`);

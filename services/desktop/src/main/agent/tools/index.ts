@@ -438,7 +438,7 @@ export function buildReadOnlyRegistry(deps: {
     registry.register(t);
   for (const t of buildEmailMusterTools({ get: () => deps.getEmailMuster?.() ?? null })) registry.register(t);
   for (const t of buildPersonenZusammenfuehrenTools({ gateway: deps.gateway, get: () => deps.getPersonenAbgleich?.() ?? null })) registry.register(t);
-  for (const t of buildRegisterDeltaTools({ get: () => deps.getMithelfen?.() ?? null, queueStatus: () => deps.getRegisterQueueStatus?.() ?? Promise.resolve(null) ,
+  for (const t of buildRegisterDeltaTools({ get: () => deps.getMithelfen?.() ?? null, gateway: deps.gateway, queueStatus: () => deps.getRegisterQueueStatus?.() ?? Promise.resolve(null) ,
       browserStand: () => deps.browserStand?.() ?? { zustand: "aus" },
       browserLaden: () => deps.browserLaden?.() ?? Promise.resolve({ zustand: "aus" }),
     })) registry.register(t);

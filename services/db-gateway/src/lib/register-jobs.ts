@@ -345,7 +345,7 @@ function trefferUkZuDelta(t: TrefferUk) {
 
 type DeltaAntwort = { neu: number; geaendert: number; unveraendert: number; befunde: Array<{ companyId: string; befund: string; felder?: string[] }> };
 
-async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+export async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
   return schreibeDelta(treffer.map(trefferZuDelta), source);
 }
 

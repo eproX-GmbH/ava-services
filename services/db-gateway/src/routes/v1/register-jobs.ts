@@ -28,7 +28,9 @@ import {
   statistik,
   verarbeiteErgebnis,
   type JobArt,
+  schreibeTreffer,
 } from "../../lib/register-jobs";
+import { companyIdAus } from "../../lib/register-ids";
 import { ErrorShape } from "./schemas";
 
 export const registerJobsRouter = new OpenAPIHono();
@@ -292,6 +294,45 @@ registerJobsRouter.openapi(refreshRoute, async (c) => {
   auth(c);
   const body = c.req.valid("json");
   return c.json({ jobs: await refreshAnfordern(getGatewayPool(), body.firmen, body.grund) }, 200);
+});
+
+// Live-Namenssuche (docs/PLAN_FIRMEN_OHNE_REGISTER.md, F2): Der Desktop hat im
+// Registerportal nach einem Firmennamen gesucht; die Treffer kommen wie bei
+// einem Worker-Job in die Stammdaten (source registerportal) und liefern die
+// companyIds fuer den Import. Kein Job, kein Lease.
+const TrefferEingabe = z.object({
+  gericht: z.string().min(1),
+  art: z.string().min(2).max(4),
+  nummer: z.number().int().nonnegative(),
+  zusatz: z.string().max(12).default(""),
+  frueher: z.string().max(80).default(""),
+  frueherSuffix: z.boolean().optional(),
+  bundesland: z.string().max(40).default(""),
+  name: z.string().min(1).max(400),
+  sitz: z.string().max(200).default(""),
+  status: z.enum(["ACTIVE", "CLOSED", "LOESCHUNG_ANGEKUENDIGT"]).default("ACTIVE"),
+  historie: z.array(z.object({ name: z.string(), sitz: z.string(), order: z.number().int() })).default([]),
+});
+const trefferRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/treffer",
+  tags: [tag],
+  summary: "Treffer einer Live-Namenssuche in die Stammdaten uebernehmen (liefert companyIds)",
+  request: { body: { content: { "application/json": { schema: z.object({ treffer: z.array(TrefferEingabe).min(1).max(100) }) } } } },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ neu: z.number().int(), geaendert: z.number().int(), unveraendert: z.number().int(), firmen: z.array(z.object({ companyId: z.string(), name: z.string(), sitz: z.string(), status: z.string() })) }) } },
+      description: "ok",
+    },
+    401: err[401],
+  },
+});
+registerJobsRouter.openapi(trefferRoute, async (c) => {
+  auth(c);
+  const { treffer } = c.req.valid("json");
+  const summe = await schreibeTreffer(treffer, "registerportal");
+  const firmen = treffer.map((t) => ({ companyId: companyIdAus(t.gericht, t.art, t.nummer, t.zusatz, t.frueher, t.frueherSuffix === true), name: t.name, sitz: t.sitz, status: t.status }));
+  return c.json({ neu: summe.neu, geaendert: summe.geaendert, unveraendert: summe.unveraendert, firmen }, 200);
 });
 
 // Insolvenz-Delta — Pruefung konkreter Firmen anfordern (Chat, Import, Firmendetail).

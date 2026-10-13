@@ -84,6 +84,20 @@ const SUCHE_SKRIPT = `
   if (a && b) document.getElementById('form:btnSuche').click();
   return {gericht: a, art: b};`;
 
+// Normale Suche (Firmenname): Formular der Startseite, dieselbe Treffertabelle
+// wie die erweiterte Suche. Option 1 = alle Schlagwoerter enthalten, 3 = exakte
+// Firmenbezeichnung (docs/PLAN_FIRMEN_OHNE_REGISTER.md, F2).
+const NAME_SUCHE_SKRIPT = `
+  const [name, exakt] = arguments;
+  function setSel(id, text){ const s=document.getElementById(id); if(!s) return false; const o=[...s.options].find(o=>o.text.trim()===text); if(!o) return false; s.value=o.value; s.dispatchEvent(new Event('change',{bubbles:true})); return true; }
+  const feld = document.getElementById('form:schlagwoerter'); if (!feld) return { feld: false };
+  feld.value = name; feld.dispatchEvent(new Event('input',{bubbles:true}));
+  const opt = [...document.querySelectorAll('input[name="form:schlagwortOptionen"]')].find(i => i.value === (exakt ? '3' : '1'));
+  if (opt) opt.click();
+  setSel('form:ergebnisseProSeite_input','100');
+  const btn = document.getElementById('form:btnSuche'); if (!btn) return { feld: true, knopf: false };
+  btn.click(); return { feld: true, knopf: true };`;
+
 export class RegisterPortal {
   private driver: WebDriver | null = null;
   /** Eigenes Profilverzeichnis dieses Browsers (browser-lebenszyklus.ts). */
@@ -208,6 +222,50 @@ export class RegisterPortal {
     await d.executeScript(`const a=[...document.querySelectorAll('a')].find(x=>/erweiterteSucheLink/.test(x.getAttribute('onclick')||''));
       if(!a) throw new Error('erweiterteSucheLink fehlt'); a.click();`);
     await this.warteAuf(async () => (await d.findElements(By.id("form:registerNummer"))).length > 0, 20_000, "Erweiterte Suche");
+  }
+
+  private async normaleSuche(): Promise<void> {
+    const d = this.d();
+    if ((await d.findElements(By.id("form:schlagwoerter"))).length > 0) return;
+    await d.executeScript(`const a=[...document.querySelectorAll('a')].find(x=>/normaleSucheLink/.test(x.getAttribute('onclick')||''));
+      if(!a) throw new Error('normaleSucheLink fehlt'); a.click();`);
+    await this.warteAuf(async () => (await d.findElements(By.id("form:schlagwoerter"))).length > 0, 20_000, "Normale Suche");
+  }
+
+  /**
+   * Namenssuche (Normale Suche): alle Schlagwoerter muessen vorkommen, bei
+   * `exakt` die genaue Firmenbezeichnung. Treffer wie bei der Nummernsuche;
+   * ein Ort wird NICHT im Portal gefiltert (der Aufrufer sortiert nach Sitz).
+   */
+  async sucheName(name: string, exakt = false): Promise<Suchergebnis> {
+    const d = this.d();
+    const t0 = Date.now();
+    const begriff = name.replace(/\s+/g, " ").trim();
+    if (begriff.length < 2) throw new Error("Suchbegriff zu kurz");
+    try {
+      await this.normaleSuche();
+    } catch {
+      await this.startseite();
+      await this.normaleSuche();
+    }
+    const ok = (await d.executeScript(NAME_SUCHE_SKRIPT, begriff, exakt)) as { feld: boolean; knopf?: boolean };
+    if (!ok.feld || !ok.knopf) throw new Error(`Suchformular unvollstaendig (Feld ${ok.feld}, Knopf ${ok.knopf ?? false})`);
+    this.anfragen++;
+    await this.warteAuf(async () => {
+      const title = await d.getTitle();
+      if (title.includes("Suchergebnis")) return true;
+      const text = (await d.executeScript("return document.body.innerText")) as string;
+      return SPERR_RE.test(text) || /keine Treffer|Es wurden keine/i.test(text);
+    }, 40_000, `Namenssuche ${begriff}`);
+    await schlafen(800);
+    const title = await d.getTitle();
+    const text = (await d.executeScript("return document.body.innerText")) as string;
+    if (!title.includes("Suchergebnis") && SPERR_RE.test(text)) {
+      this.log(`SPERRE nach ${this.anfragen} Anfragen: Namenssuche ${begriff}`);
+      return { gesperrt: true, treffer: [], trefferRoh: null, dauerMs: Date.now() - t0 };
+    }
+    const zeilen = (await d.executeScript(ZEILEN_SKRIPT)) as RohZeile[];
+    return { gesperrt: false, treffer: parseErgebnis(zeilen).filter((t) => t.kopfGeparst), trefferRoh: trefferzahl(text), dauerMs: Date.now() - t0 };
   }
 
   /** Exakte Nummernsuche; mit "auch geloeschte" kommen alle Zusatz- und Altgerichts-Varianten mit. */

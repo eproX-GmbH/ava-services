@@ -22,6 +22,24 @@ import { power, spawner } from "../../core/platform";
 const LOG_NAME = "register-delta";
 const STATUS_MARKER = "__AVA_RD_STATUS__";
 const JOB_MARKER = "__AVA_RD_JOB__";
+const SUCHE_MARKER = "__AVA_RD_SUCHE__";
+export interface LiveSucheTreffer {
+  gericht: string;
+  art: string;
+  nummer: number;
+  zusatz: string;
+  frueher: string;
+  bundesland: string;
+  name: string;
+  sitz: string;
+  status: "ACTIVE" | "CLOSED" | "LOESCHUNG_ANGEKUENDIGT";
+  statusText: string;
+  historie: Array<{ name: string; sitz: string; order: number }>;
+  ortTreffer: boolean | null;
+}
+export type LiveSucheAntwort =
+  | { fehler: string }
+  | { gesperrt: boolean; trefferRoh: number | null; dauerMs: number; treffer: LiveSucheTreffer[] };
 const VERLAUF_MAX = 300;
 
 function beschreibeJob(art: string, payload: Record<string, unknown>): string {
@@ -308,6 +326,56 @@ export class MithelfenSupervisor extends EventEmitter {
     this.tokenTimer = setInterval(() => void this.schreibeToken(), TOKEN_INTERVAL_MS);
   }
 
+  /**
+   * Live-Namenssuche im Registerportal (docs/PLAN_FIRMEN_OHNE_REGISTER.md, F2):
+   * eigener Kindprozess `cli.js suche`, unabhaengig vom Job-Worker (eigenes
+   * Browser-Profil), ohne Gateway-Token. Laeuft auch, wenn Mithelfen aus ist —
+   * es ist die Anfrage des Nutzers, kein Dienst fuer die Organisation.
+   */
+  async sucheLive(name: string, ort?: string | null, exakt = false): Promise<LiveSucheAntwort> {
+    const entry = this.entry();
+    if (!entry) return { fehler: "Register-Worker nicht installiert." };
+    const nodeCmd = spawner().nodeCommand();
+    const args = [entry, "suche", "--name", name, ...(ort ? ["--ort", ort] : []), ...(exakt ? ["--exakt"] : [])];
+    return new Promise<LiveSucheAntwort>((resolve) => {
+      let ergebnis: LiveSucheAntwort | null = null;
+      let rest = "";
+      const child = spawn(nodeCmd.command, args, {
+        cwd: join(entry, "..", ".."),
+        env: {
+          ...process.env,
+          ...nodeCmd.env,
+          ...(this.o.browserPfad?.() ? { CHROME_BIN: this.o.browserPfad()! } : {}),
+          ...(this.o.treiberVerzeichnis?.() ? { PATH: `${this.o.treiberVerzeichnis()}${pathDelimiter}${process.env.PATH ?? ""}` } : {}),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const t = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* weg */ }
+      }, 150_000);
+      child.stdout?.on("data", (c: Buffer) => {
+        rest += c.toString("utf8");
+        let i: number;
+        while ((i = rest.indexOf("\n")) >= 0) {
+          const line = rest.slice(0, i);
+          rest = rest.slice(i + 1);
+          const j = line.indexOf(SUCHE_MARKER);
+          if (j >= 0) {
+            try { ergebnis = JSON.parse(line.slice(j + SUCHE_MARKER.length)) as LiveSucheAntwort; } catch { /* unvollstaendig */ }
+          } else producerLogBuffer.push(LOG_NAME, "stdout", `[suche] ${line}\n`);
+        }
+      });
+      child.stderr?.on("data", (c: Buffer) => producerLogBuffer.push(LOG_NAME, "stderr", `[suche] ${c.toString("utf8")}`));
+      child.on("exit", (code) => {
+        clearTimeout(t);
+        resolve(ergebnis ?? { fehler: `Suche ohne Ergebnis beendet (code ${code ?? "-"})` });
+      });
+      child.on("error", (err) => {
+        clearTimeout(t);
+        resolve({ fehler: err.message });
+      });
+    });
+  }
   async stop(): Promise<void> {
     const child = this.child;
     if (!child) return;

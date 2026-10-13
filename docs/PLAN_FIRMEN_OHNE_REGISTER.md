@@ -94,4 +94,8 @@ Firma dann verarbeiten. Harte Vorgaben:
 - **F5 Live-Test** mit drei Fällen (eine frische Register-Firma, ein Einzelunternehmer mit eigener
   Website, ein Friseur nur mit Facebook-Seite → muss abgelehnt werden) und Nachtrag hier.
 
-Stand: Plan geschrieben, F1–F5 offen (Freigabe der Entscheidungen 2 und 3 erbeten).
+## Stand
+
+- F1 (v0.1.832): `services/desktop/src/main/firmen-web/domain-gate.ts` mit Tests (Kern-Domain, Sperrliste, Erreichbarkeit, Redirect, Inhalt, Parkseite).
+- F2 (v0.1.832): `RegisterPortal.sucheName` (Normale Suche, `form:schlagwoerter`), CLI `cli.js suche --name --ort [--exakt]`, Desktop `MithelfenSupervisor.sucheLive`, Gateway `POST /v1/register-jobs/treffer`, Werkzeug `register_live_suche`, Seele/Prompt. Live-Test 2026-10-13: „eproX“ + Herford → 3 Treffer in 8 s, eproX GmbH Herford mit ortTreffer.
+- F3–F5 offen (Entscheidungen 2 und 3 gelten als Vorschlag, Umsetzung läuft).
