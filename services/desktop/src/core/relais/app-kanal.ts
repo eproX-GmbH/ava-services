@@ -386,9 +386,34 @@ export class AppKanal {
   private gespraech(id: string) {
     if (!id) throw new AppFehler("ungueltig", "conversationId fehlt.");
     const alle = this.deps.gespraeche.load(id);
+    // Werkzeugschritte wie im Desktop-Chat (Chat.tsx replayConversation): Aufruf
+    // aus der Assistenten-Nachricht, Ergebnis aus der folgenden tool-Nachricht.
+    const ergebnisse = new Map<string, { vorschau: string; fehler: boolean }>();
+    for (const m of alle) {
+      if (m.role !== "tool" || !m.toolCallId) continue;
+      const text = (m.content ?? "").trim();
+      let fehler = false;
+      try {
+        const j = JSON.parse(text) as { error?: unknown };
+        fehler = Boolean(j && typeof j === "object" && "error" in j && j.error);
+      } catch {
+        fehler = /^error[:\s]/i.test(text);
+      }
+      ergebnisse.set(m.toolCallId, { vorschau: text.length > 160 ? `${text.slice(0, 157)}…` : text, fehler });
+    }
+    const args = (a: unknown): string => {
+      if (a === undefined || a === null) return "";
+      try {
+        const j = JSON.stringify(a, null, 2);
+        return j.length > 2000 ? `${j.slice(0, 1997)}…` : j;
+      } catch {
+        return "";
+      }
+    };
     const nachrichten = alle
       .filter((m) => m.role === "user" || m.role === "assistant")
       .filter((m) => m.content.trim() || (m.toolCalls?.length ?? 0) > 0)
+      .filter((m) => !(m.role === "user" && /^\[Hinweis:[\s\S]*\]\s*$/.test(m.content.trim())))
       .slice(-MAX_NACHRICHTEN)
       .map((m) => ({
         id: m.id,
@@ -396,6 +421,17 @@ export class AppKanal {
         text: m.content.length > MAX_INHALT ? `${m.content.slice(0, MAX_INHALT)}…` : m.content,
         zeit: new Date(m.createdAt).toISOString(),
         ...(m.toolCalls?.length ? { werkzeuge: m.toolCalls.map((t) => t.name) } : {}),
+        ...(m.toolCalls?.length
+          ? {
+              aktivitaeten: m.toolCalls
+                .filter((t) => t.name !== "ask_user_choice")
+                .map((t) => {
+                  const e = ergebnisse.get(t.id);
+                  return { id: t.id, name: t.name, args: args(t.args), status: e?.fehler ? "fehler" : "ok", vorschau: e?.vorschau ?? "" };
+                }),
+            }
+          : {}),
+        ...(m.usage ? { usage: m.usage } : {}),
         ...(m.images?.length ? { bilder: m.images.map((b) => ({ mimeType: b.mimeType, filename: b.filename ?? null })) } : {}),
         ...(m.quelle ? { quelle: m.quelle } : {}),
       }));
