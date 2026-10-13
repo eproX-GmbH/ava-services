@@ -54,7 +54,7 @@ Wechselkurs 1 $ ≈ 0,92 €.
 |---|---|---|---|---|---|
 | **klein** | kein LinkedIn-Firmenprofil zuordenbar oder Free-Plan ohne Apify; Website-Crawl + SERP-Rückfall; ≤ 10 Personen | 2–8 Suchen → 0,5–2 ct | 0 | **≈ 0,02 €** | 0,20–0,60 € |
 | **mittel** | LinkedIn-Profil zugeordnet, Mitarbeiter-Fenster 100 genügt; 10–50 Personen | 2–10 Suchen → ≤ 2,5 ct | Suche 0,02 + Details 0,02 + 100 × 0,004 = 0,40 + Startgebühren 0,06 + CU ≈ 0,03 → **≈ 0,53 $ = 0,49 €** | **≈ 0,52 €** | 0,40–1,20 € |
-| **groß** | Fenster voll ohne Führungsrolle → Zweitlauf 25; viele LinkedIn-URL-Suchen; 50–95 Personen; Konzern mit Konzernabschluss | 10–20 Suchen → 2,5–5 ct | wie mittel + 25 × 0,004 + 0,02 ≈ **0,65 $ = 0,60 €** | **≈ 0,65 €** | 0,60–1,50 € |
+| **groß** | 50 oder mehr Personen über Apify oder aktuell (seit 13.10.2026; vorher Fenster voll = 100); ggf. Zweitlauf 25; Konzern mit Konzernabschluss | 10–20 Suchen → 2,5–5 ct | wie mittel + 25 × 0,004 + 0,02 ≈ **0,65 $ = 0,60 €** | **≈ 0,65 €** | 0,60–1,50 € |
 
 Erkenntnisse:
 
@@ -156,7 +156,7 @@ Warum so:
 2. **Apify-Preise im Apify-Console prüfen** (Pricing-Tab der drei harvestapi-Aktoren); die
    Code-Kommentare sind vom 31.08.2026, Vergleichsseiten nennen inzwischen andere Sätze.
 3. **Elastic- und CloudAMQP-Rechnung** in §4 eintragen (Fixkostenboden).
-4. **Stufen-Zuordnung im Gateway** (nach dem Lauf: Apify ja/nein, Fenster voll, Personenzahl)
+4. **Stufen-Zuordnung im Gateway** (nach dem Lauf: Apify ja/nein, Personenzahl ab 50 = groß)
    und Anzeige am Vorgang; Guthabenstand in der App und im Chat (Self-Service-Regel).
 5. **Entscheidung:** Stufenpreise (0,50/2,00/3,50 €) oder Einheitspreis (1,50 €).
 
