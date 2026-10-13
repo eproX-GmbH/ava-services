@@ -22,6 +22,19 @@ export const TIER_LIMITS: Record<BillingTier, number> = {
 
 export type PaidTier = "starter" | "pro";
 
+/** Z4 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Zugangsguthaben je Monat und Seat in
+ *  Euro-Cent (netto). Aufnahmen werden mit ihrem Stufenpreis dagegen gerechnet,
+ *  darueber faellt Pay-as-you-go an. Free: 25 Firmen lebenslang, kein Guthaben;
+ *  Enterprise: unbegrenzt. Per Env ohne Deploy aenderbar. */
+export function guthabenCents(tier: BillingTier): number {
+  if (tier === "enterprise") return UNLIMITED;
+  if (tier === "free") return 0;
+  const env = tier === "starter" ? process.env.GUTHABEN_STARTER_CENTS : process.env.GUTHABEN_PRO_CENTS;
+  const n = env ? Number(env) : NaN;
+  if (Number.isFinite(n) && n >= 0) return Math.round(n);
+  return tier === "starter" ? 4000 : 13000;
+}
+
 /** Returns the env-configured Stripe price id for a paid tier, or
  *  null when the env var isn't set (caller decides whether that's a
  *  503). We don't read env at module load — the gateway boots with

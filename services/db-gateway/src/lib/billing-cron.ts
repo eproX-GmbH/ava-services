@@ -35,6 +35,11 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] closeCompletedPeriods failed");
   }
   try {
+    await zugangUeberschreitungEinzelabo(now);
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] zugangUeberschreitung failed");
+  }
+  try {
     await suspendOverdue(now);
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] suspendOverdue failed");
@@ -47,6 +52,54 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
     } catch (err) {
       logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] reconcile failed");
     }
+  }
+}
+
+/** Z4 — Einzelabos: Aufnahmen des Vormonats ueber das Guthaben hinaus als
+ *  Stripe-Rechnungsposten (landet auf der naechsten Abo-Rechnung). Idempotent
+ *  ueber BillingEvent kind zugang_ueberschreitung je Periode. */
+async function zugangUeberschreitungEinzelabo(now: Date): Promise<void> {
+  if (!process.env.STRIPE_SECRET_KEY) return;
+  const pool = getGatewayPool();
+  const vormonat = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const periodKey = `${vormonat.getUTCFullYear()}-${String(vormonat.getUTCMonth() + 1).padStart(2, "0")}`;
+  const r = await pool.query<{ tenantId: string; stripeCustomerId: string; tier: string }>(
+    `SELECT b."tenantId", b."stripeCustomerId", b.tier FROM "TenantBilling" b
+      WHERE b."mode" = 'subscription' AND b."stripeCustomerId" IS NOT NULL AND b.tier IN ('starter', 'pro')
+        AND NOT EXISTS (SELECT 1 FROM "BillingEvent" e WHERE e."billingAccountId" = b."tenantId" AND e.kind = 'zugang_ueberschreitung' AND e.payload->>'periodKey' = $1)`,
+    [periodKey],
+  );
+  if (r.rows.length === 0) return;
+  const { guthabenCents } = await import("./billing-plans");
+  const { zugangStand } = await import("./billing");
+  const { getStripe } = await import("./stripe-client");
+  const stripe = getStripe();
+  for (const row of r.rows) {
+    const tier = row.tier as "starter" | "pro";
+    const z = await zugangStand(pool, row.tenantId, periodKey, guthabenCents(tier));
+    const aufnahmen = z.stufen.klein + z.stufen.mittel + z.stufen.gross;
+    let stripeItemId: string | null = null;
+    if (z.ueberschreitungCents > 0) {
+      try {
+        const item = await stripe.invoiceItems.create({
+          customer: row.stripeCustomerId,
+          amount: z.ueberschreitungCents,
+          currency: "eur",
+          description: `AVA: Aufnahmen ueber das Guthaben hinaus, ${periodKey} (${aufnahmen} Firmen, ${(z.verbrauchtCents / 100).toFixed(2)} EUR gesamt, Guthaben ${(z.guthabenCents / 100).toFixed(2)} EUR)`,
+        });
+        stripeItemId = item.id;
+      } catch (err) {
+        logger.warn({ tenantId: row.tenantId, periodKey, err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Stripe-Rechnungsposten fehlgeschlagen");
+        continue;
+      }
+    }
+    await recordBillingEvent(pool, {
+      billingAccountId: row.tenantId,
+      kind: "zugang_ueberschreitung",
+      source: "cron",
+      payload: { periodKey, aufnahmen, stufen: z.stufen, verbrauchtCents: z.verbrauchtCents, guthabenCents: z.guthabenCents, ueberschreitungCents: z.ueberschreitungCents, stripeItemId },
+    });
+    if (z.ueberschreitungCents > 0) logger.info({ tenantId: row.tenantId, periodKey, cents: z.ueberschreitungCents }, "[billing-cron] Zugang-Ueberschreitung berechnet");
   }
 }
 

@@ -37,6 +37,14 @@ export interface UsageSnapshot {
   status: BillingStatus;
   /** B1 — woher die Berechtigung kommt (eigenes Abo, Seat der Organisation, Enterprise). */
   entitlement: UsageEntitlement;
+  /** Z4 — Zugang zum Ergebnis: Stufen der Aufnahmen und Verbrauch gegen das Guthaben (Cent). */
+  zugang?: {
+    stufen: { klein: number; mittel: number; gross: number; offen: number };
+    verbrauchtCents: number;
+    guthabenCents: number;
+    uebrigCents: number;
+    ueberschreitungCents: number;
+  };
 }
 
 export const USAGE_QUERY_KEY = ["usage"] as const;

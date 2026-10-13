@@ -18,7 +18,7 @@ import { VerbrauchTab } from "./settings/VerbrauchTab";
 import { WissensquellenTab } from "./settings/WissensquellenTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
-import { useUsage, isUnlimited, isSeatPaid, type BillingTier } from "../api/usage";
+import { useUsage, isUnlimited, isSeatPaid, type BillingTier, type UsageSnapshot } from "../api/usage";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useProfileStore } from "../store/profile";
@@ -5254,6 +5254,34 @@ const PLAN_CARDS: PlanCard[] = [
 
 const ENTERPRISE_CONTACT_URL = "https://ava.bi/kontakt";
 
+
+/** Z4 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Aufnahmen der Periode nach Stufe und
+ *  Verbrauch gegen das Zugangsguthaben. Free: nur Zaehlung. */
+function ZugangStand({ zugang, tier }: { zugang: UsageSnapshot["zugang"]; tier: string }) {
+  if (!zugang) return null;
+  const eur = (c: number) => (c / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  const n = zugang.stufen.klein + zugang.stufen.mittel + zugang.stufen.gross + zugang.stufen.offen;
+  const stufen = [
+    zugang.stufen.klein ? `${zugang.stufen.klein} klein` : "",
+    zugang.stufen.mittel ? `${zugang.stufen.mittel} mittel` : "",
+    zugang.stufen.gross ? `${zugang.stufen.gross} groß` : "",
+    zugang.stufen.offen ? `${zugang.stufen.offen} noch ohne Stufe` : "",
+  ].filter(Boolean).join(", ");
+  return (
+    <div style={{ display: "grid", gap: "0.25rem" }}>
+      <span className="muted small">
+        Aufnahmen in dieser Periode: {n}{stufen ? ` (${stufen})` : ""}
+      </span>
+      {tier !== "free" && zugang.guthabenCents !== -1 && (
+        <span className="muted small">
+          Zugangsguthaben: {eur(zugang.verbrauchtCents)} von {eur(zugang.guthabenCents)} verbraucht
+          {zugang.ueberschreitungCents > 0 ? ` · ${eur(zugang.ueberschreitungCents)} darüber hinaus (wird mit der nächsten Rechnung berechnet)` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function PlanSection() {
   const { data, isLoading, error, refetch } = useUsage();
   const [busy, setBusy] = useState<"checkout-starter" | "checkout-pro" | "portal" | null>(
@@ -5321,6 +5349,7 @@ export function PlanSection() {
             )}
             {ent.seats?.endsAt && <span className="muted small">· Sammelabrechnung endet am {fmtDateShort(ent.seats.endsAt)}</span>}
           </div>
+          <ZugangStand zugang={data.zugang} tier={data.tier} />
           {data.status === "suspended" && (
             <div className="error">
               Die Sammelabrechnung deiner Organisation ist wegen einer offenen Zahlung pausiert. Importe und Radar-Scans laufen
@@ -5393,6 +5422,7 @@ export function PlanSection() {
 
       {data && (
         <div style={{ display: "grid", gap: "1.25rem" }}>
+          {data && <ZugangStand zugang={data.zugang} tier={data.tier} />}
           {/* Current tier pill + usage bar */}
           <div style={{ display: "grid", gap: "0.5rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>

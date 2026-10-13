@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { paths } from "../../../core/platform";
 import { APIFY_DEFAULT_ACTORS } from "./providers/apify";
 
 export interface WatchlistConfig {

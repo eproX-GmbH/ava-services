@@ -559,6 +559,22 @@ export async function closePeriod(
         [idFor("sl"), id, l.tier, l.seats, l.unitPriceCents, l.amountCents],
       );
     }
+    // Z4 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Aufnahmen ueber das Seat-Guthaben hinaus
+    // als eigene Zeile "zugang" (Pay-as-you-go zum Stufenpreis).
+    {
+      const { guthabenCents } = await import("./billing-plans");
+      const { zugangStand } = await import("./billing");
+      const guthaben = comp.lines.reduce((s, l) => (l.tier === "starter" || l.tier === "pro" ? s + l.seats * guthabenCents(l.tier) : s), 0);
+      const z = await zugangStand(client, tenantId, periodKey, guthaben);
+      if (z.ueberschreitungCents > 0) {
+        const aufnahmen = z.stufen.klein + z.stufen.mittel + z.stufen.gross;
+        await client.query(
+          `INSERT INTO "SeatInvoiceLine" ("id", "invoiceId", "tier", "seats", "unitPriceCents", "amountCents") VALUES ($1, $2, 'zugang', $3, 0, $4)`,
+          [idFor("sl"), id, aufnahmen, z.ueberschreitungCents],
+        );
+        await client.query(`UPDATE "SeatInvoice" SET "subtotalCents" = "subtotalCents" + $2, "totalCents" = "totalCents" + $2 WHERE "id" = $1`, [id, z.ueberschreitungCents]);
+      }
+    }
     for (const s of comp.seats) {
       await client.query(
         `INSERT INTO "SeatInvoiceSeat" ("id", "invoiceId", "actorId", "email", "name", "tier", "firstCountedDay", "lastCountedDay", "countedDays")

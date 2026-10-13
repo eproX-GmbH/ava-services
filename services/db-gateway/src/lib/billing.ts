@@ -365,9 +365,48 @@ export interface UsageSnapshot {
   /** B1 */
   status: BillingStatus;
   entitlement: Entitlement;
+  /** Z4 — Zugang zum Ergebnis: Stufen der Aufnahmen in der Periode, Verbrauch
+   *  gegen das Guthaben (Cent, netto). Free: Guthaben 0, nur Zaehlung. */
+  zugang: ZugangStand;
+}
+
+export interface ZugangStand {
+  stufen: { klein: number; mittel: number; gross: number; offen: number };
+  /** Summe der Stufenpreise aller zugeordneten Aufnahmen der Periode. */
+  verbrauchtCents: number;
+  /** Guthaben der Periode (Seats × Guthaben je Tier); -1 = unbegrenzt. */
+  guthabenCents: number;
+  uebrigCents: number;
+  /** Was ueber das Guthaben hinaus als Pay-as-you-go berechnet wuerde. */
+  ueberschreitungCents: number;
 }
 
 export const UNLIMITED = -1;
+
+/** Z4 — Stufen und Verbrauch einer Periode gegen das Guthaben rechnen. */
+export async function zugangStand(q: Q, billingAccountId: string, periodKey: string, guthaben: number): Promise<ZugangStand> {
+  const r = await q.query<{ stufe: string | null; n: string; preis: string | null }>(
+    `SELECT "stufe", COUNT(*)::text AS n, SUM("preisCents")::text AS preis FROM "UsageEntry"
+      WHERE "billingAccountId" = $1 AND "periodKey" = $2 GROUP BY "stufe"`,
+    [billingAccountId, periodKey],
+  );
+  const stufen = { klein: 0, mittel: 0, gross: 0, offen: 0 };
+  let verbraucht = 0;
+  for (const row of r.rows) {
+    const n = Number(row.n);
+    if (row.stufe === "klein" || row.stufe === "mittel" || row.stufe === "gross") stufen[row.stufe] += n;
+    else stufen.offen += n;
+    verbraucht += Number(row.preis ?? 0);
+  }
+  const unbegrenzt = guthaben === UNLIMITED;
+  return {
+    stufen,
+    verbrauchtCents: verbraucht,
+    guthabenCents: guthaben,
+    uebrigCents: unbegrenzt ? UNLIMITED : Math.max(0, guthaben - verbraucht),
+    ueberschreitungCents: unbegrenzt ? 0 : Math.max(0, verbraucht - guthaben),
+  };
+}
 
 async function pendingSeatTierChange(
   q: Q,
@@ -408,6 +447,11 @@ export async function getUsageSnapshot(
 
   const limit = await quotaLimitFor(pool, acc);
   const remaining = limit === UNLIMITED ? UNLIMITED : Math.max(0, limit - used);
+  // Z4 — Guthaben: je Seat (Sammelabrechnung) bzw. je Konto (Einzelabo).
+  const { guthabenCents } = await import("./billing-plans");
+  const guthabenJeSeat = guthabenCents(tier);
+  const guthaben = guthabenJeSeat === UNLIMITED ? UNLIMITED : acc.mode === "seats" ? guthabenJeSeat * Math.max(1, await currentMemberCount(pool, acc.id)) : guthabenJeSeat;
+  const zugang = await zugangStand(pool, billingAccountId, periodKey, guthaben);
 
   // Entitlement
   let paidBy: string | null = null;
@@ -450,6 +494,7 @@ export async function getUsageSnapshot(
     cancelAtPeriodEnd: acc.mode === "subscription" ? acc.cancelAtPeriodEnd : false,
     parkedCount,
     status: acc.status,
+    zugang,
     entitlement: {
       tier,
       source: acc.mode === "enterprise" ? "enterprise" : istOrgKonto ? "seat" : "personal",

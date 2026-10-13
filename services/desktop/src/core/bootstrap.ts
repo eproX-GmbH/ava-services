@@ -686,6 +686,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
                   // bei der Organisation) und bleibt im Gateway; der Producer ruft
                   // /v1/proxy/apify mit dem Nutzer-JWT. Nie ein Token auf dem Geraet.
                   if (!apifyZentral()) return {};
+                  // Z4: LinkedIn-Kontakte ueber Apify gibt es ab Starter; im Free-Plan
+                  // bleibt es beim Website-Crawl (das Gateway lehnt sonst mit 402 ab).
+                  if (getTenantTierCached() === "free") return {};
                   return {
                     AVA_APIFY_VIA_GATEWAY: "1",
                     APIFY_COMPANY_FENSTER: String(watchlistKeyStore?.getConfig().companyWindow ?? 100),

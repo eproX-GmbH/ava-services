@@ -225,6 +225,12 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
     zugang = { key: b.key, azure: null };
     festesModell = b.modell;
   } else if (kind === "apify" && betreiberApify()) {
+    // Z4: LinkedIn-Kontakte ueber den zentralen Apify-Token gibt es ab Starter;
+    // Free bleibt beim Website-Crawl (Stufe klein, docs/PLAN_ABRECHNUNG_ZUGANG.md §2).
+    const { effectiveTier, ensureBillingAccount, resolveBillingAccountId } = await import("../../lib/billing");
+    const kontoId = await resolveBillingAccountId(pool, { tenantId: auth.tenantId, actorId: auth.actorId });
+    const konto = await ensureBillingAccount(pool, kontoId, "personal");
+    if (effectiveTier(konto) === "free") throw new HTTPException(402, { message: "apify_nicht_im_free_plan" });
     zugang = { key: betreiberApify()!, azure: null };
   } else {
     if (!secretsConfigured()) throw new HTTPException(503, { message: "secrets_unconfigured" });
