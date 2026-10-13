@@ -14,7 +14,7 @@
 import type { Pool } from "pg";
 import { logger } from "./logger";
 import { masterData } from "./register-jobs";
-import { readBillingAccount, effectiveTier, periodKeyFor, resolveBillingAccountId, ensureBillingAccount, recordUsage } from "./billing";
+import { readBillingAccount, effectiveTier, periodKeyFor, resolveBillingAccountId, ensureBillingAccount, recordUsage, tenantPaysForMembers } from "./billing";
 import { recordBillingEvent } from "./billing-events";
 
 async function bestandJeKonto(pool: Pool, billingAccountId: string, kind: string, mode: string): Promise<{ userIds: string[]; companyIds: string[] }> {
@@ -52,6 +52,13 @@ export async function bestandVerbuchen(pool: Pool, now: Date = new Date()): Prom
     try {
       const acc = await readBillingAccount(pool, k.tenantId);
       if (!acc || effectiveTier(acc) === "free") continue;
+      // Persoenliches Konto eines Mitglieds, dessen Organisation zahlt (Seats/
+      // Enterprise): der Bestand laeuft ueber die Organisation, nicht doppelt.
+      if (k.kind !== "organisation") {
+        const m = await pool.query<{ tenantId: string }>(`SELECT "tenantId" FROM "TenantMember" WHERE "actorId" = $1`, [k.tenantId]);
+        const org = m.rows[0]?.tenantId;
+        if (org && org !== k.tenantId && (await tenantPaysForMembers(pool, org))) continue;
+      }
       const { userIds, companyIds } = await bestandJeKonto(pool, k.tenantId, k.kind, k.mode);
       const ins = await pool.query(
         `INSERT INTO "UsageEntry" ("billingAccountId", "periodKey", "companyId", source, "createdAt")
