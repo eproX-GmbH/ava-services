@@ -13,13 +13,15 @@ import { UNLIMITED, type BillingTier } from "./billing";
 
 /** Quota limits applied when a webhook flips a tenant to a new tier.
  *  Matches the locked pricing in the monetization plan. */
-// Z7 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Pro ist der einzige bezahlte Plan, Aufnahmen
-// laufen Pay-as-you-go; der Deckel ist nur noch eine Notbremse. Starter bleibt
-// fuer Altvertraege lesbar, wird aber nicht mehr angeboten.
+// Z7/Z9 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Pro ist der einzige bezahlte Plan, jede
+// verarbeitete Firma wird zum Stufensatz berechnet. Bezahlte Plaene haben KEINEN
+// Firmen-Deckel (Joyce, 2026-10-13); die einzige Grenze ist das Ausgabenlimit,
+// das der Kunde selbst setzt. Nur Free ist begrenzt. Starter bleibt fuer
+// Altvertraege lesbar und verhaelt sich wie Pro.
 export const TIER_LIMITS: Record<BillingTier, number> = {
   free: 25,
-  starter: 500,
-  pro: 5000,
+  starter: UNLIMITED,
+  pro: UNLIMITED,
   enterprise: UNLIMITED,
 };
 

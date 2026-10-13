@@ -102,8 +102,12 @@ Im Folgemonat frischt AVA 20 davon auf (15 klein, 5 mittel): 49 € plus 25 € 
 - Keine Angabe eines Modellnamens für die Aufbereitung (das Modell gibt AVA vor und
   kann es wechseln).
 - Keine Rückerstattung oder Gutschrift, wenn andere Kunden dieselbe Firma nutzen.
-- Nicht „unbegrenzt“ für Pro: es gibt eine hohe technische Notbremse je Monat, die nicht
-  beworben wird.
+- Pro hat keinen Firmen-Deckel und keine Funktionsgrenzen; die einzige Grenze ist das
+  Ausgabenlimit, das der Kunde selbst setzt. Ausnahme sind technische Grenzen wie die
+  Prüfung von E-Mail-Adressen, die nicht als Plan-Merkmal beworben werden.
+- Die Einschränkungen des Kostenlos-Plans dürfen klar genannt werden: 25 Firmen,
+  Ansprechpartner nur von der Website (kein LinkedIn), Firmen-Radar nur als manueller
+  Wochen-Scan mit kleinem Radius, keine Personen-Beobachtung, ein Workflow.
 - Kein „Starter“-Plan, kein „Zugangsguthaben“, keine Firmenzahl „inklusive“ bei Pro.
 - Keine Aussage, dass Jahresabschlüsse oder Kontakte für jede Firma vorliegen; der
   Preis hängt nur an Website und Firmenprofil, nicht am Umfang der Registerdaten.

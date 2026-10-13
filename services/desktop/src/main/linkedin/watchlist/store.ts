@@ -40,10 +40,10 @@ export function watchlistLimitsForTier(tier: string | null): WatchlistLimits | n
     case "free":
       return { maxEintraege: 0, maxFokus: 0 };
     case "starter":
-      return { maxEintraege: 25, maxFokus: 5 };
     case "pro":
     case "enterprise":
-      return { maxEintraege: 200, maxFokus: 25 };
+      // Z9 (2026-10-13): bezahlte Plaene ohne Deckel.
+      return null;
     default:
       return null; // unbekannt → kein Deckel (nie Verknappung aus Cache-Miss)
   }

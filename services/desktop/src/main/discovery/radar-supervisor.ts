@@ -215,15 +215,9 @@ export class RadarSupervisor {
       }
       return;
     }
-    let effectiveInterval: number = cfg.intervalHours;
-    if (
-      cfg.intervalHours === 6 &&
-      tier !== null &&
-      tier !== "pro" &&
-      tier !== "enterprise"
-    ) {
-      effectiveInterval = 24;
-    }
+    // Z9 (2026-10-13): bezahlte Plaene ohne Einschraenkung — das gewaehlte
+    // Intervall gilt, auch fuer Starter-Altvertraege.
+    const effectiveInterval: number = cfg.intervalHours;
 
     const last = cfg.lastRunAt ? Date.parse(cfg.lastRunAt) : 0;
     if (Date.now() - last < effectiveInterval * 3600 * 1000) return;

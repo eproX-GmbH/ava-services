@@ -129,21 +129,23 @@ const PLAN_DISCOVERY: Record<string, Omit<DiscoveryLimits, "tier">> = {
     maxRadiusKm: 25,
     maxGebiete: 1,
   },
+  // Z9 (Joyce, 2026-10-13): bezahlte Plaene ohne Einschraenkungen — Scan-,
+  // Radius- und Gebiete-Gates greifen nur im Free-Plan; Starter = Altvertrag.
   starter: {
-    maxScansPerWindow: 1,
-    windowDays: 1,
-    maxCandidatesPerScan: 150,
-    serpBudget: 20,
-    maxRadiusKm: 50,
-    maxGebiete: 2,
-  },
-  pro: {
-    maxScansPerWindow: 4,
+    maxScansPerWindow: 10,
     windowDays: 1,
     maxCandidatesPerScan: 300,
     serpBudget: 30,
-    maxRadiusKm: 100,
-    maxGebiete: 5,
+    maxRadiusKm: 250,
+    maxGebiete: 20,
+  },
+  pro: {
+    maxScansPerWindow: 10,
+    windowDays: 1,
+    maxCandidatesPerScan: 300,
+    serpBudget: 30,
+    maxRadiusKm: 250,
+    maxGebiete: 20,
   },
   enterprise: {
     maxScansPerWindow: 10,
@@ -295,14 +297,16 @@ export async function startScan(
   );
   const scansUsedInWindow = used.rows[0]?.n ?? 0;
 
+  // Z9 — nur Free wird gedrosselt (Scans je Woche, Radius, Gebiete); bezahlte
+  // Plaene und Enterprise haben keine Grenzen, ein Operator-Override (Scans/Tag)
+  // greift weiterhin.
+  const gedrosselt = limits.tier === "free";
+  const override = limits.maxScansPerWindow !== (PLAN_DISCOVERY[limits.tier] ?? PLAN_DISCOVERY.free!).maxScansPerWindow;
   if (!isInitial) {
-    if (args.radiusKm > limits.maxRadiusKm) {
+    if (gedrosselt && args.radiusKm > limits.maxRadiusKm) {
       return { ok: false, reason: "radius", limits, scansUsedInWindow };
     }
-    // v0.1.637 — Enterprise ist laut billing.isUnlimited nicht zu drosseln.
-    // Vorher zaehlte die Organisation (alle Mitglieder zusammen) gegen die
-    // 10/Tag und ein Enterprise-Kunde sah "Scan-Limit deines Plans".
-    if (limits.tier !== "enterprise" && scansUsedInWindow >= limits.maxScansPerWindow) {
+    if ((gedrosselt || override) && scansUsedInWindow >= limits.maxScansPerWindow) {
       return { ok: false, reason: "quota", limits, scansUsedInWindow };
     }
     // Gebiete-Gate: verschiedene Orte im 7-Tage-Fenster (Erst-Scan
@@ -318,7 +322,7 @@ export async function startScan(
     );
     const known = new Set(orte.rows.map((r) => r.ort));
     const requested = `${args.country ?? "DE"}|${args.ort.trim().toLowerCase()}`;
-    if (!known.has(requested) && known.size >= limits.maxGebiete) {
+    if (gedrosselt && !known.has(requested) && known.size >= limits.maxGebiete) {
       return { ok: false, reason: "gebiete", limits, scansUsedInWindow };
     }
   }

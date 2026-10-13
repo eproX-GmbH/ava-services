@@ -95,7 +95,8 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
     const used = Number(usedRes.rows[0]?.used ?? 0);
     const parkedCount = Number(parkedRes.rows[0]?.parked ?? 0);
     const limit = billing.quotaLimit;
-    let granted = used + parkedCount + count <= limit;
+    // Z9 — bezahlte Plaene ohne Firmen-Deckel; nur das Ausgabenlimit unten greift.
+    let granted = limit === UNLIMITED || used + parkedCount + count <= limit;
     // Z7 — Ausgabenlimit des Kunden (nur bezahlte Plaene): geparkte Firmen zaehlen
     // vorsichtig mit, damit das Limit nicht ueber die Warteschlange umgangen wird.
     if (granted && billing.tier !== "free") {

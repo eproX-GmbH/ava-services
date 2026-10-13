@@ -249,6 +249,8 @@ export async function currentMemberCount(q: Q, tenantId: string): Promise<number
 export async function quotaLimitFor(q: Q, acc: BillingAccount): Promise<number> {
   const tier = effectiveTier(acc);
   if (isUnlimited(tier)) return UNLIMITED;
+  // Z9 — bezahlte Plaene ohne Firmen-Deckel (nur das Ausgabenlimit greift).
+  if (TIER_LIMITS[tier] === UNLIMITED) return UNLIMITED;
   if (acc.mode === "seats") {
     const seats = await currentMemberCount(q, acc.id);
     return Math.max(1, seats) * TIER_LIMITS[tier];
@@ -563,8 +565,7 @@ export async function assertQuotaAvailable(
       ),
     });
   }
-  if (snapshot.limit === UNLIMITED) return snapshot;
-  // Z7 — Ausgabenlimit des Kunden vor dem Kontingent-Deckel.
+  // Z7 — Ausgabenlimit des Kunden (bezahlte Plaene haben sonst keinen Deckel).
   if (snapshot.tier !== "free" && !ausgabenlimitReicht(snapshot.zugang, Math.max(0, neededCount))) {
     throw new HTTPException(402, {
       res: new Response(
@@ -573,6 +574,7 @@ export async function assertQuotaAvailable(
       ),
     });
   }
+  if (snapshot.limit === UNLIMITED) return snapshot;
   const wouldUse = snapshot.used + Math.max(0, neededCount);
   if (wouldUse <= snapshot.limit) return snapshot;
   throw new HTTPException(402, {

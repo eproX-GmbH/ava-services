@@ -41,7 +41,6 @@ export function policyForTier(tier: string | null): RadarAlertPolicy {
     case "free":
       return { threshold: 75, maxPerEmit: 3, budget: { max: 3, windowDays: 7 } };
     case "starter":
-      return { threshold: 75, maxPerEmit: 5, budget: { max: 10, windowDays: 1 } };
     case "pro":
     case "enterprise":
       return { threshold: 65, maxPerEmit: 10, budget: null };
