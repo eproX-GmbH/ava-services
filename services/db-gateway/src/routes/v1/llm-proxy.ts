@@ -458,17 +458,19 @@ llmProxyRouter.openapi(usageRoute, async (c) => {
   return c.json({ ok: true, costMicroUsd: cost }, 200);
 });
 
+// Betreiber-Spur (Z1): Pool-Stufen der Producer. Modell wird im Gateway gesetzt.
+// MUSS vor der allgemeinen /llm/:kind-Route stehen — sonst faengt die den Pfad ab
+// und antwortet 404 unknown_provider (Befund 2026-10-14: Website-Judge "Not Found").
+llmProxyRouter.all("/llm/betreiber/*", async (c) => {
+  const rest = c.req.path.replace(/^\/v1\/llm\/betreiber\/?/, "");
+  return passthrough(c, "betreiber", UPSTREAM.openai, rest, true);
+});
+
 llmProxyRouter.all("/llm/:kind/*", async (c) => {
   const kind = c.req.param("kind");
   if (!isProviderKind(kind) || kind === "apify") throw new HTTPException(404, { message: "unknown_provider" });
   const rest = c.req.path.replace(/^\/v1\/llm\/[^/]+\/?/, "");
   return passthrough(c, kind, UPSTREAM[kind], rest, true);
-});
-
-// Betreiber-Spur (Z1): Pool-Stufen der Producer. Modell wird im Gateway gesetzt.
-llmProxyRouter.all("/llm/betreiber/*", async (c) => {
-  const rest = c.req.path.replace(/^\/v1\/llm\/betreiber\/?/, "");
-  return passthrough(c, "betreiber", UPSTREAM.openai, rest, true);
 });
 
 // Welche Betreiber-Spuren gibt es? Der Desktop entscheidet damit, ob Pool-Producer
