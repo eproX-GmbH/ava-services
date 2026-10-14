@@ -202,3 +202,23 @@ Renderer:
   Vermessungs-Kandidat rankt vor Bäckerei/Steuerkanzlei, Hinweis im
   Judge-Prompt, Begründung angereichert.
 - **P2 — ENTSCHIEDEN: Chat-Card** (B5 wie vorgeschlagen).
+
+## I6 — Bestehendes ICP aus Dokument oder Freitext (2026-10-14, v0.1.849)
+
+Dritter Weg neben Website-Analyse und Handeingabe: Viele Firmen haben ihr ICP schon
+ausfuehrlich beschrieben (Confluence, Word, PDF). AVA liest das Dokument EINMAL und
+verdichtet es in ihr Formular; das grosse Dokument liegt danach nie mehr im Kontext.
+
+- Oberflaeche: Intro mit drei Wegen (Websites, bestehendes ICP uebernehmen, von Hand);
+  Import-Seite mit Datei-Ablage (PDF, DOCX, TXT, MD; Text per `agent:extractPdfText`,
+  mammoth/pdf-parse) oder grossem Textfeld mit Zeichenzaehler und Abschnittshinweis;
+  Fortschritt ueber den vorhandenen Stepper; Formular wird nur mit belegten Feldern
+  ueberschrieben, Hinweis nennt nicht belegte Felder; `quelle: "dokument"`.
+- Engine `icpAusText` (discovery/icp-assistant.ts): bis 24k Zeichen direkt, sonst
+  Abschnitte zu 12k (max. 12) → Notizen je Abschnitt → Synthese in die Formularfelder
+  (yup-Schema tolerant, Kuerzung statt Ablehnung). Laeuft ueber `LlmProviderManager`
+  (eigener Schluessel, Orga-Schluessel, ChatGPT-Abo oder lokales Modell), nie ueber die
+  Betreiber-Spur.
+- IPC `icpAssistant:ausText`, Preload `discovery.icpAusText`; Chat-Werkzeug
+  `icp_aus_dokument` (hochgeladene Datei per Name/Handle oder Text; Entwurf, Speichern
+  nur ueber icp_set nach Bestaetigung).

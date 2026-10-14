@@ -310,6 +310,7 @@ export function buildReadOnlyRegistry(deps: {
     providers: deps.providers,
     customerStore: deps.discoveryCustomerProfiles,
     profile: deps.profile,
+    attachments: deps.attachments,
   }))
     registry.register(t);
   for (const t of buildSettingsTools({

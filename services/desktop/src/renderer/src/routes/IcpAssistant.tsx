@@ -4,8 +4,24 @@
 // Formular). In I2 wird derselbe Screen vom URL-Analyse-Stepper mit dem
 // generierten Entwurf vorbefuellt.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+
+/** Dritter Weg (2026-10-14): bestehendes ICP aus Datei (PDF, Word, Text, Markdown)
+ *  oder Freitext. AVA verdichtet es EINMAL in das Formular, damit das grosse
+ *  Dokument nie im Kontext mitlaufen muss. Laeuft ueber das Modell des Nutzers. */
+const IMPORT_MAX_ZEICHEN = 200_000;
+const IMPORT_DATEITYPEN = ".pdf,.docx,.txt,.md,.markdown";
+
+async function dateiZuText(file: File): Promise<{ text: string; hinweis: string | null }> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf") || name.endsWith(".docx")) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const r = await window.api.agent.extractPdfText({ filename: file.name, bytes });
+    return { text: r.text, hinweis: r.truncated ? "Die Datei war sehr lang; nur der Anfang wurde gelesen." : r.numPages > 1 ? `${r.numPages} Seiten gelesen.` : null };
+  }
+  return { text: await file.text(), hinweis: null };
+}
 
 interface FormState {
   beschreibung: string;
@@ -52,7 +68,7 @@ function toDomain(v: string): string | null {
   }
 }
 
-type Mode = "intro" | "analyzing" | "form";
+type Mode = "intro" | "import" | "analyzing" | "form";
 
 export function IcpAssistant(): JSX.Element {
   const [mode, setMode] = useState<Mode>("intro");
@@ -70,7 +86,72 @@ export function IcpAssistant(): JSX.Element {
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [radiusHint, setRadiusHint] = useState<string | null>(null);
   const [showAutoCta, setShowAutoCta] = useState(false);
+  // Import eines bestehenden ICP.
+  const [importText, setImportText] = useState("");
+  const [importDatei, setImportDatei] = useState<{ name: string; hinweis: string | null } | null>(null);
+  const [importLaedt, setImportLaedt] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [importFehlend, setImportFehlend] = useState<string[]>([]);
+  const dateiInput = useRef<HTMLInputElement | null>(null);
   const navigate = useNavigate();
+
+  const dateiUebernehmen = async (file: File | undefined): Promise<void> => {
+    if (!file) return;
+    setNotice(null);
+    setImportLaedt(true);
+    try {
+      const r = await dateiZuText(file);
+      const text = r.text.trim();
+      if (text.length < 80) {
+        setNotice(`Aus „${file.name}“ liess sich kein Text lesen (gescanntes PDF?). Füge den Inhalt dann bitte als Text ein.`);
+        return;
+      }
+      setImportText(text.slice(0, IMPORT_MAX_ZEICHEN));
+      setImportDatei({ name: file.name, hinweis: r.hinweis });
+    } catch (err) {
+      setNotice(`Datei konnte nicht gelesen werden: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setImportLaedt(false);
+    }
+  };
+
+  const startImport = async (): Promise<void> => {
+    setMode("analyzing");
+    setProgress([]);
+    setNotice(null);
+    setAnalysisNotes([]);
+    setRadiusHint(null);
+    setImportFehlend([]);
+    const result = await window.api.discovery.icpAusText({ text: importText, quelle: importDatei?.name ?? "eingefügter Text" });
+    if ("error" in result) {
+      setNotice(result.error);
+      setMode("import");
+      return;
+    }
+    const d = result.icp;
+    setForm((f) => ({
+      beschreibung: d.beschreibung || f.beschreibung,
+      angebot: d.angebot || f.angebot,
+      nutzen: d.nutzen || f.nutzen,
+      branchen: (d.branchen ?? []).length ? (d.branchen ?? []).join(", ") : f.branchen,
+      orte: (d.orte ?? []).length ? (d.orte ?? []).join(", ") : f.orte,
+      radiusKm: d.radiusKm ?? f.radiusKm,
+      groesse: d.groesse || f.groesse,
+      merkmale: (d.merkmale ?? []).length ? (d.merkmale ?? []).join(", ") : f.merkmale,
+      ausschluesse: d.ausschluesse || f.ausschluesse,
+      kundenUrls: (d.kundenBeispiele ?? []).length ? (d.kundenBeispiele ?? []).map((k) => k.domain).join("\n") : f.kundenUrls,
+    }));
+    setAnalysisNotes(result.hinweise);
+    setImportFehlend(result.fehlend);
+    setQuelle("dokument");
+    const umfang = result.abschnitte > 1 ? `${result.abschnitte} Abschnitte, ${Math.round(result.zeichen / 1000)}k Zeichen` : `${Math.round(result.zeichen / 1000)}k Zeichen`;
+    setNotice(
+      `Entwurf aus ${importDatei ? `„${importDatei.name}“` : "deinem Text"} übernommen (${umfang}). ` +
+        (result.fehlend.length > 0 ? `Im Dokument nicht belegt: ${result.fehlend.join(", ")}. ` : "") +
+        "Bitte prüfen und anpassen — gespeichert wird erst mit „ICP übernehmen“.",
+    );
+    setMode("form");
+  };
 
   useEffect(() => {
     void window.api.discovery.getIcp().then((icp) => {
@@ -166,7 +247,7 @@ export function IcpAssistant(): JSX.Element {
         .slice(0, 5)
         .map((domain) => ({ domain }));
       const saved = await window.api.discovery.setIcp({
-        quelle: radiusHint !== null || analysisNotes.length > 0 ? "assistent" : "manuell",
+        quelle: quelle === "dokument" ? "dokument" : radiusHint !== null || analysisNotes.length > 0 ? "assistent" : "manuell",
         beschreibung: form.beschreibung,
         angebot: form.angebot,
         nutzen: form.nutzen,
@@ -216,17 +297,129 @@ export function IcpAssistant(): JSX.Element {
 
   if (!loaded) return <div className="radar-page">Lade…</div>;
 
+  if (mode === "import") {
+    const zeichen = importText.length;
+    return (
+      <div className="radar-page icp-page">
+        <h1>Bestehendes Idealkundenprofil übernehmen</h1>
+        <p className="radar-sub">
+          Du hast dein ICP schon beschrieben, etwa in Confluence, Word oder als PDF? Gib es AVA einmal
+          komplett. Sie verdichtet es in ihr Formular, damit das große Dokument nie im Chat mitlaufen muss.
+          Die Auswertung läuft über dein eigenes KI-Modell; das Dokument bleibt auf deinem Rechner.
+        </p>
+        <div className="icp-form">
+          <div
+            className={`icp-drop${dragOver ? " icp-drop--over" : ""}${importDatei ? " icp-drop--datei" : ""}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => dateiInput.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") dateiInput.current?.click();
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              void dateiUebernehmen(e.dataTransfer.files?.[0]);
+            }}
+          >
+            <input
+              ref={dateiInput}
+              type="file"
+              accept={IMPORT_DATEITYPEN}
+              hidden
+              onChange={(e) => {
+                void dateiUebernehmen(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden>
+              <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {importLaedt ? (
+              <span>Datei wird gelesen …</span>
+            ) : importDatei ? (
+              <span>
+                <strong>{importDatei.name}</strong> gelesen{importDatei.hinweis ? ` · ${importDatei.hinweis}` : ""} · andere Datei wählen
+              </span>
+            ) : (
+              <span>
+                <strong>PDF, Word, Text oder Markdown</strong> hierher ziehen oder klicken
+              </span>
+            )}
+          </div>
+          <div className="icp-oder">oder einfügen</div>
+          <label className="icp-field">
+            <span>Dein bestehendes ICP als Text</span>
+            <textarea
+              value={importText}
+              onChange={(e) => {
+                setImportText(e.target.value.slice(0, IMPORT_MAX_ZEICHEN));
+                if (importDatei) setImportDatei(null);
+              }}
+              rows={14}
+              placeholder={"Füge hier dein komplettes ICP-Dokument ein: Zielbranchen, Firmengröße, Regionen, Merkmale, Ausschlüsse, Beispielkunden …"}
+            />
+            <span className="icp-zaehler">
+              {zeichen.toLocaleString("de-DE")} Zeichen
+              {zeichen > 24_000 ? ` · wird in ${Math.min(12, Math.ceil(zeichen / 12_000))} Abschnitten gelesen` : ""}
+              {zeichen >= IMPORT_MAX_ZEICHEN ? " · Obergrenze erreicht" : ""}
+            </span>
+          </label>
+          {notice && <div className="radar-error">{notice}</div>}
+          <div className="icp-actions">
+            <button className="proc-toggle radar-import" disabled={importText.trim().length < 80 || importLaedt} onClick={() => void startImport()}>
+              ICP ableiten
+            </button>
+            <button
+              className="proc-toggle"
+              onClick={() => {
+                setNotice(null);
+                setMode("intro");
+              }}
+            >
+              Zurück
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "intro") {
     return (
       <div className="radar-page icp-page">
         <h1>Idealkundenprofil in 2 Minuten</h1>
         <p className="radar-sub">
-          Keine Fragebogen-Folter: Gib nur <strong>deine Website</strong> und
-          bis zu <strong>5 Websites deiner besten Kunden</strong> an — AVA
-          liest daraus Angebot, Standort und was deine Top-Kunden gemeinsam
-          haben, und schreibt dir einen ICP-Entwurf zum Prüfen. Die
-          Kunden-Angaben bleiben ausschließlich auf deinem Rechner.
+          Drei Wege, ein Formular: AVA schreibt dir den Entwurf aus deinen Websites, übernimmt dein
+          bestehendes ICP aus einem Dokument, oder du füllst es von Hand. Gespeichert wird erst,
+          wenn du den Entwurf geprüft hast.
         </p>
+        <div className="icp-wege">
+          <button type="button" className="icp-weg icp-weg--aktiv" aria-pressed>
+            <strong>Aus deinen Websites</strong>
+            <span>Deine Website und bis zu 5 Kunden-Websites. AVA liest Angebot, Standort und Gemeinsamkeiten.</span>
+          </button>
+          <button
+            type="button"
+            className="icp-weg"
+            onClick={() => {
+              setNotice(null);
+              setMode("import");
+            }}
+          >
+            <strong>Bestehendes ICP übernehmen</strong>
+            <span>PDF, Word oder Text aus Confluence und Co. AVA verdichtet es einmal in ihr Formular.</span>
+          </button>
+          <button type="button" className="icp-weg" onClick={() => setMode("form")}>
+            <strong>Von Hand ausfüllen</strong>
+            <span>Neun kurze Fragen. Du kannst jederzeit später einen der anderen Wege nutzen.</span>
+          </button>
+        </div>
         <div className="icp-form">
           <label className="icp-field">
             <span>Deine Website</span>
@@ -254,9 +447,6 @@ export function IcpAssistant(): JSX.Element {
             >
               Analysieren &amp; ICP erstellen
             </button>
-            <button className="proc-toggle" onClick={() => setMode("form")}>
-              Lieber von Hand ausfüllen
-            </button>
           </div>
         </div>
       </div>
@@ -269,7 +459,9 @@ export function IcpAssistant(): JSX.Element {
       <div className="radar-page icp-page">
         <h1>AVA liest mit …</h1>
         <p className="radar-sub">
-          Websites werden analysiert — das dauert je nach Anzahl 1–3 Minuten.
+          {importText && progress.some((p) => /Abschnitt|Formular/.test(p.text))
+            ? "Dein bestehendes ICP wird mit deinem Modell verdichtet — bei langen Dokumenten dauert das ein bis zwei Minuten."
+            : "Websites werden analysiert — das dauert je nach Anzahl 1–3 Minuten."}
         </p>
         <div className="icp-progress">
           {progress.map((p, i) => {
@@ -317,14 +509,29 @@ export function IcpAssistant(): JSX.Element {
               ? "per Assistent erstellt"
               : quelle === "chat"
                 ? "im Chat erfasst"
-                : "von Hand gepflegt"}
+                : quelle === "dokument"
+                  ? "aus deinem bestehenden ICP übernommen"
+                  : "von Hand gepflegt"}
             .
           </>
         )}{" "}
         <button className="icp-linkbtn" onClick={() => setMode("intro")}>
           Neu aus Websites erstellen
         </button>
+        {" · "}
+        <button
+          className="icp-linkbtn"
+          onClick={() => {
+            setNotice(null);
+            setMode("import");
+          }}
+        >
+          Bestehendes ICP übernehmen
+        </button>
       </p>
+      {importFehlend.length > 0 && (
+        <div className="radar-hint">Im Dokument nicht belegt, bitte ergänzen: {importFehlend.join(", ")}.</div>
+      )}
       {radiusHint && <div className="radar-hint">{radiusHint}</div>}
       {analysisNotes.length > 0 && (
         <div className="radar-hint">{analysisNotes.join(" ")}</div>

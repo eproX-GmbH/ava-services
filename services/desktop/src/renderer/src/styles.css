@@ -8092,6 +8092,51 @@ tr.held-row td:first-child::after {
   align-items: center;
 }
 
+/* Dritter Weg: bestehendes ICP aus Dokument/Freitext (2026-10-14) ------- */
+.icp-wege {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 1rem;
+}
+.icp-weg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--color-bg-0, transparent);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.icp-weg span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.icp-weg:hover { border-color: color-mix(in srgb, var(--color-brand-500, #00c0a7) 55%, var(--border)); }
+.icp-weg--aktiv { border-color: var(--color-brand-500, #00c0a7); background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 7%, transparent); cursor: default; }
+.icp-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 16px;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.icp-drop svg { flex: none; color: var(--color-brand-500, #00c0a7); }
+.icp-drop strong { color: var(--fg); font-weight: 600; }
+.icp-drop:hover, .icp-drop:focus-visible { border-color: var(--color-brand-500, #00c0a7); outline: none; }
+.icp-drop--over { border-color: var(--color-brand-500, #00c0a7); background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 8%, transparent); }
+.icp-drop--datei { border-style: solid; border-color: color-mix(in srgb, var(--color-brand-500, #00c0a7) 55%, var(--border)); }
+.icp-oder { text-align: center; font-size: 12px; color: var(--muted); }
+.icp-zaehler { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; align-self: flex-end; }
+
 /* I2 ICP-Assistent — Stepper ------------------------------------------- */
 .icp-progress {
   margin-top: 1rem;

@@ -220,7 +220,7 @@ export interface IcpDto {
   merkmale: string[];
   ausschluesse: string;
   kundenBeispiele: Array<{ domain: string; name?: string; ort?: string }>;
-  quelle: "assistent" | "manuell" | "chat" | null;
+  quelle: "assistent" | "manuell" | "chat" | "dokument" | null;
   updatedAt: string | null;
   gesetzt: boolean;
   /** v0.1.574 — Pflichtfelder fuer den Radar erfuellt (Ort, Branchen, Beschreibung/Angebot). */
@@ -501,6 +501,11 @@ const api = {
         }
       | { error: string }
     > => ipcRenderer.invoke("icpAssistant:analyze", args),
+    /** Bestehendes ICP (Dokument/Freitext) in das Formular verdichten — Entwurf, nicht gespeichert. */
+    icpAusText: (args: { text: string; quelle: string }): Promise<
+      | { icp: Partial<Omit<IcpDto, "gesetzt" | "vollstaendig" | "fehlend">>; fehlend: string[]; hinweise: string[]; zeichen: number; abschnitte: number }
+      | { error: string }
+    > => ipcRenderer.invoke("icpAssistant:ausText", args),
     onIcpProgress: (
       handler: (p: { step: number; total: number; text: string }) => void,
     ): (() => void) => {

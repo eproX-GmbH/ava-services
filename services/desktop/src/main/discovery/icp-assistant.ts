@@ -509,3 +509,142 @@ export async function runIcpAnalysis(
   };
   return { icp, eigene, kunden, kundenFehlgeschlagen, radiusBegruendung, hinweise };
 }
+
+// ---- Dritter Weg: bestehendes ICP aus Dokument oder Freitext --------------
+//
+// Viele Firmen haben ihr ICP schon ausfuehrlich beschrieben (Confluence, Word,
+// PDF). Statt das ganze Dokument in jeden Kontext zu schleppen, verdichtet AVA
+// es EINMAL in ihr eigenes Formular. Lange Texte werden in Abschnitten
+// vorverdichtet (Notizen je Abschnitt), dann folgt eine Synthese in die
+// Formularfelder. Laeuft wie der Website-Pfad ueber das Modell des Nutzers
+// (LlmProviderManager: eigener Schluessel, Orga-Schluessel, ChatGPT-Abo oder
+// lokales Modell) — nie ueber die Betreiber-Spur.
+
+const ABSCHNITT_ZEICHEN = 12_000;
+const DIREKT_BIS_ZEICHEN = 24_000;
+const MAX_ABSCHNITTE = 12;
+
+const notizenSchema = yup.object({
+  notizen: clampList(400, 30),
+});
+
+const importSchema = yup.object({
+  beschreibung: clampString(2000).default(""),
+  angebot: clampString(600).default(""),
+  nutzen: clampString(600).default(""),
+  branchen: clampList(60, 12),
+  orte: clampList(60, 10),
+  radiusKm: yup.number().transform((v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.min(200, Math.round(Number(v))) : undefined)).optional(),
+  groesse: clampString(200).default(""),
+  merkmale: clampList(120, 10),
+  ausschluesse: clampString(500).default(""),
+  kundenBeispiele: clampList(120, 5),
+  fehlend: clampList(80, 10),
+});
+
+export interface IcpImportErgebnis {
+  icp: Partial<IcpProfile>;
+  /** Felder, die im Text keine belastbare Grundlage hatten (Formularbegriffe). */
+  fehlend: string[];
+  hinweise: string[];
+  zeichen: number;
+  abschnitte: number;
+}
+
+function abschnitte(text: string): string[] {
+  const t = text.replace(/\r/g, "");
+  if (t.length <= ABSCHNITT_ZEICHEN) return [t];
+  const aus: string[] = [];
+  let rest = t;
+  while (rest.length > 0 && aus.length < MAX_ABSCHNITTE) {
+    if (rest.length <= ABSCHNITT_ZEICHEN) {
+      aus.push(rest);
+      break;
+    }
+    // An einem Absatz- oder Satzende trennen, damit nichts mitten im Satz reisst.
+    const fenster = rest.slice(0, ABSCHNITT_ZEICHEN);
+    const schnitt = Math.max(fenster.lastIndexOf("\n\n"), fenster.lastIndexOf("\n"), fenster.lastIndexOf(". "));
+    const bei = schnitt > ABSCHNITT_ZEICHEN * 0.5 ? schnitt + 1 : ABSCHNITT_ZEICHEN;
+    aus.push(rest.slice(0, bei));
+    rest = rest.slice(bei);
+  }
+  return aus;
+}
+
+export async function icpAusText(
+  providers: LlmProviderManager,
+  input: { text: string; quelle: string },
+  onProgress: (p: IcpAnalysisProgress) => void,
+): Promise<IcpImportErgebnis | { error: string }> {
+  const text = input.text.trim();
+  if (text.length < 80) return { error: "Der Text ist zu kurz, um ein Idealkundenprofil daraus abzuleiten." };
+  if (!providers.getStatus().ready) return { error: "Kein KI-Modell bereit. Richte unter Einstellungen → Modelle einen Zugang ein." };
+  const teile = text.length > DIREKT_BIS_ZEICHEN ? abschnitte(text) : [text];
+  const total = teile.length > 1 ? teile.length + 1 : 1;
+  const hinweise: string[] = [];
+  let grundlage = text;
+
+  if (teile.length > 1) {
+    const notizen: string[] = [];
+    for (let i = 0; i < teile.length; i++) {
+      onProgress({ step: i + 1, total, text: `Abschnitt ${i + 1} von ${teile.length} lesen (${input.quelle})` });
+      const system =
+        "Du liest einen Abschnitt eines Dokuments, in dem ein B2B-Anbieter sein Idealkundenprofil (ICP) " +
+        "beschreibt. Notiere NUR Fakten, die fuer ein ICP zaehlen: Angebot und Nutzen des Anbieters, " +
+        "Zielbranchen, Firmengroesse, Regionen/Standorte, Merkmale idealer Kunden, Ausschluesse, " +
+        "Beispielkunden (Firmennamen oder Domains, KEINE Personennamen), Kauf-/Entscheidungssignale. " +
+        "Keine Vermutungen, nichts erfinden, Zahlen woertlich uebernehmen. " +
+        'Antworte NUR als JSON: {"notizen": ["ein Fakt je Eintrag, max. 30"]}';
+      const r = await llmJson(providers, system, teile[i]!, "icpimp", notizenSchema);
+      if (r.ok) notizen.push(...cleanList(r.value.notizen));
+      else hinweise.push(`Abschnitt ${i + 1} konnte nicht ausgewertet werden (${r.detail}).`);
+    }
+    if (notizen.length === 0) return { error: `Aus dem Dokument liessen sich keine ICP-Fakten lesen. ${hinweise[0] ?? ""}`.trim() };
+    grundlage = `NOTIZEN AUS DEM DOKUMENT (${teile.length} Abschnitte):\n- ${notizen.join("\n- ")}`;
+    if (teile.length === MAX_ABSCHNITTE && text.length > MAX_ABSCHNITTE * ABSCHNITT_ZEICHEN) {
+      hinweise.push(`Nur die ersten ${MAX_ABSCHNITTE} Abschnitte (ca. ${Math.round((MAX_ABSCHNITTE * ABSCHNITT_ZEICHEN) / 1000)}k Zeichen) wurden gelesen.`);
+    }
+  }
+
+  onProgress({ step: total, total, text: "Formular aus dem bestehenden ICP ableiten" });
+  const system =
+    "Du uebertraegst ein bestehendes Idealkundenprofil (ICP) eines B2B-Anbieters in ein festes " +
+    "Formular. Uebernimm NUR, was der Text belegt; fehlt etwas, lass das Feld leer und nenne es in " +
+    "\"fehlend\". Keine Vermutungen, keine Personennamen. Felder:\n" +
+    "- angebot: 1-2 Saetze, was der Anbieter anbietet.\n" +
+    "- nutzen: welches Problem er loest / Nutzenversprechen.\n" +
+    "- branchen: 2-8 uebergeordnete Zielbranchen.\n" +
+    "- orte: Heimat- oder Zielregionen als Ortsnamen (z. B. \"Hannover\", \"Wien (AT)\"); leer, wenn nur Laender oder nichts genannt.\n" +
+    "- radiusKm: Umkreis in km, nur wenn der Text einen nennt.\n" +
+    "- groesse: Groessenband idealer Kunden (Mitarbeiter, Umsatz, Standorte) als Freitext.\n" +
+    "- merkmale: bis zu 10 verallgemeinerte Eigenschaften idealer Kunden (Situation, Signale, Technik, Struktur).\n" +
+    "- ausschluesse: wer explizit NICHT passt, als Freitext.\n" +
+    "- kundenBeispiele: bis zu 5 genannte Beispiel- oder Referenzkunden als Website-Domain, wenn eine im Text steht, sonst Firmenname.\n" +
+    "- beschreibung: 3-6 Saetze in Du-Form aus Sicht des Anbieters (\"Deine idealen Kunden sind ...\"), konkret, " +
+    "als Verdichtung des ganzen Dokuments, ohne Marketing-Floskeln.\n" +
+    'Antworte NUR als JSON: {"beschreibung": "...", "angebot": "...", "nutzen": "...", "branchen": [], "orte": [], ' +
+    '"radiusKm": 50, "groesse": "...", "merkmale": [], "ausschluesse": "...", "kundenBeispiele": [], "fehlend": []}';
+  const r = await llmJson(providers, system, grundlage.slice(0, 60_000), "icpimp2", importSchema);
+  if (!r.ok) return { error: `Das Modell konnte das Formular nicht ableiten (${r.detail}).` };
+  const v = r.value;
+  const kunden: IcpKundenBeispiel[] = [];
+  for (const k of cleanList(v.kundenBeispiele)) {
+    const d = domainFromUrl(k);
+    if (d) kunden.push({ domain: d, name: k });
+  }
+  const icp: Partial<IcpProfile> = {
+    beschreibung: v.beschreibung,
+    angebot: v.angebot,
+    nutzen: v.nutzen,
+    branchen: cleanList(v.branchen),
+    orte: cleanList(v.orte),
+    ...(v.radiusKm ? { radiusKm: v.radiusKm } : {}),
+    groesse: v.groesse,
+    merkmale: cleanList(v.merkmale),
+    ausschluesse: v.ausschluesse,
+    kundenBeispiele: kunden,
+  };
+  const ohneDomain = cleanList(v.kundenBeispiele).length - kunden.length;
+  if (ohneDomain > 0) hinweise.push(`${ohneDomain} Beispielkunde${ohneDomain === 1 ? "" : "n"} ohne Website im Text — bitte Domains bei K9 nachtragen.`);
+  return { icp, fehlend: cleanList(v.fehlend), hinweise, zeichen: text.length, abschnitte: teile.length };
+}

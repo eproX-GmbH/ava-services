@@ -10,7 +10,8 @@ import type { GatewayClient } from "../gateway-client";
 import type { LlmProviderManager } from "../providers";
 import type { IcpStore } from "../icp-store";
 import type { Tool } from "../types";
-import { runIcpAnalysis, buildCustomerInputs } from "../../discovery/icp-assistant";
+import { runIcpAnalysis, buildCustomerInputs, icpAusText } from "../../discovery/icp-assistant";
+import type { AttachmentStore, StagedAttachment } from "../attachment-store";
 import { domainFromUrl } from "../../discovery/scan";
 import { fillProfileFromIcp } from "../icp-profile-sync";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
@@ -23,6 +24,13 @@ export interface IcpToolDeps {
   customerStore: CustomerProfileStore;
   /** ICP→Profil-Bruecke: leere Profil-Felder aus dem ICP ergaenzen. */
   profile: UserProfileStore;
+  /** Hochgeladene Dateien der Unterhaltung (fuer icp_aus_dokument). */
+  attachments?: AttachmentStore;
+}
+
+function textVonDatei(d: StagedAttachment): string {
+  if (d.seiten && d.seiten.length > 0) return d.seiten.join("\n\n");
+  return "";
 }
 
 export function buildIcpTools(deps: IcpToolDeps): Tool[] {
@@ -115,6 +123,61 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
     },
   });
 
+  // Dritter Weg (2026-10-14): bestehendes ICP aus Dokument oder Freitext verdichten.
+  const ausDokument = defineTool({
+    name: "icp_aus_dokument",
+    summary:
+      "Bestehendes Idealkundenprofil aus einem Dokument (hochgeladene PDF/Word-Datei) oder eingefuegtem Text in das ICP-Formular verdichten (Entwurf, KEIN Speichern).",
+    category: "icp idealkunden assistent dokument import discovery",
+    description:
+      "Wenn der Nutzer sein ICP schon beschrieben hat (Confluence-Export, Word, PDF, langer Text): " +
+      "liest das Dokument EINMAL und verdichtet es in die Formularfelder (Angebot, Nutzen, Branchen, " +
+      "Orte, Groesse, Merkmale, Ausschluesse, Beispielkunden, Beschreibung). Entweder `datei` " +
+      "(Name oder Handle einer hochgeladenen Datei) oder `text` angeben. Dauert bei langen Dokumenten " +
+      "1-2 Minuten. WICHTIG: Ergebnis ist NUR ein Entwurf — zeige ihn dem Nutzer kompakt, nenne die " +
+      "nicht belegten Felder und speichere erst nach Bestaetigung via icp_set. Das Dokument bleibt lokal.",
+    parameters: {
+      type: "object",
+      properties: {
+        datei: { type: "string", description: "Dateiname oder Handle einer hochgeladenen Datei (PDF, DOCX, TXT)." },
+        text: { type: "string", description: "Das ICP als Text, wenn keine Datei vorliegt." },
+      },
+    },
+    schema: yup.object({
+      datei: yup.string().trim().min(1).max(200).optional(),
+      text: yup.string().trim().min(80).max(200_000).optional(),
+    }),
+    preview: (r) => {
+      const res = r as { error?: string; fehlend?: string[]; abschnitte?: number };
+      if (res.error) return res.error;
+      return `ICP-Entwurf aus Dokument (${res.abschnitte ?? 1} Abschnitt${(res.abschnitte ?? 1) === 1 ? "" : "e"}${res.fehlend?.length ? `, offen: ${res.fehlend.join(", ")}` : ""})`;
+    },
+    run: async (args, ctx) => {
+      let text = args.text ?? "";
+      let quelle = "eingefuegter Text";
+      if (args.datei) {
+        if (!deps.attachments) return { error: "Dateien stehen hier nicht zur Verfuegung." };
+        const r = deps.attachments.aufloesen(ctx.conversationId, args.datei);
+        if ("fehler" in r) return { error: r.fehler, kandidaten: r.kandidaten };
+        text = textVonDatei(r.datei);
+        quelle = r.datei.filename;
+        if (text.trim().length < 80) return { error: `"${r.datei.filename}" enthaelt keinen lesbaren Text.` };
+      }
+      if (text.trim().length < 80) return { error: "Bitte `datei` oder `text` (mindestens 80 Zeichen) angeben." };
+      const result = await icpAusText(deps.providers, { text, quelle }, (p) => ctx.log(`icp_aus_dokument: ${p.text} (${p.step}/${p.total})`));
+      if ("error" in result) return { error: result.error };
+      return {
+        entwurf: result.icp,
+        fehlend: result.fehlend,
+        hinweise: result.hinweise,
+        quelle,
+        abschnitte: result.abschnitte,
+        zeichen: result.zeichen,
+        naechsterSchritt: "Entwurf dem Nutzer kompakt zeigen; nach Bestaetigung mit icp_set speichern.",
+      };
+    },
+  });
+
   const assist = defineTool({
     name: "icp_assist_from_urls",
     summary:
@@ -192,5 +255,5 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
     },
   });
 
-  return [get, set, assist];
+  return [get, set, assist, ausDokument];
 }

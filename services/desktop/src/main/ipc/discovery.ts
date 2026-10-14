@@ -6,7 +6,7 @@ import { ipcMain } from "electron";
 import { fillProfileFromIcp } from "../agent/icp-profile-sync";
 import { radarActivity } from "../discovery/activity";
 import { decideCandidates } from "../discovery/decide";
-import { buildCustomerInputs, runIcpAnalysis } from "../discovery/icp-assistant";
+import { buildCustomerInputs, icpAusText, runIcpAnalysis } from "../discovery/icp-assistant";
 import { listCandidatesWithMatches } from "../discovery/list";
 import { runMatch } from "../discovery/matcher";
 import { domainFromUrl } from "../discovery/scan";
@@ -126,6 +126,26 @@ export function registerDiscoveryIpc(deps: DiscoveryIpcDeps): void {
     vollstaendig: icpStore.isComplete(),
     fehlend: icpStore.fehlendeFelder(),
   }));
+
+  // Dritter Weg: bestehendes ICP aus Dokument/Freitext in das Formular verdichten.
+  ipcMain.handle(
+    "icpAssistant:ausText",
+    async (e, args: { text: string; quelle: string }) => {
+      if (icpAnalysisRunning.current) return { error: "Es laeuft bereits eine Analyse." };
+      icpAnalysisRunning.current = true;
+      try {
+        return await icpAusText(providers, { text: String(args?.text ?? ""), quelle: String(args?.quelle ?? "Text") }, (p) => {
+          try {
+            e.sender.send("icpAssistant:progress", p);
+          } catch {
+            /* Fenster ggf. geschlossen */
+          }
+        });
+      } finally {
+        icpAnalysisRunning.current = false;
+      }
+    },
+  );
 
   ipcMain.handle(
     "icpAssistant:analyze",
