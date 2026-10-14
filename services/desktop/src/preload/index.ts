@@ -369,12 +369,6 @@ const api = {
   },
 
   // v0.1.424 — Publikations-Analyse-Modus (lazy/eager).
-  publication: {
-    getAnalysisMode: (): Promise<"lazy" | "eager"> =>
-      ipcRenderer.invoke("publication:getAnalysisMode"),
-    setAnalysisMode: (mode: "lazy" | "eager"): Promise<"lazy" | "eager"> =>
-      ipcRenderer.invoke("publication:setAnalysisMode", mode),
-  },
 
   // Phase 3 Firmen-Discovery — Radar-Kandidaten-Tabelle.
   // (IcpDto: siehe Typ-Definition am Dateiende-Bereich der Discovery-API.)

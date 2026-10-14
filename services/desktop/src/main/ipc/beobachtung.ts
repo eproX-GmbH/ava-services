@@ -21,31 +21,8 @@ export interface BeobachtungIpcDeps {
 export function registerBeobachtungIpc(deps: BeobachtungIpcDeps): void {
   const { audit, broadcastWatchesChanged, linkMonitorSupervisor, publicationStore, watchStore } = deps;
 
-  ipcMain.handle("publication:getAnalysisMode", () =>
-    publicationStore.getMode(),
-  );
-
-  ipcMain.handle(
-    "publication:setAnalysisMode",
-    (_e, mode: "lazy" | "eager") => {
-      const next = publicationStore.setMode(mode);
-      audit({
-        actorType: "user",
-        actorId: null,
-        category: "producer",
-        action: "publication.analysis-mode",
-        severity: "info",
-        subjectType: null,
-        subjectId: null,
-        summary:
-          next === "eager"
-            ? "Publikations-Analyse auf VOLLSTAENDIG (eager) gestellt — jeder Block wird per LLM analysiert"
-            : "Publikations-Analyse auf SPARSAM (lazy) gestellt — nur trend-relevante Bloecke",
-        metadata: { mode: next },
-      });
-      return next;
-    },
-  );
+  // 2026-10-14: Der Publikations-Analysemodus ist keine Nutzereinstellung mehr
+  // (Verarbeitung ueber AVAs Modell, fest "lazy"); der Store bleibt fuer die Env.
 
   // Watches IPC (Phase 8.t2). Read-only views + remove / pause /
   // resume mutations for the Settings panel + topbar chip popover.

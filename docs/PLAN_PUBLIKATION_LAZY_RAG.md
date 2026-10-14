@@ -136,3 +136,14 @@ der Chat-Agent ruft einfach `publication_search` mit der Rohfrage auf.
 | PB4 | ~½ Tag | |
 
 PB1 ist unabhängig auslieferbar und bringt den Großteil der Ersparnis.
+
+## Stand 2026-10-14 (v0.1.851)
+
+Der Modus ist keine Nutzereinstellung mehr: Die Publikations-Analyse laeuft ueber AVAs
+Modell (Betreiber-Spur, docs/PLAN_ABRECHNUNG_ZUGANG.md Z1/Z2) und damit fest im
+sparsamen Modus (`AVA_PUBLICATION_ANALYSIS=lazy`, PublicationStore liefert nur noch die
+Env). Entfernt: Settings-Sektion „Publikations-Analyse", Chat-Werkzeug
+`publication_analysis_config`, IPC/Preload `publication:*AnalysisMode`, Hinweis
+„Sparsame Analyse aktiv" im Finanzen-Reiter. Ebenfalls entfernt (Joyce): die
+Modell-Tier-Pillen je Reiter in der Firmenansicht — `llmTier`/`llmModel` bleiben in
+ContentFreshness fuer den Betreiber erhalten.

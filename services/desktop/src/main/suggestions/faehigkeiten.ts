@@ -24,7 +24,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "abrechnung", text: "Plan, Aufnahmen nach Stufe (klein/mittel/gross), voraussichtliche Kosten und Ausgabenlimit nachsehen oder das Limit setzen", tools: ["abrechnung_status", "abrechnung_limit_setzen"] },
   { id: "icp_abgleich", text: "Welche Firmen aus dem eigenen Bestand passen am besten zum ICP oder zu einer konkreten Anfrage (Rangliste mit Begruendung)", tools: ["icp_bestand_abgleich"] },
   { id: "radar", text: "Firmen-Radar: Scan in einer Region starten, Kandidaten mit Mini-Profil und ICP-Score ansehen, importieren oder verwerfen, Automatik und Deckel einstellen, Live-Stand", tools: ["discovery_*", "radar_config", "radar_activity", "geo_places_nearby"] },
-  { id: "publikationen", text: "Jahresabschluesse und Publikationen einer Firma durchsuchen", tools: ["publication_search", "publication_analysis_config"] },
+  { id: "publikationen", text: "Jahresabschluesse und Publikationen einer Firma durchsuchen", tools: ["publication_search"] },
   { id: "hubspot", text: "HubSpot verbinden und nutzen: Firmen, Kontakte, Deals, Aufgaben, Notizen lesen, anlegen, aktualisieren, verknuepfen; Firmen aus AVA mit HubSpot verknuepfen", tools: ["crm_*", "connect_crm", "disconnect_crm"] },
   { id: "notion", text: "Notion verbinden, Datenbanken und Seiten lesen, anlegen, aktualisieren", tools: ["notion_*"] },
   { id: "obsidian", text: "Obsidian verbinden, Notizen lesen, anlegen, aendern, Tags und Ordner", tools: ["obsidian_*"] },

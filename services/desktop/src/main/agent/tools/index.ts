@@ -211,12 +211,10 @@ export function buildReadOnlyRegistry(deps: {
   getPersonenRadarSupervisor: () => import("../../linkedin/personen-radar/supervisor").PersonenRadarSupervisor | null;
   /** T5 — Firmen des Tenants fuer firmenuebergreifende Abfragen. */
   getTenantCompanyIds: () => Promise<string[]>;
-  getPublicationMode?: () => "lazy" | "eager";
   /** Feste Anhänge für Mail-Entwürfe (docs/PLAN_MAIL_ENTWURF.md E8). */
   festeAnhaenge?: FesteAnhaenge;
   /** Chat-Uploads, aus denen feste Anhänge übernommen werden. */
   chatAnhaenge?: AttachmentStore;
-  setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
   /** 2026-09-24 — manueller Recherche-Lauf: OpenAI-Schluessel vorhanden, und woher? */
@@ -315,10 +313,8 @@ export function buildReadOnlyRegistry(deps: {
     registry.register(t);
   for (const t of buildSettingsTools({
     providers: deps.providers,
-    getPublicationMode: deps.getPublicationMode,
     festeAnhaenge: deps.festeAnhaenge,
     chatAnhaenge: deps.attachments,
-    setPublicationMode: deps.setPublicationMode,
   }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))

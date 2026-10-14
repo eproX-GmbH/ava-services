@@ -1857,9 +1857,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     listAccounts: () => listAccounts(),
     refreshPolicy: () => checkTenantChange("Vorgaben per Chat geaendert").then(() => getOrgPolicy()),
     getTenantCompanyIds: () => collectTenantCompanyIds(gatewayClient, 250),
-    getPublicationMode: () => publicationStore.getMode(),
     festeAnhaenge,
-    setPublicationMode: (mode: "lazy" | "eager") => publicationStore.setMode(mode),
     discoveryAudit: ({ action, severity, summary, metadata }) => {
       audit({
         actorType: "system",

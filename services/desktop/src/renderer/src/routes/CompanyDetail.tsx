@@ -429,32 +429,6 @@ interface CompanyStateResponse {
   stages: Record<string, StageState>;
 }
 
-const TIER_LETTER: Record<number, string> = { 4: "S", 3: "A", 2: "B", 1: "C" };
-const TIER_LABEL: Record<number, string> = {
-  4: "Tier S · Frontier",
-  3: "Tier A · Strong cloud",
-  2: "Tier B · Solid cloud / large local",
-  1: "Tier C · Lokal / klein",
-};
-const TIER_DESCRIPTION =
-  "AVA klassifiziert jedes LLM in einen Tier S/A/B/C, siehe MODEL_TIERS.md. " +
-  "Höhere Tiers liefern verlässlichere Daten; tiefe Tiers können halluzinieren.";
-const STAGE_LABEL: Record<string, string> = {
-  "structured-content": "Stamm-Daten",
-  "company-publication": "Publikationen",
-  website: "Website",
-  "company-profile": "Profil",
-  "company-contact": "Kontakt",
-  "company-email": "E-Mail",
-};
-/** Map tier 1..4 onto the `.dot.<class>` palette. */
-const TIER_DOT: Record<number, string> = {
-  4: "ok",
-  3: "ok",
-  2: "warn",
-  1: "bad",
-};
-
 // ---- Page ------------------------------------------------------------------
 
 export function CompanyDetail() {
@@ -815,15 +789,9 @@ export function CompanyDetail() {
       </nav>
 
       <div className="tab-body">
-        {/* v0.1.104 — per-tab tier pills replace the old top-of-page
-         *  Datenqualität banner. Each tab advertises ONLY the LLM-driven
-         *  stages whose data feeds it; non-LLM stages (structured-content,
-         *  publications) render no badge because there's no model
-         *  reliability story to tell. */}
-        <TabTierBadges
-          stages={stageState.data?.stages ?? null}
-          stageKeys={STAGES_FOR_TAB[tab]}
-        />
+        {/* 2026-10-14: keine Modell-Tier-Pillen mehr in der Oberflaeche — die
+         *  Verarbeitung laeuft ueber AVAs Modell; das Tier bleibt in den Daten
+         *  (ContentFreshness) fuer den Betreiber. */}
         {tab === "overview" && (
           <InsolvenzAbschnitt
             companyId={id!}
@@ -895,104 +863,6 @@ function KpiTile({
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">{children}</div>
     </div>
-  );
-}
-
-// ---- Per-tab Tier-Badges (v0.1.104) ---------------------------------------
-//
-// Replaces the old top-of-page "Datenqualität" banner with a compact pill
-// rendered inside each tab's body. Only LLM-driven stages get a badge —
-// the user only cares about provenance when an AI model produced the
-// numbers. Non-LLM scrape stages (structured-content, publications) are
-// silent.
-//
-// Each pill is a small `Tier B · gpt-5-mini ⓘ` row, with the full
-// per-stage description in the native title attribute (hover popover).
-
-function TabTierBadges({
-  stages,
-  stageKeys,
-}: {
-  stages: Record<string, StageState> | null;
-  stageKeys: string[];
-}) {
-  if (!stages || stageKeys.length === 0) return null;
-  const visible = stageKeys
-    .map((k) => ({ key: k, stage: stages[k] }))
-    .filter(
-      (x): x is { key: string; stage: StageState } =>
-        x.stage != null && x.stage.llmTier != null
-    );
-  if (visible.length === 0) return null;
-  return (
-    <div
-      className="tab-tier-badges"
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "0.4rem",
-        marginBottom: "0.75rem",
-      }}
-    >
-      {visible.map(({ key, stage }) => (
-        <TabTierPill key={key} stageKey={key} stage={stage} />
-      ))}
-    </div>
-  );
-}
-
-function TabTierPill({
-  stageKey,
-  stage,
-}: {
-  stageKey: string;
-  stage: StageState;
-}) {
-  const stageLabel = STAGE_LABEL[stageKey] ?? stageKey;
-  const tierLetter = stage.llmTier ? TIER_LETTER[stage.llmTier] : "?";
-  const tierFull = stage.llmTier ? TIER_LABEL[stage.llmTier] : "Tier ?";
-  const dotClass = stage.llmTier ? TIER_DOT[stage.llmTier] : "muted";
-  const updated = stage.updatedAt ? fmtDate(stage.updatedAt) : null;
-  // Tooltip lines kept as an array so the CSS-driven popover can
-  // render them with proper line breaks instead of relying on \n in
-  // a native title attribute. The browser-native title path had a
-  // ~1.5s hover delay and reset on any mouse jitter, which the user
-  // experienced as "not reactive enough".
-  const tooltipLines = [
-    `${stageLabel} · ${tierFull}`,
-    stage.llmModel ? `Modell: ${stage.llmModel}` : null,
-    updated ? `aktualisiert: ${updated}` : null,
-  ].filter((line): line is string => Boolean(line));
-  return (
-    <span className="tab-tier-pill">
-      <span
-        className={`dot ${dotClass}`}
-        aria-hidden="true"
-        style={{ flex: "0 0 auto" }}
-      />
-      <span className="tab-tier-pill__stage">{stageLabel}</span>
-      <span className="tab-tier-pill__sep">·</span>
-      <span className="tab-tier-pill__tier">Tier {tierLetter}</span>
-      {stage.llmModel && (
-        <>
-          <span className="tab-tier-pill__sep">·</span>
-          <span className="tab-tier-pill__model">{stage.llmModel}</span>
-        </>
-      )}
-      <span className="tab-tier-pill__info" aria-hidden="true">
-        ⓘ
-      </span>
-      <span className="tab-tier-pill__tooltip" role="tooltip">
-        {tooltipLines.map((line, i) => (
-          <span key={i} className="tab-tier-pill__tooltip-line">
-            {line}
-          </span>
-        ))}
-        <span className="tab-tier-pill__tooltip-line tab-tier-pill__tooltip-line--desc">
-          {TIER_DESCRIPTION}
-        </span>
-      </span>
-    </span>
   );
 }
 
@@ -1426,7 +1296,6 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
           is on top. */}
       <section style={{ gridColumn: "1 / -1", display: "grid", gap: "1rem" }}>
         <h3 style={{ margin: 0 }}>Jahresberichte</h3>
-        <PublicationModeHint />
         {[...pubs].reverse().map((p, i) => (
           <PublicationCard key={i} pub={p} />
         ))}
@@ -3171,30 +3040,3 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
   );
 }
 
-/** v0.1.429 — PB4: Im Sparmodus wissen lassen, dass Details nicht fehlen,
- *  sondern per Chat-Frage on-the-fly geholt werden (publication_search). */
-function PublicationModeHint() {
-  const [mode, setMode] = useState<"lazy" | "eager" | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void window.api.publication
-      .getAnalysisMode()
-      .then((m) => {
-        if (alive) setMode(m);
-      })
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, []);
-  if (mode !== "lazy") return null;
-  return (
-    <p className="muted small" style={{ margin: 0 }}>
-      Sparsame Analyse aktiv: Vorab extrahiert werden nur Kernzahlen und
-      Lagebericht-Aussagen. Der vollständige Jahresabschluss ist trotzdem
-      durchsuchbar — stell deine Detailfrage einfach im Chat (z.&nbsp;B. „Wie
-      haben sich die Umsatzerlöse entwickelt?“). Vollständige Voranalyse:
-      Einstellungen&nbsp;→ Modelle&nbsp;→ Publikations-Analyse.
-    </p>
-  );
-}

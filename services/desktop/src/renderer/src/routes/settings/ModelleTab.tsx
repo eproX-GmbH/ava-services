@@ -1,6 +1,5 @@
 import { ProviderSection, VoiceSection } from "../Settings";
 import { ResearchFeaturesSection } from "./ResearchFeaturesSection";
-import { PublicationAnalysisSection } from "./PublicationAnalysisSection";
 import { SprachmodusSection } from "./SprachmodusSection";
 
 // Modelle-Tab — LLM-Provider + Spracherkennung (Whisper) +
@@ -16,7 +15,6 @@ export function ModelleTab() {
   return (
     <>
       <ProviderSection />
-      <PublicationAnalysisSection />
       <ResearchFeaturesSection />
       <SprachmodusSection />
       <VoiceSection />
