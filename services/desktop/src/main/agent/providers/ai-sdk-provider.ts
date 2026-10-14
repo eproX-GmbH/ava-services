@@ -10,6 +10,7 @@ import {
   createOpenAIPlanModel,
   getCachedPlanModelle,
   listePlanModelle,
+  planFehlerText,
   standardPlanModell,
 } from "./openai-subscription-model";
 import type { OpenAISubscriptionRecord } from "./store";
@@ -963,6 +964,14 @@ function humanizeProviderError(
   // code "chatgpt_plan" und einen fertigen deutschen Text (planFehlerText).
   // Der darf nicht in der API-Key-Sprache enden („API-Key pruefen“).
   const planQuelle = `${raw} ${detail ?? ""}`;
+  // v0.1.853 — Plan-Fehler, die OpenAI als Ereignis IM Stream schickt
+  // (Status 200, also nicht vom Plan-Fetch abgefangen), tragen die
+  // subscription_sharing_*-Codes; gleicher deutscher Text wie beim
+  // HTTP-Fehler.
+  if (authMode === "subscription" && planQuelle.includes("subscription_sharing_")) {
+    const t = planFehlerText(0, planQuelle);
+    if (t) return `ChatGPT-Abo: ${t}`;
+  }
   if (planQuelle.includes("chatgpt_plan")) {
     const m = /"message"\s*:\s*"([^"]{10,400})"/.exec(planQuelle);
     return `ChatGPT-Abo: ${m?.[1] ?? "Die Anfrage ueber dein ChatGPT-Abo wurde abgelehnt. Pruefe chatgpt.com/settings/usage oder verbinde dich in den Einstellungen neu."}`;
