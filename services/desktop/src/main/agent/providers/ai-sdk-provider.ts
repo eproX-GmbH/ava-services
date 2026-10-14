@@ -595,12 +595,11 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
               cause: err instanceof Error ? (err as { cause?: unknown }).cause : undefined,
               stack: err instanceof Error ? err.stack : undefined,
             });
-            const rawMsg =
-              err instanceof Error
-                ? err.message
-                : typeof err === "string"
-                  ? err
-                  : "ai-sdk stream error";
+            // v0.1.852 — der OpenAI-Provider liefert Fehler aus dem
+            // Stream als nackte Objekte ({code, message, type}), nicht
+            // als Error. Vorher endete das als „ai-sdk stream error“
+            // ohne jede Ursache; jetzt lesen wir message/code heraus.
+            const rawMsg = streamFehlerText(err);
             const up = extractUpstreamDetail(err);
             const msg = humanizeProviderError(
               this.kind,
@@ -873,6 +872,44 @@ function buildToolSet(specs: OllamaToolSpec[]): ToolSet {
 // `unsupported tool type`, …). Den heben wir hoch, damit er in der
 // Chat-Meldung sichtbar wird — sonst ist der Fehler ohne Konsolen-/Log-Zugriff
 // nicht diagnostizierbar. Entpackt rekursiv die `cause`-Kette.
+/**
+ * Lesbarer Text aus einem Stream-Fehler: Error.message, String oder
+ * bei Objekten message / error.message / code / type, sonst JSON.
+ */
+function streamFehlerText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    const inner =
+      e.error && typeof e.error === "object"
+        ? (e.error as Record<string, unknown>)
+        : undefined;
+    const message =
+      typeof e.message === "string"
+        ? e.message
+        : typeof inner?.message === "string"
+          ? inner.message
+          : undefined;
+    const code =
+      typeof e.code === "string"
+        ? e.code
+        : typeof inner?.code === "string"
+          ? inner.code
+          : typeof e.type === "string"
+            ? e.type
+            : undefined;
+    if (message) return code ? `${message} (${code})` : message;
+    if (code) return code;
+    try {
+      return JSON.stringify(err).slice(0, 400);
+    } catch {
+      /* nicht serialisierbar */
+    }
+  }
+  return "ai-sdk stream error";
+}
+
 function extractUpstreamDetail(err: unknown): {
   detail?: string;
   status?: number;
@@ -898,6 +935,13 @@ function extractUpstreamDetail(err: unknown): {
   if (!body && e.cause && typeof e.cause === "object") {
     const inner = extractUpstreamDetail(e.cause);
     return { detail: inner.detail, status: status ?? inner.status };
+  }
+  if (!body && !(err instanceof Error) && (e.message != null || e.code != null || e.error != null)) {
+    try {
+      body = JSON.stringify(err);
+    } catch {
+      /* nicht serialisierbar */
+    }
   }
   return {
     detail: body ? body.replace(/\s+/g, " ").trim().slice(0, 800) : undefined,
