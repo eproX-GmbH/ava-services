@@ -769,24 +769,23 @@ function ProviderChooserGrid({
         </details>
       )}
 
-      {/* Sektion 3 — ChatGPT-Abo: optionaler Zusatz NUR fuer den Chat.
-          Schliesst den Schritt nicht ab; der Hintergrund braucht weiterhin
-          Schluessel oder lokales Modell. */}
+      {/* Sektion 3 — ChatGPT-Abo: Chat und Hintergrund-KI ueber das Abo; die
+          Firmenverarbeitung laeuft ueber AVAs Modell (Betreiber-Spur). */}
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">
           ChatGPT-Abo verbinden
         </h3>
         <p className="first-run__option-sub">
           Optional. Melde dich mit deinem persönlichen ChatGPT-Konto an (Plus oder Pro):{" "}
-          <strong>Eligible AI requests in this app use your ChatGPT plan.</strong> Chat und Hintergrund-KI
-          von AVA laufen dann über dein Abo, mit einem Modell deiner Wahl. Die Verarbeitungs-Producer
-          (Firmenprofile, Jahresabschlüsse) brauchen weiterhin einen API-Schlüssel oder ein lokales Modell.
-          {orgKarte ? " Ist der Organisationsschlüssel gewählt, übernimmt er den Hintergrund." : ""}
+          <strong>Eligible AI requests in this app use your ChatGPT plan.</strong> Chat, Radar, Alarme, Recherche und
+          Workflows laufen dann über dein Abo, mit einem Modell deiner Wahl. Die Firmenverarbeitung (Profile,
+          Kontakte, Jahresabschlüsse) läuft über AVAs eigenes Modell und braucht keinen Zugang von dir.
+          {orgKarte ? " Ist der Organisationsschlüssel gewählt, übernimmt er Chat und Hintergrund." : ""}
         </p>
         {aboVerbunden ? (
           <p className="muted small">
-            <span className="badge ok">ChatGPT-Abo verbunden</span> · Wähle jetzt oben Schlüssel, lokales Modell
-            {orgKarte ? " oder Organisationsschlüssel" : ""} für die Hintergrund-Verarbeitung.
+            <span className="badge ok">ChatGPT-Abo verbunden</span> · Chat und Hintergrund-KI laufen über dein Abo.
+            Sprachmodus und Deep Research brauchen zusätzlich einen Schlüssel{orgKarte ? " oder den Organisationsschlüssel" : ""}.
           </p>
         ) : (
           <OpenAISubscriptionHeroCTA
