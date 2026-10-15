@@ -179,7 +179,7 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
   if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
   const { monate } = c.req.valid("query");
   const pool = getGatewayPool();
-  const [modell, serp, stufen, aufnahmen] = await Promise.all([
+  const [modell, serp, stufen, aufnahmen, messung] = await Promise.all([
     pool.query(
       `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COALESCE(quelle, '?') AS stufe, COUNT(*)::int AS aufrufe,
               COALESCE(SUM("costMicroUsd"), 0)::bigint AS "microUsd", COALESCE(SUM("inputTokens"), 0)::bigint AS "inputTokens", COALESCE(SUM("outputTokens"), 0)::bigint AS "outputTokens"
@@ -191,9 +191,15 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
          FROM "ProxyAudit" WHERE proxy = 'valueserp' AND "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1 ORDER BY 1 DESC`,
       [String(monate)],
     ),
+    // 2026-10-15: je Stufe UND Plan-Gruppe. Enterprise zahlt pauschal, Free
+    // nichts — nur Starter/Pro bringen Erloes je Firma. Erloes zu HEUTIGEN
+    // Stufenpreisen (gespeicherte preisCents tragen alte Saetze aus Aug/Sep).
     pool.query(
-      `SELECT COALESCE("stufe", 'offen') AS stufe, COUNT(*)::int AS n, COALESCE(SUM("preisCents"), 0)::bigint AS "preisCents", COALESCE(SUM("direktkostenCents"), 0)::bigint AS "direktkostenCents"
-         FROM "UsageEntry" WHERE "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1 ORDER BY 1`,
+      `SELECT COALESCE(u."stufe", 'offen') AS stufe,
+              CASE WHEN b.tier IN ('starter', 'pro') THEN 'zahlend' WHEN b.tier = 'enterprise' THEN 'enterprise' ELSE 'free' END AS gruppe,
+              COUNT(*)::int AS n
+         FROM "UsageEntry" u LEFT JOIN "TenantBilling" b ON b."tenantId" = u."billingAccountId"
+         WHERE u."createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1, 2 ORDER BY 1, 2`,
       [String(monate)],
     ),
     pool.query(
@@ -201,13 +207,31 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
          WHERE "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1 ORDER BY 1 DESC`,
       [String(monate)],
     ),
+    // Seit wann die Betreiber-Spur ueberhaupt gemessen wird (vorher 404, Fix 2026-10-14).
+    pool.query(`SELECT MIN("createdAt") AS seit FROM "LlmUsage" WHERE kind = 'betreiber'`),
   ]);
   const num = (v: unknown) => Number(v ?? 0);
+  const { stufenPreise } = await import("../../lib/stufen");
+  const preise = stufenPreise();
+  const satz = (stufe: string) => (preise as Record<string, { preisCents: number; direktkostenCents: number }>)[stufe] ?? { preisCents: 0, direktkostenCents: 0 };
+  // Je Stufe summieren; Erloes nur fuer zahlende Konten, Direktkosten fuer alle.
+  const jeStufe = new Map<string, { aufnahmen: number; zahlend: number; enterprise: number; free: number; preisEur: number; direktkostenEur: number }>();
+  for (const r of stufen.rows as Array<{ stufe: string; gruppe: string; n: number }>) {
+    const z = jeStufe.get(r.stufe) ?? { aufnahmen: 0, zahlend: 0, enterprise: 0, free: 0, preisEur: 0, direktkostenEur: 0 };
+    z.aufnahmen += r.n;
+    if (r.gruppe === "zahlend") { z.zahlend += r.n; z.preisEur += (r.n * satz(r.stufe).preisCents) / 100; }
+    else if (r.gruppe === "enterprise") z.enterprise += r.n;
+    else z.free += r.n;
+    z.direktkostenEur += (r.n * satz(r.stufe).direktkostenCents) / 100;
+    jeStufe.set(r.stufe, z);
+  }
+  const seit = (messung.rows[0] as { seit?: Date | null } | undefined)?.seit ?? null;
   return c.json({
     monate,
     modell: modell.rows.map((r) => ({ monat: r.monat, stufe: r.stufe, aufrufe: r.aufrufe, usd: Math.round(num(r.microUsd) / 1e4) / 100, inputTokens: num(r.inputTokens), outputTokens: num(r.outputTokens) })),
+    modellMessungSeit: seit ? new Date(seit).toISOString() : null,
     valueserp: serp.rows,
-    stufen: stufen.rows.map((r) => ({ stufe: r.stufe, aufnahmen: r.n, preisEur: num(r.preisCents) / 100, direktkostenEur: num(r.direktkostenCents) / 100 })),
+    stufen: [...jeStufe.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([stufe, z]) => ({ stufe, ...z, preisEur: Math.round(z.preisEur * 100) / 100, direktkostenEur: Math.round(z.direktkostenEur * 100) / 100 })),
     aufnahmenJeMonat: aufnahmen.rows,
   }, 200);
 });
