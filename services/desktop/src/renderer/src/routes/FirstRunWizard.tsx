@@ -1205,6 +1205,27 @@ function OrgStep({
     }
   };
 
+  // 2026-10-15 — Registrierung verlangt eine Organisation: hier anlegen (der
+  // Aufrufer wird Owner). Das Gateway traegt die Organisation in Keycloak ein,
+  // danach wechselt AVA per Tenant-Pruefung in die neue Organisation.
+  const [orgName, setOrgName] = useState("");
+  const anlegen = async () => {
+    setBusy(true);
+    setFehler(null);
+    try {
+      await gatewayFetch("/v1/tenants", { method: "POST", body: { name: orgName.trim() } });
+      for (let i = 0; i < 6; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        if (await window.api.org.checkTenant()) return;
+      }
+      await lade();
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (laden) {
     return (
       <p className="muted">
@@ -1276,12 +1297,21 @@ function OrgStep({
   return (
     <>
       <p className="muted small">
-        Nach der Registrierung bist du automatisch in deinem eigenen, persönlichen Bereich. Das kann so bleiben — dieser
-        Schritt ist optional.{" "}
-        <button type="button" className="link" onClick={onWeiterOhne} disabled={busy}>
-          Überspringen
-        </button>
+        AVA arbeitet in Organisationen: Sie teilen Firmenbestand, Vorgaben und Schlüssel und sind die Abrechnungseinheit.
+        Lege eine Organisation an (du wirst Owner) oder tritt per Einladungslink bei.
       </p>
+      <div className="first-run__option-card">
+        <h3 className="first-run__option-title">Eigene Organisation anlegen</h3>
+        <p className="first-run__option-sub">
+          Für dein Unternehmen oder Team. Du kannst danach Mitarbeitende einladen, Vorgaben setzen und Schlüssel hinterlegen.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", maxWidth: 560 }}>
+          <input type="text" placeholder="Name der Organisation" value={orgName} onChange={(e) => setOrgName(e.target.value)} style={{ flex: 1 }} disabled={busy || !!offen} />
+          <button type="button" className="primary" disabled={busy || !!offen || orgName.trim().length < 2} onClick={() => void anlegen()}>
+            Anlegen
+          </button>
+        </div>
+      </div>
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">Einladungslink einer Organisation</h3>
         {offen ? (
@@ -1315,16 +1345,6 @@ function OrgStep({
           </>
         )}
         {fehler && <p className="bad">{fehler}</p>}
-      </div>
-      <div className="first-run__option-card">
-        <h3 className="first-run__option-title">Ohne Organisation</h3>
-        <p className="first-run__option-sub">
-          Du arbeitest in deinem persönlichen Bereich und wählst deine KI selbst. Eine Organisation legst du später in der
-          AVA Konsole (admin.ava.bi) an oder trittst ihr über den Einladungslink bei.
-        </p>
-        <button type="button" onClick={onWeiterOhne} disabled={busy}>
-          Weiter ohne Organisation →
-        </button>
       </div>
     </>
   );
