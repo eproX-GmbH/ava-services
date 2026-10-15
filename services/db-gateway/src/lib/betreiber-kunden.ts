@@ -170,10 +170,12 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
       `SELECT "periodKey", "stufe", COUNT(*)::text AS n FROM "UsageEntry" WHERE "billingAccountId" = $1 AND ("periodKey" = ANY($2::text[]) OR "periodKey" = 'lifetime') GROUP BY 1, 2`,
       [tenantId, perioden],
     ),
+    // Betreiber-Spur; beim Betreiber selbst auch die Aufrufe ueber den eigenen
+    // Organisationsschluessel (gleiche OpenAI-Rechnung).
     pool.query<{ monat: string; n: string; usd: string }>(
       `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*)::text AS n, COALESCE(SUM("costMicroUsd"), 0)::text AS usd
-         FROM "LlmUsage" WHERE kind = 'betreiber' AND "tenantId" = $1 AND "createdAt" > NOW() - ($2 || ' months')::interval GROUP BY 1`,
-      [tenantId, String(monate)],
+         FROM "LlmUsage" WHERE (kind = 'betreiber' OR (kind = 'openai' AND "tenantId" = $3)) AND "tenantId" = $1 AND "createdAt" > NOW() - ($2 || ' months')::interval GROUP BY 1`,
+      [tenantId, String(monate), process.env.OPERATOR_TENANT_ID ?? ""],
     ),
     pool.query<{ monat: string; n: string; ohne: string; usd: string }>(
       `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*)::text AS n, COUNT(*) FILTER (WHERE "costMicroUsd" IS NULL)::text AS ohne, COALESCE(SUM("costMicroUsd"), 0)::text AS usd

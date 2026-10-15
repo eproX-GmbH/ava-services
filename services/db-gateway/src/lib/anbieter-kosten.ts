@@ -264,7 +264,7 @@ export async function anbieterAbgleich(pool: Pool, now: Date = new Date()): Prom
   const vormonat = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
   void monat; void vormonat;
   const schritte: Array<[string, () => Promise<unknown>]> = [
-    ["openai", () => openaiAbgleich(pool, 35)],
+    ["openai", () => openaiAbgleich(pool, 95)],
     ["apify-zyklus", () => apifyZyklus(pool)],
     ["apify-zuordnen", () => apifyLaeufeZuordnen(pool)],
     ["apify-laeufe", () => apifyFehlendeKostenNachtragen(pool)],
@@ -309,11 +309,14 @@ export interface AnbieterStand {
 
 export async function anbieterJeMonat(pool: Pool, monate: number): Promise<{ monate: AnbieterMonat[]; stand: AnbieterStand }> {
   const [ll, ak, serp, zuletzt, zyk, vsk] = await Promise.all([
+    // OpenAI-Rechnung = Betreiber-Spur + Aufrufe ueber den eigenen Organisationsschluessel des
+    // Betreibers (gleiche OpenAI-Organisation). Fremde Organisationsschluessel laufen auf
+    // fremden Rechnungen und zaehlen hier nicht.
     pool.query<{ monat: string; kind: string; n: string; usd: string; ohne: string; cache: string }>(
-      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, kind, COUNT(*)::text AS n, COALESCE(SUM("costMicroUsd"), 0)::text AS usd,
+      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, CASE WHEN kind = 'openai' THEN 'betreiber' ELSE kind END AS kind, COUNT(*)::text AS n, COALESCE(SUM("costMicroUsd"), 0)::text AS usd,
               COUNT(*) FILTER (WHERE "costMicroUsd" IS NULL)::text AS ohne, COALESCE(SUM("cacheReadTokens"), 0)::text AS cache
-         FROM "LlmUsage" WHERE kind IN ('betreiber', 'apify') AND "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1, 2`,
-      [String(monate)],
+         FROM "LlmUsage" WHERE (kind IN ('betreiber', 'apify') OR (kind = 'openai' AND "tenantId" = $2)) AND "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1, 2`,
+      [String(monate), process.env.OPERATOR_TENANT_ID ?? ""],
     ),
     pool.query<{ monat: string; quelle: string; kennung: string; usd: string; menge: string }>(
       `SELECT to_char(date_trunc('month', "tag"), 'YYYY-MM') AS monat, quelle, kennung, SUM("betragMicroUsd")::text AS usd, SUM("menge")::text AS menge
