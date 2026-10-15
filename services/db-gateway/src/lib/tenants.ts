@@ -275,6 +275,18 @@ async function setzeAufPersoenlichenTenant(client: Q, actorId: string, email: st
   );
 }
 
+/** Organisation ohne Mitglieder als geloescht markieren (nie hart loeschen: Firmen,
+ *  Kontakte und Vorgaben bleiben). Einladungslink wird entwertet. */
+async function orgArchivierenWennLeer(q: Q, tenantId: string): Promise<boolean> {
+  const r = await q.query(
+    `UPDATE "Tenant" SET "deletedAt" = CURRENT_TIMESTAMP, "inviteToken" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "id" = $1 AND "kind" = 'organisation' AND "deletedAt" IS NULL
+        AND NOT EXISTS (SELECT 1 FROM "TenantMember" m WHERE m."tenantId" = $1)`,
+    [tenantId],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function createOrganisation(
   pool: pg.Pool,
   auth: AuthContext,
@@ -322,7 +334,7 @@ export async function requestJoin(
   inviteToken: string,
 ): Promise<{ requestId: string; tenantId: string; tenantName: string | null }> {
   const t = await pool.query<{ id: string; name: string | null }>(
-    `SELECT "id", "name" FROM "Tenant" WHERE "inviteToken" = $1 AND "kind" = 'organisation'`,
+    `SELECT "id", "name" FROM "Tenant" WHERE "inviteToken" = $1 AND "kind" = 'organisation' AND "deletedAt" IS NULL`,
     [inviteToken],
   );
   const ziel = t.rows[0];
@@ -446,8 +458,11 @@ export async function decideJoinRequest(
         [requestId],
       );
       // Eine vorherige Organisations-Mitgliedschaft (Wechsel) wird geschlossen.
+      const vorher = (await client.query<{ tenantId: string }>(`SELECT "tenantId" FROM "TenantMember" WHERE "actorId" = $1`, [req.actorId])).rows[0]?.tenantId ?? null;
       await closeMembership(client, { actorId: req.actorId, reason: "replaced" });
       await client.query(`DELETE FROM "TenantMember" WHERE "actorId" = $1`, [req.actorId]);
+      // War das Mitglied allein in der alten Organisation, wird sie als geloescht markiert.
+      if (vorher && vorher !== req.tenantId) await orgArchivierenWennLeer(client, vorher);
       await client.query(
         `INSERT INTO "TenantMember" ("tenantId", "actorId", "role", "email", "name") VALUES ($1, $2, 'member', $3, $4)`,
         [req.tenantId, req.actorId, reqIdent.rows[0]?.email ?? null, reqIdent.rows[0]?.name ?? null],
@@ -505,11 +520,13 @@ export async function removeMember(pool: pg.Pool, auth: AuthContext, actorId: st
     );
     if (!m.rows[0]) throw new TenantError(404, "Kein Mitglied dieser Organisation.");
     if (m.rows[0].role === "owner") {
-      const owners = await client.query<{ n: string }>(
-        `SELECT COUNT(*)::text AS n FROM "TenantMember" WHERE "tenantId" = $1 AND "role" = 'owner'`,
+      const owners = await client.query<{ n: string; alle: string }>(
+        `SELECT COUNT(*) FILTER (WHERE "role" = 'owner')::text AS n, COUNT(*)::text AS alle FROM "TenantMember" WHERE "tenantId" = $1`,
         [auth.tenantId],
       );
-      if (Number(owners.rows[0]?.n ?? "0") <= 1) {
+      // Allein in der Organisation: Austritt erlaubt, die Organisation wird als
+      // geloescht markiert (2026-10-15). Mit weiteren Mitgliedern braucht es einen Nachfolger.
+      if (Number(owners.rows[0]?.n ?? "0") <= 1 && Number(owners.rows[0]?.alle ?? "0") > 1) {
         throw new TenantError(409, "Der letzte Owner kann nicht entfernt werden. Erst einen Nachfolger ernennen.");
       }
     }
@@ -537,6 +554,7 @@ export async function removeMember(pool: pg.Pool, auth: AuthContext, actorId: st
       [auth.tenantId, actorId],
     );
     await setzeAufPersoenlichenTenant(client, actorId, email);
+    await orgArchivierenWennLeer(client, auth.tenantId);
     const acc = await readBillingAccount(client, auth.tenantId);
     if (acc?.mode === "seats") {
       await recordBillingEvent(client, {
@@ -616,7 +634,7 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
 export async function rotateInvite(pool: pg.Pool, auth: AuthContext): Promise<string> {
   if (!(await istAdmin(pool, auth.tenantId, auth.actorId))) throw new TenantError(403, "Nur Admins duerfen den Einladungslink erneuern.");
   const token = neuerInviteToken();
-  const r = await pool.query(`UPDATE "Tenant" SET "inviteToken" = $2 WHERE "id" = $1 AND "kind" = 'organisation'`, [auth.tenantId, token]);
+  const r = await pool.query(`UPDATE "Tenant" SET "inviteToken" = $2 WHERE "id" = $1 AND "kind" = 'organisation' AND "deletedAt" IS NULL`, [auth.tenantId, token]);
   if (r.rowCount === 0) throw new TenantError(409, "Ein persoenlicher Tenant hat keinen Einladungslink.");
   return token;
 }

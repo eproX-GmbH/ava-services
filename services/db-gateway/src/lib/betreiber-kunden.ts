@@ -25,21 +25,27 @@ export interface KundeZeile {
   bestandAktuell: number;
   ausgabenLimitCents: number | null;
   betreiberLimitCents: number | null;
+  /** Enterprise-Vertrag: ausgehandelter Fixpreis je Monat (Cent), null = keiner. */
+  enterprisePreisCents: number | null;
+  /** Organisation ohne Mitglieder, als geloescht markiert (Daten bleiben). */
+  geloescht: boolean;
 }
 
 export async function kundenListe(pool: Pool): Promise<KundeZeile[]> {
   const periode = aktuellePeriode();
   const r = await pool.query<{
     tenantId: string; name: string | null; kind: string | null; tier: string; mode: string; status: string;
-    mitglieder: string; bestand: string; ausgabenLimitCents: number | null; betreiberLimitCents: number | null;
+    mitglieder: string; bestand: string; ausgabenLimitCents: number | null; betreiberLimitCents: number | null; enterprisePreisCents: number | null; deletedAt: Date | null;
   }>(
-    `SELECT b."tenantId", t.name, t.kind, b.tier, b.mode, b.status, b."ausgabenLimitCents", b."betreiberLimitCents",
-            (SELECT COUNT(*) FROM "TenantMember" m WHERE m."tenantId" = b."tenantId")::text AS mitglieder,
-            (SELECT COUNT(*) FROM "UsageEntry" u WHERE u."billingAccountId" = b."tenantId" AND u."periodKey" IN ($1, 'lifetime'))::text AS bestand
-       FROM "TenantBilling" b LEFT JOIN "Tenant" t ON t.id = b."tenantId"
-      WHERE t.kind = 'organisation' OR b.tier <> 'free'
-         OR EXISTS (SELECT 1 FROM "UsageEntry" u WHERE u."billingAccountId" = b."tenantId")
-      ORDER BY (t.kind = 'organisation') DESC, t.name NULLS LAST, b."tenantId"`,
+    // Kunden sind Organisationen (Registrierung verlangt seit 2026-10-15 eine
+    // Organisation); persoenliche Tenants sind technische Altlast und bleiben aussen vor.
+    `SELECT t.id AS "tenantId", t.name, t.kind, t."deletedAt", COALESCE(b.tier, 'free') AS tier, COALESCE(b.mode, 'none') AS mode, COALESCE(b.status, 'active') AS status,
+            b."ausgabenLimitCents", b."betreiberLimitCents", b."enterprisePreisCents",
+            (SELECT COUNT(*) FROM "TenantMember" m WHERE m."tenantId" = t.id)::text AS mitglieder,
+            (SELECT COUNT(*) FROM "UsageEntry" u WHERE u."billingAccountId" = t.id AND u."periodKey" IN ($1, 'lifetime'))::text AS bestand
+       FROM "Tenant" t LEFT JOIN "TenantBilling" b ON b."tenantId" = t.id
+      WHERE t.kind = 'organisation'
+      ORDER BY (t."deletedAt" IS NULL) DESC, t.name NULLS LAST, t.id`,
     [periode],
   );
   return r.rows.map((x) => ({
@@ -49,10 +55,12 @@ export async function kundenListe(pool: Pool): Promise<KundeZeile[]> {
     tier: x.tier,
     mode: x.mode,
     status: x.status,
-    mitglieder: Math.max(1, Number(x.mitglieder)),
+    mitglieder: Number(x.mitglieder),
     bestandAktuell: Number(x.bestand),
     ausgabenLimitCents: x.ausgabenLimitCents,
     betreiberLimitCents: x.betreiberLimitCents,
+    enterprisePreisCents: x.enterprisePreisCents,
+    geloescht: x.deletedAt != null,
   }));
 }
 
@@ -66,6 +74,10 @@ export interface MonatZeile {
   firmenerloesCents: number;
   /** Seat-Erloes (Cent): zahlende Plaene Mitglieder x Seatpreis, sonst 0. */
   seatErloesCents: number;
+  /** Enterprise: vereinbarter Fixpreis (Cent), sonst 0. */
+  fixpreisCents: number;
+  /** Rechnungsbetrag des Monats (Cent): Firmen + Seats bzw. Fixpreis. */
+  erloesCents: number;
   direktkostenCents: number;
   modellAufrufe: number;
   modellUsd: number;
@@ -130,13 +142,13 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
   let kunde = liste.find((k) => k.tenantId === tenantId) ?? null;
   if (!kunde) {
     // Konto ohne Treffer in der Liste (z. B. Free ohne Aufnahmen): trotzdem anzeigen.
-    const r = await pool.query<{ tenantId: string; name: string | null; kind: string | null; tier: string; mode: string; status: string; ausgabenLimitCents: number | null; betreiberLimitCents: number | null }>(
-      `SELECT b."tenantId", t.name, t.kind, b.tier, b.mode, b.status, b."ausgabenLimitCents", b."betreiberLimitCents" FROM "TenantBilling" b LEFT JOIN "Tenant" t ON t.id = b."tenantId" WHERE b."tenantId" = $1`,
+    const r = await pool.query<{ tenantId: string; name: string | null; kind: string | null; tier: string; mode: string; status: string; ausgabenLimitCents: number | null; betreiberLimitCents: number | null; enterprisePreisCents: number | null }>(
+      `SELECT b."tenantId", t.name, t.kind, b.tier, b.mode, b.status, b."ausgabenLimitCents", b."betreiberLimitCents", b."enterprisePreisCents" FROM "TenantBilling" b LEFT JOIN "Tenant" t ON t.id = b."tenantId" WHERE b."tenantId" = $1`,
       [tenantId],
     );
     const x = r.rows[0];
     if (!x) return null;
-    kunde = { tenantId: x.tenantId, name: x.name ?? x.tenantId, kind: x.kind === "organisation" ? "organisation" : "personal", tier: x.tier, mode: x.mode, status: x.status, mitglieder: 1, bestandAktuell: 0, ausgabenLimitCents: x.ausgabenLimitCents, betreiberLimitCents: x.betreiberLimitCents };
+    kunde = { tenantId: x.tenantId, name: x.name ?? x.tenantId, kind: x.kind === "organisation" ? "organisation" : "personal", tier: x.tier, mode: x.mode, status: x.status, mitglieder: 1, bestandAktuell: 0, ausgabenLimitCents: x.ausgabenLimitCents, betreiberLimitCents: x.betreiberLimitCents, enterprisePreisCents: x.enterprisePreisCents, geloescht: false };
   }
   const preise = stufenPreise();
   const zahlend = kunde.tier === "starter" || kunde.tier === "pro";
@@ -172,7 +184,7 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
   const zeile = (m: string): MonatZeile => {
     let z = jeMonat.get(m);
     if (!z) {
-      z = { monat: m, aufnahmen: leer(), bestand: 0, bestandswertCents: 0, firmenerloesCents: 0, seatErloesCents: zahlend ? kunde!.mitglieder * seatPreis : 0, direktkostenCents: 0, modellAufrufe: 0, modellUsd: 0, apifyLaeufe: 0, apifyUsd: 0, serpSuchen: 0, serpUsd: 0, spurkostenCents: 0 };
+      z = { monat: m, aufnahmen: leer(), bestand: 0, bestandswertCents: 0, firmenerloesCents: 0, seatErloesCents: zahlend ? kunde!.mitglieder * seatPreis : 0, fixpreisCents: kunde!.tier === "enterprise" ? (kunde!.enterprisePreisCents ?? 0) : 0, erloesCents: 0, direktkostenCents: 0, modellAufrufe: 0, modellUsd: 0, apifyLaeufe: 0, apifyUsd: 0, serpSuchen: 0, serpUsd: 0, spurkostenCents: 0 };
       jeMonat.set(m, z);
     }
     return z;
@@ -197,6 +209,7 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
   for (const r of serp.rows) { const z = zeile(r.monat); z.serpSuchen = Number(r.n); z.serpUsd = z.serpSuchen * VALUESERP_USD_JE_SUCHE; }
   for (const z of jeMonat.values()) {
     z.firmenerloesCents = zahlend ? z.bestandswertCents : 0;
+    z.erloesCents = z.firmenerloesCents + z.seatErloesCents + z.fixpreisCents;
     z.spurkostenCents = Math.round((z.modellUsd + z.apifyUsd + z.serpUsd) * USD_EUR * 100);
     z.modellUsd = Math.round(z.modellUsd * 100) / 100;
     z.apifyUsd = Math.round(z.apifyUsd * 100) / 100;
@@ -283,14 +296,45 @@ export function kundeCsv(d: KundeDetail): string {
   const kopf = [
     "Monat", "Kunde", "Konto", "Plan", "Mitglieder",
     "Firmen klein", "Firmen mittel", "Firmen gross", "Firmen ohne Stufe", "Firmen gesamt",
-    "Bestandswert zu Stufenpreisen EUR", "Firmenerloes EUR", "Seat-Erloes EUR", "Erloes gesamt EUR",
+    "Bestandswert zu Stufenpreisen EUR", "Firmenerloes EUR", "Seat-Erloes EUR", "Fixpreis EUR", "Erloes gesamt EUR",
     "Direktkosten gerechnet EUR", "Modellaufrufe Betreiber-Spur", "Modellkosten USD", "Apify-Laeufe", "Apify geschaetzt USD", "Google-Suchen", "Google USD", "Spurkosten gemessen EUR",
   ];
   const zeilen = d.monate.map((z) => [
     z.monat === "lifetime" ? "Free (lebenslang)" : z.monat, d.kunde.name, d.kunde.tenantId, d.kunde.tier, String(d.kunde.mitglieder),
     z.aufnahmen.klein, z.aufnahmen.mittel, z.aufnahmen.gross, z.aufnahmen.offen, z.bestand,
-    de(z.bestandswertCents), de(z.firmenerloesCents), de(z.seatErloesCents), de(z.firmenerloesCents + z.seatErloesCents),
+    de(z.bestandswertCents), de(z.firmenerloesCents), de(z.seatErloesCents), de(z.fixpreisCents), de(z.erloesCents),
     de(z.direktkostenCents), z.modellAufrufe, usdDe(z.modellUsd), z.apifyLaeufe, usdDe(z.apifyUsd), z.serpSuchen, usdDe(z.serpUsd), de(z.spurkostenCents),
   ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"));
   return "﻿" + [kopf.map((k) => `"${k}"`).join(";"), ...zeilen].join("\r\n") + "\r\n";
+}
+
+/** Kundensicht (Owner/Admin der Organisation): ohne interne Kosten und Spuren. */
+export interface KundeKosten {
+  konto: { tenantId: string; name: string; tier: string; mitglieder: number; ausgabenLimitCents: number | null; betreiberLimitCents: number | null; enterprisePreisCents: number | null };
+  preise: Record<Stufe, { preisCents: number }>;
+  verbrauch: { monat: string; bestandswertCents: number; limitCents: number | null; prozent: number | null };
+  monate: Array<{ monat: string; aufnahmen: Record<Stufe | "offen", number>; bestand: number; bestandswertCents: number; firmenerloesCents: number; seatErloesCents: number; fixpreisCents: number; rechnungCents: number }>;
+}
+
+export function kundenSicht(d: KundeDetail): KundeKosten {
+  const k = d.kunde;
+  const heute = d.monate.find((m) => m.monat === aktuellePeriode());
+  const limit = k.betreiberLimitCents != null && (k.ausgabenLimitCents == null || k.betreiberLimitCents <= k.ausgabenLimitCents) ? k.betreiberLimitCents : k.ausgabenLimitCents;
+  const wert = heute?.bestandswertCents ?? 0;
+  return {
+    konto: { tenantId: k.tenantId, name: k.name, tier: k.tier, mitglieder: k.mitglieder, ausgabenLimitCents: k.ausgabenLimitCents, betreiberLimitCents: k.betreiberLimitCents, enterprisePreisCents: k.enterprisePreisCents },
+    preise: { klein: { preisCents: d.preise.klein.preisCents }, mittel: { preisCents: d.preise.mittel.preisCents }, gross: { preisCents: d.preise.gross.preisCents } },
+    verbrauch: { monat: aktuellePeriode(), bestandswertCents: wert, limitCents: limit, prozent: limit ? Math.min(100, Math.round((wert / limit) * 100)) : null },
+    monate: d.monate.map((z) => ({ monat: z.monat, aufnahmen: z.aufnahmen, bestand: z.bestand, bestandswertCents: z.bestandswertCents, firmenerloesCents: z.firmenerloesCents, seatErloesCents: z.seatErloesCents, fixpreisCents: z.fixpreisCents, rechnungCents: z.erloesCents })),
+  };
+}
+
+export function kundenCsv(k: KundeKosten): string {
+  const kopf = ["Monat", "Organisation", "Plan", "Mitglieder", "Firmen klein", "Firmen mittel", "Firmen gross", "Firmen ohne Stufe", "Firmen gesamt", "Bestandswert zu Stufenpreisen EUR", "Firmen EUR", "Seats EUR", "Fixpreis EUR", "Rechnungsbetrag EUR"];
+  const zeilen = k.monate.map((z) => [
+    z.monat === "lifetime" ? "Free (lebenslang)" : z.monat, k.konto.name, k.konto.tier, String(k.konto.mitglieder),
+    z.aufnahmen.klein, z.aufnahmen.mittel, z.aufnahmen.gross, z.aufnahmen.offen, z.bestand,
+    de(z.bestandswertCents), de(z.firmenerloesCents), de(z.seatErloesCents), de(z.fixpreisCents), de(z.rechnungCents),
+  ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"));
+  return "\uFEFF" + [kopf.map((x) => `"${x}"`).join(";"), ...zeilen].join("\r\n") + "\r\n";
 }

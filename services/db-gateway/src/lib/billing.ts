@@ -77,11 +77,13 @@ export interface BillingAccount {
   /** 2026-10-15 — vom Betreiber gesetztes Monatslimit der Hintergrundverarbeitung
    *  (Cent, zu Stufenpreisen), gilt auch fuer Enterprise; null = keins. */
   betreiberLimitCents: number | null;
+  /** Enterprise-Vertrag: ausgehandelter Fixpreis je Monat (Cent, netto); null = keiner. */
+  enterprisePreisCents: number | null;
 }
 
 const ACCOUNT_COLUMNS = `"tenantId", "kind", "mode", tier, "quotaLimit", "status", "pastDueSince", "suspendedAt", "graceDays",
   "stripeCustomerId", "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd", "seatTier", "seatBillingSince",
-  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents", "betreiberLimitCents"`;
+  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents", "betreiberLimitCents", "enterprisePreisCents"`;
 
 interface AccountRow {
   tenantId: string;
@@ -104,6 +106,7 @@ interface AccountRow {
   karenzTag: number | null;
   ausgabenLimitCents: number | null;
   betreiberLimitCents: number | null;
+  enterprisePreisCents: number | null;
 }
 
 function mapAccount(r: AccountRow): BillingAccount {
@@ -128,6 +131,7 @@ function mapAccount(r: AccountRow): BillingAccount {
     karenzTag: r.karenzTag,
     ausgabenLimitCents: r.ausgabenLimitCents ?? null,
     betreiberLimitCents: r.betreiberLimitCents ?? null,
+    enterprisePreisCents: r.enterprisePreisCents ?? null,
   };
 }
 
@@ -178,6 +182,7 @@ export async function ensureBillingAccount(
     karenzTag: null,
     ausgabenLimitCents: null,
     betreiberLimitCents: null,
+    enterprisePreisCents: null,
   };
 }
 

@@ -291,6 +291,8 @@ model TenantBilling {
   ausgabenLimitCents   Int?
   /// Betreiber-Monatslimit Hintergrundverarbeitung (Cent, zu Stufenpreisen); NULL = keins.
   betreiberLimitCents  Int?
+  /// Enterprise-Vertrag: ausgehandelter Fixpreis je Monat (Cent, netto); NULL = keiner.
+  enterprisePreisCents Int?
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
 }
@@ -458,6 +460,8 @@ model Tenant {
   kind         String              @default("personal")
   /// O1 — Einladungslink-Token (ava://join/<token>), rotierbar.
   inviteToken  String?             @unique
+  /// 2026-10-15 — Organisation ohne Mitglieder: als geloescht markiert, nie hart geloescht.
+  deletedAt    DateTime?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @default(now())
   members      TenantMember[]

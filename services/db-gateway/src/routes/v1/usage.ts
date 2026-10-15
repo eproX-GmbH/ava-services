@@ -305,10 +305,10 @@ const betreiberKundeLimitRoute = createRoute({
   method: "put",
   path: "/betreiber/kunden/{tenantId}/limit",
   tags: ["billing"],
-  summary: "Betreiber: Monatslimit der Hintergrundverarbeitung setzen (Cent zu Stufenpreisen, null = keins)",
-  request: { params: KundeParam, body: { content: { "application/json": { schema: z.object({ betreiberLimitCents: z.number().int().min(0).max(1_000_000_000).nullable() }) } }, required: true } },
+  summary: "Betreiber: Enterprise-Vertrag setzen — Monatslimit der Hintergrundverarbeitung (Cent zu Stufenpreisen) und ausgehandelter Fixpreis (Cent), null = keins",
+  request: { params: KundeParam, body: { content: { "application/json": { schema: z.object({ betreiberLimitCents: z.number().int().min(0).max(1_000_000_000).nullable().optional(), enterprisePreisCents: z.number().int().min(0).max(1_000_000_000).nullable().optional() }) } }, required: true } },
   responses: {
-    200: { content: { "application/json": { schema: z.object({ betreiberLimitCents: z.number().int().nullable() }) } }, description: "gesetzt" },
+    200: { content: { "application/json": { schema: z.object({ betreiberLimitCents: z.number().int().nullable(), enterprisePreisCents: z.number().int().nullable() }) } }, description: "gesetzt" },
     404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber oder Kunde unbekannt" },
   },
 });
@@ -316,15 +316,75 @@ usageRouter.openapi(betreiberKundeLimitRoute, async (c) => {
   const auth = c.get("auth");
   if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
   const { tenantId } = c.req.valid("param");
-  const { betreiberLimitCents } = c.req.valid("json");
+  const body = c.req.valid("json");
   const pool = getGatewayPool();
-  const r = await pool.query(`UPDATE "TenantBilling" SET "betreiberLimitCents" = $2, "updatedAt" = NOW() WHERE "tenantId" = $1`, [tenantId, betreiberLimitCents]);
+  const { ensureBillingAccount } = await import("../../lib/billing");
+  const vorher = await ensureBillingAccount(pool, tenantId, "organisation");
+  const betreiberLimitCents = body.betreiberLimitCents === undefined ? vorher.betreiberLimitCents : body.betreiberLimitCents;
+  const enterprisePreisCents = body.enterprisePreisCents === undefined ? vorher.enterprisePreisCents : body.enterprisePreisCents;
+  const r = await pool.query(`UPDATE "TenantBilling" SET "betreiberLimitCents" = $2, "enterprisePreisCents" = $3, "updatedAt" = NOW() WHERE "tenantId" = $1`, [tenantId, betreiberLimitCents, enterprisePreisCents]);
   if (r.rowCount === 0) throw new HTTPException(404, { message: "kunde_unbekannt" });
   const { invalidateBillingResolution } = await import("../../lib/billing");
   invalidateBillingResolution(tenantId);
   const { recordBillingEvent } = await import("../../lib/billing-events");
-  await recordBillingEvent(pool, { billingAccountId: tenantId, kind: "betreiberlimit_gesetzt", source: "admin", actorId: auth.actorId, payload: { betreiberLimitCents } });
-  return c.json({ betreiberLimitCents }, 200);
+  await recordBillingEvent(pool, { billingAccountId: tenantId, kind: "vertrag_gesetzt", source: "admin", actorId: auth.actorId, payload: { betreiberLimitCents, enterprisePreisCents } });
+  return c.json({ betreiberLimitCents, enterprisePreisCents }, 200);
+});
+
+// 2026-10-15 — Kundensicht: Owner/Admin der eigenen Organisation sehen Vertrag,
+// Kontingentverbrauch und Rechnungsbetraege je Monat; CSV-Export.
+async function eigenesKontoAlsAdmin(c: { get: (k: "auth") => { tenantId?: string; actorId?: string | null } }): Promise<string> {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const pool = getGatewayPool();
+  const { resolveBillingAccountId } = await import("../../lib/billing");
+  const konto = await resolveBillingAccountId(pool, { tenantId: auth.tenantId, actorId: auth.actorId });
+  if (konto !== auth.actorId) {
+    const me = await pool.query<{ role: string }>(`SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [konto, auth.actorId]);
+    if (me.rows[0]?.role !== "owner" && me.rows[0]?.role !== "admin") throw new HTTPException(403, { message: "Nur Owner oder Admin der Organisation sehen die Kosten." });
+  }
+  return konto;
+}
+
+const meineKostenRoute = createRoute({
+  method: "get",
+  path: "/tenants/me/kosten",
+  tags: ["billing"],
+  summary: "Eigene Organisation: Vertrag, Kontingentverbrauch und Rechnungsbetraege je Monat (Owner/Admin)",
+  request: { query: z.object({ monate: z.coerce.number().int().min(1).max(24).default(12) }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" },
+    403: { content: { "application/json": { schema: ErrorShape } }, description: "kein Owner/Admin" },
+  },
+});
+usageRouter.openapi(meineKostenRoute, async (c) => {
+  const konto = await eigenesKontoAlsAdmin(c);
+  const { monate } = c.req.valid("query");
+  const { kundeDetail, kundenSicht } = await import("../../lib/betreiber-kunden");
+  const d = await kundeDetail(getGatewayPool(), konto, monate, 0);
+  if (!d) throw new HTTPException(404, { message: "konto_unbekannt" });
+  return c.json(kundenSicht(d), 200);
+});
+
+const meineKostenExportRoute = createRoute({
+  method: "get",
+  path: "/tenants/me/kosten/export.csv",
+  tags: ["billing"],
+  summary: "Eigene Organisation: Kosten je Monat als CSV (Owner/Admin)",
+  request: { query: z.object({ monate: z.coerce.number().int().min(1).max(24).default(12) }) },
+  responses: {
+    200: { content: { "text/csv": { schema: z.string() } }, description: "CSV" },
+    403: { content: { "application/json": { schema: ErrorShape } }, description: "kein Owner/Admin" },
+  },
+});
+usageRouter.openapi(meineKostenExportRoute, async (c) => {
+  const konto = await eigenesKontoAlsAdmin(c);
+  const { monate } = c.req.valid("query");
+  const { kundeDetail, kundenSicht, kundenCsv } = await import("../../lib/betreiber-kunden");
+  const d = await kundeDetail(getGatewayPool(), konto, monate, 0);
+  if (!d) throw new HTTPException(404, { message: "konto_unbekannt" });
+  const datei = `ava-kosten-${monate}m.csv`;
+  return new Response(kundenCsv(kundenSicht(d)), { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${datei}"` } }) as never;
 });
 
 usageRouter.openapi(usageRoute, async (c) => {
