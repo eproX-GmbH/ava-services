@@ -101,12 +101,17 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
     // vorsichtig mit, damit das Limit nicht ueber die Warteschlange umgangen wird.
     if (granted && billing.tier !== "free") {
       const konto = await readBillingAccount(client, billingAccountId);
-      if (konto?.ausgabenLimitCents != null) {
-        const z = await zugangStand(client, billingAccountId, periodKey, 0, konto.ausgabenLimitCents);
+      // 2026-10-15: wirksam ist das kleinere aus Kundenlimit (nur Pay-as-you-go)
+      // und Betreiber-Limit (auch Enterprise, Fixpreis-Vertraege).
+      const kundeLimit = isUnlimited(billing.tier) ? null : (konto?.ausgabenLimitCents ?? null);
+      const betreiberLimit = konto?.betreiberLimitCents ?? null;
+      const wirksam = betreiberLimit != null && (kundeLimit == null || betreiberLimit <= kundeLimit) ? betreiberLimit : kundeLimit;
+      if (wirksam != null) {
+        const z = await zugangStand(client, billingAccountId, periodKey, 0, wirksam);
         if (!ausgabenlimitReicht(z, count + parkedCount)) {
           granted = false;
           await client.query("COMMIT");
-          return c.json({ granted: false, used, limit, parkedCount, reason: "ausgabenlimit" });
+          return c.json({ granted: false, used, limit, parkedCount, reason: wirksam === betreiberLimit && betreiberLimit != null ? "betreiberlimit" : "ausgabenlimit" });
         }
       }
     }
