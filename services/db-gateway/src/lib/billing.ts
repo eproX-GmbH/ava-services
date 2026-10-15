@@ -74,11 +74,14 @@ export interface BillingAccount {
   karenzTag: number | null;
   /** Z7 — Ausgabenlimit je Monat fuer Aufnahmen (Cent), null = keins. */
   ausgabenLimitCents: number | null;
+  /** 2026-10-15 — vom Betreiber gesetztes Monatslimit der Hintergrundverarbeitung
+   *  (Cent, zu Stufenpreisen), gilt auch fuer Enterprise; null = keins. */
+  betreiberLimitCents: number | null;
 }
 
 const ACCOUNT_COLUMNS = `"tenantId", "kind", "mode", tier, "quotaLimit", "status", "pastDueSince", "suspendedAt", "graceDays",
   "stripeCustomerId", "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd", "seatTier", "seatBillingSince",
-  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents"`;
+  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents", "betreiberLimitCents"`;
 
 interface AccountRow {
   tenantId: string;
@@ -100,6 +103,7 @@ interface AccountRow {
   maxSeats: number | null;
   karenzTag: number | null;
   ausgabenLimitCents: number | null;
+  betreiberLimitCents: number | null;
 }
 
 function mapAccount(r: AccountRow): BillingAccount {
@@ -123,6 +127,7 @@ function mapAccount(r: AccountRow): BillingAccount {
     maxSeats: r.maxSeats,
     karenzTag: r.karenzTag,
     ausgabenLimitCents: r.ausgabenLimitCents ?? null,
+    betreiberLimitCents: r.betreiberLimitCents ?? null,
   };
 }
 
@@ -172,6 +177,7 @@ export async function ensureBillingAccount(
     maxSeats: null,
     karenzTag: null,
     ausgabenLimitCents: null,
+    betreiberLimitCents: null,
   };
 }
 
@@ -405,6 +411,8 @@ export interface ZugangStand {
   ausgabenLimitCents: number | null;
   /** Z7 — voraussichtliche Kosten der Periode: zugeordnete Aufnahmen zum Stufenpreis plus offene zu 2,00 €. */
   erwartetCents: number;
+  /** Wer das wirksame Limit gesetzt hat: der Kunde, der Betreiber (Enterprise-Vertrag) oder niemand. */
+  limitQuelle: "kunde" | "betreiber" | null;
 }
 
 /** Z7 — Reicht das Ausgabenlimit fuer `anzahl` weitere Aufnahmen? Offene (noch
@@ -417,7 +425,7 @@ export function ausgabenlimitReicht(z: Pick<ZugangStand, "ausgabenLimitCents" | 
 export const UNLIMITED = -1;
 
 /** Z4 — Stufen und Verbrauch einer Periode gegen das Guthaben rechnen. */
-export async function zugangStand(q: Q, billingAccountId: string, periodKey: string, guthaben: number, ausgabenLimitCents: number | null = null): Promise<ZugangStand> {
+export async function zugangStand(q: Q, billingAccountId: string, periodKey: string, guthaben: number, ausgabenLimitCents: number | null = null, limitQuelle: "kunde" | "betreiber" | null = null): Promise<ZugangStand> {
   const r = await q.query<{ stufe: string | null; n: string; preis: string | null }>(
     `SELECT "stufe", COUNT(*)::text AS n, SUM("preisCents")::text AS preis FROM "UsageEntry"
       WHERE "billingAccountId" = $1 AND "periodKey" = $2 GROUP BY "stufe"`,
@@ -440,6 +448,7 @@ export async function zugangStand(q: Q, billingAccountId: string, periodKey: str
     ueberschreitungCents: unbegrenzt ? 0 : Math.max(0, verbraucht - guthaben),
     ausgabenLimitCents,
     erwartetCents: verbraucht + stufen.offen * 200,
+    limitQuelle: ausgabenLimitCents == null ? null : limitQuelle,
   };
 }
 
@@ -486,7 +495,13 @@ export async function getUsageSnapshot(
   const { guthabenCents } = await import("./billing-plans");
   const guthabenJeSeat = guthabenCents(tier);
   const guthaben = guthabenJeSeat === UNLIMITED ? UNLIMITED : acc.mode === "seats" ? guthabenJeSeat * Math.max(1, await currentMemberCount(pool, acc.id)) : guthabenJeSeat;
-  const zugang = await zugangStand(pool, billingAccountId, periodKey, guthaben, isUnlimited(tier) ? null : acc.ausgabenLimitCents);
+  // Wirksames Limit: das kleinere aus Kundenlimit (nur Pay-as-you-go) und
+  // Betreiber-Limit (auch Enterprise; 2026-10-15).
+  const kundeLimit = isUnlimited(tier) ? null : acc.ausgabenLimitCents;
+  const betreiberLimit = acc.betreiberLimitCents;
+  const limitQuelle: "kunde" | "betreiber" | null =
+    betreiberLimit != null && (kundeLimit == null || betreiberLimit <= kundeLimit) ? "betreiber" : kundeLimit != null ? "kunde" : null;
+  const zugang = await zugangStand(pool, billingAccountId, periodKey, guthaben, limitQuelle === "betreiber" ? betreiberLimit : kundeLimit, limitQuelle);
 
   // Entitlement
   let paidBy: string | null = null;
@@ -567,9 +582,13 @@ export async function assertQuotaAvailable(
   }
   // Z7 — Ausgabenlimit des Kunden (bezahlte Plaene haben sonst keinen Deckel).
   if (snapshot.tier !== "free" && !ausgabenlimitReicht(snapshot.zugang, Math.max(0, neededCount))) {
+    const quelle = snapshot.zugang.limitQuelle ?? "kunde";
+    const meldung = quelle === "betreiber"
+      ? "Das mit AVA vereinbarte Monatslimit fuer die Hintergrundverarbeitung ist erreicht. Neue Firmen werden ab dem naechsten Monat wieder aufgenommen; fuer mehr Volumen bitte an AVA wenden."
+      : "Das monatliche Ausgabenlimit deines Kontos ist erreicht. Ein Owner oder Admin kann es in den Einstellungen unter Abrechnung anheben.";
     throw new HTTPException(402, {
       res: new Response(
-        JSON.stringify({ error: "ausgabenlimit_erreicht", tier: snapshot.tier, ausgabenLimitCents: snapshot.zugang.ausgabenLimitCents, erwartetCents: snapshot.zugang.erwartetCents, neededCount }),
+        JSON.stringify({ error: "ausgabenlimit_erreicht", tier: snapshot.tier, quelle, meldung, ausgabenLimitCents: snapshot.zugang.ausgabenLimitCents, erwartetCents: snapshot.zugang.erwartetCents, neededCount }),
         { status: 402, headers: { "content-type": "application/json" } },
       ),
     });

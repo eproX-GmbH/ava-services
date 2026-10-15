@@ -236,6 +236,97 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
   }, 200);
 });
 
+// 2026-10-15 — Betreiber: Kunden (Abrechnungskonten) mit Detail je Monat, Enterprise-
+// Preisempfehlung, Betreiber-Monatslimit und CSV-Export. Nur Betreiber (sonst 404).
+const betreiberKundenRoute = createRoute({
+  method: "get",
+  path: "/betreiber/kunden",
+  tags: ["billing"],
+  summary: "Betreiber: alle Kunden (Abrechnungskonten) mit Plan, Mitgliedern, Bestand und Limits",
+  responses: {
+    200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber" },
+  },
+});
+usageRouter.openapi(betreiberKundenRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
+  const { kundenListe } = await import("../../lib/betreiber-kunden");
+  return c.json({ kunden: await kundenListe(getGatewayPool()) }, 200);
+});
+
+const KundeParam = z.object({ tenantId: z.string().min(1).max(120) });
+const betreiberKundeRoute = createRoute({
+  method: "get",
+  path: "/betreiber/kunden/{tenantId}",
+  tags: ["billing"],
+  summary: "Betreiber: Kunde im Detail (Bestand, Erloes, Spurkosten je Monat, Enterprise-Empfehlung)",
+  request: { params: KundeParam, query: z.object({ monate: z.coerce.number().int().min(1).max(24).default(12), instanzen: z.coerce.number().int().min(0).max(50).default(0) }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber oder Kunde unbekannt" },
+  },
+});
+usageRouter.openapi(betreiberKundeRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
+  const { tenantId } = c.req.valid("param");
+  const { monate, instanzen } = c.req.valid("query");
+  const { kundeDetail } = await import("../../lib/betreiber-kunden");
+  const d = await kundeDetail(getGatewayPool(), tenantId, monate, instanzen);
+  if (!d) throw new HTTPException(404, { message: "kunde_unbekannt" });
+  return c.json(d, 200);
+});
+
+const betreiberKundeExportRoute = createRoute({
+  method: "get",
+  path: "/betreiber/kunden/{tenantId}/export.csv",
+  tags: ["billing"],
+  summary: "Betreiber: Kostenexport je Monat als CSV",
+  request: { params: KundeParam, query: z.object({ monate: z.coerce.number().int().min(1).max(24).default(12) }) },
+  responses: {
+    200: { content: { "text/csv": { schema: z.string() } }, description: "CSV" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber oder Kunde unbekannt" },
+  },
+});
+usageRouter.openapi(betreiberKundeExportRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
+  const { tenantId } = c.req.valid("param");
+  const { monate } = c.req.valid("query");
+  const { kundeDetail, kundeCsv } = await import("../../lib/betreiber-kunden");
+  const d = await kundeDetail(getGatewayPool(), tenantId, monate, 0);
+  if (!d) throw new HTTPException(404, { message: "kunde_unbekannt" });
+  const datei = `ava-kosten-${d.kunde.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || tenantId}-${monate}m.csv`;
+  return new Response(kundeCsv(d), { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${datei}"` } }) as never;
+});
+
+const betreiberKundeLimitRoute = createRoute({
+  method: "put",
+  path: "/betreiber/kunden/{tenantId}/limit",
+  tags: ["billing"],
+  summary: "Betreiber: Monatslimit der Hintergrundverarbeitung setzen (Cent zu Stufenpreisen, null = keins)",
+  request: { params: KundeParam, body: { content: { "application/json": { schema: z.object({ betreiberLimitCents: z.number().int().min(0).max(1_000_000_000).nullable() }) } }, required: true } },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ betreiberLimitCents: z.number().int().nullable() }) } }, description: "gesetzt" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber oder Kunde unbekannt" },
+  },
+});
+usageRouter.openapi(betreiberKundeLimitRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
+  const { tenantId } = c.req.valid("param");
+  const { betreiberLimitCents } = c.req.valid("json");
+  const pool = getGatewayPool();
+  const r = await pool.query(`UPDATE "TenantBilling" SET "betreiberLimitCents" = $2, "updatedAt" = NOW() WHERE "tenantId" = $1`, [tenantId, betreiberLimitCents]);
+  if (r.rowCount === 0) throw new HTTPException(404, { message: "kunde_unbekannt" });
+  const { invalidateBillingResolution } = await import("../../lib/billing");
+  invalidateBillingResolution(tenantId);
+  const { recordBillingEvent } = await import("../../lib/billing-events");
+  await recordBillingEvent(pool, { billingAccountId: tenantId, kind: "betreiberlimit_gesetzt", source: "admin", actorId: auth.actorId, payload: { betreiberLimitCents } });
+  return c.json({ betreiberLimitCents }, 200);
+});
+
 usageRouter.openapi(usageRoute, async (c) => {
   const auth = c.get("auth");
   if (!auth?.tenantId) {

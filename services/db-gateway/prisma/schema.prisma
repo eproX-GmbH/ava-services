@@ -289,6 +289,8 @@ model TenantBilling {
   karenzTag            Int?
   /// Z7 — Ausgabenlimit je Monat fuer Aufnahmen in Cent (NULL = keins). Setzt der Kunde selbst.
   ausgabenLimitCents   Int?
+  /// Betreiber-Monatslimit Hintergrundverarbeitung (Cent, zu Stufenpreisen); NULL = keins.
+  betreiberLimitCents  Int?
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
 }
