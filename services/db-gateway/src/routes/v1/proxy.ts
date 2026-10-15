@@ -280,11 +280,16 @@ async function recordAudit(
     cacheHit: boolean;
   },
 ): Promise<void> {
+  // 2026-10-15 — je Abfrage den geltenden Tarif und Preis festhalten; Cache-Treffer
+  // und Fehler kosten beim Anbieter nichts.
+  const { valueserpTarif } = await import("../../lib/anbieter-kosten");
+  const t = valueserpTarif();
+  const kosten = row.cacheHit || row.status >= 400 ? 0 : t.preisMicroUsd;
   await pool
     .query(
       `INSERT INTO "ProxyAudit"
-         (proxy, "tenantId", "actorId", "qHash", status, "latencyMs", "cacheHit", "createdAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+         (proxy, "tenantId", "actorId", "qHash", status, "latencyMs", "cacheHit", "tarif", "kostenMicroUsd", "createdAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
       [
         PROXY_NAME,
         row.tenantId,
@@ -293,6 +298,8 @@ async function recordAudit(
         row.status,
         row.latencyMs,
         row.cacheHit,
+        t.name,
+        kosten,
       ],
     )
     .catch((err: unknown) => {

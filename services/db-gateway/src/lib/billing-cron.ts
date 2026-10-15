@@ -59,12 +59,27 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] suspendOverdue failed");
   }
   const tag = now.toISOString().slice(0, 10);
+  // 2026-10-15 — Apify-Laeufe, die beim Aufruf noch liefen: echte Kosten nachtragen.
+  try {
+    const { apifyFehlendeKostenNachtragen } = await import("./anbieter-kosten");
+    const n = await apifyFehlendeKostenNachtragen(pool);
+    if (n > 0) logger.info({ n }, "[billing-cron] Apify-Laufkosten nachgetragen");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Apify-Laufkosten failed");
+  }
   if (now.getUTCHours() >= 3 && letzterAbgleichTag !== tag) {
     letzterAbgleichTag = tag;
     try {
       await reconcileWithStripe();
     } catch (err) {
       logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] reconcile failed");
+    }
+    // Tatsaechliche Anbieterkosten (OpenAI Admin-API, Apify-Konto, Valueserp-Konto).
+    try {
+      const { anbieterAbgleich } = await import("./anbieter-kosten");
+      await anbieterAbgleich(pool, now);
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Anbieter-Abgleich failed");
     }
   }
 }

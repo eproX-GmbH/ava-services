@@ -20,6 +20,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
+import { logger } from "../../lib/logger";
 import { getUsageSnapshot } from "../../lib/billing";
 import { istBetreiber } from "../../middleware/auth";
 import { ErrorShape } from "./schemas";
@@ -210,6 +211,12 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
     // Seit wann die Betreiber-Spur ueberhaupt gemessen wird (vorher 404, Fix 2026-10-14).
     pool.query(`SELECT MIN("createdAt") AS seit FROM "LlmUsage" WHERE kind = 'betreiber'`),
   ]);
+  // 2026-10-15 — tatsaechliche Kosten laut Anbieter (OpenAI Admin-API, Apify, Valueserp).
+  const { anbieterJeMonat } = await import("../../lib/anbieter-kosten");
+  const anbieter = await anbieterJeMonat(pool, monate).catch((err: unknown) => {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[betreiber] Anbieterkosten nicht lesbar");
+    return null;
+  });
   const num = (v: unknown) => Number(v ?? 0);
   const { stufenPreise } = await import("../../lib/stufen");
   const preise = stufenPreise();
@@ -230,6 +237,7 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
     monate,
     modell: modell.rows.map((r) => ({ monat: r.monat, stufe: r.stufe, aufrufe: r.aufrufe, usd: Math.round(num(r.microUsd) / 1e4) / 100, inputTokens: num(r.inputTokens), outputTokens: num(r.outputTokens) })),
     modellMessungSeit: seit ? new Date(seit).toISOString() : null,
+    anbieter,
     valueserp: serp.rows,
     stufen: [...jeStufe.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([stufe, z]) => ({ stufe, ...z, preisEur: Math.round(z.preisEur * 100) / 100, direktkostenEur: Math.round(z.direktkostenEur * 100) / 100 })),
     aufnahmenJeMonat: aufnahmen.rows,
@@ -238,6 +246,25 @@ usageRouter.openapi(betreiberKostenRoute, async (c) => {
 
 // 2026-10-15 — Betreiber: Kunden (Abrechnungskonten) mit Detail je Monat, Enterprise-
 // Preisempfehlung, Betreiber-Monatslimit und CSV-Export. Nur Betreiber (sonst 404).
+// 2026-10-15 — Anbieter-Abgleich von Hand anstossen (sonst taeglich nach 03:00 UTC).
+const betreiberAbgleichRoute = createRoute({
+  method: "post",
+  path: "/betreiber/anbieter/abgleich",
+  tags: ["billing"],
+  summary: "Betreiber: tatsaechliche Anbieterkosten jetzt abrufen (OpenAI, Apify, Valueserp)",
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ ok: z.boolean() }) } }, description: "abgerufen" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber" },
+  },
+});
+usageRouter.openapi(betreiberAbgleichRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
+  const { anbieterAbgleich } = await import("../../lib/anbieter-kosten");
+  await anbieterAbgleich(getGatewayPool());
+  return c.json({ ok: true }, 200);
+});
+
 const betreiberKundenRoute = createRoute({
   method: "get",
   path: "/betreiber/kunden",

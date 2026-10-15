@@ -62,6 +62,11 @@ const schema = z.object({
   // attaches the key server-side. Lets the operator rotate without
   // redeploying every desktop.
   VALUESERP_API_KEY: z.string().optional(),
+  /** Geltender Valueserp-Tarif (Name) und Preis je Abfrage in Mikro-USD (2500 = 0,0025 USD). */
+  VALUESERP_TARIF: z.string().optional(),
+  VALUESERP_PREIS_MICROUSD: z.coerce.number().int().optional(),
+  /** OpenAI Admin-Schluessel (Organisation) fuer Kosten-/Verbrauchsabgleich. */
+  OPENAI_ADMIN_KEY: z.string().optional(),
   // docs/PLAN_ABRECHNUNG_ZUGANG.md (Z1): Betreiber-Spur. Pool-Stufen der Producer
   // (Website-Judge, Profil, Kontakt, E-Mail, Publikationen) laufen ueber diesen
   // OpenAI-Schluessel mit festem Modell; der Apify-Token liegt zentral hier.

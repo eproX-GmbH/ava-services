@@ -332,7 +332,12 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
   const abschluss = (text: string, status: number) => {
     const latencyMs = Date.now() - start;
     if (!meter) {
-      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false, quelle });
+      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false, quelle }).then((id) => {
+        // 2026-10-15 — Apify: Lauf-Kennung und echte Kosten laut Apify an die Zeile.
+        if (id && kind === "apify" && status < 400) {
+          void import("../../lib/anbieter-kosten").then(({ apifyLaufNachtragen }) => apifyLaufNachtragen(pool, id, rest, upstream.headers, text));
+        }
+      });
       return;
     }
     const usage = streamed ? parseUsageFromSse(text) : parseUsageFromJson(text);
@@ -381,19 +386,22 @@ async function promptAuditAktiv(pool: ReturnType<typeof getGatewayPool>, tenantI
 async function recordUsage(
   pool: ReturnType<typeof getGatewayPool>,
   e: { tenantId: string; actorId: string; kind: ProxyKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean; quelle?: string | null },
-): Promise<void> {
+): Promise<string | null> {
   const input = e.usage?.inputTokens ?? 0;
   const output = e.usage?.outputTokens ?? 0;
   const cache = e.usage?.cacheReadTokens ?? 0;
   const cost = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind === "betreiber" ? "openai" : e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
+  const id = `lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   try {
     await pool.query(
       `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel", "quelle")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel, e.quelle ?? null],
+      [id, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel, e.quelle ?? null],
     );
+    return id;
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage insert failed");
+    return null;
   }
 }
 

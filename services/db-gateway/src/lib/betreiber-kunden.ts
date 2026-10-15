@@ -6,11 +6,11 @@
 import type { Pool } from "pg";
 import { stufenPreise } from "./stufen";
 import { tarif } from "./kalkulation";
+import { openaiFaktorJeMonat, valueserpTarif } from "./anbieter-kosten";
 
 type Stufe = "klein" | "mittel" | "gross";
 const STUFEN: Stufe[] = ["klein", "mittel", "gross"];
-const VALUESERP_USD_JE_SUCHE = 0.0025;
-/** Apify-Lauf (Firmensuche/-details/Mitarbeiter): Mittel aus der Kalkulation, nur Schaetzung. */
+/** Apify-Lauf ohne nachgetragene Kosten (noch laufend/unbekannt): Mittel aus der Kalkulation. */
 const APIFY_USD_JE_LAUF = 0.12;
 const USD_EUR = 0.92;
 
@@ -80,11 +80,18 @@ export interface MonatZeile {
   erloesCents: number;
   direktkostenCents: number;
   modellAufrufe: number;
+  /** Gerechnet aus Tokens und Preistabelle. */
   modellUsd: number;
+  /** Laut OpenAI-Rechnung umgelegt (Faktor echt/gerechnet des Monats), null ohne Abgleich. */
+  modellUsdEcht: number | null;
   apifyLaeufe: number;
+  /** Echte Laufkosten laut Apify; Laeufe ohne nachgetragene Kosten mit Mittelwert. */
   apifyUsd: number;
+  apifyLaeufeOhneKosten: number;
   serpSuchen: number;
   serpUsd: number;
+  /** Abfragen je Abrechnungstarif. */
+  serpTarife: Array<{ tarif: string; suchen: number; usd: number }>;
   /** Spurkosten gesamt in Cent (EUR, Umrechnung USD_EUR). */
   spurkostenCents: number;
 }
@@ -168,23 +175,25 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
          FROM "LlmUsage" WHERE kind = 'betreiber' AND "tenantId" = $1 AND "createdAt" > NOW() - ($2 || ' months')::interval GROUP BY 1`,
       [tenantId, String(monate)],
     ),
-    pool.query<{ monat: string; n: string }>(
-      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*)::text AS n
+    pool.query<{ monat: string; n: string; ohne: string; usd: string }>(
+      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*)::text AS n, COUNT(*) FILTER (WHERE "costMicroUsd" IS NULL)::text AS ohne, COALESCE(SUM("costMicroUsd"), 0)::text AS usd
          FROM "LlmUsage" WHERE kind = 'apify' AND "tenantId" = $1 AND "createdAt" > NOW() - ($2 || ' months')::interval GROUP BY 1`,
       [tenantId, String(monate)],
     ),
-    pool.query<{ monat: string; n: string }>(
-      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, COUNT(*) FILTER (WHERE NOT "cacheHit")::text AS n
-         FROM "ProxyAudit" WHERE proxy = 'valueserp' AND "tenantId" = $1 AND "createdAt" > NOW() - ($2 || ' months')::interval GROUP BY 1`,
+    pool.query<{ monat: string; tarif: string | null; n: string; usd: string }>(
+      `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, tarif, COUNT(*) FILTER (WHERE NOT "cacheHit" AND status < 400)::text AS n, COALESCE(SUM("kostenMicroUsd"), 0)::text AS usd
+         FROM "ProxyAudit" WHERE proxy = 'valueserp' AND "tenantId" = $1 AND "createdAt" > NOW() - ($2 || ' months')::interval GROUP BY 1, 2`,
       [tenantId, String(monate)],
     ),
   ]);
+  const faktor = await openaiFaktorJeMonat(pool, monate).catch(() => new Map<string, number>());
+  const serpTarif = valueserpTarif();
 
   const jeMonat = new Map<string, MonatZeile>();
   const zeile = (m: string): MonatZeile => {
     let z = jeMonat.get(m);
     if (!z) {
-      z = { monat: m, aufnahmen: leer(), bestand: 0, bestandswertCents: 0, firmenerloesCents: 0, seatErloesCents: zahlend ? kunde!.mitglieder * seatPreis : 0, fixpreisCents: kunde!.tier === "enterprise" ? (kunde!.enterprisePreisCents ?? 0) : 0, erloesCents: 0, direktkostenCents: 0, modellAufrufe: 0, modellUsd: 0, apifyLaeufe: 0, apifyUsd: 0, serpSuchen: 0, serpUsd: 0, spurkostenCents: 0 };
+      z = { monat: m, aufnahmen: leer(), bestand: 0, bestandswertCents: 0, firmenerloesCents: 0, seatErloesCents: zahlend ? kunde!.mitglieder * seatPreis : 0, fixpreisCents: kunde!.tier === "enterprise" ? (kunde!.enterprisePreisCents ?? 0) : 0, erloesCents: 0, direktkostenCents: 0, modellAufrufe: 0, modellUsd: 0, modellUsdEcht: null, apifyLaeufe: 0, apifyUsd: 0, apifyLaeufeOhneKosten: 0, serpSuchen: 0, serpUsd: 0, serpTarife: [], spurkostenCents: 0 };
       jeMonat.set(m, z);
     }
     return z;
@@ -204,14 +213,33 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
       z.direktkostenCents += n * preise.klein.direktkostenCents;
     }
   }
-  for (const r of modell.rows) { const z = zeile(r.monat); z.modellAufrufe = Number(r.n); z.modellUsd = Number(r.usd) / 1e6; }
-  for (const r of apify.rows) { const z = zeile(r.monat); z.apifyLaeufe = Number(r.n); z.apifyUsd = z.apifyLaeufe * APIFY_USD_JE_LAUF; }
-  for (const r of serp.rows) { const z = zeile(r.monat); z.serpSuchen = Number(r.n); z.serpUsd = z.serpSuchen * VALUESERP_USD_JE_SUCHE; }
+  for (const r of modell.rows) {
+    const z = zeile(r.monat);
+    z.modellAufrufe = Number(r.n);
+    z.modellUsd = Number(r.usd) / 1e6;
+    const f = faktor.get(r.monat);
+    z.modellUsdEcht = f == null ? null : z.modellUsd * f;
+  }
+  for (const r of apify.rows) {
+    const z = zeile(r.monat);
+    z.apifyLaeufe = Number(r.n);
+    z.apifyLaeufeOhneKosten = Number(r.ohne);
+    z.apifyUsd = Number(r.usd) / 1e6 + z.apifyLaeufeOhneKosten * APIFY_USD_JE_LAUF;
+  }
+  for (const r of serp.rows) {
+    const z = zeile(r.monat);
+    const n = Number(r.n);
+    const usd = r.tarif ? Number(r.usd) / 1e6 : (n * serpTarif.preisMicroUsd) / 1e6;
+    z.serpSuchen += n;
+    z.serpUsd += usd;
+    z.serpTarife.push({ tarif: r.tarif ?? `${serpTarif.name} (angenommen)`, suchen: n, usd: Math.round(usd * 100) / 100 });
+  }
   for (const z of jeMonat.values()) {
     z.firmenerloesCents = zahlend ? z.bestandswertCents : 0;
     z.erloesCents = z.firmenerloesCents + z.seatErloesCents + z.fixpreisCents;
-    z.spurkostenCents = Math.round((z.modellUsd + z.apifyUsd + z.serpUsd) * USD_EUR * 100);
+    z.spurkostenCents = Math.round(((z.modellUsdEcht ?? z.modellUsd) + z.apifyUsd + z.serpUsd) * USD_EUR * 100);
     z.modellUsd = Math.round(z.modellUsd * 100) / 100;
+    z.modellUsdEcht = z.modellUsdEcht == null ? null : Math.round(z.modellUsdEcht * 100) / 100;
     z.apifyUsd = Math.round(z.apifyUsd * 100) / 100;
     z.serpUsd = Math.round(z.serpUsd * 100) / 100;
   }
@@ -297,13 +325,13 @@ export function kundeCsv(d: KundeDetail): string {
     "Monat", "Kunde", "Konto", "Plan", "Mitglieder",
     "Firmen klein", "Firmen mittel", "Firmen gross", "Firmen ohne Stufe", "Firmen gesamt",
     "Bestandswert zu Stufenpreisen EUR", "Firmenerloes EUR", "Seat-Erloes EUR", "Fixpreis EUR", "Erloes gesamt EUR",
-    "Direktkosten gerechnet EUR", "Modellaufrufe Betreiber-Spur", "Modellkosten USD", "Apify-Laeufe", "Apify geschaetzt USD", "Google-Suchen", "Google USD", "Spurkosten gemessen EUR",
+    "Direktkosten gerechnet EUR", "Modellaufrufe Betreiber-Spur", "Modellkosten gerechnet USD", "Modellkosten laut OpenAI USD", "Apify-Laeufe", "Apify laut Anbieter USD", "Google-Suchen", "Google-Tarif", "Google USD", "Spurkosten EUR",
   ];
   const zeilen = d.monate.map((z) => [
     z.monat === "lifetime" ? "Free (lebenslang)" : z.monat, d.kunde.name, d.kunde.tenantId, d.kunde.tier, String(d.kunde.mitglieder),
     z.aufnahmen.klein, z.aufnahmen.mittel, z.aufnahmen.gross, z.aufnahmen.offen, z.bestand,
     de(z.bestandswertCents), de(z.firmenerloesCents), de(z.seatErloesCents), de(z.fixpreisCents), de(z.erloesCents),
-    de(z.direktkostenCents), z.modellAufrufe, usdDe(z.modellUsd), z.apifyLaeufe, usdDe(z.apifyUsd), z.serpSuchen, usdDe(z.serpUsd), de(z.spurkostenCents),
+    de(z.direktkostenCents), z.modellAufrufe, usdDe(z.modellUsd), z.modellUsdEcht == null ? "" : usdDe(z.modellUsdEcht), z.apifyLaeufe, usdDe(z.apifyUsd), z.serpSuchen, z.serpTarife.map((t) => `${t.tarif}: ${t.suchen}`).join(" | "), usdDe(z.serpUsd), de(z.spurkostenCents),
   ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"));
   return "﻿" + [kopf.map((k) => `"${k}"`).join(";"), ...zeilen].join("\r\n") + "\r\n";
 }
