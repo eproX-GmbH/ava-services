@@ -121,6 +121,15 @@ Enterprise-Verträgen (Fixpreis je Monat) einen sicheren Preis nennen können.
 - Bestandsübersicht aller Kunden: Aufnahmen je Plan-Gruppe (zahlend/Enterprise/Free),
   Firmenerlös nur zahlend, Modellkosten je Aufruf mit Messbeginn (Spur seit 14.10.2026).
 
+- Nachtrag 2026-10-15 (Enterprise-Vertrag, Kundensicht, Organisationen): `TenantBilling.enterprisePreisCents`
+  (ausgehandelter Fixpreis, Betreiber setzt ihn mit dem Limit über `PUT /v1/betreiber/kunden/{id}/limit`);
+  Owner/Admin sehen unter Abrechnung Vertrag, Monatskontingent (Bestandswert zu Stufenpreisen gegen das
+  wirksame Limit) und Rechnungsbeträge je Monat mit CSV (`GET /v1/tenants/me/kosten`, `…/export.csv`).
+  Registrierung verlangt eine Organisation (Desktop-Assistent: anlegen oder beitreten, kein Weg ohne);
+  Kunden der Betreiber-Sicht sind nur Organisationen. `Tenant.deletedAt`: verlässt das letzte Mitglied
+  eine Organisation (Austritt oder Wechsel per Beitritt), wird sie als gelöscht markiert und der
+  Einladungslink entwertet; nie hart löschen. Migration 20261015_tenant_geloescht_enterprise_preis.
+
 ## 4. Offene Entscheidungen
 
 1. Pool-Modell: gpt-6.1-sol für alles oder luna für Profil/Kontakt-Extraktion (Qualität vs. 2,3× Kosten)?
