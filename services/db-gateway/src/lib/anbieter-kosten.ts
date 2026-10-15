@@ -118,19 +118,62 @@ export async function apifyFehlendeKostenNachtragen(pool: Pool): Promise<number>
   return n;
 }
 
-async function apifyMonatskonto(pool: Pool, monat: string): Promise<void> {
+/** Apify-Konto: Verbrauch im laufenden Abrechnungszyklus (laeuft vom 13. bis 12., nicht
+ *  kalendermonatlich) laut /v2/users/me/limits. Tag = Zyklusbeginn. */
+async function apifyZyklus(pool: Pool): Promise<void> {
   const token = apifyToken();
   if (!token) return;
-  const res = await fetch(`${APIFY_BASE}/v2/users/me/usage/monthly?date=${monat}&token=${encodeURIComponent(token)}`);
-  if (!res.ok) throw new Error(`Apify usage/monthly ${res.status}`);
-  const j = (await res.json()) as { data?: { totalUsageCreditsUsdAfterVolumeDiscount?: number; totalUsageCreditsUsdBeforeVolumeDiscount?: number; monthlyServiceUsage?: Record<string, { totalUsageCreditsUsdAfterVolumeDiscount?: number; quantity?: number }> } };
+  const res = await fetch(`${APIFY_BASE}/v2/users/me/limits?token=${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error(`Apify limits ${res.status}`);
+  const j = (await res.json()) as { data?: { monthlyUsageCycle?: { startAt?: string; endAt?: string }; limits?: { maxMonthlyUsageUsd?: number }; current?: { monthlyUsageUsd?: number } } };
   const d = j.data;
-  if (!d) return;
-  const gesamt = d.totalUsageCreditsUsdAfterVolumeDiscount ?? d.totalUsageCreditsUsdBeforeVolumeDiscount ?? 0;
-  await upsert(pool, { quelle: "apify", tag: `${monat}-01`, kennung: "monat", betragMicroUsd: gesamt * 1e6, details: d.monthlyServiceUsage ?? null });
-  for (const [dienst, v] of Object.entries(d.monthlyServiceUsage ?? {})) {
-    await upsert(pool, { quelle: "apify", tag: `${monat}-01`, kennung: `dienst:${dienst}`, betragMicroUsd: (v.totalUsageCreditsUsdAfterVolumeDiscount ?? 0) * 1e6, menge: v.quantity ?? 0 });
+  const von = d?.monthlyUsageCycle?.startAt?.slice(0, 10);
+  if (!d || !von) return;
+  await upsert(pool, {
+    quelle: "apify", tag: von, kennung: "zyklus", betragMicroUsd: (d.current?.monthlyUsageUsd ?? 0) * 1e6,
+    details: { von, bis: d.monthlyUsageCycle?.endAt?.slice(0, 10) ?? null, limitUsd: d.limits?.maxMonthlyUsageUsd ?? null },
+  });
+}
+
+/** Laeufe ohne Kennung (Aufrufe vor dem 15.10.2026 oder ohne Header) den Apify-Laeufen
+ *  nach Startzeit zuordnen: naechste unzugeordnete Verbrauchszeile innerhalb von 3 Minuten. */
+export async function apifyLaeufeZuordnen(pool: Pool): Promise<number> {
+  const token = apifyToken();
+  if (!token) return 0;
+  const offen = await pool.query<{ id: string; createdAt: Date }>(
+    `SELECT "id", "createdAt" FROM "LlmUsage" WHERE kind = 'apify' AND "ref" IS NULL AND status < 400 AND "createdAt" > NOW() - INTERVAL '31 days' ORDER BY "createdAt"`,
+  );
+  if (offen.rows.length === 0) return 0;
+  const belegt = new Set<string>((await pool.query<{ ref: string }>(`SELECT "ref" FROM "LlmUsage" WHERE kind = 'apify' AND "ref" IS NOT NULL AND "createdAt" > NOW() - INTERVAL '31 days'`)).rows.map((r) => r.ref));
+  const frei = offen.rows.map((r) => ({ id: r.id, t: new Date(r.createdAt).getTime(), genutzt: false }));
+  let n = 0;
+  for (let offset = 0; offset < 2000; offset += 100) {
+    const res = await fetch(`${APIFY_BASE}/v2/actor-runs?desc=1&limit=100&offset=${offset}&token=${encodeURIComponent(token)}`);
+    if (!res.ok) break;
+    const j = (await res.json()) as { data?: { items?: Array<{ id: string; actId?: string; status?: string; startedAt?: string; finishedAt?: string; usageTotalUsd?: number }>; total?: number } };
+    const items = j.data?.items ?? [];
+    if (items.length === 0) break;
+    for (const run of items) {
+      if (!run.startedAt || belegt.has(run.id)) continue;
+      const t0 = new Date(run.startedAt).getTime();
+      // Die Verbrauchszeile entsteht nach dem Lauf (run-sync): Zeile zwischen Start und Start + 3 Min.
+      let best: (typeof frei)[number] | null = null;
+      for (const z of frei) {
+        if (z.genutzt) continue;
+        const d = z.t - t0;
+        if (d >= -5_000 && d <= 180_000 && (!best || Math.abs(d) < Math.abs(best.t - t0))) best = z;
+      }
+      if (!best) continue;
+      best.genutzt = true;
+      belegt.add(run.id);
+      const usd = typeof run.usageTotalUsd === "number" ? Math.round(run.usageTotalUsd * 1e6) : null;
+      await pool.query(`UPDATE "LlmUsage" SET "ref" = $2, "model" = COALESCE($3, "model"), "costMicroUsd" = COALESCE($4, "costMicroUsd") WHERE "id" = $1`, [best.id, run.id, run.actId ?? null, usd]);
+      n++;
+    }
+    const aelteste = items[items.length - 1]?.startedAt;
+    if (aelteste && new Date(aelteste).getTime() < Date.now() - 31 * 86_400_000) break;
   }
+  return n;
 }
 
 // ---- OpenAI: Kosten und Verbrauch laut Admin-API ----------------------------
@@ -198,20 +241,32 @@ async function valueserpAbgleich(pool: Pool): Promise<void> {
   if (!res.ok) throw new Error(`Valueserp account ${res.status}`);
   const j = (await res.json()) as { account_info?: Record<string, unknown> };
   const a = j.account_info ?? {};
-  const tag = new Date().toISOString().slice(0, 10);
   const t = valueserpTarif();
-  const verbraucht = Number(a["credits_used"] ?? a["credits_used_this_month"] ?? 0);
-  await upsert(pool, { quelle: "valueserp", tag, kennung: "konto", betragMicroUsd: verbraucht * t.preisMicroUsd, menge: verbraucht, details: { ...a, tarif: t.name, preisMicroUsd: t.preisMicroUsd } });
+  // Nie den Schluessel oder die Statusliste ablegen.
+  const { api_key: _k, status: _s, usage_history: history, ...konto } = a as { api_key?: unknown; status?: unknown; usage_history?: Array<{ year: number; month_number: number; credits_total_for_month?: number; credits_total_per_day?: Record<string, number> }> } & Record<string, unknown>;
+  void _k; void _s;
+  const tag = new Date().toISOString().slice(0, 10);
+  await upsert(pool, { quelle: "valueserp", tag, kennung: "konto", betragMicroUsd: 0, menge: Number(konto["topup_credits_remaining"] ?? 0), details: { ...konto, tarif: t.name, preisMicroUsd: t.preisMicroUsd } });
+  for (const m of history ?? []) {
+    const mm = String(m.month_number).padStart(2, "0");
+    for (const [d, n] of Object.entries(m.credits_total_per_day ?? {})) {
+      const anzahl = Number(n);
+      if (!anzahl) continue;
+      const tagX = `${m.year}-${mm}-${String(d).padStart(2, "0")}`;
+      await upsert(pool, { quelle: "valueserp", tag: tagX, kennung: "suchen", betragMicroUsd: anzahl * t.preisMicroUsd, menge: anzahl, details: { tarif: t.name } });
+    }
+  }
 }
 
 /** Taeglicher Abgleich aller drei Anbieter; Fehler je Anbieter werden geloggt, nicht geworfen. */
 export async function anbieterAbgleich(pool: Pool, now: Date = new Date()): Promise<void> {
   const monat = now.toISOString().slice(0, 7);
   const vormonat = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+  void monat; void vormonat;
   const schritte: Array<[string, () => Promise<unknown>]> = [
     ["openai", () => openaiAbgleich(pool, 35)],
-    ["apify-monat", () => apifyMonatskonto(pool, monat)],
-    ["apify-vormonat", () => apifyMonatskonto(pool, vormonat)],
+    ["apify-zyklus", () => apifyZyklus(pool)],
+    ["apify-zuordnen", () => apifyLaeufeZuordnen(pool)],
     ["apify-laeufe", () => apifyFehlendeKostenNachtragen(pool)],
     ["valueserp", () => valueserpAbgleich(pool)],
   ];
@@ -237,21 +292,32 @@ export interface AnbieterMonat {
   apifyLaeufeOhneKosten: number;
   apifyLaeufeUsd: number;
   apifyKontoUsd: number | null;
-  /** Valueserp: Abfragen je Tarif. */
+  /** Valueserp: Abfragen je Tarif (unsere Zaehlung) und laut Konto. */
   valueserp: Array<{ tarif: string; suchen: number; usd: number }>;
+  valueserpLautKonto: { suchen: number; usd: number } | null;
 }
 
-export async function anbieterJeMonat(pool: Pool, monate: number): Promise<{ monate: AnbieterMonat[]; stand: { openaiAdmin: boolean; apify: boolean; valueserp: boolean; zuletzt: string | null } }> {
-  const [ll, ak, serp, zuletzt] = await Promise.all([
+export interface AnbieterStand {
+  openaiAdmin: boolean;
+  apify: boolean;
+  valueserp: boolean;
+  zuletzt: string | null;
+  /** Apify-Abrechnungszyklen (13. bis 12.) mit Verbrauch laut Konto. */
+  apifyZyklen: Array<{ von: string; bis: string | null; usd: number; limitUsd: number | null }>;
+  valueserpKonto: { plan: string | null; guthabenSuchen: number | null } | null;
+}
+
+export async function anbieterJeMonat(pool: Pool, monate: number): Promise<{ monate: AnbieterMonat[]; stand: AnbieterStand }> {
+  const [ll, ak, serp, zuletzt, zyk, vsk] = await Promise.all([
     pool.query<{ monat: string; kind: string; n: string; usd: string; ohne: string; cache: string }>(
       `SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS monat, kind, COUNT(*)::text AS n, COALESCE(SUM("costMicroUsd"), 0)::text AS usd,
               COUNT(*) FILTER (WHERE "costMicroUsd" IS NULL)::text AS ohne, COALESCE(SUM("cacheReadTokens"), 0)::text AS cache
          FROM "LlmUsage" WHERE kind IN ('betreiber', 'apify') AND "createdAt" > NOW() - ($1 || ' months')::interval GROUP BY 1, 2`,
       [String(monate)],
     ),
-    pool.query<{ monat: string; quelle: string; kennung: string; usd: string }>(
-      `SELECT to_char(date_trunc('month', "tag"), 'YYYY-MM') AS monat, quelle, kennung, SUM("betragMicroUsd")::text AS usd
-         FROM "AnbieterKosten" WHERE "tag" > NOW() - ($1 || ' months')::interval AND ((quelle = 'openai' AND kennung = 'gesamt') OR (quelle = 'apify' AND kennung = 'monat')) GROUP BY 1, 2, 3`,
+    pool.query<{ monat: string; quelle: string; kennung: string; usd: string; menge: string }>(
+      `SELECT to_char(date_trunc('month', "tag"), 'YYYY-MM') AS monat, quelle, kennung, SUM("betragMicroUsd")::text AS usd, SUM("menge")::text AS menge
+         FROM "AnbieterKosten" WHERE "tag" > NOW() - ($1 || ' months')::interval AND ((quelle = 'openai' AND kennung = 'gesamt') OR (quelle = 'valueserp' AND kennung = 'suchen')) GROUP BY 1, 2, 3`,
       [String(monate)],
     ),
     pool.query<{ monat: string; tarif: string | null; n: string; usd: string }>(
@@ -260,12 +326,15 @@ export async function anbieterJeMonat(pool: Pool, monate: number): Promise<{ mon
       [String(monate)],
     ),
     pool.query<{ zuletzt: Date | null }>(`SELECT MAX("abgerufenAt") AS zuletzt FROM "AnbieterKosten"`),
+    pool.query<{ tag: Date; usd: string; details: { bis?: string | null; limitUsd?: number | null } | null }>(`SELECT "tag", "betragMicroUsd"::text AS usd, details FROM "AnbieterKosten" WHERE quelle = 'apify' AND kennung = 'zyklus' ORDER BY "tag" DESC LIMIT 6`),
+    pool.query<{ menge: string; details: { plan?: string } | null }>(`SELECT "menge"::text AS menge, details FROM "AnbieterKosten" WHERE quelle = 'valueserp' AND kennung = 'konto' ORDER BY "tag" DESC LIMIT 1`),
   ]);
+
   const je = new Map<string, AnbieterMonat>();
   const z = (m: string) => {
     let x = je.get(m);
     if (!x) {
-      x = { monat: m, openaiGerechnetUsd: 0, openaiLautAnbieterUsd: null, openaiCacheTokens: 0, apifyLaeufe: 0, apifyLaeufeOhneKosten: 0, apifyLaeufeUsd: 0, apifyKontoUsd: null, valueserp: [] };
+      x = { monat: m, openaiGerechnetUsd: 0, openaiLautAnbieterUsd: null, openaiCacheTokens: 0, apifyLaeufe: 0, apifyLaeufeOhneKosten: 0, apifyLaeufeUsd: 0, apifyKontoUsd: null, valueserp: [], valueserpLautKonto: null };
       je.set(m, x);
     }
     return x;
@@ -279,7 +348,7 @@ export async function anbieterJeMonat(pool: Pool, monate: number): Promise<{ mon
   for (const r of ak.rows) {
     const x = z(r.monat);
     if (r.quelle === "openai") x.openaiLautAnbieterUsd = Number(r.usd) / 1e6;
-    else x.apifyKontoUsd = Number(r.usd) / 1e6;
+    else x.valueserpLautKonto = { suchen: Number(r.menge), usd: Math.round(Number(r.usd) / 1e4) / 100 };
   }
   for (const r of serp.rows) {
     const x = z(r.monat);
@@ -292,7 +361,12 @@ export async function anbieterJeMonat(pool: Pool, monate: number): Promise<{ mon
   const rund = (v: number | null) => (v == null ? null : Math.round(v * 100) / 100);
   return {
     monate: [...je.values()].sort((a, b) => b.monat.localeCompare(a.monat)).map((x) => ({ ...x, openaiGerechnetUsd: rund(x.openaiGerechnetUsd)!, openaiLautAnbieterUsd: rund(x.openaiLautAnbieterUsd), apifyLaeufeUsd: rund(x.apifyLaeufeUsd)!, apifyKontoUsd: rund(x.apifyKontoUsd) })),
-    stand: { openaiAdmin: Boolean(env.OPENAI_ADMIN_KEY), apify: Boolean(env.OPERATOR_APIFY_TOKEN), valueserp: Boolean(env.VALUESERP_API_KEY), zuletzt: zuletzt.rows[0]?.zuletzt ? new Date(zuletzt.rows[0].zuletzt).toISOString() : null },
+    stand: {
+      openaiAdmin: Boolean(env.OPENAI_ADMIN_KEY), apify: Boolean(env.OPERATOR_APIFY_TOKEN), valueserp: Boolean(env.VALUESERP_API_KEY),
+      zuletzt: zuletzt.rows[0]?.zuletzt ? new Date(zuletzt.rows[0].zuletzt).toISOString() : null,
+      apifyZyklen: zyk.rows.map((r) => ({ von: new Date(r.tag).toISOString().slice(0, 10), bis: r.details?.bis ?? null, usd: Math.round(Number(r.usd) / 1e4) / 100, limitUsd: r.details?.limitUsd ?? null })),
+      valueserpKonto: vsk.rows[0] ? { plan: vsk.rows[0].details?.plan ?? null, guthabenSuchen: Number(vsk.rows[0].menge) } : null,
+    },
   };
 }
 
