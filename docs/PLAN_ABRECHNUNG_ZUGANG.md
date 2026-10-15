@@ -93,6 +93,34 @@ Direktkosten prüfen.
 
 Recherche (Stellenanzeigen, Ausschreibungen/Expansion, Deep Research) bleibt bewusst beim Kundenmodell, auch wenn die Ergebnisse im Pool landen (Joyce, 2026-10-13): die Daten sind nur frisch wertvoll. Offen: Sichtbarkeit der Rechercheergebnisse nur fuer den zahlenden Nutzer und seine Organisation (Tenant-Kennzeichen an JobPosting/DeepResearch, Filter beim Lesen) — bewusst noch nicht umgesetzt.
 
+## Z12 — Betreiber-Sicht je Kunde, Enterprise-Fixpreis, Betreiber-Limit, Export (2026-10-15)
+
+Anlass: Patrick und Henning müssen je Kunde wissen, was er uns kostet, und bei
+Enterprise-Verträgen (Fixpreis je Monat) einen sicheren Preis nennen können.
+
+- Gateway `GET /v1/betreiber/kunden` (alle Abrechnungskonten mit Plan, Mitgliedern,
+  Bestand, Limits) und `GET /v1/betreiber/kunden/{tenantId}?monate&instanzen`
+  (lib/betreiber-kunden.ts): je Monat Bestand nach Stufen, Bestandswert zu heutigen
+  Stufenpreisen, Firmen-/Seat-Erlös (nur Starter/Pro), gerechnete Direktkosten,
+  gemessene Spurkosten (LlmUsage betreiber + apify je tenantId, ProxyAudit valueserp).
+- Enterprise-Empfehlung: Listenpreis heute und in 12 Monaten (Bestand + stärkster
+  Monatszuwachs × 12, mittlerer Stufenpreis aus dem Stufenmix) + 15 % Reserve, mindestens
+  das Dreifache der Direktkosten in 12 Monaten, auf 50 € aufgerundet; Begründung als
+  Liste; Vorschlag fürs Monatslimit = Bestandswert in 12 Monaten + 25 %.
+- Betreiber-Monatslimit `TenantBilling.betreiberLimitCents` (Migration
+  20261015_betreiber_limit), `PUT /v1/betreiber/kunden/{tenantId}/limit`. Wirksam ist das
+  kleinere aus Kundenlimit (nur Pay-as-you-go) und Betreiber-Limit (auch Enterprise);
+  `ZugangStand.limitQuelle` sagt, wessen Limit greift. 402 `ausgabenlimit_erreicht`
+  trägt `quelle` und `meldung`; internal-quota liefert reason `betreiberlimit`.
+  Desktop zeigt bei Vertragslimit eine Lesezeile statt des Eingabefelds; das
+  Chat-Werkzeug abrechnung_limit_setzen lehnt ab.
+- CSV-Export `GET /v1/betreiber/kunden/{tenantId}/export.csv?monate` (Semikolon, deutsche
+  Dezimaltrennung, BOM) für Buchhaltung und Vertrieb, auch für Pay-as-you-go.
+- Konsole "Bestand": Auswahl "Alle Kunden" / Kunde; Kundenansicht mit Kennzahlen,
+  Monatstabelle, Empfehlung (Eingabe Server-Instanzen), Limit-Formular, Export-Knopf.
+- Bestandsübersicht aller Kunden: Aufnahmen je Plan-Gruppe (zahlend/Enterprise/Free),
+  Firmenerlös nur zahlend, Modellkosten je Aufruf mit Messbeginn (Spur seit 14.10.2026).
+
 ## 4. Offene Entscheidungen
 
 1. Pool-Modell: gpt-6.1-sol für alles oder luna für Profil/Kontakt-Extraktion (Qualität vs. 2,3× Kosten)?

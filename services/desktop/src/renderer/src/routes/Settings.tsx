@@ -5256,7 +5256,14 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
           {" · "}kommt mit der nächsten Rechnung
         </span>
       )}
-      {tier !== "free" && zugang.guthabenCents !== -1 && (
+      {zugang.limitQuelle === "betreiber" && zugang.ausgabenLimitCents != null && (
+        <span className="muted small">
+          Monatslimit für die Hintergrundverarbeitung laut Vertrag: {eur(zugang.ausgabenLimitCents)}
+          {" · "}belegt {eur(zugang.erwartetCents ?? zugang.verbrauchtCents)}
+          {(zugang.erwartetCents ?? zugang.verbrauchtCents) >= zugang.ausgabenLimitCents ? " · erreicht, neue Firmen ab dem nächsten Monat" : ""}
+        </span>
+      )}
+      {tier !== "free" && zugang.guthabenCents !== -1 && zugang.limitQuelle !== "betreiber" && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           <label className="muted small" htmlFor="ausgabenlimit">Ausgabenlimit je Monat</label>
           <input
@@ -5279,7 +5286,7 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
           {limitFehler && <span className="error small">{limitFehler}</span>}
         </div>
       )}
-      {tier !== "free" && zugang.ausgabenLimitCents != null && (zugang.erwartetCents ?? zugang.verbrauchtCents) >= zugang.ausgabenLimitCents && (
+      {tier !== "free" && zugang.limitQuelle !== "betreiber" && zugang.ausgabenLimitCents != null && (zugang.erwartetCents ?? zugang.verbrauchtCents) >= zugang.ausgabenLimitCents && (
         <span className="small" style={{ color: "var(--color-warn)" }}>
           Dein Ausgabenlimit ist erreicht. Neue Firmen warten, bis du es erhöhst oder der Monat wechselt.
         </span>

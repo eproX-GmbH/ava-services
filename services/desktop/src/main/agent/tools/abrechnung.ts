@@ -23,6 +23,7 @@ interface Usage {
     uebrigCents: number;
     ueberschreitungCents: number;
     ausgabenLimitCents?: number | null;
+    limitQuelle?: "kunde" | "betreiber" | null;
     erwartetCents?: number;
   };
 }
@@ -71,7 +72,9 @@ export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
           u.tier === "free"
             ? "Free: 25 Firmen lebenslang, Kontakte nur von der Website (kein LinkedIn). Mehr Firmen und LinkedIn-Kontakte mit Pro (49 € je Nutzer und Monat plus 0,50 bis 1,50 € je Firma im Bestand und Monat)."
             : limit != null && erwartet >= limit
-              ? "Das Ausgabenlimit ist erreicht: neue Firmen warten, bis das Limit erhoeht wird (abrechnung_limit_setzen) oder der Monat wechselt."
+              ? z?.limitQuelle === "betreiber"
+                ? "Das mit AVA vereinbarte Monatslimit fuer die Hintergrundverarbeitung ist erreicht: neue Firmen werden ab dem naechsten Monat aufgenommen; fuer mehr Volumen an AVA wenden."
+                : "Das Ausgabenlimit ist erreicht: neue Firmen warten, bis das Limit erhoeht wird (abrechnung_limit_setzen) oder der Monat wechselt."
               : "Jede Firma im Bestand wird je Monat zum Stufensatz berechnet; wer nicht mehr zahlen will, entfernt die Firma aus Meine Firmen (wirkt ab dem Folgemonat). Ein Ausgabenlimit je Monat laesst sich mit abrechnung_limit_setzen setzen.",
       };
     },
@@ -98,6 +101,7 @@ export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
     run: async (args, c) => {
       const u = await deps.gateway.request<Usage>("/v1/usage", { signal: c.signal });
       if (u.tier === "free") return { error: "Im Free-Plan gibt es kein Ausgabenlimit (25 Firmen lebenslang)." };
+      if (u.zugang?.limitQuelle === "betreiber") return { error: "Das Monatslimit ist im Vertrag mit AVA festgelegt und laesst sich hier nicht aendern." };
       if (u.entitlement?.source === "seat" && u.entitlement.role !== "owner" && u.entitlement.role !== "admin") {
         return { error: "Das Ausgabenlimit deiner Organisation setzt nur der Owner oder ein Admin." };
       }

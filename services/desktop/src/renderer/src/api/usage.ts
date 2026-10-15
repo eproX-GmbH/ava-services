@@ -48,6 +48,8 @@ export interface UsageSnapshot {
     ausgabenLimitCents?: number | null;
     /** Z7 — zugeordnete Aufnahmen plus offene (zu 2,00 €). */
     erwartetCents?: number;
+    /** Wer das wirksame Limit gesetzt hat: Kunde, Betreiber (Vertrag) oder niemand. */
+    limitQuelle?: "kunde" | "betreiber" | null;
   };
 }
 
