@@ -82,7 +82,14 @@ async function writeEntityProgressFromEvent(
         * ist sein Zeitstempel aelter als die Seed-Zeile und wurde als
         * veraltet verworfen — die Stufe blieb ewig "offen" (Classic Car
         * Ranch). Ueber pending darf jedes Ereignis schreiben. */
-       WHERE ("EntityProgress".state = 'pending' OR EXCLUDED."updatedAt" > "EntityProgress"."updatedAt")
+       WHERE ("EntityProgress".state = 'pending'
+              /* Gleicher Wettlauf beim Neustart: die Route setzt optimistisch
+               * in_progress mit NOW(), der Producer hat seine Endmeldung
+               * schon eine Millisekunde vorher abgesetzt. Ein Endzustand
+               * ueber einem offenen Zustand gilt immer. */
+              OR (EXCLUDED.state IN ('completed', 'failed', 'skipped')
+                  AND "EntityProgress".state NOT IN ('completed', 'failed', 'skipped'))
+              OR EXCLUDED."updatedAt" > "EntityProgress"."updatedAt")
          /* v0.1.80 — never regress a terminal state. The
           * company-evaluation producer publishes one in_progress per
           * inbound slice (8 listeners). Both the in_progress event and
