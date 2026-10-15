@@ -708,7 +708,9 @@ export function CompanyDetail() {
           {registerKennung(summary.data ?? {}) && (
             <KpiTile
               label={
-                summary.data?.country === "AT"
+                summary.data?.registerType === "WEB"
+                  ? "Register"
+                  : summary.data?.country === "AT"
                   ? "Firmenbuch"
                   : summary.data?.country === "CH"
                   ? "Handelsregister CH"
