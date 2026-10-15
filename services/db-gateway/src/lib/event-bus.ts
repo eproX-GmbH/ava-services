@@ -76,7 +76,13 @@ async function writeEntityProgressFromEvent(
              WHEN EXCLUDED.state IN ('completed', 'skipped') THEN NULL
              ELSE "EntityProgress"."giveUpAt"
            END
-       WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"
+       /* 2026-10-15 — die Seed-Zeile (pending) traegt die Zeit des Seedings,
+        * nicht eines Ereignisses. Antwortet ein Producer schneller als das
+        * Seeding (WEB-Firma: Publikation meldet in 1 ms "uebersprungen"),
+        * ist sein Zeitstempel aelter als die Seed-Zeile und wurde als
+        * veraltet verworfen — die Stufe blieb ewig "offen" (Classic Car
+        * Ranch). Ueber pending darf jedes Ereignis schreiben. */
+       WHERE ("EntityProgress".state = 'pending' OR EXCLUDED."updatedAt" > "EntityProgress"."updatedAt")
          /* v0.1.80 — never regress a terminal state. The
           * company-evaluation producer publishes one in_progress per
           * inbound slice (8 listeners). Both the in_progress event and
