@@ -237,9 +237,49 @@ export class OllamaSupervisor extends EventEmitter {
     }
     await this.refreshInstalledModels();
     this.setState("ready");
+    this.kompatAufraeumenPlanen();
+  }
+
+  // Ollama 0.40.2+ hebt Modelle aelterer Staende beim ersten Lauf im Hintergrund
+  // auf das neue Format und laesst die alte Kopie als Sicherung liegen (Platz
+  // vorlaeufig doppelt, Ollama raeumt "in einer spaeteren Version" auf). Wir
+  // buendeln nur vorwaerts und brauchen keinen Rueckweg: nach erfolgreichem
+  // Umstieg (Manifest mit runner llamacpp vorhanden) die ggml-Sicherung loeschen.
+  // Nur fuer die eigene, gebuendelte Instanz; laeuft nach dem Start und danach
+  // alle 6 Stunden, weil der Umstieg je Modell erst bei dessen erstem Lauf passiert.
+  private kompatTimer: ReturnType<typeof setInterval> | null = null;
+  private kompatAufraeumenPlanen(): void {
+    if (this.kompatTimer) clearInterval(this.kompatTimer);
+    const lauf = () => void this.kompatSicherungenAufraeumen().catch(() => undefined);
+    setTimeout(lauf, 120_000).unref?.();
+    this.kompatTimer = setInterval(lauf, 6 * 60 * 60_000);
+    this.kompatTimer.unref?.();
+  }
+
+  async kompatSicherungenAufraeumen(): Promise<number> {
+    if (this.state !== "ready" || !this.child) return 0;
+    const version = await this.getInstalledVersion();
+    const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version ?? "");
+    if (!m || Number(m[1]) === 0 && (Number(m[2]) < 40 || (Number(m[2]) === 40 && Number(m[3]) < 2))) return 0;
+    const tags = await fetch(`${this.baseUrl()}/api/tags`).then((r) => (r.ok ? r.json() : null)).catch(() => null) as { models?: Array<{ name: string }> } | null;
+    const namen = [...new Set((tags?.models ?? []).map((x) => x.name).filter((n) => !n.startsWith("llamacpp:")))];
+    let geloescht = 0;
+    for (const name of namen) {
+      const show = await fetch(`${this.baseUrl()}/api/show`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: name }) })
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null) as { manifests?: Array<{ runner?: string; digest?: string }> } | null;
+      const manifeste = show?.manifests ?? [];
+      if (!manifeste.some((x) => x.runner === "llamacpp")) continue;
+      for (const alt of manifeste.filter((x) => x.runner === "ggml" && x.digest)) {
+        const res = await fetch(`${this.baseUrl()}/api/delete`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: alt.digest }) }).catch(() => null);
+        if (res?.ok) { geloescht++; console.log(`[ollama] Sicherung von ${name} nach dem Format-Umstieg entfernt (${alt.digest!.slice(0, 19)}…)`); }
+      }
+    }
+    if (geloescht > 0) await this.refreshInstalledModels();
+    return geloescht;
   }
 
   async stop(): Promise<void> {
+    if (this.kompatTimer) { clearInterval(this.kompatTimer); this.kompatTimer = null; }
     if (this.state === "idle" || this.state === "stopping") return;
     this.setState("stopping");
     this.killChild();

@@ -54,7 +54,13 @@ import { pipeline } from "node:stream/promises";
 // /api/show liefert thinking-Werte, Decision-Modelle tragen nur die
 // Faehigkeit "decision" (werden im Katalog nicht als Chat angeboten).
 // Asset-Layout unveraendert (Ollama-darwin.zip, ollama-windows-amd64.zip).
-const VERSION = process.env.OLLAMA_VERSION ?? "v0.40.0";
+// 2026-10-16 — v0.40.5: Modelle aus aelteren Ollama-Staenden werden beim ersten
+// Lauf im Hintergrund auf das neue Format gehoben, die alte Kopie bleibt als
+// Sicherung liegen (Platzbedarf vorlaeufig doppelt; der Supervisor raeumt die
+// Sicherungen nach erfolgreichem Umstieg auf). Decision-Modelle auch ueber
+// MLX, multimodale Embeddings, Responses-API-Fix. Asset-Layout unveraendert;
+// Releases liefern jetzt sha256sum.txt, das Skript prueft die Pruefsummen.
+const VERSION = process.env.OLLAMA_VERSION ?? "v0.40.5";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "ollama");
 
@@ -116,6 +122,7 @@ async function main() {
     const url = `https://github.com/ollama/ollama/releases/download/${VERSION}/${target.asset}`;
     const tmp = join(outDir, target.asset);
     await download(url, tmp);
+    await verifyChecksum(tmp, target.asset);
     await target.extract(tmp, outDir, exeName, target.id);
     rmSync(tmp, { force: true });
     await writeFile(versionMarker, VERSION);
@@ -123,6 +130,37 @@ async function main() {
   }
 
   console.log("[ollama] all targets up to date");
+}
+
+// Pruefsummen aus dem Release (sha256sum.txt, seit v0.40). Fehlt die Datei im
+// Release (aeltere Versionen), wird gewarnt statt abgebrochen.
+let checksums = null;
+async function verifyChecksum(file, assetName) {
+  if (checksums === null) {
+    const url = `https://github.com/ollama/ollama/releases/download/${VERSION}/sha256sum.txt`;
+    const res = await fetch(url, { redirect: "follow" });
+    checksums = new Map();
+    if (res.ok) {
+      for (const line of (await res.text()).split("\n")) {
+        const m = /^([0-9a-f]{64})\s+\.?\/?(\S+)$/.exec(line.trim());
+        if (m) checksums.set(m[2], m[1]);
+      }
+    } else {
+      console.warn(`[ollama] keine sha256sum.txt im Release ${VERSION} (HTTP ${res.status}) — Pruefsummen uebersprungen`);
+    }
+  }
+  const erwartet = checksums.get(assetName);
+  if (!erwartet) {
+    if (checksums.size > 0) throw new Error(`keine Pruefsumme fuer ${assetName} in sha256sum.txt`);
+    return;
+  }
+  const { createHash } = await import("node:crypto");
+  const { createReadStream } = await import("node:fs");
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(file), hash);
+  const ist = hash.digest("hex");
+  if (ist !== erwartet) throw new Error(`Pruefsumme von ${assetName} stimmt nicht: erwartet ${erwartet}, erhalten ${ist}`);
+  console.log(`[ollama] ${assetName}: Pruefsumme ok`);
 }
 
 async function download(url, dest) {
