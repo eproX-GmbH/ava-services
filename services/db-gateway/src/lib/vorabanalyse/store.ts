@@ -15,7 +15,7 @@ export interface Einstellungen {
   parallelWebsite: number;
   parallelProfil: number;
 }
-export const STANDARD: Einstellungen = { mindestScore: 60, judgeKonfidenz: 0.7, budgetUsd: 150, bestMatchMindestScore: 0.8, parallelWebsite: 5, parallelProfil: 10 };
+export const STANDARD: Einstellungen = { mindestScore: 60, judgeKonfidenz: 0.7, budgetUsd: 150, bestMatchMindestScore: 0.8, parallelWebsite: 3, parallelProfil: 10 };
 
 export interface Lauf {
   id: string;

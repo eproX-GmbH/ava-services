@@ -269,6 +269,23 @@ vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorab
   return c.json({ ok: true }, 200);
 });
 
+vorabanalyseRouter.openapi(createRoute({
+  method: "post", path: "/betreiber/vorabanalyse/{id}/erneut", tags: ["vorabanalyse"], summary: "Vorabanalyse: fehlgeschlagene Zeilen erneut versuchen oder Website-Suche wiederholen, danach Lauf starten",
+  request: { params: Id, body: { content: { "application/json": { schema: z.object({ was: z.enum(["fehler", "ohne-website", "alle-websites"]) }) } }, required: true } },
+  responses: ok200("gestartet"),
+}), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const { was } = c.req.valid("json");
+  const lauf = await laufOder404(id);
+  const pool = getGatewayPool();
+  const { fehlerZuruecksetzen, websitesZuruecksetzen, laeuferStarten, laufAktiv } = await import("../../lib/vorabanalyse/laeufer");
+  if (laufAktiv(id)) throw new HTTPException(409, { message: "Der Lauf läuft gerade; erst pausieren." });
+  const n = was === "fehler" ? await fehlerZuruecksetzen(pool, id) : await websitesZuruecksetzen(pool, id, was === "ohne-website");
+  if (n > 0 && lauf.icp) { await laufAendern(pool, id, { status: "website" }); laeuferStarten(pool); }
+  return c.json({ anzahl: n }, 200);
+});
+
 // Live-Stand: alle 2 s Zaehler, Status, Kosten und neue Ereignisse.
 vorabanalyseRouter.get("/betreiber/vorabanalyse/:id/events", async (c) => {
   betreiber(c as never);

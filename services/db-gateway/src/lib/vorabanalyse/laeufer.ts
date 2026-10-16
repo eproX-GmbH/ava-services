@@ -7,19 +7,32 @@ import type { Pool } from "pg";
 import { logger } from "../logger";
 import { betreiberJson } from "../betreiber-llm";
 import { websiteLesen } from "./crawl";
-import { kandidatenFiltern, valueserpSuche } from "./suche";
+import { kandidatenFiltern, valueserpSucheMitWiederholung } from "./suche";
 import { ereignis, laufAendern, laufKosten, laufLesen, zaehlerAktualisieren, type Lauf } from "./store";
 import type { Icp } from "./icp";
 
 const judgeSchema = z.object({ matchIndex: z.number().int().nullable(), confidence: z.enum(["high", "medium", "low"]), reasoning: z.string().max(400).default("") });
+// Grenzen werden gekuerzt, nicht abgelehnt (Modelle ueberschreiten Laengen gern knapp).
+const kurz = (n: number) => z.string().default("").transform((v) => v.trim().slice(0, n));
+const liste = (n: number, len: number) => z.array(z.string()).default([]).transform((a) => a.map((x) => x.trim().slice(0, len)).filter(Boolean).slice(0, n));
 const profilSchema = z.object({
-  branche: z.string().max(120).default(""), kurzbeschreibung: z.string().max(800).default(""), leistungen: z.array(z.string().max(120)).max(12).default([]),
-  zielkunden: z.string().max(300).default(""), region: z.string().max(120).default(""), groessenIndiz: z.string().max(200).default(""), keywords: z.array(z.string().max(60)).max(15).default([]),
+  branche: kurz(200), kurzbeschreibung: kurz(1200), leistungen: liste(15, 160), zielkunden: kurz(400), region: kurz(160), groessenIndiz: kurz(300), keywords: liste(20, 80),
 });
 const urteilSchema = z.object({ bewertungen: z.array(z.object({ id: z.string(), score: z.number().min(0).max(100), begruendung: z.string().max(400).default(""), ausschlussgrund: z.string().max(120).nullable().optional() })) });
 type Profil = z.infer<typeof profilSchema>;
 
-const KONFIDENZ: Record<"high" | "medium" | "low", number> = { high: 0.9, medium: 0.7, low: 0.4 };
+// medium liegt unter der Standardschwelle 0,7: nur sichere Urteile zaehlen als Website.
+const KONFIDENZ: Record<"high" | "medium" | "low", number> = { high: 0.9, medium: 0.6, low: 0.3 };
+
+const GENERISCH = new Set(["gmbh", "co", "kg", "ag", "ohg", "ug", "mbh", "und", "the", "der", "die", "das", "von", "fuer", "group", "gruppe", "holding", "international", "deutschland", "germany", "service", "services", "systems", "system", "technik", "tube", "mill", "steel", "engineering", "industrie", "industries", "maschinen", "maschinenbau", "automotive", "automation", "solutions", "consulting", "software", "haftungsbeschraenkt"]);
+/** Plausibilitaet: Domain oder Titel muss einen kennzeichnenden Namensbestandteil tragen. */
+function namePasst(firmenname: string, domain: string, titel: string): boolean {
+  const norm = (x: string) => x.toLowerCase().replace(/ae|ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+  const tokens = norm(firmenname).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !GENERISCH.has(t));
+  if (tokens.length === 0) return true;
+  const ziel = norm(`${domain} ${titel}`).replace(/-/g, "");
+  return tokens.some((t) => ziel.includes(t) || (t.length >= 6 && ziel.includes(t.slice(0, 5))));
+}
 const aktive = new Map<string, { stop: boolean; pause: boolean }>();
 let tickTimer: NodeJS.Timeout | null = null;
 
@@ -93,26 +106,32 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
         const name = kand?.name ?? f.name;
         const ort = f.ort ?? kand?.ort ?? "";
         let treffer;
+        let roh = 0;
         try {
-          treffer = kandidatenFiltern((await valueserpSuche(pool, `${name} ${ort}`.trim(), q)).treffer);
+          const r = await valueserpSucheMitWiederholung(pool, `${name} ${ort}`.trim(), q);
+          roh = r.treffer.length;
+          treffer = kandidatenFiltern(r.treffer);
         } catch (err) {
           await fertig(f.id, { fehler: `Websuche fehlgeschlagen: ${err instanceof Error ? err.message.slice(0, 160) : String(err)}`, versuche: 1 });
           return;
         }
-        if (treffer.length === 0) { await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: "Keine Suchergebnisse außer Plattformen und Verzeichnissen." } }); return; }
+        if (treffer.length === 0) { await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: roh === 0 ? "Die Suche lieferte keine Treffer (drei Versuche)." : "Nur Plattformen und Verzeichnisse in den Treffern.", roh } }); return; }
         const prompt =
           `Du bekommst die Top-Suchergebnisse von Google zu einer Firma. Waehle EINEN Treffer als offizielle Unternehmens-Webseite oder antworte mit matchIndex: null.\n\n` +
-          `Firmenname: ${name}\nStandort: ${[f.plz, ort].filter(Boolean).join(" ")}\n${f.strasse ? `Anschrift: ${f.strasse}\n` : ""}\nSuchergebnisse:\n` +
+          `Firmenname: ${name}${f.name !== name ? ` (im CRM: ${f.name})` : ""}\nStandort: ${[f.plz, ort].filter(Boolean).join(" ")}\n${f.strasse ? `Anschrift: ${f.strasse}\n` : ""}\nSuchergebnisse:\n` +
           treffer.map((c) => `[${c.index}] ${c.title}\n    URL: ${c.link}${c.snippet ? `\n    Snippet: ${c.snippet}` : ""}`).join("\n\n") +
-          `\n\nRegeln: eigene Domain der Firma bevorzugen; Verzeichnisse, Portale, Presse und soziale Netzwerke ausschliessen; ein gleicher Firmenname reicht NICHT, wenn Ort oder Rechtsform nicht passen; im Zweifel matchIndex null. reasoning: EIN kurzer deutscher Satz.\n` +
+          `\n\nRegeln:\n- Die Domain oder der Titel muss den Firmennamen oder seinen kennzeichnenden Teil tragen. Eine Seite, die nur zum ORT oder nur zur BRANCHE passt, ist IMMER falsch (z. B. ein Pflegeheim am selben Ort, ein Shop mit aehnlichen Produkten).\n- Konzernseiten zaehlen, wenn die Firma erkennbar zur Gruppe gehoert.\n- Verzeichnisse, Portale, Presse, Marktplaetze und soziale Netzwerke ausschliessen.\n- Gleicher Name, aber anderer Ort oder andere Rechtsform: null.\n- confidence high nur, wenn Name UND Ort oder Name UND eigene Domain zusammenpassen; medium bei plausibler, aber nicht belegter Zuordnung; im Zweifel null.\n- reasoning: EIN kurzer deutscher Satz.\n` +
           `Antworte NUR als JSON: {"matchIndex": <0..${treffer.length - 1}> | null, "confidence": "high"|"medium"|"low", "reasoning": "..."}`;
         const u = await betreiberJson({ system: "Du beurteilst, ob ein Suchergebnis die offizielle Website einer bestimmten Firma ist. Antworte nur als JSON.", user: prompt, schema: judgeSchema, quelle: q, maxTokens: 300 });
         if (!u.ok) { await fertig(f.id, { fehler: `Website-Judge: ${u.grund}`, websiteKandidaten: treffer }); return; }
         const idx = u.wert.matchIndex;
         const gewaehlt = idx != null && idx >= 0 && idx < treffer.length ? treffer[idx]! : null;
-        const konf = KONFIDENZ[u.wert.confidence];
+        let konf = KONFIDENZ[u.wert.confidence];
+        let begruendung = u.wert.reasoning;
+        // Plausibilitaet gegen Halluzinationen: ohne Namensbezug in Domain oder Titel keine Website.
+        if (gewaehlt && !namePasst(name, gewaehlt.domain, gewaehlt.title)) { konf = Math.min(konf, 0.3); begruendung = `Verworfen: weder Domain noch Titel tragen den Firmennamen (${gewaehlt.domain}). ${begruendung}`; }
         const passt = !!gewaehlt && konf >= e.judgeKonfidenz;
-        await fertig(f.id, { schritt: "website", website: passt ? gewaehlt!.link : null, websiteKandidaten: treffer, websiteUrteil: { passt, konfidenz: konf, begruendung: u.wert.reasoning, kandidat: gewaehlt?.link ?? null } });
+        await fertig(f.id, { schritt: "website", website: passt ? gewaehlt!.link : null, websiteKandidaten: treffer, websiteUrteil: { passt, konfidenz: konf, begruendung, kandidat: gewaehlt?.link ?? null, roh } });
         if (!passt) return;
         f.website = gewaehlt!.link;
       }
@@ -197,3 +216,28 @@ export async function urteileZuruecksetzen(pool: Pool, laufId: string): Promise<
 }
 
 export type { Lauf };
+
+/** Fehlgeschlagene Zeilen erneut versuchen: Fehler loeschen, Schritt zurueck auf den letzten erledigten. */
+export async function fehlerZuruecksetzen(pool: Pool, laufId: string): Promise<number> {
+  const r = await pool.query(
+    `UPDATE "VorabFirma" SET "fehler" = NULL, "versuche" = 0, "gesperrtBis" = NULL,
+       "schritt" = CASE WHEN "icpUrteil" IS NOT NULL THEN 'urteil' WHEN "profil" IS NOT NULL THEN 'profil' WHEN "website" IS NOT NULL THEN 'website' WHEN "abgleich" IS NOT NULL THEN 'abgeglichen' ELSE 'eingelesen' END,
+       "websiteUrteil" = CASE WHEN "website" IS NULL THEN NULL ELSE "websiteUrteil" END, "websiteKandidaten" = CASE WHEN "website" IS NULL THEN NULL ELSE "websiteKandidaten" END
+     WHERE "laufId" = $1 AND "fehler" IS NOT NULL`,
+    [laufId],
+  );
+  await ereignis(pool, laufId, "website", "info", `${r.rowCount ?? 0} fehlgeschlagene Zeilen werden erneut versucht.`);
+  return r.rowCount ?? 0;
+}
+
+/** Website-Suche neu (verwirft Website, Profil und Urteil), fuer alle oder nur fuer Zeilen ohne Website. */
+export async function websitesZuruecksetzen(pool: Pool, laufId: string, nurOhneWebsite: boolean): Promise<number> {
+  const r = await pool.query(
+    `UPDATE "VorabFirma" SET "website" = NULL, "websiteUrteil" = NULL, "websiteKandidaten" = NULL, "profil" = NULL, "icpUrteil" = NULL, "fehler" = NULL, "versuche" = 0, "gesperrtBis" = NULL,
+       "schritt" = CASE WHEN "abgleich" IS NOT NULL THEN 'abgeglichen' ELSE 'eingelesen' END
+     WHERE "laufId" = $1 AND "duplikatVon" IS NULL AND "zuordnung" <> 'ausgeschlossen' AND ($2::boolean = false OR "website" IS NULL)`,
+    [laufId, nurOhneWebsite],
+  );
+  await ereignis(pool, laufId, "website", "info", nurOhneWebsite ? `Website-Suche für ${r.rowCount ?? 0} Zeilen ohne Website wird wiederholt.` : `Website-Suche für ${r.rowCount ?? 0} Zeilen wird neu gestartet.`);
+  return r.rowCount ?? 0;
+}

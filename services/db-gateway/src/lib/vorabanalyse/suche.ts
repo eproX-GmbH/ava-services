@@ -9,7 +9,24 @@ import { istPlattform, kernDomain } from "./crawl";
 
 export interface Treffer { index: number; title: string; link: string; domain: string; snippet: string }
 
-export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8): Promise<{ treffer: Treffer[]; status: number }> {
+/** Suche mit bis zu drei Versuchen: Valueserp antwortet unter Last langsam (20-50 s) oder
+ *  mit leerer Trefferliste; Zeitueberschreitung und leere Antwort werden wiederholt. */
+export async function valueserpSucheMitWiederholung(pool: Pool, q: string, ref: string, num = 8): Promise<{ treffer: Treffer[]; status: number; versuche: number }> {
+  let letzter: unknown = null;
+  for (let versuch = 1; versuch <= 3; versuch++) {
+    try {
+      const r = await valueserpSuche(pool, q, ref, num, 90_000);
+      if (r.treffer.length > 0 || versuch === 3) return { ...r, versuche: versuch };
+    } catch (err) {
+      letzter = err;
+      if (versuch === 3) throw err;
+    }
+    await new Promise((res) => setTimeout(res, 3_000 * versuch));
+  }
+  throw letzter instanceof Error ? letzter : new Error("Suche fehlgeschlagen");
+}
+
+export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8, timeoutMs = 90_000): Promise<{ treffer: Treffer[]; status: number }> {
   const env = loadEnv();
   if (!env.VALUESERP_API_KEY) throw new Error("VALUESERP_API_KEY fehlt");
   const params = new URLSearchParams();
@@ -25,7 +42,7 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
   let status = 0;
   let json: { organic_results?: Array<{ title?: string; link?: string; domain?: string; snippet?: string }> } = {};
   try {
-    const res = await fetch(`https://api.valueserp.com/search?${params.toString()}`, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(`https://api.valueserp.com/search?${params.toString()}`, { signal: AbortSignal.timeout(timeoutMs) });
     status = res.status;
     json = (await res.json().catch(() => ({}))) as typeof json;
   } catch (err) {
