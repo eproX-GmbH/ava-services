@@ -274,3 +274,27 @@ vorabanalyseRouter.get("/betreiber/vorabanalyse/:id/events", async (c) => {
     }
   });
 });
+
+// ---- V5: Exporte -----------------------------------------------------------
+
+const XLSX_TYP = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+vorabanalyseRouter.openapi(createRoute({ method: "get", path: "/betreiber/vorabanalyse/{id}/ergebnis.xlsx", tags: ["vorabanalyse"], summary: "Vorabanalyse: Ergebnis als Excel", request: { params: Id }, responses: { 200: { content: { [XLSX_TYP]: { schema: z.string() } }, description: "xlsx" }, 404: { content: { "application/json": { schema: ErrorShape } }, description: "unbekannt" } } }), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  await laufOder404(id);
+  const { ergebnisXlsx } = await import("../../lib/vorabanalyse/ergebnis");
+  const b = await ergebnisXlsx(getGatewayPool(), id);
+  if (!b) throw new HTTPException(404, { message: "lauf_unbekannt" });
+  return new Response(new Uint8Array(b.buffer), { status: 200, headers: { "content-type": XLSX_TYP, "content-disposition": `attachment; filename="${b.datei}"` } }) as never;
+});
+for (const [pfad, nurReady] of [["ergebnis.csv", false], ["ava-ready.csv", true]] as const) {
+  vorabanalyseRouter.openapi(createRoute({ method: "get", path: `/betreiber/vorabanalyse/{id}/${pfad}`, tags: ["vorabanalyse"], summary: `Vorabanalyse: ${nurReady ? "AVA-ready-Liste" : "Ergebnis"} als CSV`, request: { params: Id }, responses: { 200: { content: { "text/csv": { schema: z.string() } }, description: "csv" }, 404: { content: { "application/json": { schema: ErrorShape } }, description: "unbekannt" } } }), async (c) => {
+    betreiber(c);
+    const { id } = c.req.valid("param");
+    await laufOder404(id);
+    const { ergebnisCsv } = await import("../../lib/vorabanalyse/ergebnis");
+    const r = await ergebnisCsv(getGatewayPool(), id, nurReady);
+    if (!r) throw new HTTPException(404, { message: "lauf_unbekannt" });
+    return new Response(r.text, { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${r.datei}"` } }) as never;
+  });
+}
