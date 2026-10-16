@@ -116,7 +116,20 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
         const modus = e.websuche ?? "hybrid";
         if (modus !== "openai") {
           try {
-            const r = await valueserpVarianten(pool, name, ort, q);
+            // Erste Abfrage "Name, Ort"; Kasten auswerten, bevor eine zweite Suche Geld kostet.
+            let r = await valueserpVarianten(pool, name, ort, q, true);
+            const k = r.kasten;
+            if (k?.geschlossen && namenUeberlappen(crm, k.titel, ort)) {
+              await fertig(f.id, { schritt: "website", websiteKandidaten: r.treffer.slice(0, 8), websiteUrteil: { passt: false, konfidenz: 1, begruendung: `Laut Google-Unternehmensprofil dauerhaft geschlossen (${k.titel}).`, roh: r.roh, geschlossen: true } });
+              return;
+            }
+            if (k?.website && (namenUeberlappen(crm, k.titel, ort) || (kand ? namenUeberlappen(kand.name, k.titel, ort) : false)) && !istPlattformDomain(new URL(k.website).hostname.replace(/^www\./, ""))) {
+              await fertig(f.id, { schritt: "website", website: k.website, websiteKandidaten: r.treffer.slice(0, 8), websiteUrteil: { passt: true, konfidenz: 0.9, begruendung: `Website aus dem Google-Unternehmensprofil „${k.titel}“.`, kandidat: k.website, roh: r.roh, quelleSuche: "google-profil" } });
+              f.website = k.website;
+            } else {
+              const ersteMitName = kandidatenFiltern(r.treffer, 20).some((t) => namePasst(crm, ort, `${t.domain} ${t.title}`));
+              if (!ersteMitName) r = await valueserpVarianten(pool, name, ort, q);
+            }
             roh = r.roh;
             // Treffer mit Namensbezug nach vorn, damit der Judge sie sicher sieht.
             const gefiltert = kandidatenFiltern(r.treffer, 20);
@@ -152,7 +165,7 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
           if (passt) f.website = url;
           return passt;
         };
-        if (treffer.length === 0) {
+        if (!f.website && treffer.length === 0) {
           if (await openaiSuchen(roh === 0 ? "Valueserp ohne Treffer." : "Valueserp nur mit Verzeichnissen.")) { /* weiter zum Profil */ } else {
             if (modus === "valueserp") await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: roh === 0 ? "Die Suche lieferte keine Treffer (drei Versuche)." : "Nur Plattformen und Verzeichnisse in den Treffern.", roh } });
             if (!f.website) return;

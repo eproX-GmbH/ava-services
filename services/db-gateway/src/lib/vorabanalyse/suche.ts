@@ -8,10 +8,12 @@ import { valueserpTarif } from "../anbieter-kosten";
 import { istPlattform, kernDomain } from "./crawl";
 
 export interface Treffer { index: number; title: string; link: string; domain: string; snippet: string }
+/** Google-Unternehmensprofil (Info-Kasten rechts): Titel, Website, dauerhaft geschlossen. */
+export interface Kasten { titel: string; website: string | null; geschlossen: boolean; typ: string | null }
 
 /** Suche mit bis zu drei Versuchen: Valueserp antwortet unter Last langsam (20-50 s) oder
  *  mit leerer Trefferliste; Zeitueberschreitung und leere Antwort werden wiederholt. */
-export async function valueserpSucheMitWiederholung(pool: Pool, q: string, ref: string, num = 8): Promise<{ treffer: Treffer[]; status: number; versuche: number }> {
+export async function valueserpSucheMitWiederholung(pool: Pool, q: string, ref: string, num = 8): Promise<{ treffer: Treffer[]; status: number; versuche: number; kasten: Kasten | null }> {
   let letzter: unknown = null;
   for (let versuch = 1; versuch <= 3; versuch++) {
     try {
@@ -26,7 +28,7 @@ export async function valueserpSucheMitWiederholung(pool: Pool, q: string, ref: 
   throw letzter instanceof Error ? letzter : new Error("Suche fehlgeschlagen");
 }
 
-export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8, timeoutMs = 90_000): Promise<{ treffer: Treffer[]; status: number }> {
+export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8, timeoutMs = 90_000): Promise<{ treffer: Treffer[]; status: number; kasten: Kasten | null }> {
   const env = loadEnv();
   if (!env.VALUESERP_API_KEY) throw new Error("VALUESERP_API_KEY fehlt");
   const params = new URLSearchParams();
@@ -40,7 +42,7 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
   params.set("num", String(num));
   const start = Date.now();
   let status = 0;
-  let json: { organic_results?: Array<{ title?: string; link?: string; domain?: string; displayed_link?: string; snippet?: string }> } = {};
+  let json: { organic_results?: Array<{ title?: string; link?: string; domain?: string; displayed_link?: string; snippet?: string }>; knowledge_graph?: Record<string, unknown> } = {};
   try {
     const res = await fetch(`https://api.valueserp.com/search?${params.toString()}`, { signal: AbortSignal.timeout(timeoutMs) });
     status = res.status;
@@ -65,7 +67,19 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
     try { host = new URL(link).hostname; } catch { continue; }
     treffer.push({ index: treffer.length, title: (o.title ?? "").slice(0, 200), link, domain: kernDomain(host), snippet: (o.snippet ?? "").slice(0, 300) });
   }
-  return { treffer, status };
+  const kg = json.knowledge_graph;
+  let kasten: Kasten | null = null;
+  if (kg && typeof kg === "object") {
+    const roh = JSON.stringify(kg);
+    const web = typeof kg.website === "string" ? kg.website : null;
+    kasten = {
+      titel: typeof kg.title === "string" ? kg.title : "",
+      website: web && /^https?:\/\//i.test(web) ? web : null,
+      geschlossen: /dauerhaft geschlossen|permanently closed|endg(ü|ue)ltig geschlossen/i.test(roh),
+      typ: typeof kg.type === "string" ? kg.type : null,
+    };
+  }
+  return { treffer, status, kasten };
 }
 
 /** Valueserp liefert Links teils als Google-Weiterleitung (google.com/url?q=… oder
@@ -103,15 +117,19 @@ export function suchname(name: string): string {
 
 /** Zwei Suchen (Suchname + Ort, Suchname allein), Treffer nach Domain zusammengefuehrt,
  *  Reihenfolge: erst die mit Ort, dann die ohne. */
-export async function valueserpVarianten(pool: Pool, name: string, ort: string, ref: string): Promise<{ treffer: Treffer[]; roh: number }> {
+export async function valueserpVarianten(pool: Pool, name: string, ort: string, ref: string, nurErste = false): Promise<{ treffer: Treffer[]; roh: number; kasten: Kasten | null }> {
   const kurz = suchname(name);
-  const anfragen = [`${kurz} ${ort}`.trim(), kurz];
+  // "Name, Ort" wie in der Google-Maske: eigene Website meist auf Platz 1-2 und
+  // Unternehmensprofil im Kasten; danach der Suchname allein als zweite Variante.
+  const anfragen = [ort ? `${name}, ${ort}` : name, kurz];
   const alle: Treffer[] = [];
   let roh = 0;
-  for (const q of [...new Set(anfragen)]) {
+  let kasten: Kasten | null = null;
+  for (const q of [...new Set(anfragen)].slice(0, nurErste ? 1 : 2)) {
     const r = await valueserpSucheMitWiederholung(pool, q, ref, 10);
     roh += r.treffer.length;
     alle.push(...r.treffer);
+    kasten = kasten ?? r.kasten;
   }
   const gesehen = new Set<string>();
   const treffer: Treffer[] = [];
@@ -121,5 +139,5 @@ export async function valueserpVarianten(pool: Pool, name: string, ort: string, 
     gesehen.add(k);
     treffer.push({ ...t, index: treffer.length });
   }
-  return { treffer, roh };
+  return { treffer, roh, kasten };
 }
