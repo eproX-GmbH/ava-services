@@ -1,6 +1,6 @@
 # Plan: Vorabanalyse für Kunden-CRM-Listen (Betreiber-Werkzeug)
 
-Stand: 2026-10-16. Status: Entwurf, wartet auf Go.
+Stand: 2026-10-16. Status: V0 bis V5 umgesetzt und ausgerollt (Gateway lib/vorabanalyse, Konsole /vorabanalyse, master-data /internal/data-care/rows); V6 Live-Test offen; Uebergabe-Knopf in den Import offen (braucht Organisation des Kunden).
 
 ## 1. Ziel
 
