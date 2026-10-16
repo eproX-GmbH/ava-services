@@ -95,7 +95,7 @@ vorabanalyseRouter.openapi(createRoute({
   const b = c.req.valid("json");
   const pool = getGatewayPool();
   const lauf = await laufOder404(id);
-  if (!["neu", "icp", "abgleich", "zuordnung"].includes(lauf.status)) throw new HTTPException(409, { message: "Der Lauf verarbeitet schon; Zeilen lassen sich nur vor dem Start aendern." });
+  if (!["neu", "icp", "abgleich", "zuordnung"].includes(lauf.status)) throw new HTTPException(409, { message: "Der Lauf verarbeitet schon; Zeilen lassen sich nur vor dem Start ändern." });
   if (b.neu) await firmenLeeren(pool, id);
   const r = await firmenEinfuegen(pool, id, b.zeilen, b.startZeile);
   if (b.dateiName || b.spalten) await laufAendern(pool, id, { dateiName: b.dateiName ?? lauf.dateiName, spalten: b.spalten ?? lauf.spalten, status: lauf.status === "neu" ? "icp" : lauf.status });
@@ -137,7 +137,7 @@ vorabanalyseRouter.openapi(createRoute({
   const lauf = await laufOder404(id);
   const { IcpSchema } = await import("../../lib/vorabanalyse/icp");
   const parsed = IcpSchema.safeParse({ ...roh, updatedAt: new Date().toISOString() });
-  if (!parsed.success) throw new HTTPException(400, { message: `ICP unvollstaendig: ${parsed.error.issues[0]?.path.join(".") ?? "?"}` });
+  if (!parsed.success) throw new HTTPException(400, { message: `ICP unvollständig: ${parsed.error.issues[0]?.path.join(".") ?? "?"} (${parsed.error.issues[0]?.message ?? ""})` });
   const icp = parsed.data;
   const neu = await laufAendern(getGatewayPool(), id, { icp, status: lauf.status === "icp" && lauf.firmen > 0 ? "abgleich" : lauf.status });
   await (await import("../../lib/vorabanalyse/store")).ereignis(getGatewayPool(), id, "icp", "info", `ICP gespeichert (${icp.branchen.length} Branchen, ${icp.merkmale.length} Merkmale).`);
@@ -217,7 +217,7 @@ vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorab
   const lauf = await laufOder404(id);
   if (!lauf.icp) throw new HTTPException(409, { message: "Erst das ICP speichern." });
   if (lauf.firmen === 0) throw new HTTPException(409, { message: "Erst eine Datei einlesen." });
-  if (!["zuordnung", "pausiert", "abgebrochen", "fehler", "fertig", "icp", "abgleich"].includes(lauf.status)) throw new HTTPException(409, { message: "Der Lauf laeuft bereits." });
+  if (!["zuordnung", "pausiert", "abgebrochen", "fehler", "fertig", "icp", "abgleich"].includes(lauf.status)) throw new HTTPException(409, { message: "Der Lauf läuft bereits." });
   const { laeuferStarten, laufAktiv } = await import("../../lib/vorabanalyse/laeufer");
   if (laufAktiv(id)) return c.json({ ok: true }, 200);
   await laufAendern(getGatewayPool(), id, { status: "website" });

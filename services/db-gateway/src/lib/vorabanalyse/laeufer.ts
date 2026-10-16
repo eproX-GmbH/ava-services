@@ -99,7 +99,7 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
           await fertig(f.id, { fehler: `Websuche fehlgeschlagen: ${err instanceof Error ? err.message.slice(0, 160) : String(err)}`, versuche: 1 });
           return;
         }
-        if (treffer.length === 0) { await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: "Keine Suchergebnisse ausser Plattformen und Verzeichnissen." } }); return; }
+        if (treffer.length === 0) { await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: "Keine Suchergebnisse außer Plattformen und Verzeichnissen." } }); return; }
         const prompt =
           `Du bekommst die Top-Suchergebnisse von Google zu einer Firma. Waehle EINEN Treffer als offizielle Unternehmens-Webseite oder antworte mit matchIndex: null.\n\n` +
           `Firmenname: ${name}\nStandort: ${[f.plz, ort].filter(Boolean).join(" ")}\n${f.strasse ? `Anschrift: ${f.strasse}\n` : ""}\nSuchergebnisse:\n` +
@@ -142,7 +142,7 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
           await zaehlerAktualisieren(pool, laufId);
           const k = await laufKosten(pool, laufId);
           await ereignis(pool, laufId, "website", "fortschritt", `${erledigt} Firmen gesucht und profiliert · Kosten bisher ${k.gesamtUsd.toFixed(2)} USD.`);
-          if (k.gesamtUsd >= e.budgetUsd && !budgetGemeldet) { budgetGemeldet = true; steuer.pause = true; await ereignis(pool, laufId, "website", "fehler", `Budgetbremse: ${k.gesamtUsd.toFixed(2)} USD erreicht (Limit ${e.budgetUsd} USD). Lauf pausiert; Limit erhoehen und fortsetzen.`); }
+          if (k.gesamtUsd >= e.budgetUsd && !budgetGemeldet) { budgetGemeldet = true; steuer.pause = true; await ereignis(pool, laufId, "website", "fehler", `Budgetbremse: ${k.gesamtUsd.toFixed(2)} USD erreicht (Limit ${e.budgetUsd} USD). Lauf pausiert; Limit erhöhen und fortsetzen.`); }
         }
       }
     };

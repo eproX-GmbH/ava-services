@@ -5,19 +5,20 @@ import { z } from "zod";
 import { betreiberJson } from "../betreiber-llm";
 import { websiteLesen } from "./crawl";
 
-const liste = (max: number, len: number) => z.array(z.string().max(len)).max(max).default([]);
+// Listen werden beim Speichern auf die Grenzen gekuerzt statt abgelehnt.
+const liste = (max: number, len: number) => z.array(z.string()).default([]).transform((a) => [...new Set(a.map((x) => x.trim().slice(0, len)).filter(Boolean))].slice(0, max));
 
 export const IcpSchema = z.object({
   beschreibung: z.string().max(2000).default(""),
   angebot: z.string().max(600).default(""),
   nutzen: z.string().max(600).default(""),
-  branchen: liste(12, 80),
-  orte: liste(12, 80),
+  branchen: liste(30, 100),
+  orte: liste(30, 100),
   radiusKm: z.number().int().min(0).max(2000).default(50),
   groesse: z.string().max(200).default(""),
-  merkmale: liste(12, 160),
+  merkmale: liste(30, 200),
   ausschluesse: z.string().max(800).default(""),
-  kundenBeispiele: z.array(z.object({ domain: z.string().max(200), name: z.string().max(200).optional(), ort: z.string().max(100).optional() })).max(10).default([]),
+  kundenBeispiele: z.array(z.object({ domain: z.string().max(200), name: z.string().max(200).optional(), ort: z.string().max(100).optional() })).default([]).transform((a) => a.slice(0, 20)),
   quelle: z.enum(["assistent", "manuell", "dokument"]).nullable().default(null),
   updatedAt: z.string().nullable().default(null),
 });
@@ -52,7 +53,7 @@ const FORMULAR_SYSTEM =
 const WEBSITE_SYSTEM =
   "Du analysierst die eigene Website eines B2B-Anbieters und leitest daraus ein erstes Idealkundenprofil (ICP) ab. " +
   "Extrahiere NUR, was der Text belegt (Angebot, Nutzen, genannte Zielbranchen, Referenzkunden, Standort), keine Personennamen. " +
-  "Zielgruppenmerkmale und Groesse nur, wenn die Website sie nennt oder klar nahelegt; sonst leer und in \"fehlend\" nennen. " +
+  "Zielgruppenmerkmale und Groesse nur, wenn die Website sie nennt oder klar nahelegt; sonst leer und in \"fehlend\" nennen. branchen: 2-6 UEBERGEORDNETE Branchen, keine Produkt- oder Leistungslisten. " +
   "Felder wie im Formular: beschreibung (3-6 Saetze in Du-Form: \"Deine idealen Kunden sind ...\"), angebot, nutzen, branchen, orte (Firmensitz), radiusKm (50, falls unbekannt), groesse, merkmale, ausschluesse (leer), kundenBeispiele (Domains oder Namen genannter Referenzen), fehlend. " +
   'Antworte NUR als JSON: {"beschreibung": "...", "angebot": "...", "nutzen": "...", "branchen": [], "orte": [], "radiusKm": 50, "groesse": "...", "merkmale": [], "ausschluesse": "", "kundenBeispiele": [], "fehlend": []}';
 
@@ -96,7 +97,7 @@ function vorschlagAus(v: z.infer<typeof importSchema>, quelle: Icp["quelle"]): I
   }
   if (ohne > 0) hinweise.push(`${ohne} Beispielkunde${ohne === 1 ? "" : "n"} ohne Website im Text.`);
   return {
-    icp: { beschreibung: v.beschreibung, angebot: v.angebot, nutzen: v.nutzen, branchen: sauber(v.branchen), orte: sauber(v.orte), ...(v.radiusKm ? { radiusKm: Math.round(v.radiusKm) } : {}), groesse: v.groesse, merkmale: sauber(v.merkmale), ausschluesse: v.ausschluesse, kundenBeispiele: kunden, quelle },
+    icp: { beschreibung: v.beschreibung, angebot: v.angebot, nutzen: v.nutzen, branchen: sauber(v.branchen).slice(0, 8), orte: sauber(v.orte).slice(0, 10), ...(v.radiusKm ? { radiusKm: Math.round(v.radiusKm) } : {}), groesse: v.groesse, merkmale: sauber(v.merkmale).slice(0, 10), ausschluesse: v.ausschluesse, kundenBeispiele: kunden.slice(0, 5), quelle },
     fehlend: sauber(v.fehlend),
     hinweise,
   };
@@ -119,7 +120,7 @@ export async function icpAusText(text: string, quelle: string): Promise<IcpVorsc
       if (r.ok) notizen.push(...r.wert.notizen.map((n) => n.trim()).filter(Boolean));
       else hinweise.push(`Abschnitt ${i + 1} konnte nicht ausgewertet werden (${r.grund}).`);
     }
-    if (notizen.length === 0) return { error: `Aus dem Text liessen sich keine ICP-Fakten lesen. ${hinweise[0] ?? ""}`.trim() };
+    if (notizen.length === 0) return { error: `Aus dem Text ließen sich keine ICP-Fakten lesen. ${hinweise[0] ?? ""}`.trim() };
     grundlage = `NOTIZEN AUS DEM DOKUMENT (${teile.length} Abschnitte):\n- ${notizen.join("\n- ")}`;
   }
   const r = await betreiberJson({ system: FORMULAR_SYSTEM, user: grundlage.slice(0, 60_000), schema: importSchema, quelle, maxTokens: 2500 });
