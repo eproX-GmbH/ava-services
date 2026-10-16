@@ -122,3 +122,40 @@ vorabanalyseRouter.openapi(createRoute({ method: "get", path: "/betreiber/voraba
   await laufOder404(id);
   return c.json({ ereignisse: await ereignisse(getGatewayPool(), id, limit) }, 200);
 });
+
+// ---- V1: ICP ---------------------------------------------------------------
+
+vorabanalyseRouter.openapi(createRoute({
+  method: "put", path: "/betreiber/vorabanalyse/{id}/icp", tags: ["vorabanalyse"], summary: "Vorabanalyse: ICP speichern",
+  request: { params: Id, body: { content: { "application/json": { schema: z.record(z.string(), z.unknown()) } }, required: true } },
+  responses: ok200("gespeichert"),
+}), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const roh = c.req.valid("json");
+  const lauf = await laufOder404(id);
+  const { IcpSchema } = await import("../../lib/vorabanalyse/icp");
+  const parsed = IcpSchema.safeParse({ ...roh, updatedAt: new Date().toISOString() });
+  if (!parsed.success) throw new HTTPException(400, { message: `ICP unvollstaendig: ${parsed.error.issues[0]?.path.join(".") ?? "?"}` });
+  const icp = parsed.data;
+  const neu = await laufAendern(getGatewayPool(), id, { icp, status: lauf.status === "icp" && lauf.firmen > 0 ? "abgleich" : lauf.status });
+  await (await import("../../lib/vorabanalyse/store")).ereignis(getGatewayPool(), id, "icp", "info", `ICP gespeichert (${icp.branchen.length} Branchen, ${icp.merkmale.length} Merkmale).`);
+  return c.json({ lauf: neu }, 200);
+});
+
+vorabanalyseRouter.openapi(createRoute({
+  method: "post", path: "/betreiber/vorabanalyse/{id}/icp/assistent", tags: ["vorabanalyse"], summary: "Vorabanalyse: ICP-Vorschlag aus Website oder Text (Betreiber-Modell)",
+  request: { params: Id, body: { content: { "application/json": { schema: z.object({ website: z.string().max(300).optional(), text: z.string().max(400_000).optional(), quelle: z.string().max(80).optional() }) } }, required: true } },
+  responses: ok200("Vorschlag"),
+}), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const b = c.req.valid("json");
+  await laufOder404(id);
+  const { icpAusText, icpAusWebsite } = await import("../../lib/vorabanalyse/icp");
+  const q = `vorab:${id}`;
+  const r = b.text && b.text.trim().length >= 80 ? await icpAusText(b.text, q) : b.website ? await icpAusWebsite(b.website.trim(), q) : { error: "Website oder Text angeben." };
+  if ("error" in r) throw new HTTPException(422, { message: r.error });
+  await (await import("../../lib/vorabanalyse/store")).ereignis(getGatewayPool(), id, "icp", "info", `ICP-Vorschlag aus ${b.text ? b.quelle ?? "Text" : b.website}.`);
+  return c.json(r, 200);
+});
