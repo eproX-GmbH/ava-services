@@ -3,6 +3,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
+import { crmNameBereinigen } from "./namen";
 
 export type LaufStatus = "neu" | "icp" | "abgleich" | "zuordnung" | "website" | "profil" | "urteil" | "fertig" | "pausiert" | "abgebrochen" | "fehler";
 export const SCHRITTE = ["datei", "icp", "abgleich", "zuordnung", "website", "profil", "urteil", "ergebnis"] as const;
@@ -133,6 +134,8 @@ export async function firmenEinfuegen(pool: Pool, laufId: string, zeilen: FirmaZ
     await client.query("BEGIN");
     for (let i = 0; i < zeilen.length; i++) {
       const z = zeilen[i]!;
+      // Name bereinigt speichern (Buchhaltungszusaetze raus), Original bleibt in "eingabe".
+      z.name = crmNameBereinigen(z.name);
       const k = normalisiert(z.name, z.ort);
       const dup = schluessel.get(k) ?? null;
       const r = await client.query<{ id: string }>(

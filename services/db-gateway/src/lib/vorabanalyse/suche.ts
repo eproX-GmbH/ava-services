@@ -40,7 +40,7 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
   params.set("num", String(num));
   const start = Date.now();
   let status = 0;
-  let json: { organic_results?: Array<{ title?: string; link?: string; domain?: string; snippet?: string }> } = {};
+  let json: { organic_results?: Array<{ title?: string; link?: string; domain?: string; displayed_link?: string; snippet?: string }> } = {};
   try {
     const res = await fetch(`https://api.valueserp.com/search?${params.toString()}`, { signal: AbortSignal.timeout(timeoutMs) });
     status = res.status;
@@ -59,7 +59,7 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
   if (status >= 400) throw new Error(`Valueserp ${status}`);
   const treffer: Treffer[] = [];
   for (const o of json.organic_results ?? []) {
-    const link = echterLink(o.link, o.domain);
+    const link = echterLink(o.link, o.domain, o.displayed_link);
     if (!link) continue;
     let host = "";
     try { host = new URL(link).hostname; } catch { continue; }
@@ -68,13 +68,16 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
   return { treffer, status };
 }
 
-/** Valueserp liefert Links teils als Google-Weiterleitung (google.com/url?q=…): Ziel
- *  aus dem Parameter lesen; sonst das Domain-Feld der Antwort als Rueckfall. */
-export function echterLink(link: string | undefined, domain: string | undefined): string | null {
+/** Valueserp liefert Links teils als Google-Weiterleitung (google.com/url?q=… oder
+ *  google.com/goto?url=<verschluesselt>). Dann zaehlt das Domain-Feld der Antwort,
+ *  den Pfad liefert die angezeigte Adresse ("https://host › pfad › …"), wenn lesbar. */
+export function echterLink(link: string | undefined, domain: string | undefined, angezeigt?: string): string | null {
+  let google = false;
   if (link) {
     try {
       const u = new URL(link);
-      if (/(^|\.)google\.[a-z.]+$/i.test(u.hostname) && (u.pathname === "/url" || u.pathname.startsWith("/url"))) {
+      if (/(^|\.)google\.[a-z.]+$/i.test(u.hostname)) {
+        google = true;
         const ziel = u.searchParams.get("q") ?? u.searchParams.get("url");
         if (ziel && /^https?:\/\//i.test(ziel)) return ziel;
       } else {
@@ -82,8 +85,10 @@ export function echterLink(link: string | undefined, domain: string | undefined)
       }
     } catch { /* unten */ }
   }
-  const d = (domain ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
-  return d ? `https://${d}/` : null;
+  const host = (domain ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  if (!host || /(^|\.)google\.[a-z.]+$/i.test(host)) return google ? null : null;
+  const pfad = (angezeigt ?? "").includes("›") ? (angezeigt ?? "").split("›").slice(1).map((x) => x.trim()).filter((x) => x && !x.includes("...") && !x.includes("…")).join("/") : "";
+  return `https://${host}/${pfad}`.replace(/\/+$/, "/");
 }
 
 /** Plattformen und Verzeichnisse aussortieren; Index bleibt fuer den Judge stabil. */

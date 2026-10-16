@@ -5,6 +5,7 @@ import type { Pool } from "pg";
 import { masterData } from "../register-jobs";
 import { logger } from "../logger";
 import { ereignis, laufAendern, laufLesen, zaehlerAktualisieren } from "./store";
+import { crmNameBereinigen, namenUeberlappen } from "./namen";
 
 interface AbgleichZeile {
   name: string; location: string; status: "treffer" | "unsicher" | "keiner"; companyId: string | null; companyName?: string; companyLocation?: string; historie?: boolean;
@@ -53,7 +54,7 @@ export function abgleichStarten(pool: Pool, laufId: string): void {
         for (const [country, zeilen] of gruppen) {
           let antwort: { rows: AbgleichZeile[] };
           try {
-            antwort = await masterData<{ rows: AbgleichZeile[] }>("POST", "/internal/data-care/rows", { country, rows: zeilen.map((x) => ({ name: x.name, location: x.ort })) });
+            antwort = await masterData<{ rows: AbgleichZeile[] }>("POST", "/internal/data-care/rows", { country, rows: zeilen.map((x) => ({ name: crmNameBereinigen(x.name), location: x.ort })) });
           } catch (err) {
             const g = err instanceof Error ? err.message : String(err);
             logger.warn({ laufId, err: g }, "[vorab] Abgleich-Paket fehlgeschlagen");
@@ -62,7 +63,7 @@ export function abgleichStarten(pool: Pool, laufId: string): void {
             continue;
           }
           for (const x of zeilen) {
-            const z = antwort.rows.find((a) => a.name.toLowerCase() === x.name.trim().toLowerCase() && a.location.toLowerCase() === (x.ort ?? "").trim().toLowerCase());
+            const z = antwort.rows.find((a) => a.name.toLowerCase() === crmNameBereinigen(x.name).toLowerCase() && a.location.toLowerCase() === (x.ort ?? "").trim().toLowerCase());
             if (!z) { keiner++; await pool.query(`UPDATE "VorabFirma" SET "abgleich" = 'keiner', "kandidaten" = '[]'::jsonb, "updatedAt" = NOW() WHERE "id" = $1`, [x.id]); continue; }
             const kand = z.kandidaten.map((k) => ({ companyId: k.companyId, name: k.name, ort: k.location, score: Math.round((k.score ?? 0) * 100) / 100 }));
             if (z.status === "treffer" && z.companyId) {
@@ -119,14 +120,16 @@ export async function zuordnen(pool: Pool, laufId: string, firmaId: number, wahl
 export async function bestMatch(pool: Pool, laufId: string, mindestScore: number): Promise<{ zugeordnet: number; offenGeblieben: number }> {
   const lauf = await laufLesen(pool, laufId);
   if (!lauf) return { zugeordnet: 0, offenGeblieben: 0 };
-  const r = await pool.query<{ id: string; kandidaten: Array<{ companyId: string; score: number }> }>(`SELECT "id", "kandidaten" FROM "VorabFirma" WHERE "laufId" = $1 AND "abgleich" = 'unsicher' AND "zuordnung" = 'offen'`, [laufId]);
+  const r = await pool.query<{ id: string; name: string; ort: string | null; kandidaten: Array<{ companyId: string; name: string; score: number }> }>(`SELECT "id", "name", "ort", "kandidaten" FROM "VorabFirma" WHERE "laufId" = $1 AND "abgleich" = 'unsicher' AND "zuordnung" = 'offen'`, [laufId]);
   let zugeordnet = 0;
   let offen = 0;
   // Fuzzy-Scores sind Elasticsearch-Scores (nicht 0..1): Schwelle relativ zum besten
   // Treffer je Zeile und absolut >= 0.8 * bester Score der Zeile; mindestScore 0..1 wirkt
   // als Abstand zum zweiten Kandidaten (Eindeutigkeit).
   for (const row of r.rows) {
-    const k = (row.kandidaten ?? []).slice().sort((a, b) => b.score - a.score);
+    // Nur Kandidaten, die einen kennzeichnenden Namensbestandteil mit der CRM-Zeile teilen
+    // (sonst nimmt die Fuzzy-Suche z. B. "A.I. Fitness" fuer "CT Formteile").
+    const k = (row.kandidaten ?? []).filter((c) => namenUeberlappen(row.name, c.name, row.ort)).sort((a, b) => b.score - a.score);
     const best = k[0];
     const zweiter = k[1];
     const eindeutig = best && (!zweiter || zweiter.score <= best.score * (1 - (1 - mindestScore) * 0.5));
