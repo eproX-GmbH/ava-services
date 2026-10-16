@@ -87,7 +87,8 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
       const r = await pool.query<FirmaZeile>(
         `UPDATE "VorabFirma" SET "gesperrtBis" = NOW() + INTERVAL '10 minutes' WHERE "id" = (
            SELECT "id" FROM "VorabFirma" WHERE "laufId" = $1 AND "duplikatVon" IS NULL AND "zuordnung" <> 'ausgeschlossen'
-             AND "schritt" IN ('eingelesen', 'abgeglichen', 'website') AND "fehler" IS NULL AND ("gesperrtBis" IS NULL OR "gesperrtBis" < NOW())
+             AND ("schritt" IN ('eingelesen', 'abgeglichen') OR ("schritt" = 'website' AND "website" IS NOT NULL AND "profil" IS NULL))
+             AND "fehler" IS NULL AND ("gesperrtBis" IS NULL OR "gesperrtBis" < NOW())
            ORDER BY "zeile" LIMIT 1 FOR UPDATE SKIP LOCKED)
          RETURNING "id", "name", "ort", "plz", "strasse", "companyId", "schritt", "website", "profil", "kandidaten"`,
         [laufId],
