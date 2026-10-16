@@ -179,14 +179,20 @@ Posten "Vorabanalysen" (nicht in Kundenkosten, es gibt noch keinen Kunden).
 Gesamt etwa 7 Arbeitstage. Reihenfolge so, dass nach V2 bereits der Abgleich mit
 Zuordnung nutzbar ist und nach V4 der ganze Durchlauf.
 
-## 5. Offene Entscheidungen
+## 5. Entscheidungen (Joyce, 2026-10-16)
 
-1. Mindestscore für "AVA ready" (Vorschlag 60) und Judge-Konfidenz (0,7) als
-   Einstellungen je Lauf oder fest?
-2. Sollen Firmen ohne Registertreffer, aber mit bestätigter Website, in die
-   "AVA ready"-Liste (als WEB-Kandidaten) oder nur Registerfirmen?
-3. Budgetbremse je Lauf: 150 USD Standard in Ordnung?
-4. Soll der Lauf das Ergebnis später per Knopf direkt als Import in die Organisation
-   des Kunden geben können (wenn der Kunde angelegt ist), oder bleibt das manuell
-   über den Export? Vorschlag: zunächst manuell, Knopf in einer späteren Phase.
-5. Aufbewahrung der Läufe: 90 Tage, dann automatisch als gelöscht markieren?
+1. Mindestscore "AVA ready" (60) und Judge-Konfidenz (0,7) sind Einstellungen je Lauf.
+2. Firmen ohne Registertreffer, aber mit bestätigter Website, gehören in die Liste,
+   deutlich markiert (Spalte "Registertreffer" ja/nein, Kennung WEB).
+3. Budgetbremse je Lauf 150 USD Standard, je Lauf konfigurierbar.
+4. Übergabe in den Import der Kundenorganisation per Knopf, sobald die Organisation
+   existiert (Phase V5; nutzt by-ids mit companyIds und firma_finden-Pfad für
+   WEB-Kandidaten). Export bleibt daneben bestehen.
+5. Keine Obergrenze an Firmen; Läufe bleiben unbegrenzt erhalten (kein automatisches
+   Löschen), Löschen nur von Hand.
+6. Ergebnis-Artefakt: CSV und Excel mit mindestens "Name" und "Ort" (direkt in AVA
+   importierbar), dazu Registertreffer, companyId, Website, Miniprofil, Score,
+   Konfidenz, Begründung. Die Excel aus dem Abgleich (Data-Care-Report) wird dabei
+   mit überarbeitet: ein Blatt je Ergebnisklasse, Kopfzeile fixiert, Filter, Farben
+   je Status, Kandidaten lesbar, Zusammenfassung als erstes Blatt. Sie steht nach dem
+   Abgleich zum Download bereit.

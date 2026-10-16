@@ -98,6 +98,8 @@ model ProxyAudit {
   /// 2026-10-15 — geltender Abrechnungstarif (Env VALUESERP_TARIF) und Preis je Abfrage.
   tarif          String?
   kostenMicroUsd Int?
+  /// Vorabanalyse: Lauf-Kennung "vorab:<id>" (Kosten je Lauf).
+  ref            String?
   createdAt DateTime @default(now())
 
   // Counter-window queries: WHERE proxy=$1 AND tenantId=$2 AND createdAt > NOW() - $window
@@ -1110,4 +1112,69 @@ model AnbieterKosten {
   abgerufenAt    DateTime @default(now())
 
   @@unique([quelle, tag, kennung])
+}
+
+/// Vorabanalyse (docs/PLAN_VORABANALYSE.md): Betreiber-Werkzeug, eigene Tabellen.
+model VorabLauf {
+  id            String    @id
+  kundeName     String
+  erstelltVon   String
+  status        String    @default("neu")
+  icp           Json?
+  einstellungen Json      @default("{}")
+  zaehler       Json      @default("{}")
+  spalten       Json?
+  dateiName     String?
+  notiz         String?
+  gestartetAt   DateTime?
+  beendetAt     DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now())
+  firmen        VorabFirma[]
+  ereignisse    VorabEreignis[]
+}
+
+model VorabFirma {
+  id                BigInt    @id @default(autoincrement())
+  laufId            String
+  lauf              VorabLauf @relation(fields: [laufId], references: [id], onDelete: Cascade)
+  zeile             Int
+  name              String
+  ort               String?
+  plz               String?
+  strasse           String?
+  land              String?
+  eingabe           Json?
+  duplikatVon       BigInt?
+  abgleich          String?
+  kandidaten        Json?
+  companyId         String?
+  zuordnung         String    @default("offen")
+  website           String?
+  websiteKandidaten Json?
+  websiteUrteil     Json?
+  profil            Json?
+  icpUrteil         Json?
+  schritt           String    @default("eingelesen")
+  fehler            String?
+  versuche          Int       @default(0)
+  gesperrtBis       DateTime?
+  updatedAt         DateTime  @default(now())
+
+  @@index([laufId, schritt])
+  @@index([laufId, zeile])
+}
+
+model VorabEreignis {
+  id      BigInt    @id @default(autoincrement())
+  laufId  String
+  lauf    VorabLauf @relation(fields: [laufId], references: [id], onDelete: Cascade)
+  zeit    DateTime  @default(now())
+  schritt String
+  art     String
+  text    String
+  daten   Json?
+
+  @@index([laufId, zeit])
 }

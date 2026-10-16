@@ -19,6 +19,7 @@ import { personsRouter } from "./v1/persons";
 import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
+import { vorabanalyseRouter } from "./v1/vorabanalyse";
 import { billingRouter } from "./v1/billing";
 import { seatBillingRouter } from "./v1/seat-billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
@@ -90,6 +91,8 @@ v1.route("/", companiesRouter);
 
 // §4.2 Transaction reads (W2-W5) + §6 SSE bridge (W4).
 v1.route("/", transactionsRouter);
+// Vorabanalyse (Betreiber-Werkzeug, docs/PLAN_VORABANALYSE.md).
+v1.route("/", vorabanalyseRouter);
 
 // §4.3 Evaluation reads (W15, W19, W22).
 v1.route("/", evaluationsRouter);
