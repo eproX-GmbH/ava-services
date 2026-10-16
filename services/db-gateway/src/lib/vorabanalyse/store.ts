@@ -220,7 +220,9 @@ export async function zaehlerAktualisieren(pool: Pool, laufId: string): Promise<
   );
   const z: Record<string, number> = {};
   for (const row of r.rows) z[row.k] = Number(row.n);
-  await pool.query(`UPDATE "VorabLauf" SET "zaehler" = $2::jsonb, "updatedAt" = NOW() WHERE "id" = $1`, [laufId, JSON.stringify(z)]);
+  // Nur die Zaehler; updatedAt bleibt (die Konsole nutzt updatedAt als Schluessel
+  // fuer Formulare, ein staendiger Wechsel wuerde Eingaben verwerfen).
+  await pool.query(`UPDATE "VorabLauf" SET "zaehler" = $2::jsonb WHERE "id" = $1`, [laufId, JSON.stringify(z)]);
   return z;
 }
 
