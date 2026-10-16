@@ -59,7 +59,10 @@ vorabanalyseRouter.openapi(createRoute({ method: "get", path: "/betreiber/voraba
   const pool = getGatewayPool();
   const lauf = await laufOder404(id);
   const [zaehler, kosten, letzte] = await Promise.all([zaehlerAktualisieren(pool, id), laufKosten(pool, id), ereignisse(pool, id, 50)]);
-  return c.json({ lauf: { ...lauf, zaehler }, kosten, ereignisse: letzte }, 200);
+  const { abgleichLaeuft } = await import("../../lib/vorabanalyse/abgleich");
+  const { laufAktiv } = await import("../../lib/vorabanalyse/laeufer");
+  // Nach einem Gateway-Neustart kann ein Lauf im Status "abgleich" haengen: Flag sagt die Wahrheit.
+  return c.json({ lauf: { ...lauf, zaehler }, kosten, ereignisse: letzte, abgleichLaeuft: abgleichLaeuft(id), laufAktiv: laufAktiv(id) }, 200);
 });
 
 vorabanalyseRouter.openapi(createRoute({
@@ -139,7 +142,8 @@ vorabanalyseRouter.openapi(createRoute({
   const parsed = IcpSchema.safeParse({ ...roh, updatedAt: new Date().toISOString() });
   if (!parsed.success) throw new HTTPException(400, { message: `ICP unvollständig: ${parsed.error.issues[0]?.path.join(".") ?? "?"} (${parsed.error.issues[0]?.message ?? ""})` });
   const icp = parsed.data;
-  const neu = await laufAendern(getGatewayPool(), id, { icp, status: lauf.status === "icp" && lauf.firmen > 0 ? "abgleich" : lauf.status });
+  // Status bleibt; "abgleich" heisst "Abgleich laeuft" und wird nur vom Abgleich selbst gesetzt.
+  const neu = await laufAendern(getGatewayPool(), id, { icp });
   await (await import("../../lib/vorabanalyse/store")).ereignis(getGatewayPool(), id, "icp", "info", `ICP gespeichert (${icp.branchen.length} Branchen, ${icp.merkmale.length} Merkmale).`);
   return c.json({ lauf: neu }, 200);
 });
