@@ -159,3 +159,51 @@ vorabanalyseRouter.openapi(createRoute({
   await (await import("../../lib/vorabanalyse/store")).ereignis(getGatewayPool(), id, "icp", "info", `ICP-Vorschlag aus ${b.text ? b.quelle ?? "Text" : b.website}.`);
   return c.json(r, 200);
 });
+
+// ---- V2: Abgleich und Zuordnung -------------------------------------------
+
+vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorabanalyse/{id}/abgleich", tags: ["vorabanalyse"], summary: "Vorabanalyse: Stammdaten-Abgleich starten (neu=true setzt zurueck)", request: { params: Id, body: { content: { "application/json": { schema: z.object({ neu: z.boolean().optional() }) } }, required: false } }, responses: ok200("gestartet") }), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const body = (await c.req.json().catch(() => ({}))) as { neu?: boolean };
+  const lauf = await laufOder404(id);
+  const { abgleichStarten, abgleichLaeuft, abgleichZuruecksetzen } = await import("../../lib/vorabanalyse/abgleich");
+  if (abgleichLaeuft(id)) return c.json({ ok: true, laeuft: true }, 200);
+  if (!["icp", "abgleich", "zuordnung", "fehler", "neu"].includes(lauf.status)) throw new HTTPException(409, { message: "Der Lauf ist schon weiter; Abgleich nur vor dem Start der Website-Suche." });
+  if (lauf.firmen === 0) throw new HTTPException(409, { message: "Erst eine Datei einlesen." });
+  if (body.neu) await abgleichZuruecksetzen(getGatewayPool(), id);
+  abgleichStarten(getGatewayPool(), id);
+  return c.json({ ok: true, laeuft: true }, 200);
+});
+
+vorabanalyseRouter.openapi(createRoute({
+  method: "put", path: "/betreiber/vorabanalyse/{id}/firmen/{firmaId}/zuordnung", tags: ["vorabanalyse"], summary: "Vorabanalyse: Zuordnung einer Zeile (Kandidat, ohne Registerfirma, ausschliessen)",
+  request: { params: Id.extend({ firmaId: z.coerce.number().int().min(1) }), body: { content: { "application/json": { schema: z.object({ companyId: z.string().max(120).nullable(), ausschliessen: z.boolean().optional() }) } }, required: true } },
+  responses: ok200("zugeordnet"),
+}), async (c) => {
+  betreiber(c);
+  const { id, firmaId } = c.req.valid("param");
+  const b = c.req.valid("json");
+  await laufOder404(id);
+  const { zuordnen } = await import("../../lib/vorabanalyse/abgleich");
+  if (!(await zuordnen(getGatewayPool(), id, firmaId, b))) throw new HTTPException(404, { message: "firma_unbekannt" });
+  return c.json({ ok: true }, 200);
+});
+
+vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorabanalyse/{id}/bestmatch", tags: ["vorabanalyse"], summary: "Vorabanalyse: Best Match fuer alle offenen unsicheren Zeilen", request: { params: Id }, responses: ok200("zugeordnet") }), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const lauf = await laufOder404(id);
+  const { bestMatch } = await import("../../lib/vorabanalyse/abgleich");
+  return c.json(await bestMatch(getGatewayPool(), id, lauf.einstellungen.bestMatchMindestScore), 200);
+});
+
+vorabanalyseRouter.openapi(createRoute({ method: "get", path: "/betreiber/vorabanalyse/{id}/abgleich.xlsx", tags: ["vorabanalyse"], summary: "Vorabanalyse: Abgleichsbericht als Excel", request: { params: Id }, responses: { 200: { content: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { schema: z.string() } }, description: "xlsx" }, 404: { content: { "application/json": { schema: ErrorShape } }, description: "unbekannt" } } }), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  await laufOder404(id);
+  const { abgleichBericht } = await import("../../lib/vorabanalyse/bericht");
+  const b = await abgleichBericht(getGatewayPool(), id);
+  if (!b) throw new HTTPException(404, { message: "lauf_unbekannt" });
+  return new Response(new Uint8Array(b.buffer), { status: 200, headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": `attachment; filename="${b.datei}"` } }) as never;
+});
