@@ -139,3 +139,17 @@ export async function bestMatch(pool: Pool, laufId: string, mindestScore: number
   await zaehlerAktualisieren(pool, laufId);
   return { zugeordnet, offenGeblieben: offen };
 }
+
+/** Alle offenen unsicheren Zeilen auf einmal: ohne Registerfirma weiterfuehren oder ausschliessen. */
+export async function alleOffenenZuordnen(pool: Pool, laufId: string, aktion: "ohne-register" | "ausschliessen"): Promise<number> {
+  const r = await pool.query(
+    aktion === "ausschliessen"
+      ? `UPDATE "VorabFirma" SET "zuordnung" = 'ausgeschlossen', "companyId" = NULL, "updatedAt" = NOW() WHERE "laufId" = $1 AND "abgleich" = 'unsicher' AND "zuordnung" = 'offen'`
+      : `UPDATE "VorabFirma" SET "zuordnung" = 'manuell', "companyId" = NULL, "updatedAt" = NOW() WHERE "laufId" = $1 AND "abgleich" = 'unsicher' AND "zuordnung" = 'offen'`,
+    [laufId],
+  );
+  const n = r.rowCount ?? 0;
+  await ereignis(pool, laufId, "zuordnung", "info", aktion === "ausschliessen" ? `${n} offene Zeilen ausgeschlossen.` : `${n} offene Zeilen ohne Registerfirma übernommen.`);
+  await zaehlerAktualisieren(pool, laufId);
+  return n;
+}

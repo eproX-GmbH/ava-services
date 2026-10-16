@@ -203,6 +203,19 @@ vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorab
   return c.json(await bestMatch(getGatewayPool(), id, lauf.einstellungen.bestMatchMindestScore), 200);
 });
 
+vorabanalyseRouter.openapi(createRoute({
+  method: "post", path: "/betreiber/vorabanalyse/{id}/zuordnung-alle", tags: ["vorabanalyse"], summary: "Vorabanalyse: alle offenen unsicheren Zeilen ohne Register uebernehmen oder ausschliessen",
+  request: { params: Id, body: { content: { "application/json": { schema: z.object({ aktion: z.enum(["ohne-register", "ausschliessen"]) }) } }, required: true } },
+  responses: ok200("erledigt"),
+}), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const { aktion } = c.req.valid("json");
+  await laufOder404(id);
+  const { alleOffenenZuordnen } = await import("../../lib/vorabanalyse/abgleich");
+  return c.json({ anzahl: await alleOffenenZuordnen(getGatewayPool(), id, aktion) }, 200);
+});
+
 vorabanalyseRouter.openapi(createRoute({ method: "get", path: "/betreiber/vorabanalyse/{id}/abgleich.xlsx", tags: ["vorabanalyse"], summary: "Vorabanalyse: Abgleichsbericht als Excel", request: { params: Id }, responses: { 200: { content: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { schema: z.string() } }, description: "xlsx" }, 404: { content: { "application/json": { schema: ErrorShape } }, description: "unbekannt" } } }), async (c) => {
   betreiber(c);
   const { id } = c.req.valid("param");
