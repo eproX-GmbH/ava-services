@@ -7,9 +7,11 @@ import type { Pool } from "pg";
 import { logger } from "../logger";
 import { betreiberJson } from "../betreiber-llm";
 import { websiteLesen } from "./crawl";
-import { kandidatenFiltern, valueserpSucheMitWiederholung } from "./suche";
+import { kandidatenFiltern, valueserpVarianten } from "./suche";
+import { betreiberWebsuche } from "../betreiber-llm";
 import { ereignis, laufAendern, laufKosten, laufLesen, zaehlerAktualisieren, type Lauf } from "./store";
 import { crmNameBereinigen, namePasst, namenUeberlappen } from "./namen";
+import { istPlattform as istPlattformDomain } from "./crawl";
 import type { Icp } from "./icp";
 
 const judgeSchema = z.object({ matchIndex: z.number().int().nullable(), confidence: z.enum(["high", "medium", "low"]), reasoning: z.string().max(400).default("") });
@@ -21,6 +23,7 @@ const profilSchema = z.object({
 });
 const urteilSchema = z.object({ bewertungen: z.array(z.object({ id: z.string(), score: z.number().min(0).max(100), begruendung: z.string().max(400).default(""), ausschlussgrund: z.string().max(120).nullable().optional() })) });
 type Profil = z.infer<typeof profilSchema>;
+const websucheSchema = z.object({ url: z.string().nullable(), konfidenz: z.enum(["high", "medium", "low"]).default("low"), begruendung: z.string().default("") });
 
 // medium liegt unter der Standardschwelle 0,7: nur sichere Urteile zaehlen als Website.
 const KONFIDENZ: Record<"high" | "medium" | "low", number> = { high: 0.9, medium: 0.6, low: 0.3 };
@@ -108,17 +111,54 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
         }
         const name = kand?.name ?? crm;
         const ort = f.ort ?? kand?.ort ?? "";
-        let treffer;
+        let treffer: Awaited<ReturnType<typeof valueserpVarianten>>["treffer"] = [];
         let roh = 0;
-        try {
-          const r = await valueserpSucheMitWiederholung(pool, `${name} ${ort}`.trim(), q);
-          roh = r.treffer.length;
-          treffer = kandidatenFiltern(r.treffer);
-        } catch (err) {
-          await fertig(f.id, { fehler: `Websuche fehlgeschlagen: ${err instanceof Error ? err.message.slice(0, 160) : String(err)}`, versuche: 1 });
-          return;
+        const modus = e.websuche ?? "hybrid";
+        if (modus !== "openai") {
+          try {
+            const r = await valueserpVarianten(pool, name, ort, q);
+            roh = r.roh;
+            // Treffer mit Namensbezug nach vorn, damit der Judge sie sicher sieht.
+            const gefiltert = kandidatenFiltern(r.treffer, 20);
+            const mitName = gefiltert.filter((t) => namePasst(crm, ort, `${t.domain} ${t.title}`) || (kand && namePasst(kand.name, ort, `${t.domain} ${t.title}`)));
+            treffer = [...mitName, ...gefiltert.filter((t) => !mitName.includes(t))].slice(0, 8).map((t, i) => ({ ...t, index: i }));
+          } catch (err) {
+            if (modus === "valueserp") { await fertig(f.id, { fehler: `Websuche fehlgeschlagen: ${err instanceof Error ? err.message.slice(0, 160) : String(err)}`, versuche: 1 }); return; }
+          }
         }
-        if (treffer.length === 0) { await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: roh === 0 ? "Die Suche lieferte keine Treffer (drei Versuche)." : "Nur Plattformen und Verzeichnisse in den Treffern.", roh } }); return; }
+        // OpenAI-Websuche: im Modus openai immer, im Hybrid nur ohne bestaetigte Website.
+        const openaiSuchen = async (vorher: string | null): Promise<boolean> => {
+          if (modus === "valueserp") return false;
+          const w = await betreiberWebsuche({
+            prompt: `Finde die offizielle Unternehmenswebsite (eigene Domain der Firma, kein Verzeichnis, kein Portal, keine Social-Media-Seite) der Firma "${name}"${crm !== name ? ` (auch gefuehrt als "${crm}")` : ""} mit Sitz in ${[f.plz, ort].filter(Boolean).join(" ")}${f.strasse ? `, ${f.strasse}` : ""}, Deutschland. ` +
+              `Pruefe, dass Name UND Standort zur Seite passen (Impressum). Gibt es keine eigene Website, antworte mit url null. ` +
+              `Antworte NUR als JSON: {"url": "https://..." oder null, "konfidenz": "high"|"medium"|"low", "begruendung": "ein kurzer deutscher Satz"}`,
+            schema: websucheSchema,
+            quelle: q,
+          });
+          if (!w.ok || !w.wert.url) {
+            if (w.ok) await fertig(f.id, { schritt: "website", websiteUrteil: { passt: false, konfidenz: 1, begruendung: `${vorher ? `${vorher} ` : ""}OpenAI-Websuche: ${w.wert.begruendung || "keine eigene Website gefunden"}`, roh, quelleSuche: "openai" } });
+            return false;
+          }
+          let url = w.wert.url.trim();
+          if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+          let domain = "";
+          try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch { return false; }
+          const belegt = namePasst(crm, ort, domain) || (kand ? namePasst(kand.name, ort, domain) : false);
+          // Ohne Namensbezug in der Domain gilt nur "high"; mit Namensbezug reicht "medium".
+          const konf = w.wert.konfidenz === "high" ? 0.9 : w.wert.konfidenz === "medium" && belegt ? 0.75 : 0.4;
+          const passt = konf >= e.judgeKonfidenz && !istPlattformDomain(domain);
+          await fertig(f.id, { schritt: "website", website: passt ? url : null, websiteUrteil: { passt, konfidenz: konf, begruendung: `OpenAI-Websuche: ${w.wert.begruendung}`, kandidat: url, roh, quelleSuche: "openai" } });
+          if (passt) f.website = url;
+          return passt;
+        };
+        if (treffer.length === 0) {
+          if (await openaiSuchen(roh === 0 ? "Valueserp ohne Treffer." : "Valueserp nur mit Verzeichnissen.")) { /* weiter zum Profil */ } else {
+            if (modus === "valueserp") await fertig(f.id, { schritt: "website", websiteKandidaten: [], websiteUrteil: { passt: false, konfidenz: 1, begruendung: roh === 0 ? "Die Suche lieferte keine Treffer (drei Versuche)." : "Nur Plattformen und Verzeichnisse in den Treffern.", roh } });
+            if (!f.website) return;
+          }
+        }
+        if (!f.website) {
         const prompt =
           `Du bekommst die Top-Suchergebnisse von Google zu einer Firma. Waehle EINEN Treffer als offizielle Unternehmens-Webseite oder antworte mit matchIndex: null.\n\n` +
           `Firmenname: ${name}${crm !== name ? ` (im CRM: ${crm})` : ""}\nStandort: ${[f.plz, ort].filter(Boolean).join(" ")}\n${f.strasse ? `Anschrift: ${f.strasse}\n` : ""}\nSuchergebnisse:\n` +
@@ -138,8 +178,9 @@ async function laufVerarbeiten(pool: Pool, laufId: string): Promise<void> {
         if (gewaehlt && !namePasst(crm, ort, beleg) && !(kand && namePasst(kand.name, ort, beleg))) { konf = Math.min(konf, 0.3); begruendung = `Verworfen: weder Domain noch Titel tragen den Firmennamen (${gewaehlt.domain}). ${begruendung}`; }
         const passt = !!gewaehlt && konf >= e.judgeKonfidenz;
         await fertig(f.id, { schritt: "website", website: passt ? gewaehlt!.link : null, websiteKandidaten: treffer, websiteUrteil: { passt, konfidenz: konf, begruendung, kandidat: gewaehlt?.link ?? null, roh } });
-        if (!passt) return;
-        f.website = gewaehlt!.link;
+        if (passt) f.website = gewaehlt!.link;
+        else if (!(await openaiSuchen(`Valueserp-Judge: ${begruendung}`))) return;
+        }
       }
       // Profil
       if (f.website && !f.profil) {

@@ -15,8 +15,10 @@ export interface Einstellungen {
   bestMatchMindestScore: number;
   parallelWebsite: number;
   parallelProfil: number;
+  /** hybrid = Valueserp zuerst, OpenAI-Websuche nur ohne bestaetigte Website; openai = immer OpenAI; valueserp = nur Valueserp. */
+  websuche: "hybrid" | "openai" | "valueserp";
 }
-export const STANDARD: Einstellungen = { mindestScore: 60, judgeKonfidenz: 0.7, budgetUsd: 150, bestMatchMindestScore: 0.8, parallelWebsite: 3, parallelProfil: 10 };
+export const STANDARD: Einstellungen = { mindestScore: 60, judgeKonfidenz: 0.7, budgetUsd: 150, bestMatchMindestScore: 0.8, parallelWebsite: 3, parallelProfil: 10, websuche: "hybrid" };
 
 export interface Lauf {
   id: string;

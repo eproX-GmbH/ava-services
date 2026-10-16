@@ -92,6 +92,34 @@ export function echterLink(link: string | undefined, domain: string | undefined,
 }
 
 /** Plattformen und Verzeichnisse aussortieren; Index bleibt fuer den Judge stabil. */
-export function kandidatenFiltern(treffer: Treffer[]): Treffer[] {
-  return treffer.filter((t) => !istPlattform(t.domain)).slice(0, 6).map((t, i) => ({ ...t, index: i }));
+export function kandidatenFiltern(treffer: Treffer[], max = 6): Treffer[] {
+  return treffer.filter((t) => !istPlattform(t.domain)).slice(0, max).map((t, i) => ({ ...t, index: i }));
+}
+
+/** Suchname ohne Rechtsform und Sonderzeichen ("ALPHAMATIC Maschinenbau GmbH" → "ALPHAMATIC Maschinenbau"). */
+export function suchname(name: string): string {
+  return name.replace(/\b(GmbH|mbH|AG|KG|KGaA|OHG|UG|GbR|SE|e\.?\s?K\.?|Co\.?|haftungsbeschränkt)\b/gi, " ").replace(/[&()+,]/g, " ").replace(/\s+/g, " ").trim() || name;
+}
+
+/** Zwei Suchen (Suchname + Ort, Suchname allein), Treffer nach Domain zusammengefuehrt,
+ *  Reihenfolge: erst die mit Ort, dann die ohne. */
+export async function valueserpVarianten(pool: Pool, name: string, ort: string, ref: string): Promise<{ treffer: Treffer[]; roh: number }> {
+  const kurz = suchname(name);
+  const anfragen = [`${kurz} ${ort}`.trim(), kurz];
+  const alle: Treffer[] = [];
+  let roh = 0;
+  for (const q of [...new Set(anfragen)]) {
+    const r = await valueserpSucheMitWiederholung(pool, q, ref, 10);
+    roh += r.treffer.length;
+    alle.push(...r.treffer);
+  }
+  const gesehen = new Set<string>();
+  const treffer: Treffer[] = [];
+  for (const t of alle) {
+    const k = `${t.domain}|${t.link.replace(/\/$/, "")}`;
+    if (gesehen.has(k)) continue;
+    gesehen.add(k);
+    treffer.push({ ...t, index: treffer.length });
+  }
+  return { treffer, roh };
 }

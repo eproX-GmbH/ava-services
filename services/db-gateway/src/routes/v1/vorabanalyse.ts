@@ -21,6 +21,7 @@ const EinstellungenShape = z.object({
   bestMatchMindestScore: z.number().min(0).max(1).optional(),
   parallelWebsite: z.number().int().min(1).max(20).optional(),
   parallelProfil: z.number().int().min(1).max(30).optional(),
+  websuche: z.enum(["hybrid", "openai", "valueserp"]).optional(),
 });
 
 function betreiber(c: { get: (k: "auth") => unknown }): { actorId: string } {

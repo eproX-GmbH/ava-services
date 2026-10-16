@@ -88,3 +88,47 @@ export async function betreiberJson<S extends ZodTypeAny>(args: { system: string
   }
   return { ok: false, grund };
 }
+
+/** Websuche ueber das Betreiber-Modell (OpenAI Responses-API, Werkzeug web_search).
+ *  Kosten: Tokens nach Preistabelle plus je Suchaufruf OPENAI_WEBSUCHE_USD (Standard 0,01 USD). */
+export async function betreiberWebsuche<S extends ZodTypeAny>(args: { prompt: string; schema: S; quelle: string; timeoutMs?: number }): Promise<JsonErgebnis<ZodOutput<S>> & { suchen?: number }> {
+  const env = loadEnv();
+  const key = env.OPERATOR_OPENAI_API_KEY;
+  if (!key) return { ok: false, grund: "Betreiber-Modell nicht konfiguriert (OPERATOR_OPENAI_API_KEY)" };
+  const modell = env.OPERATOR_POOL_MODEL;
+  const start = Date.now();
+  let status = 0;
+  let input = 0, output = 0, cache = 0, suchen = 0;
+  try {
+    const res = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: modell, tools: [{ type: "web_search" }], input: args.prompt }),
+      signal: AbortSignal.timeout(args.timeoutMs ?? 120_000),
+    });
+    status = res.status;
+    const j = (await res.json().catch(() => ({}))) as { output?: Array<{ type: string; content?: Array<{ text?: string }> }>; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } }; error?: { message?: string } };
+    input = j.usage?.input_tokens ?? 0;
+    output = j.usage?.output_tokens ?? 0;
+    cache = j.usage?.input_tokens_details?.cached_tokens ?? 0;
+    suchen = (j.output ?? []).filter((o) => o.type === "web_search_call").length;
+    if (!res.ok) return { ok: false, grund: j.error?.message?.slice(0, 200) ?? `HTTP ${res.status}`, suchen };
+    const text = (j.output ?? []).filter((o) => o.type === "message").flatMap((o) => o.content ?? []).map((c) => c.text ?? "").join("");
+    const obj = jsonObjekt(text);
+    if (!obj) return { ok: false, grund: "Antwort war kein JSON", suchen };
+    const parsed = args.schema.safeParse(obj);
+    if (!parsed.success) return { ok: false, grund: `Antwort passt nicht zum Schema: ${parsed.error.issues[0]?.message ?? "?"}`, suchen };
+    return { ok: true, wert: parsed.data as ZodOutput<S>, suchen };
+  } catch (err) {
+    status = status || 599;
+    return { ok: false, grund: err instanceof Error ? err.message.slice(0, 160) : String(err), suchen };
+  } finally {
+    const tokenKosten = estimateMicroUsd({ provider: "openai", model: modell, inputTokens: input, outputTokens: output, cacheReadTokens: cache }) ?? 0;
+    const suchKosten = Math.round(suchen * Number(process.env.OPENAI_WEBSUCHE_USD ?? "0.01") * 1e6);
+    void getGatewayPool().query(
+      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel", "quelle")
+       VALUES ($1, $2, 'betreiber', 'betreiber', $3, $4, $5, $6, $7, $8, $9, false, 'background', $10)`,
+      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, process.env.OPERATOR_TENANT_ID ?? "betreiber", `${modell}+web_search`, input, output, cache, tokenKosten + suchKosten, status, Date.now() - start, args.quelle.slice(0, 80)],
+    ).catch(() => undefined);
+  }
+}
