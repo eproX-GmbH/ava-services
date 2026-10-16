@@ -59,12 +59,31 @@ export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8
   if (status >= 400) throw new Error(`Valueserp ${status}`);
   const treffer: Treffer[] = [];
   for (const o of json.organic_results ?? []) {
-    if (!o.link) continue;
+    const link = echterLink(o.link, o.domain);
+    if (!link) continue;
     let host = "";
-    try { host = new URL(o.link).hostname; } catch { continue; }
-    treffer.push({ index: treffer.length, title: (o.title ?? "").slice(0, 200), link: o.link, domain: kernDomain(host), snippet: (o.snippet ?? "").slice(0, 300) });
+    try { host = new URL(link).hostname; } catch { continue; }
+    treffer.push({ index: treffer.length, title: (o.title ?? "").slice(0, 200), link, domain: kernDomain(host), snippet: (o.snippet ?? "").slice(0, 300) });
   }
   return { treffer, status };
+}
+
+/** Valueserp liefert Links teils als Google-Weiterleitung (google.com/url?q=…): Ziel
+ *  aus dem Parameter lesen; sonst das Domain-Feld der Antwort als Rueckfall. */
+export function echterLink(link: string | undefined, domain: string | undefined): string | null {
+  if (link) {
+    try {
+      const u = new URL(link);
+      if (/(^|\.)google\.[a-z.]+$/i.test(u.hostname) && (u.pathname === "/url" || u.pathname.startsWith("/url"))) {
+        const ziel = u.searchParams.get("q") ?? u.searchParams.get("url");
+        if (ziel && /^https?:\/\//i.test(ziel)) return ziel;
+      } else {
+        return link;
+      }
+    } catch { /* unten */ }
+  }
+  const d = (domain ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  return d ? `https://${d}/` : null;
 }
 
 /** Plattformen und Verzeichnisse aussortieren; Index bleibt fuer den Judge stabil. */
