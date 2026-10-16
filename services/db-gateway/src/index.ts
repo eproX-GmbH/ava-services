@@ -264,6 +264,8 @@ startPersonRetentionCron();
 // B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
 // Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
 startBillingCron();
+// Vorabanalyse: Laeufe weiterfuehren, die beim letzten Neustart liefen.
+void import("./lib/vorabanalyse/laeufer").then(({ laeuferStarten }) => laeuferStarten(getGatewayPool())).catch(() => undefined);
 
 // Verflechtungen V5 — Geschaeftsfuehrer-Rollen des Altbestands nachtragen.
 // Einmaliger Durchgang in kleinen Buendeln; endet von selbst.

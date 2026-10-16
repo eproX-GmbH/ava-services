@@ -1,0 +1,56 @@
+// Vorabanalyse: Valueserp-Suche aus dem Gateway (Betreiber-Schluessel), je Aufruf eine
+// ProxyAudit-Zeile mit Tarif, Preis und Lauf-Kennung (ref), damit Kosten je Lauf stimmen.
+
+import { createHash } from "node:crypto";
+import type { Pool } from "pg";
+import { loadEnv } from "../env";
+import { valueserpTarif } from "../anbieter-kosten";
+import { istPlattform, kernDomain } from "./crawl";
+
+export interface Treffer { index: number; title: string; link: string; domain: string; snippet: string }
+
+export async function valueserpSuche(pool: Pool, q: string, ref: string, num = 8): Promise<{ treffer: Treffer[]; status: number }> {
+  const env = loadEnv();
+  if (!env.VALUESERP_API_KEY) throw new Error("VALUESERP_API_KEY fehlt");
+  const params = new URLSearchParams();
+  params.set("api_key", env.VALUESERP_API_KEY);
+  params.set("q", q);
+  params.set("engine", "google");
+  params.set("location_auto", "false");
+  params.set("google_domain", env.VALUESERP_DOMAIN ?? "google.de");
+  params.set("hl", env.VALUESERP_UI_LANGUAGE ?? "de");
+  params.set("gl", env.VALUESERP_LOCATION ?? "de");
+  params.set("num", String(num));
+  const start = Date.now();
+  let status = 0;
+  let json: { organic_results?: Array<{ title?: string; link?: string; domain?: string; snippet?: string }> } = {};
+  try {
+    const res = await fetch(`https://api.valueserp.com/search?${params.toString()}`, { signal: AbortSignal.timeout(30_000) });
+    status = res.status;
+    json = (await res.json().catch(() => ({}))) as typeof json;
+  } catch (err) {
+    status = 599;
+    throw err;
+  } finally {
+    const t = valueserpTarif();
+    const kosten = status >= 200 && status < 400 ? t.preisMicroUsd : 0;
+    void pool.query(
+      `INSERT INTO "ProxyAudit" (proxy, "tenantId", "actorId", "qHash", status, "latencyMs", "cacheHit", "tarif", "kostenMicroUsd", "ref", "createdAt") VALUES ('valueserp', $1, 'vorabanalyse', $2, $3, $4, false, $5, $6, $7, NOW())`,
+      [process.env.OPERATOR_TENANT_ID ?? "betreiber", createHash("sha256").update(q).digest("hex"), status, Date.now() - start, t.name, kosten, ref],
+    ).catch(() => undefined);
+  }
+  if (status >= 400) throw new Error(`Valueserp ${status}`);
+  const treffer: Treffer[] = [];
+  for (const o of json.organic_results ?? []) {
+    if (!o.link) continue;
+    let host = "";
+    try { host = new URL(o.link).hostname; } catch { continue; }
+    treffer.push({ index: treffer.length, title: (o.title ?? "").slice(0, 200), link: o.link, domain: kernDomain(host), snippet: (o.snippet ?? "").slice(0, 300) });
+  }
+  return { treffer, status };
+}
+
+/** Plattformen und Verzeichnisse aussortieren; Index bleibt fuer den Judge stabil. */
+export function kandidatenFiltern(treffer: Treffer[]): Treffer[] {
+  return treffer.filter((t) => !istPlattform(t.domain)).slice(0, 6).map((t, i) => ({ ...t, index: i }));
+}

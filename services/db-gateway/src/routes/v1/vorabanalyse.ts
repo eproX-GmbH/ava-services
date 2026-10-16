@@ -3,6 +3,7 @@
 // Abgleich, Zuordnung, Website/Profil/Urteil und Exporte an.
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { istBetreiber } from "../../middleware/auth";
@@ -206,4 +207,70 @@ vorabanalyseRouter.openapi(createRoute({ method: "get", path: "/betreiber/voraba
   const b = await abgleichBericht(getGatewayPool(), id);
   if (!b) throw new HTTPException(404, { message: "lauf_unbekannt" });
   return new Response(new Uint8Array(b.buffer), { status: 200, headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": `attachment; filename="${b.datei}"` } }) as never;
+});
+
+// ---- V3/V4: Lauf (Website, Profil, Urteil), Steuerung, SSE ---------------
+
+vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorabanalyse/{id}/start", tags: ["vorabanalyse"], summary: "Vorabanalyse: Website-Suche, Miniprofile und ICP-Urteil starten/fortsetzen", request: { params: Id }, responses: ok200("gestartet") }), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  const lauf = await laufOder404(id);
+  if (!lauf.icp) throw new HTTPException(409, { message: "Erst das ICP speichern." });
+  if (lauf.firmen === 0) throw new HTTPException(409, { message: "Erst eine Datei einlesen." });
+  if (!["zuordnung", "pausiert", "abgebrochen", "fehler", "fertig", "icp", "abgleich"].includes(lauf.status)) throw new HTTPException(409, { message: "Der Lauf laeuft bereits." });
+  const { laeuferStarten, laufAktiv } = await import("../../lib/vorabanalyse/laeufer");
+  if (laufAktiv(id)) return c.json({ ok: true }, 200);
+  await laufAendern(getGatewayPool(), id, { status: "website" });
+  await pool_gestartet(id);
+  laeuferStarten(getGatewayPool());
+  return c.json({ ok: true }, 200);
+});
+async function pool_gestartet(id: string): Promise<void> {
+  await getGatewayPool().query(`UPDATE "VorabLauf" SET "gestartetAt" = COALESCE("gestartetAt", NOW()), "beendetAt" = NULL WHERE "id" = $1`, [id]);
+}
+
+for (const aktion of ["pause", "abbrechen"] as const) {
+  vorabanalyseRouter.openapi(createRoute({ method: "post", path: `/betreiber/vorabanalyse/{id}/${aktion}`, tags: ["vorabanalyse"], summary: `Vorabanalyse: Lauf ${aktion === "pause" ? "pausieren" : "abbrechen"}`, request: { params: Id }, responses: ok200("ok") }), async (c) => {
+    betreiber(c);
+    const { id } = c.req.valid("param");
+    await laufOder404(id);
+    const { laufPausieren, laufStoppen, laufAktiv } = await import("../../lib/vorabanalyse/laeufer");
+    if (aktion === "pause") laufPausieren(id); else laufStoppen(id);
+    if (!laufAktiv(id)) await laufAendern(getGatewayPool(), id, { status: aktion === "pause" ? "pausiert" : "abgebrochen" });
+    return c.json({ ok: true }, 200);
+  });
+}
+
+vorabanalyseRouter.openapi(createRoute({ method: "post", path: "/betreiber/vorabanalyse/{id}/urteile-neu", tags: ["vorabanalyse"], summary: "Vorabanalyse: ICP-Urteile neu rechnen (nach ICP-Aenderung)", request: { params: Id }, responses: ok200("gestartet") }), async (c) => {
+  betreiber(c);
+  const { id } = c.req.valid("param");
+  await laufOder404(id);
+  const { urteileZuruecksetzen, laeuferStarten } = await import("../../lib/vorabanalyse/laeufer");
+  await urteileZuruecksetzen(getGatewayPool(), id);
+  await (await import("../../lib/vorabanalyse/store")).ereignis(getGatewayPool(), id, "urteil", "info", "ICP-Urteile werden neu gerechnet.");
+  laeuferStarten(getGatewayPool());
+  return c.json({ ok: true }, 200);
+});
+
+// Live-Stand: alle 2 s Zaehler, Status, Kosten und neue Ereignisse.
+vorabanalyseRouter.get("/betreiber/vorabanalyse/:id/events", async (c) => {
+  betreiber(c as never);
+  const id = c.req.param("id");
+  const pool = getGatewayPool();
+  const lauf = await laufLesen(pool, id);
+  if (!lauf) throw new HTTPException(404, { message: "lauf_unbekannt" });
+  return streamSSE(c, async (stream) => {
+    let letzteId = 0;
+    let offen = true;
+    stream.onAbort(() => { offen = false; });
+    while (offen) {
+      const [l, zaehler, kosten, ev] = await Promise.all([
+        laufLesen(pool, id), zaehlerAktualisieren(pool, id), laufKosten(pool, id),
+        pool.query<{ id: string; zeit: Date; schritt: string; art: string; text: string }>(`SELECT "id", "zeit", "schritt", "art", "text" FROM "VorabEreignis" WHERE "laufId" = $1 AND "id" > $2 ORDER BY "id" LIMIT 50`, [id, letzteId]),
+      ]);
+      for (const e of ev.rows) letzteId = Math.max(letzteId, Number(e.id));
+      await stream.writeSSE({ event: "stand", data: JSON.stringify({ status: l?.status ?? "fehler", zaehler, kosten, ereignisse: ev.rows.map((e) => ({ id: Number(e.id), zeit: new Date(e.zeit).toISOString(), schritt: e.schritt, art: e.art, text: e.text })) }) });
+      if (!l || ["fertig", "abgebrochen", "fehler", "pausiert", "neu", "icp", "zuordnung"].includes(l.status)) { await stream.sleep(5000); } else { await stream.sleep(2000); }
+    }
+  });
 });
