@@ -33,7 +33,10 @@ async function flyMaschinen(): Promise<Array<{ id: string; state: string; region
   if (!FLY_TOKEN()) return null;
   try {
     const res = await fetch(`https://api.machines.dev/v1/apps/${WORKER_APP()}/machines`, { headers: { authorization: `Bearer ${FLY_TOKEN()}` }, signal: AbortSignal.timeout(8_000) });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logger.warn({ status: res.status, app: WORKER_APP() }, "[stammdaten] Fly-Maschinen abgelehnt (Token pruefen)");
+      return null;
+    }
     return (await res.json()) as Array<{ id: string; state: string; region: string; updated_at: string; config?: { metadata?: Record<string, string>; standbys?: string[] } }>;
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[stammdaten] Fly-Maschinen nicht lesbar");
