@@ -8,6 +8,7 @@
 //   GET  /register-jobs/status          Queue-Statistik
 //   POST /register-jobs/refresh         Auffrischung fuer konkrete Blaetter anfordern
 
+import { logger } from "../../lib/logger";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
@@ -182,6 +183,7 @@ function auth(c: { get: (k: "auth") => { tenantId: string; actorId: string } | u
 
 function jobFehler(e: unknown): never {
   if (e instanceof JobFehler) throw new HTTPException(e.status, { message: e.message });
+  logger.error({ err: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack?.split("\n").slice(0, 6).join(" | ") : undefined }, "[register-jobs] unerwarteter Fehler");
   throw e;
 }
 

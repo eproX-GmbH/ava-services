@@ -432,9 +432,15 @@ export async function erzeugeJobs(pool: pg.Pool, now: Date = new Date()): Promis
   const heute = tagIso(now);
   try {
     const fronten = await ladeFronten();
+    const offen = await pool.query<{ g: string; a: string }>(
+      `SELECT DISTINCT "payload"->>'gericht' AS g, "payload"->>'art' AS a FROM "RegisterJob" WHERE "art" = 'front' AND "status" IN ('offen', 'laeuft')`,
+    );
+    const wartend = new Set(offen.rows.map((r) => `${r.g}|${r.a}`));
     for (const f of fronten) {
       const geprueft = f.zuletztGeprueftAt ? new Date(f.zuletztGeprueftAt).getTime() : 0;
       if (now.getTime() - geprueft < 20 * 3600_000) continue;
+      // Solange dieselbe Front noch wartet, keinen weiteren Tagesjob anlegen.
+      if (wartend.has(`${f.districtCourt}|${f.registerType}`)) continue;
       const ok = await legeJobAn(
         pool,
         "front",
@@ -721,7 +727,38 @@ export function abfragenJeStundeFuer(art: JobArt): number {
   return art.startsWith("at_") || art.startsWith("uk_") ? AT_ABFRAGEN_JE_STUNDE : ABFRAGEN_JE_STUNDE;
 }
 
+/** Anteil der Vergaben, die zuerst eine Nummernfront ziehen. Ohne diesen Vorrang
+ *  hungert ein dauerhafter Refresh-Rueckstand (Prioritaet 2) die Fronten (3/4) aus,
+ *  und neue Firmen kommen nicht mehr herein (Stand 2026-10-18: Fronten seit 14.09. ungeprueft). */
+export const FRONT_ANTEIL = 0.35;
+
 export async function leaseJob(pool: pg.Pool, workerId: string, arten: JobArt[] = JOB_ARTEN): Promise<RegisterJob | null> {
+  const vorrang = arten.includes("front") && arten.length > 1 && Math.random() < FRONT_ANTEIL ? await leaseAus(pool, workerId, ["front"]) : null;
+  const job = vorrang ?? (await leaseAus(pool, workerId, arten));
+  // Abgelaufene Leases mit ausgeschoepften Versuchen endgueltig markieren.
+  await pool.query(
+    `UPDATE "RegisterJob" SET "status" = 'fehlgeschlagen', "fehler" = COALESCE("fehler", 'Lease abgelaufen'), "updatedAt" = NOW()
+      WHERE "status" = 'laeuft' AND "leaseUntil" < NOW() AND "versuche" >= $1`,
+    [MAX_VERSUCHE],
+  );
+  if (job?.art === "front") await aeltereFrontenUeberholt(pool, job);
+  return job;
+}
+
+/** Je (Gericht, Art) zaehlt nur der juengste Front-Job: aeltere offene Jobs derselben
+ *  Front wuerden ab einer veralteten Nummer zaehlen und die Front zurueckschreiben. */
+async function aeltereFrontenUeberholt(pool: pg.Pool, job: RegisterJob): Promise<void> {
+  const p = job.payload as { gericht?: string; art?: string };
+  if (!p.gericht || !p.art) return;
+  await pool.query(
+    `UPDATE "RegisterJob" SET "status" = 'ueberholt', "fehler" = 'durch Job ' || $1::text || ' ersetzt', "updatedAt" = NOW()
+      WHERE "art" = 'front' AND "status" = 'offen' AND "id" <> $1::bigint
+        AND "payload"->>'gericht' = $2 AND "payload"->>'art' = $3`,
+    [job.id, p.gericht, p.art],
+  ).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err), jobId: job.id }, "[register-jobs] ueberholte Fronten nicht markiert"));
+}
+
+async function leaseAus(pool: pg.Pool, workerId: string, arten: JobArt[]): Promise<RegisterJob | null> {
   const r = await pool.query(
     `UPDATE "RegisterJob" SET "status" = 'laeuft', "leasedBy" = $1,
             "leaseUntil" = NOW() + ($2 || ' minutes')::interval, "versuche" = "versuche" + 1, "updatedAt" = NOW()
@@ -734,12 +771,6 @@ export async function leaseJob(pool: pg.Pool, workerId: string, arten: JobArt[] 
          FOR UPDATE SKIP LOCKED LIMIT 1)
       RETURNING *`,
     [workerId, String(LEASE_MINUTEN), arten, MAX_VERSUCHE],
-  );
-  // Abgelaufene Leases mit ausgeschoepften Versuchen endgueltig markieren.
-  await pool.query(
-    `UPDATE "RegisterJob" SET "status" = 'fehlgeschlagen', "fehler" = COALESCE("fehler", 'Lease abgelaufen'), "updatedAt" = NOW()
-      WHERE "status" = 'laeuft' AND "leaseUntil" < NOW() AND "versuche" >= $1`,
-    [MAX_VERSUCHE],
   );
   if (r.rowCount === 0) return null;
   return rowToJob(r.rows[0] as Record<string, unknown>);
