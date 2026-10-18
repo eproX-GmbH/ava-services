@@ -6,7 +6,9 @@ import type { Pool } from "pg";
 import { masterData } from "./register-jobs";
 import { logger } from "./logger";
 
-const FLY_TOKEN = () => process.env.FLY_API_TOKEN?.trim() || "";
+// Eigener, nur lesender Token fuer die Worker-App (fly tokens create readonly), sonst der
+// allgemeine Gateway-Token; der gilt oft nur fuer die Kunden-Instanzen.
+const FLY_TOKEN = () => process.env.REGISTER_WORKER_FLY_TOKEN?.trim() || process.env.FLY_API_TOKEN?.trim() || "";
 const WORKER_APP = () => process.env.REGISTER_WORKER_APP?.trim() || "ava-register-worker";
 /** Ab wann ein Server-Worker als stehend gilt. */
 const STILL_MIN = Number(process.env.REGISTER_WORKER_STILL_MIN ?? "120");
@@ -60,6 +62,9 @@ export async function pflegeUebersicht(pool: Pool, tage: number) {
   for (const r of queue.rows) (warteschlange[r.art] ??= {})[r.status] = Number(r.n);
 
   const jetzt = Date.now();
+  // Aktiv auch mit laufendem, noch gueltig geliehenem Job: lange Jobs (UK-Monatsabzug)
+  // melden sich nur beim Leihen.
+  const leiheGueltig = (workerId: string) => jobsLaufend.rows.some((x) => x.leasedBy === workerId && x.leaseUntil && new Date(x.leaseUntil).getTime() > jetzt);
   const jobVon = (workerId: string) => {
     const j = jobsLaufend.rows.find((x) => x.leasedBy === workerId);
     return j ? { id: Number(j.id), art: j.art, schluessel: j.schluessel, seit: j.leaseUntil ? new Date(new Date(j.leaseUntil).getTime() - 20 * 60_000).toISOString() : null } : null;
@@ -77,14 +82,14 @@ export async function pflegeUebersicht(pool: Pool, tage: number) {
     server.push({
       workerId: w?.workerId ?? `betreiber-${m.id}`, maschine: m.id, gruppe, zustand: m.state, region: m.region, standby: Boolean(m.config?.standbys?.length),
       maschineAktualisiert: iso(m.updated_at), zuletztAt: iso(w?.zuletztAt), jobsErledigt: w?.jobsErledigt ?? 0, abfragen: w?.abfragen ?? 0, gesperrtAt: iso(w?.gesperrtAt),
-      aktuellerJob: w ? jobVon(w.workerId) : null, aktiv: m.state === "started" && zuletzt > jetzt - STILL_MIN * 60_000,
+      aktuellerJob: w ? jobVon(w.workerId) : null, aktiv: m.state === "started" && (zuletzt > jetzt - STILL_MIN * 60_000 || (w ? leiheGueltig(w.workerId) : false)),
     });
   }
   for (const w of worker.rows) {
     if (genutzt.has(w.workerId)) continue;
     const zuletzt = w.zuletztAt ? new Date(w.zuletztAt).getTime() : 0;
     if (zuletzt < jetzt - 7 * 86_400_000) continue;
-    server.push({ workerId: w.workerId, maschine: null, gruppe: null, zustand: null, region: null, standby: false, maschineAktualisiert: null, zuletztAt: iso(w.zuletztAt), jobsErledigt: w.jobsErledigt, abfragen: w.abfragen, gesperrtAt: iso(w.gesperrtAt), aktuellerJob: jobVon(w.workerId), aktiv: zuletzt > jetzt - STILL_MIN * 60_000 });
+    server.push({ workerId: w.workerId, maschine: null, gruppe: null, zustand: null, region: null, standby: false, maschineAktualisiert: null, zuletztAt: iso(w.zuletztAt), jobsErledigt: w.jobsErledigt, abfragen: w.abfragen, gesperrtAt: iso(w.gesperrtAt), aktuellerJob: jobVon(w.workerId), aktiv: zuletzt > jetzt - STILL_MIN * 60_000 || leiheGueltig(w.workerId) });
   }
 
   const helfer = await pool.query<{ aktiv: string; gesamt: string }>(`SELECT COUNT(*) FILTER (WHERE "zuletztAt" > NOW() - INTERVAL '15 minutes')::text AS aktiv, COUNT(*)::text AS gesamt FROM "RegisterWorker" WHERE art = 'desktop'`);
@@ -97,7 +102,7 @@ export async function pflegeUebersicht(pool: Pool, tage: number) {
     else if (!s.aktiv) warnungen.push({ stufe: "warnung", text: `Server-Worker ${name} hat sich seit über ${Math.round(STILL_MIN / 60)} Stunden nicht gemeldet.` });
     if (s.gesperrtAt && new Date(s.gesperrtAt).getTime() > jetzt - 3_600_000) warnungen.push({ stufe: "warnung", text: `Server-Worker ${name} wurde vom Registerportal vorübergehend gesperrt.` });
   }
-  if (maschinen === null) warnungen.push({ stufe: "warnung", text: "Zustand der Fly-Maschinen nicht lesbar (FLY_API_TOKEN am Gateway prüfen)." });
+  if (maschinen === null) warnungen.push({ stufe: "warnung", text: "Den Maschinenzustand bei Fly kann das Gateway nicht lesen; ein gestoppter Worker fällt dann erst nach zwei Stunden ohne Meldung auf. Abhilfe: nur lesenden Token als REGISTER_WORKER_FLY_TOKEN am Gateway setzen." });
   const fehlg = Number(fehlgeschlagen.rows[0]?.n ?? 0);
   if (fehlg > 0) warnungen.push({ stufe: "warnung", text: `${fehlg} Jobs sind endgültig fehlgeschlagen (werden nach 12 Stunden automatisch erneut versucht).` });
   const heute = durchsatz.rows.filter((r) => new Date(r.tag).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((a, r) => a + Number(r.n), 0);
