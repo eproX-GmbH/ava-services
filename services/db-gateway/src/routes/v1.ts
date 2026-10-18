@@ -20,6 +20,7 @@ import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
 import { vorabanalyseRouter } from "./v1/vorabanalyse";
+import { stammdatenRouter } from "./v1/stammdaten";
 import { billingRouter } from "./v1/billing";
 import { seatBillingRouter } from "./v1/seat-billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
@@ -93,6 +94,8 @@ v1.route("/", companiesRouter);
 v1.route("/", transactionsRouter);
 // Vorabanalyse (Betreiber-Werkzeug, docs/PLAN_VORABANALYSE.md).
 v1.route("/", vorabanalyseRouter);
+// Stammdatenpflege (Betreiber, 2026-10-18).
+v1.route("/", stammdatenRouter);
 
 // §4.3 Evaluation reads (W15, W19, W22).
 v1.route("/", evaluationsRouter);
