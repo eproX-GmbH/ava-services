@@ -44,6 +44,9 @@ const DEPENDENCY_WAIT_MS = 6 * 3600_000;
 const WAIT_MAX_DAYS_DEFAULT = 14;
 const MAX_SUBWORKFLOW_DEPTH = 3;
 const APPROVAL_TIMEOUT_MS = 48 * 3600_000;
+/** Beginn des Fehlertexts, wenn die Mail-Obergrenze je Tag erreicht ist (Meldung nur einmal je Tag). */
+export const MAIL_CAP_FEHLER = "Tages-Obergrenze für Mails erreicht";
+
 const ITEM_KEY_CANDIDATES = ["discoveryId", "messageId", "id", "companyId", "contactId", "dealId", "email", "domain", "url", "profileUrl"];
 
 export interface RunnerDeps {
@@ -58,7 +61,7 @@ export interface RunnerDeps {
   /** Gateway-Lesezugriff (Warten auf Vorgangs-Abschluss). */
   gatewayRequest: <T>(path: string) => Promise<T>;
   /** Meldung an den Nutzer (Meldungen-Panel, OS-Notification, Telegram). */
-  notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string }) => void;
+  notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string; dedupKey?: string }) => void;
 }
 
 export interface RunOptions {
@@ -400,12 +403,14 @@ export class WorkflowRunner {
         }
       }
       if (def.settings.notifyOnFinish && depth === 0 && opts.trigger !== "test" && execution.status !== "waiting") {
+        const mailCap = execution.status === "error" && (execution.error ?? "").startsWith(MAIL_CAP_FEHLER);
         this.deps.notify({
           art: execution.status === "error" ? "fehler" : "fertig",
           title: `Workflow „${def.name}“ ${statusText(execution.status)}`,
           body: execution.summary ?? "",
           workflowId: def.id,
           executionId: execution.id,
+          ...(mailCap ? { dedupKey: `${def.id}:mailcap:${new Date().toISOString().slice(0, 10)}` } : {}),
         });
       }
     }
@@ -1152,8 +1157,8 @@ export class WorkflowRunner {
       if (isMail) {
         const today = new Date().toISOString().slice(0, 10);
         if (ctx.state.mailsToday.day !== today) ctx.state.mailsToday = { day: today, count: 0 };
-        if (ctx.state.mailsToday.count >= ctx.def.settings.maxMailsPerDay) {
-          throw new Error(`Tages-Obergrenze fuer Mails erreicht (${ctx.def.settings.maxMailsPerDay}).`);
+        if (ctx.def.settings.maxMailsPerDay > 0 && ctx.state.mailsToday.count >= ctx.def.settings.maxMailsPerDay) {
+          throw new Error(`${MAIL_CAP_FEHLER} (${ctx.def.settings.maxMailsPerDay} je Tag). Die Grenze steht in den Einstellungen dieses Workflows unter „Mails je Tag höchstens“ (im Chat: settings.maxMailsPerDay); 0 = keine Grenze. Weitere Mails gehen erst morgen wieder raus.`);
         }
       }
       const parsed = tool.parseArgs(args);

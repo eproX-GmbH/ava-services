@@ -1322,6 +1322,7 @@ export function WorkflowEditor(): JSX.Element {
               </label>
               <label className="field">
                 <span>Mails je Tag höchstens</span>
+                <small className="muted">Ist die Grenze erreicht, bricht der Lauf ab und weitere Mails gehen erst am nächsten Tag raus. 0 = keine Grenze.</small>
                 <input type="number" min={0} value={def.settings.maxMailsPerDay} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, maxMailsPerDay: Number(e.target.value) } }); setDirty(true); }} />
               </label>
             </div>

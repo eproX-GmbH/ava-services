@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-10
-Anzahl Tools: 289
+Stand: 2026-10-20
+Anzahl Tools: 286
 
 ## Firmen (24)
 
@@ -40,7 +40,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug.
+Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. `verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.
 
 _Parameter:_ keine.
 
@@ -128,7 +128,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
+Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
 
 _Parameter:_ keine.
 
@@ -244,7 +244,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, kicking off the full master-data pipeline (profile, website, publications, contacts, evaluations). This is THE import tool when the user names or pastes companies in chat (no file attachment): a single company ("leg mir Foo GmbH aus Berlin an") is just a one-item list, a pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL companies in this ONE call — never split into multiple calls, that scatters the Transactions view into one transaction per company. WORKFLOW for lists: call FIRST with `dryRun: true` — you get a matching preview AND a downloadable Excel report (path in `reportPath`); show the user matched / not-uniquely-matched + the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. For a single, clearly-specified company you may commit directly. Each row needs name + city (city disambiguates same-named companies); if the user gave no city, use the best-known HQ — the dry-run report flags wrong guesses. Returns a transactionId on commit; progress via `import_status`. The dry-run creates NO transaction — waiting for the user's confirmation before committing is the intended flow, never a mistake. If the user claims something was or wasn't imported, VERIFY with `transactions_list` / `import_status` before agreeing: an older transaction with a similar name (e.g. an earlier single-company import) is easily mistaken for this one.
+Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, kicking off the full master-data pipeline (profile, website, publications, contacts). This is THE import tool when the user names or pastes companies in chat (no file attachment): a single company ("leg mir Foo GmbH aus Berlin an") is just a one-item list, a pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL companies in this ONE call — never split into multiple calls, that scatters the Transactions view into one transaction per company. WORKFLOW for lists: call FIRST with `dryRun: true` — you get a matching preview AND a downloadable Excel report (path in `reportPath`); show the user matched / not-uniquely-matched + the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. For a single, clearly-specified company you may commit directly. Each row needs name + city (city disambiguates same-named companies); if the user gave no city, use the best-known HQ — the dry-run report flags wrong guesses. BEST: when company_search already gave you the company, pass its id in `companyIds` — exact, works for every country, no dry-run needed. When company_get reports `verarbeitung.stand: fehlt` for a company the user is asking about, call this IMMEDIATELY with that id — no confirmation, no 'soll ich?': the user expects AVA to simply know the company, and processing it is how AVA gets there. Companies OUTSIDE Germany (company_search returned country AT or UK) need `country` on their row — without it the row is matched against the German register and finds nothing. Rows of different countries become one transaction per country. Swiss companies (CH) only via `companyIds`, not by name. Returns a transactionId on commit; progress via `import_status`. The dry-run creates NO transaction — waiting for the user's confirmation before committing is the intended flow, never a mistake. If the user claims something was or wasn't imported, VERIFY with `transactions_list` / `import_status` before agreeing: an older transaction with a similar name (e.g. an earlier single-company import) is easily mistaken for this one.
 
 _Parameter:_ keine.
 
@@ -260,7 +260,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-Start a background bulk import for a spreadsheet the user has attached. Use this whenever the user wants to process every row of an attachment ("import this", "Durchlauf starten", "process all rows", "alle Firmen anlegen"). Do NOT iterate `company_search` over rows for this — that's slow, wasteful, and skips the master-data pipeline (profile, website, contacts, evaluations are auto-fanned out by the importer). You must have already confirmed the column mapping with the user (via `ask_user_choice` or by stating the inferred mapping and getting a 'go'). Returns a `transactionId` you can hand back to the user; they can watch progress in the Transactions view.
+Start a background bulk import for a spreadsheet the user has attached. Use this whenever the user wants to process every row of an attachment ("import this", "Durchlauf starten", "process all rows", "alle Firmen anlegen"). Do NOT iterate `company_search` over rows for this — that's slow, wasteful, and skips the master-data pipeline (profile, website, contacts are auto-fanned out by the importer). You must have already confirmed the column mapping with the user (via `ask_user_choice` or by stating the inferred mapping and getting a 'go'). Returns a `transactionId` you can hand back to the user; they can watch progress in the Transactions view.
 
 _Parameter:_ keine.
 
@@ -285,12 +285,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-Re-run a single processing stage for one company inside an existing transaction. Useful when one stage failed (e.g. website crawl timed out, evaluation LLM errored) but the rest of the pipeline ran. The user usually phrases this as "retry the website for ACME", "run the contact scrape again for company X", "den Profil-Schritt nochmal laufen lassen". You need both the transactionId and the companyId — look them up via `transaction_entities` or `import_status` first if the user only named the company.
+Re-run a single processing stage for one company inside an existing transaction. Useful when one stage failed (e.g. website crawl timed out, evaluation LLM errored) but the rest of the pipeline ran. The user usually phrases this as "retry the website for ACME", "run the contact scrape again for company X", "den Profil-Schritt nochmal laufen lassen". You need both the transactionId and the companyId — look them up via `transaction_entities` or `import_status` first if the user only named the company. Also the tool to use WITHOUT asking when company_get reports `verarbeitung.stand: unvollstaendig` and the user's question needs one of the missing stages (it carries the transactionId): run the stage, tell the user you are fetching that now — never answer 'there is no such data'. Respects freshness: a stage that is already up to date is skipped by the gateway (no cost, not billed); only failed or missing stages actually run. Forcing a fresh stage to recompute is admin-only in the app, not available here.
 
 _Parameter:_
 - `transactionId: string` (required)
 - `companyId: string` (required)
-- `stage: string (enum: structuredContent, companyPublication, website, companyProfile, companyContact, companyEvaluation, deepResearch, jobPostings)` (required) — Which stage to re-run. `companyEvaluation` fans out across all 5 evaluation producers in parallel.
+- `stage: string (enum: structuredContent, companyPublication, website, companyProfile, companyContact, companyEmail, deepResearch, jobPostings)` (required) — Which stage to re-run.
 - `companyName: string` — Optional — some upstream stages re-resolve by name (helps when the row's stored name had a typo).
 
 ## Transaktionen (7)
@@ -362,53 +362,6 @@ _Parameter:_
 - `page: integer` (default: 1)
 - `pageSize: integer` (default: 20)
 
-## Bewertungen (5)
-
-### `evaluation_best_match_get`
-
-_Datei:_ `services/desktop/src/main/agent/tools/evaluations.ts`
-
-Get a best-match job's full result (ranked candidates with scores).
-
-_Parameter:_
-- `bestMatchId: string` (required)
-
-### `evaluation_best_matches_list`
-
-_Datei:_ `services/desktop/src/main/agent/tools/evaluations.ts`
-
-List best-match jobs the user has run for a transaction (W15). Each item carries the comparison configuration and final ranking job id.
-
-_Parameter:_
-- `transactionId: string` (required)
-- `page: integer` (default: 1)
-- `pageSize: integer` (default: 20)
-
-### `evaluation_comparison_get`
-
-_Datei:_ `services/desktop/src/main/agent/tools/evaluations.ts`
-
-Get a head-to-head comparison result between companies (W22).
-
-_Parameter:_
-- `comparisonId: string` (required)
-
-### `evaluation_offer_analysis`
-
-_Datei:_ `services/desktop/src/main/agent/tools/evaluations.ts`
-
-Global semantic search across the ENTIRE company corpus (no transaction binding) for matches against a free-form offer / Ausschreibung. Faster than a per-transaction deep research — vector similarity + LLM ranking, no per-company evaluation. Use as the DEFAULT path when the user describes an offer / need / Lieferantensuche without naming a specific Vorgang. Returns a `bestMatchJobId` (the same shape `evaluation_start_best_match` returns); poll `evaluation_best_match_get` to read the ranked result. Typical wall-clock: 30–90 s for a small corpus, longer for thousands of companies.
-
-_Parameter:_ keine.
-
-### `evaluation_start_best_match`
-
-_Datei:_ `services/desktop/src/main/agent/tools/evaluations.ts`
-
-Start a per-transaction DEEP RESEARCH best-match job. Picks the top candidates among the companies inside one Vorgang (every row gets a full LLM evaluation, much slower than `evaluation_offer_analysis` but with richer per-company rationale). Use when the user explicitly scopes to a transaction ('in diesem Vorgang', 'in der letzten Transaktion', 'unter diesen Importen') OR when the user picked the deep-research option after the scope disambiguation. Requires the transaction to contain ≥2 companies. Returns a `bestMatchJobId`; poll `evaluation_best_match_get` for the ranked result. Typical wall-clock: 2–5 min depending on company count.
-
-_Parameter:_ keine.
-
 ## Meldungen / Alerts (8)
 
 ### `alerts_dismiss`
@@ -440,10 +393,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/alerts.ts`
 
-List current heartbeat alerts (newest first). Use when the user asks 'welche Meldungen gibt es', 'was ist neu', 'zeig mir die letzten Alarme'. Optional `unreadOnly` filters to entries the user hasn't seen; `limit` defaults to 20.
+List current heartbeat alerts (newest first). Use when the user asks 'welche Meldungen gibt es', 'was ist neu', 'zeig mir die letzten Alarme'. Optional `unreadOnly` filters to entries the user hasn't seen; `limit` defaults to 20. In Workflows: `sinceMinutes` (nur Meldungen der letzten N Minuten) und `kinds` (z. B. ['publication','status','contact-change']) nutzen, sonst kommen bei jedem Lauf dieselben Meldungen wieder (Duplikate); kind 'workflow' sind die Abschluss-/Fehlermeldungen der Workflows selbst und gehoeren nicht in Mails.
 
 _Parameter:_
 - `unreadOnly: boolean` — When true, only return entries with seenAt=null.
+- `sinceMinutes: integer` — Nur Meldungen, die in den letzten N Minuten entstanden sind.
+- `kinds: array` — Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change).
 - `limit: integer` — Max entries to return. Default 20.
 
 ### `alerts_mark_all_seen`
@@ -651,22 +606,13 @@ _Parameter:_
 - `content: string` (required) — The fact to remember, written as a self-contained sentence. Future-you will read this without conversation context, so don't say "the company we just discussed" — name it.
 - `tags: array` — Optional short tags for grouping (e.g. "preference", "company:acme"). Lowercase, no spaces.
 
-## Einstellungen (10)
-
-### `publication_analysis_config`
-
-_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
-
-Ohne Parameter: aktueller Publikations-Analysemodus. Mit `mode`: umstellen (mutating). 'lazy' (Default) analysiert nur trend-relevante Bloecke per LLM, 'eager' JEDEN Block — gruendlicher, aber deutlich mehr LLM-Kosten/Laufzeit. Die Umstellung recycelt den company-publication-Producer automatisch.
-
-_Parameter:_
-- `mode: string (enum: lazy, eager)`
+## Einstellungen (9)
 
 ### `settings_chatgpt_plan`
 
 _Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
 
-ChatGPT-Abo des Nutzers (Sign in with ChatGPT, Plan-Nutzung). `aktion` 'stand' liefert Verbindung, Konto, gewaehltes Modell und die fuer das Konto freigegebenen Modelle; 'modelle' laedt die Liste frisch von OpenAI; 'modell' setzt das Modell (`modell` = Slug aus der Liste, leer = Standard des Kontos; gilt fuer Chat, Hintergrund-KI und Firmenverarbeitung). 'firmenverarbeitung' schaltet mit `an`, ob auch die Firmenverarbeitung (Profile, Jahresabschluesse, Kontakte, Bewertung, Recherche Standard) ueber das Abo laeuft; Sprachmodus und Deep Research brauchen immer einen Schluessel. Die Anmeldung selbst macht der Nutzer in den Einstellungen (Knopf 'Continue with ChatGPT'); verweise dorthin, wenn keine Verbindung besteht. Nutzungslimits verwaltet der Nutzer unter chatgpt.com/settings/usage.
+ChatGPT-Abo des Nutzers (Sign in with ChatGPT, Plan-Nutzung). `aktion` 'stand' liefert Verbindung, Konto, gewaehltes Modell und die fuer das Konto freigegebenen Modelle; 'modelle' laedt die Liste frisch von OpenAI; 'modell' setzt das Modell (`modell` = Slug aus der Liste, leer = Standard des Kontos; gilt fuer Chat, Radar, Alarme, Recherche und Workflows). Die Firmenverarbeitung (Profile, Kontakte, Jahresabschluesse) laeuft ueber AVAs eigenes Modell, nicht ueber das Abo; Sprachmodus und Deep Research brauchen immer einen Schluessel. Die Anmeldung selbst macht der Nutzer in den Einstellungen (Knopf 'Continue with ChatGPT'); verweise dorthin, wenn keine Verbindung besteht. Nutzungslimits verwaltet der Nutzer unter chatgpt.com/settings/usage.
 
 _Parameter:_ keine.
 
@@ -1118,6 +1064,25 @@ _Parameter:_
 - `title: string` (required) — Bold first line.
 - `body: string` (required) — One short sentence.
 
+## abrechnung (2)
+
+### `abrechnung_limit_setzen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/abrechnung.ts`
+
+Setzt das Ausgabenlimit je Monat fuer Aufnahmen (in Euro) oder hebt es auf (limitEur = null). Ist das Limit erreicht, warten neue Firmen bis zum naechsten Monat oder bis das Limit erhoeht wird. Bei Sammelabrechnung darf nur Owner oder Admin der Organisation das Limit setzen. Fragt vor dem Setzen nach Bestaetigung. Nicht im Free-Plan.
+
+_Parameter:_
+- `limitEur: number,null` (required) — Limit in Euro je Monat, null = kein Limit
+
+### `abrechnung_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/abrechnung.ts`
+
+Liest den Abrechnungsstand des Nutzers: Plan (free/pro/enterprise), Aufnahmen der Periode nach Stufe, voraussichtliche Kosten (zugeordnete Aufnahmen zum Stufenpreis plus offene), Ausgabenlimit je Monat und wer zahlt (eigenes Abo oder Seat der Organisation).
+
+_Parameter:_ keine.
+
 ## account (1)
 
 ### `account_info`
@@ -1419,7 +1384,7 @@ _Parameter:_
 - `profileSofort: boolean` — true = sofortige Mini-Profil-Verarbeitung
 - `maxOffeneKandidaten: number` — Deckel offene Kandidaten, 0 = unbegrenzt (Standard 300)
 
-## email-muster (6)
+## email-muster (4)
 
 ### `email_adresse_pruefen`
 
@@ -1435,48 +1400,40 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Aendert Einstellungen der lokalen Hintergrund-Ableitung von E-Mail-Adressen: enabled (ein/aus), zuordnungAktiv (Firmenadressen mit Namen per Namensabgleich/KI-Urteil Personen zuordnen), ungeprueftAnzeigen (Adressen auch speichern, wenn die Mail-Pruefung nicht moeglich war oder ablehnte — klar als unverifiziert/abgelehnt gekennzeichnet). Mindestens ein Feld angeben. Fragt vor der Aenderung nach.
+Aendert Einstellungen der E-Mail-Ableitung: enabled (ein/aus), zuordnungAktiv (Firmenadressen mit Namen per Namensabgleich/KI-Urteil Personen zuordnen), ungeprueftAnzeigen (Adressen auch speichern, wenn die Mail-Pruefung nicht moeglich war oder ablehnte — klar als unverifiziert/abgelehnt gekennzeichnet), pruefungenJeStunde (Verifizierungsrate dieser Person: RCPT-TO-Anfragen je Stunde, 10–3600, Standard 300; hoeher = schneller, aber mehr Last auf fremden Mailservern). Mindestens ein Feld angeben. Fragt vor der Aenderung nach.
 
 _Parameter:_
 - `enabled: boolean`
 - `zuordnungAktiv: boolean`
 - `ungeprueftAnzeigen: boolean`
-
-### `email_muster_jetzt`
-
-_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
-
-Startet sofort einen Durchgang: eine Firma mit Kontakten ohne E-Mail wird geprueft. Dauert bis zu einer Minute.
-
-_Parameter:_ keine.
+- `pruefungenJeStunde: number`
 
 ### `email_muster_status`
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, eine Firma je Durchgang, nur wenn kein Chat laeuft. Verifizierte Adressen werden als „abgeleitet · verifiziert“ gespeichert; bei Catch-all-Domains (Server nimmt jede Adresse an) nach Muster als „abgeleitet · unbestaetigt“ mit niedrigerer Zuverlaessigkeit — eine Antwort bestaetigt, ein Bounce entfernt sie. Stufe 2: Firmenadressen mit Namen (pdettlev@…) werden Personen zugeordnet (zuordnungAktiv); ohne moegliche Pruefung (Port 25) bekommen trotzdem ALLE Personen eine Adresse, gekennzeichnet „abgeleitet · unverifiziert“ mit Baseline (ungeprueftAnzeigen), spaeter nachgeprueft.
+Zeigt die Schalter der E-Mail-Ableitung: ein/aus, Zuordnung von Firmenadressen, unverifizierte Ableitungen anzeigen. Die Ableitung selbst laeuft je Firma als Pipeline-Stufe „E-Mail“ direkt nach dem Kontaktlauf (lokal, Producer company-email): Adressmuster aus Belegen/KI-Urteil, dann wird JEDE abgeleitete Adresse einzeln per Mail-Server-Anfrage geprueft (ohne Zustellung, ohne Tages-Deckel). Ergebnis je Adresse: „abgeleitet · verifiziert“ (gruen), „unbestaetigt“ (Catch-all), „unverifiziert“ (Pruefung nicht moeglich) oder „vom Server abgelehnt“. pruefungenJeStunde = Verifizierungsrate dieser Person (RCPT-TO-Anfragen je Stunde, Standard 300, 10–3600); ist sie erreicht, wartet der Lauf. Stand je Firma: Status-Matrix (company_get bereich aenderungen bzw. retry_stage fuer eine Wiederholung).
 
 _Parameter:_ keine.
-
-### `email_muster_verlauf`
-
-_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
-
-Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis (verifiziert / zugeordnet = Firmenadresse der Person zugeordnet / abgelehnt / unklar = unverifiziert gespeichert / catch_all = unbestaetigt gespeichert / gesperrt), die Baseline-Adresse und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis (nur = verifiziert|zugeordnet|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).
-
-_Parameter:_
-- `nur: string (enum: verifiziert, zugeordnet, abgelehnt, unklar, catch_all, gesperrt, gespeichert)`
-- `companyId: string`
-- `limit: number` — max. Eintraege (Standard 30)
 
 ### `email_muster_vorschau`
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Trockenlauf ohne Netzverkehr: erkennt aus den bekannten Personen-E-Mails der Firma das Adressmuster (Baseline) und listet die Kandidaten-Adressen fuer Kontakte ohne E-Mail sowie Firmenadressen, die per Namensabgleich einer Person zugeordnet wuerden. Es wird nichts gespeichert; die echte Ableitung mit Mail-Pruefung uebernimmt der Hintergrund-Job (oder email_muster_jetzt).
+Trockenlauf ohne Netzverkehr: erkennt aus den bekannten Personen-E-Mails der Firma das Adressmuster (Baseline) und listet die Kandidaten-Adressen fuer Kontakte ohne E-Mail sowie Firmenadressen, die per Namensabgleich einer Person zugeordnet wuerden. Es wird nichts gespeichert; die echte Ableitung mit Mail-Pruefung ist die Pipeline-Stufe „E-Mail“ (Wiederholung: retry_stage mit stage companyEmail).
 
 _Parameter:_
 - `companyId: string` (required)
+
+## firma-finden (1)
+
+### `firma_finden`
+
+_Datei:_ `services/desktop/src/main/agent/tools/firma-finden.ts`
+
+Nur wenn company_search UND register_live_suche nichts Passendes liefern. Sucht den Google-Eintrag (Places) der Firma, prueft die dort hinterlegte Website hart (eigene, erreichbare Domain mit echtem Inhalt — keine Social-Seite, kein Linktree, kein Verzeichnis, keine Baukasten-Subdomain, keine Parkseite), laesst das lokale Modell beurteilen, ob das die gesuchte Firma und ihre eigene Website ist, legt sie bei Konfidenz >= 0,8 als Firma ohne Registereintrag an (ID = Domain) und startet die Verarbeitung (Website, Profil, Kontakte, E-Mail; keine Register- und Abschlussstufen). Liefert transactionId → die Aufgabe wird automatisch beobachtet. Unter der Schwelle: Kandidaten mit Urteil zurueck — dann per ask_user_choice klaeren und mit `website` erneut aufrufen. Firmen ohne eigene Website werden nicht aufgenommen; das dem Nutzer in einem Satz sagen.
+
+_Parameter:_ keine.
 
 ## geo (1)
 
@@ -1488,7 +1445,20 @@ Deutsche Orte im Umkreis eines Ortsnamens finden (Luftlinie ab Orts-Zentroid). L
 
 _Parameter:_ keine.
 
-## icp (3)
+## icp-abgleich (1)
+
+### `icp_bestand_abgleich`
+
+_Datei:_ `services/desktop/src/main/agent/tools/icp-abgleich.ts`
+
+Gleicht den eigenen Bestand (Meine Firmen) mit dem Idealkundenprofil ab und liefert SOFORT eine Rangliste: Vorfilter aus Branchen, Groesse, Ausschluessen und Orten des ICP, danach ein lokales KI-Urteil (0-100 + ein Satz) fuer die plausibelsten Firmen — dieselbe Bewertung wie im Radar. Mit `anfrage` (Angebot, Ausschreibung, Freitext) wird zusaetzlich gegen diesen Text bewertet. Synchron, wenige Sekunden bis eine Minute; kein Job, kein Nachfragen. Antworte dem Nutzer mit der Rangliste (Firmenname als [Name](company:id), Score, Begruendung) und nenne, wie viele Firmen geprueft wurden.
+
+_Parameter:_
+- `anfrage: string` — Optional: Angebot/Anfrage/Ausschreibung als Freitext, gegen den zusaetzlich bewertet wird.
+- `top: integer` — Wie viele Firmen das KI-Urteil bekommen (Standard 15).
+- `suche: string` — Optional: Bestand auf Firmen mit diesem Namensteil/Ort einschraenken.
+
+## icp (4)
 
 ### `icp_assist_from_urls`
 
@@ -1499,6 +1469,16 @@ Analysiert die eigene Website des Nutzers (Angebot, Nutzen, Standort aus dem Imp
 _Parameter:_
 - `eigeneUrl: string` (required) — Website des Nutzers.
 - `kundenUrls: array` — Websites der besten Bestandskunden, max 5.
+
+### `icp_aus_dokument`
+
+_Datei:_ `services/desktop/src/main/agent/tools/icp.ts`
+
+Wenn der Nutzer sein ICP schon beschrieben hat (Confluence-Export, Word, PDF, langer Text): liest das Dokument EINMAL und verdichtet es in die Formularfelder (Angebot, Nutzen, Branchen, Orte, Groesse, Merkmale, Ausschluesse, Beispielkunden, Beschreibung). Entweder `datei` (Name oder Handle einer hochgeladenen Datei) oder `text` angeben. Dauert bei langen Dokumenten 1-2 Minuten. WICHTIG: Ergebnis ist NUR ein Entwurf — zeige ihn dem Nutzer kompakt, nenne die nicht belegten Felder und speichere erst nach Bestaetigung via icp_set. Das Dokument bleibt lokal.
+
+_Parameter:_
+- `datei: string` — Dateiname oder Handle einer hochgeladenen Datei (PDF, DOCX, TXT).
+- `text: string` — Das ICP als Text, wenn keine Datei vorliegt.
 
 ### `icp_get`
 
@@ -2079,16 +2059,7 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (12)
-
-### `org_apify_eigener_set`
-
-_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
-
-Legt fest, ob Mitglieder den Apify-Token der Organisation mit einem eigenen ueberschreiben duerfen. erlaubt=true: der eigene Token hat Vorrang, der Token der Organisation ist der Rueckfall. erlaubt=false: es gilt fuer alle ausschliesslich der Token der Organisation. Liegt weder eigener noch Organisations-Token vor, ist Apify nicht verfuegbar. Ohne Argument: aktuelle Vorgabe lesen. Betrifft die Mitarbeitersuche im Contact-Producer.
-
-_Parameter:_
-- `erlaubt: boolean` — true = eigener Token erlaubt (Vorrang), false = nur Organisation.
+## organisation (11)
 
 ### `org_billing_info`
 
@@ -2256,7 +2227,7 @@ Liefert den aktuellen Erreichbarkeits-Status der externen Quellen (unternehmensr
 
 _Parameter:_ keine.
 
-## register-delta (3)
+## register-delta (4)
 
 ### `browser_status`
 
@@ -2285,6 +2256,17 @@ _Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
 Zeigt, ob dieser Rechner Register-Jobs abarbeitet (Nummernfront neuer Firmen, Registerbekanntmachungen, Auffrischung bekannter Firmen), warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), und den Stand der geteilten Queue (offene und erledigte Jobs, aktive Worker). Nur lesend.
 
 _Parameter:_ keine.
+
+### `register_live_suche`
+
+_Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
+
+Sucht im Registerportal (handelsregister.de) nach einem Firmennamen — nur, wenn company_search KEINEN passenden Treffer hatte. Nutzt den eigenen Browser des Nutzers (eigene IP, 30–90 s). Alle Schlagwoerter muessen im Firmennamen vorkommen; mit exakt=true die genaue Bezeichnung. Treffer werden in die Stammdaten uebernommen und kommen mit companyId zurueck: GENAU EIN passender Treffer (oder einer mit ortTreffer=true) → sofort import_companies mit companyIds, ohne Rueckfrage. Mehrere plausible Treffer → ask_user_choice (Name + Sitz). Kein Treffer → als naechstes firma_finden (Google-Eintrag mit eigener Website), nicht 'nicht gefunden' sagen.
+
+_Parameter:_
+- `name: string` (required) — Firmenname oder die wichtigsten Namensbestandteile (ohne Rechtsform ist oft besser).
+- `ort: string` — Optional: Sitz/Stadt — markiert passende Treffer (ortTreffer), filtert nicht.
+- `exakt: boolean` — Genaue Firmenbezeichnung statt Schlagwortsuche.
 
 ## relevanz (5)
 
@@ -2818,7 +2800,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma). settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? "kein Kassenbestand bekannt") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.
+Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma) oder ein Ereignis. MELDUNGEN PER MAIL (Rezept): trigger { kind: 'event', event: 'alert.created', filter: { kind: [...] } } → optional ai (Text formulieren) → tool mail_send (confirmed: true, to = Adresse des Nutzers); settings.scope 'none', wenn auch Meldungen ohne Firma (Erinnerungen) mitgehen sollen. NICHT per Zeitplan alerts_list ohne sinceMinutes/unreadOnly abfragen — das schickt dieselben Meldungen immer wieder. Bei vielen Meldungen lieber sammeln: Zeitplan (z. B. taeglich 08:00, scope 'none') → alerts_list(sinceMinutes: 1440, kinds: [...], mode allItems) → ai (Zusammenfassung) → eine mail_send. settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? "kein Kassenbestand bekannt") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.
 
 _Parameter:_ keine.
 
@@ -2844,7 +2826,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Aendert einen Workflow gezielt: enabled, trigger, variables, settings oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.
+Aendert einen Workflow gezielt: enabled, trigger, variables, settings (z. B. { maxMailsPerDay: 50 } fuer die Mail-Obergrenze je Tag, { notifyOnFinish: false } gegen Meldungen je Lauf) oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.
 
 _Parameter:_
 - `workflow: string` (required) — id oder Name

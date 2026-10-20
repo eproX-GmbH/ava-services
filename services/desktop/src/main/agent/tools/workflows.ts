@@ -155,7 +155,10 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } " +
       "(Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. " +
       "Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. " +
-      "Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma). " +
+      "Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma) oder ein Ereignis. " +
+      "MELDUNGEN PER MAIL (Rezept): trigger { kind: 'event', event: 'alert.created', filter: { kind: [...] } } → optional ai (Text formulieren) → tool mail_send (confirmed: true, to = Adresse des Nutzers); " +
+      "settings.scope 'none', wenn auch Meldungen ohne Firma (Erinnerungen) mitgehen sollen. NICHT per Zeitplan alerts_list ohne sinceMinutes/unreadOnly abfragen — das schickt dieselben Meldungen immer wieder. " +
+      "Bei vielen Meldungen lieber sammeln: Zeitplan (z. B. taeglich 08:00, scope 'none') → alerts_list(sinceMinutes: 1440, kinds: [...], mode allItems) → ai (Zusammenfassung) → eine mail_send. " +
       "settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). " +
       "Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? \"kein Kassenbestand bekannt\") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.",
     parameters: {
@@ -195,9 +198,16 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
           type: "object",
           description:
             "{ kind: 'manual' | 'schedule' | 'event' | 'chat', intervalMinutes?, at?: 'HH:MM', weekdays?, event?, companyIds?: string[], companySource?: " +
-            "{ kind: 'list' } | { kind: 'radarHot', minScore?: number, nurNeue?: boolean } | { kind: 'transaction', transactionId } | { kind: 'allCompanies', limit? } } — Zeitplan: je Firma ein Lauf",
+            "{ kind: 'list' } | { kind: 'radarHot', minScore?: number, nurNeue?: boolean } | { kind: 'transaction', transactionId } | { kind: 'allCompanies', limit? } } — Zeitplan: je Firma ein Lauf. " +
+            "Ereignis: event 'alert.created' (jede neue Meldung, Payload alertId/kind/severity/headline/rationale/url/companyId/companyName), 'radar.newHot', 'mail.inbound', 'import.finished'; optional filter: { kind: ['publication','status'] } " +
+            "(nur passende Meldungen). Ein Ereignis = ein Lauf, also keine Duplikate; Meldungen der Workflows selbst (kind 'workflow') loesen nie aus.",
         },
-        settings: { type: "object" },
+        settings: {
+          type: "object",
+          description:
+            "{ maxMailsPerDay?: number (Standard 20, 0 = keine Grenze — danach bricht der Lauf mit „Tages-Obergrenze für Mails erreicht“ ab), notifyOnFinish?: boolean (Standard true: Meldung je beendetem Lauf), " +
+            "scope?: 'company' | 'none', autonomy?: 'inherit' | 'none' | 'additive' | 'mutating', timeoutMinutes?, maxItemsPerRun?, errorWorkflowId? }",
+        },
       },
     },
     schema: yup
@@ -285,7 +295,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     summary: "Teile eines Workflows aendern: Trigger, aktiv/pausiert, Variablen, Einstellungen, einzelne Node-Parameter.",
     category: "workflow workflows aendern trigger zeitplan pausieren",
     description:
-      "Aendert einen Workflow gezielt: enabled, trigger, variables, settings oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). " +
+      "Aendert einen Workflow gezielt: enabled, trigger, variables, settings (z. B. { maxMailsPerDay: 50 } fuer die Mail-Obergrenze je Tag, { notifyOnFinish: false } gegen Meldungen je Lauf) oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). " +
       "Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.",
     parameters: {
       type: "object",

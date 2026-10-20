@@ -3067,7 +3067,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         severity: m.art === "freigabe" ? "warn" : m.art === "fehler" ? "warn" : "info",
         headline: m.title,
         rationale: m.body,
-        sourceRef: `workflow:${m.executionId}:${m.approvalId ?? m.art}`,
+        // dedupKey: gleichartige Meldungen (z. B. Mail-Obergrenze erreicht) nur einmal je Tag.
+        sourceRef: m.dedupKey ? `workflow:${m.dedupKey}` : `workflow:${m.executionId}:${m.approvalId ?? m.art}`,
       });
       if (alert) {
         broadcastAlertsChanged();
@@ -3163,7 +3164,13 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   personenAbgleich.start();
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
-    void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });
+    // 2026-10-20: Meldungen, die Workflows selbst erzeugen (Lauf beendet, Fehler,
+    // Freigabe), loesen KEINEN Workflow aus — sonst fuettert ein Workflow mit
+    // Trigger alert.created seine eigenen Abschluss- und Fehlermeldungen wieder
+    // ein (Patricks Mail-Flut: 20 Mails, danach je Lauf eine Fehlermeldung).
+    if (a.kind !== "workflow") {
+      void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, rationale: a.rationale, url: a.url ?? null, companyId: a.companyId, companyName: a.companyName, createdAt: a.createdAt });
+    }
     // Zentraler Fan-out: jede Meldung erreicht OS-Push und Telegram, auch wenn
     // der Ersteller (z. B. Watches) nicht selbst benachrichtigt. Idempotent.
     broadcastAlertsChanged();

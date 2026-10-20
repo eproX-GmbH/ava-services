@@ -36,7 +36,7 @@ export interface WorkflowServiceDeps {
   isSignedIn: () => boolean;
   emit: (frame: WorkflowProgressFrame) => void;
   audit: (entry: { action: string; severity: "info" | "warning" | "error"; summary: string; metadata: Record<string, unknown> }) => void;
-  notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string }) => void;
+  notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string; dedupKey?: string }) => void;
   /** Feature-Vorgabe der Organisation. */
   featureEnabled: () => boolean;
   /** Gateway-Lesezugriff fuer dynamische Firmenquellen (Matrix, Vorgaenge). */
