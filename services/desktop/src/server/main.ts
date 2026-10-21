@@ -36,7 +36,8 @@ import { ladeOderErzeugeHostId } from "../main/auth/siwc-oauth";
 import { SiwcHeadlessFlow } from "../main/auth/siwc-headless";
 import { siwcErgebnisUebernehmen, vorherigePlanHuelle } from "../main/auth/siwc-anwenden";
 import type { DeviceFlowCode } from "../main/auth";
-import type { HostedProviderKind } from "../shared/types";
+import type { HostedProviderKind, MailAccount } from "../shared/types";
+import { featureEnabled } from "../main/org-policy";
 
 type Phase = "start" | "komposition" | "anmeldung" | "laeuft" | "beenden" | "fehler";
 
@@ -105,6 +106,7 @@ a{color:#00836f}form{margin:.6rem 0}input,select,textarea{font:inherit;padding:.
 textarea{min-height:5rem}button{font:inherit;padding:.5rem .9rem;border:0;border-radius:.4rem;background:#00C0A7;color:#0A1F2A;font-weight:600;cursor:pointer;margin-top:.5rem}
 .ok{background:#dff5ef;padding:.6rem .8rem;border-radius:.4rem}.fehler{background:#fde3df;padding:.6rem .8rem;border-radius:.4rem}
 table{border-collapse:collapse}td,th{text-align:left;padding:.25rem .8rem .25rem 0}small{color:#4b6a66}
+.zwei{display:grid;grid-template-columns:1fr 1fr;gap:0 1rem}@media(max-width:40rem){.zwei{grid-template-columns:1fr !important}}
 </style></head><body>${body}</body></html>`;
 }
 
@@ -187,6 +189,132 @@ async function telegramAbschnitt(t: string): Promise<string> {
 <form method="post" action="/setup/telegram/trennen?t=${esc(t)}"><button type="submit">Bot entfernen</button></form>`;
 }
 
+// ---- E-Mail (Setup-Seite) ------------------------------------------------------
+// 2026-10-21: Das Mail-Konto liess sich bisher nur im Fenster der Desktop-App
+// einrichten; auf dem Server blieb nur der Umzug. Jetzt dieselben Felder hier,
+// Speichern prueft IMAP und SMTP vorher (wie der Testknopf der App).
+
+function mailFeld(name: string, label: string, wert: string | number, typ = "text", extra = ""): string {
+  return `<label style="display:block;margin:.35rem 0">${esc(label)}<input name="${name}" type="${typ}" value="${esc(String(wert))}" ${extra}></label>`;
+}
+
+function mailFormular(t: string, a: MailAccount | null): string {
+  const addr = a?.address ?? "";
+  return `<form method="post" action="/setup/mail/speichern?t=${esc(t)}" autocomplete="off">
+<div class="zwei">
+<div>${mailFeld("address", "AVAs E-Mail-Adresse", addr, "email", "required placeholder='ava@firma.de'")}</div>
+<div>${mailFeld("displayName", "Anzeigename", a?.displayName ?? "AVA")}</div>
+<div><strong>Posteingang (IMAP)</strong>${mailFeld("imapHost", "Server", a?.imap.host ?? "", "text", "required placeholder='imap.firma.de'")}${mailFeld("imapPort", "Port", a?.imap.port ?? 993, "number", "min='1' max='65535'")}${mailFeld("imapUser", "Benutzer (leer = Adresse)", a?.imap.user ?? "")}${mailFeld("imapPassword", a ? "Passwort (leer = unverändert)" : "Passwort", "", "password", a ? "" : "required")}<label><input type="checkbox" name="imapSecure" ${a ? (a.imap.secure ? "checked" : "") : "checked"} style="width:auto"> TLS direkt (sonst STARTTLS)</label></div>
+<div><strong>Versand (SMTP)</strong>${mailFeld("smtpHost", "Server", a?.smtp.host ?? "", "text", "required placeholder='smtp.firma.de'")}${mailFeld("smtpPort", "Port", a?.smtp.port ?? 465, "number", "min='1' max='65535'")}${mailFeld("smtpUser", "Benutzer (leer = Adresse)", a?.smtp.user ?? "")}${mailFeld("smtpPassword", "Passwort (leer = wie IMAP)", "", "password")}<label><input type="checkbox" name="smtpSecure" ${a ? (a.smtp.secure ? "checked" : "") : "checked"} style="width:auto"> TLS direkt (sonst STARTTLS)</label></div>
+</div>
+${mailFeld("pollIntervalMinutes", "Abrufintervall in Minuten (nur ohne IMAP IDLE)", a?.pollIntervalMinutes ?? 15, "number", "min='1' max='240'")}
+<label><input type="checkbox" name="outboundEnabled" ${a ? (a.outboundEnabled ? "checked" : "") : "checked"} style="width:auto"> AVA darf Mails senden</label><br>
+<label><input type="checkbox" name="autoTriageEnabled" ${a?.autoTriageEnabled ? "checked" : ""} style="width:auto"> Eingehende Mails von Absendern der Allowlist selbstständig bearbeiten</label><br>
+<button type="submit">${a ? "Prüfen und übernehmen" : "Prüfen und verbinden"}</button>
+<p><small>Beim Speichern prüft AVA zuerst IMAP und SMTP; schlägt eine Verbindung fehl, wird nichts gespeichert. Passwörter liegen verschlüsselt auf dem Server.</small></p>
+</form>`;
+}
+
+async function mailAbschnitt(t: string): Promise<string> {
+  const c = core;
+  if (!c) return "";
+  const sup = c.mailSupervisor.current;
+  if (!sup) return "<p>Der Mail-Dienst ist noch nicht bereit.</p>";
+  if (!featureEnabled("mail")) return "<p>Für diese Organisation ist E-Mail in der Verwaltungskonsole abgeschaltet.</p>";
+  if (!platform().credentials.isEncryptionAvailable()) return `<p class="fehler">AVA_SECRETS_KEY fehlt; Passwörter werden nicht unverschlüsselt gespeichert.</p>`;
+  const snap = await sup.snapshot().catch(() => null);
+  const a = snap?.account ?? null;
+  if (!a) {
+    return `<p>AVA bekommt ein <strong>eigenes</strong> Postfach (nicht dein persönliches): Sie liest dort eingehende Mails, antwortet Absendern aus der Allowlist und verschickt Mails aus Workflows.</p>${mailFormular(t, null)}`;
+  }
+  const zustand: Record<string, string> = { connecting: "verbindet", connected: "verbunden", idling: "verbunden, wartet auf neue Mails", polling: "verbunden, ruft ab", disconnected: "getrennt", error: "Fehler" };
+  const fehler = a.lastErrorMessage ? `<p class="fehler">Zuletzt: ${esc(a.lastErrorMessage)}${a.lastErrorAt ? ` (${new Date(a.lastErrorAt).toLocaleString("de-DE")})` : ""}</p>` : "";
+  const sync = a.lastSyncAt ? `, letzter Abruf ${new Date(a.lastSyncAt).toLocaleString("de-DE")}` : "";
+  const allow = snap?.allowlist ?? [];
+  const zeilen = allow.length
+    ? allow.map((e) => `<tr><td>${esc(e.pattern)}</td><td>${esc(e.label)}</td><td><form method="post" action="/setup/mail/allowlist-entfernen?t=${esc(t)}" style="margin:0"><input type="hidden" name="id" value="${esc(e.id)}"><button type="submit" style="margin:0;padding:.2rem .5rem;background:#e3ecea">Entfernen</button></form></td></tr>`).join("")
+    : `<tr><td colspan="3"><small>Noch keine Einträge. Ohne Allowlist zeigt AVA Mails nur an und fragt vor jedem Versand nach.</small></td></tr>`;
+  return `<p class="${snap?.connectionState === "error" || snap?.connectionState === "disconnected" ? "fehler" : "ok"}">${esc(a.address)} (${esc(a.displayName)}): ${esc(zustand[snap?.connectionState ?? ""] ?? snap?.connectionState ?? "?")}${sync}. IMAP ${esc(a.imap.host)}:${a.imap.port}, SMTP ${esc(a.smtp.host)}:${a.smtp.port}. Senden ${a.outboundEnabled ? "an" : "aus"}, selbstständige Bearbeitung ${a.autoTriageEnabled ? "an" : "aus"}.</p>${fehler}
+<form method="post" action="/setup/mail/schalten?t=${esc(t)}">
+  <label><input type="checkbox" name="outboundEnabled" ${a.outboundEnabled ? "checked" : ""} style="width:auto"> AVA darf Mails senden</label><br>
+  <label><input type="checkbox" name="autoTriageEnabled" ${a.autoTriageEnabled ? "checked" : ""} style="width:auto"> Eingehende Mails von Absendern der Allowlist selbstständig bearbeiten</label><br>
+  <button type="submit">Übernehmen</button>
+</form>
+<p><strong>Allowlist</strong> <small>Absender, denen AVA ohne Rückfrage antworten darf (Adresse oder Muster wie *@firma.de).</small></p>
+<table>${zeilen}</table>
+<form method="post" action="/setup/mail/allowlist?t=${esc(t)}"><div class="zwei" style="grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:end"><label>Adresse oder Muster<input name="pattern" required placeholder="*@firma.de"></label><label>Bezeichnung<input name="label" placeholder="Kunde XY"></label><button type="submit">Hinzufügen</button></div></form>
+<details style="margin-top:.8rem"><summary>Zugang ändern</summary>${mailFormular(t, a)}</details>
+<form method="post" action="/setup/mail/trennen?t=${esc(t)}" onsubmit="return confirm('Mail-Konto von diesem Server entfernen? Gespeicherte Mails bleiben erhalten.')"><button type="submit" style="background:#e3ecea">Konto entfernen</button></form>`;
+}
+
+/** Mail-Schritte der Setup-Seite; gleiche Pruefung und Ablage wie die Einstellungen der App. */
+async function mailAktion(c: Core, aktion: string, form: URLSearchParams): Promise<{ art: "ok" | "fehler"; text: string }> {
+  const sup = c.mailSupervisor.current;
+  if (!sup) return { art: "fehler", text: "Der Mail-Dienst ist noch nicht bereit." };
+  const store = sup.getStore();
+  const alt = await store.getAccount();
+  const an = (name: string): boolean => form.get(name) === "on";
+  if (aktion === "speichern") {
+    if (!platform().credentials.isEncryptionAvailable()) return { art: "fehler", text: "AVA_SECRETS_KEY fehlt; Passwörter werden nicht unverschlüsselt gespeichert." };
+    const address = (form.get("address") ?? "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return { art: "fehler", text: "Bitte eine gültige E-Mail-Adresse angeben." };
+    const port = (name: string, standard: number): number => {
+      const n = Number(form.get(name) ?? standard);
+      return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : standard;
+    };
+    const imapHost = (form.get("imapHost") ?? "").trim();
+    const smtpHost = (form.get("smtpHost") ?? "").trim();
+    if (!imapHost || !smtpHost) return { art: "fehler", text: "IMAP- und SMTP-Server sind Pflicht." };
+    const imapPassword = form.get("imapPassword") ?? "";
+    const smtpPassword = form.get("smtpPassword") || imapPassword;
+    let creds = { imapPassword, smtpPassword };
+    if (!imapPassword) {
+      // Zugang aendern ohne neues Passwort: vorhandene Zugangsdaten weiterverwenden.
+      const vorhandene = alt ? await sup.getCredentials().catch(() => null) : null;
+      if (!vorhandene) return { art: "fehler", text: "Bitte das IMAP-Passwort angeben." };
+      creds = { imapPassword: vorhandene.imapPassword, smtpPassword: form.get("smtpPassword") || vorhandene.smtpPassword };
+    }
+    const poll = Number(form.get("pollIntervalMinutes") ?? 15);
+    const account: MailAccount = {
+      address,
+      displayName: (form.get("displayName") ?? "").trim() || "AVA",
+      imap: { host: imapHost, port: port("imapPort", 993), secure: an("imapSecure"), user: (form.get("imapUser") ?? "").trim() || address },
+      smtp: { host: smtpHost, port: port("smtpPort", 465), secure: an("smtpSecure"), user: (form.get("smtpUser") ?? "").trim() || address },
+      outboundEnabled: an("outboundEnabled"),
+      autoTriageEnabled: an("autoTriageEnabled"),
+      pollIntervalMinutes: Number.isInteger(poll) && poll >= 1 && poll <= 240 ? poll : 15,
+      lastSyncAt: alt?.lastSyncAt ?? null,
+      lastErrorAt: null,
+      lastErrorMessage: null,
+    };
+    await sup.testConnection(account, creds);
+    await sup.configureAccount(account, creds);
+    writeLineSync("INFO ", `[setup] Mail-Konto ${address} über die Setup-Seite ${alt ? "geändert" : "eingerichtet"} (IMAP ${imapHost}, SMTP ${smtpHost})`);
+    return { art: "ok", text: `Postfach ${address} verbunden: IMAP und SMTP geprüft.` };
+  }
+  if (aktion === "schalten") {
+    if (!alt) return { art: "fehler", text: "Kein Mail-Konto eingerichtet." };
+    await store.setAccount({ ...alt, outboundEnabled: an("outboundEnabled"), autoTriageEnabled: an("autoTriageEnabled") });
+    return { art: "ok", text: `Senden ${an("outboundEnabled") ? "an" : "aus"}, selbstständige Bearbeitung ${an("autoTriageEnabled") ? "an" : "aus"}.` };
+  }
+  if (aktion === "allowlist") {
+    const pattern = (form.get("pattern") ?? "").trim();
+    if (!pattern || !/^[^\s@]*@[^\s@]+\.[^\s@]+$/.test(pattern.replace(/^\*/, "x"))) return { art: "fehler", text: "Bitte eine Adresse oder ein Muster wie *@firma.de angeben." };
+    await store.addAllowlistEntry({ pattern, label: (form.get("label") ?? "").trim() || pattern, source: "user" });
+    return { art: "ok", text: `${pattern} in die Allowlist aufgenommen.` };
+  }
+  if (aktion === "allowlist-entfernen") {
+    await store.removeAllowlistEntry(form.get("id") ?? "");
+    return { art: "ok", text: "Eintrag entfernt." };
+  }
+  if (aktion === "trennen") {
+    await sup.deleteAccount();
+    writeLineSync("INFO ", "[setup] Mail-Konto über die Setup-Seite entfernt");
+    return { art: "ok", text: "Mail-Konto entfernt." };
+  }
+  return { art: "fehler", text: "Unbekannte Aktion." };
+}
+
 function instanzenAbschnitt(t = ""): string {
   const c = core;
   if (!c) return "";
@@ -219,7 +347,8 @@ async function setupSeite(t: string): Promise<string> {
 <h2>2. Modellzugang: API-Schlüssel</h2>${modellAbschnitt(t)}
 <h2>3. Modellzugang: ChatGPT-Abo</h2>${await chatgptAbschnitt(t)}
 <h2>4. Telegram</h2>${await telegramAbschnitt(t)}
-<h2>5. Deine AVAs</h2>${instanzenAbschnitt(t)}`);
+<h2>5. E-Mail</h2>${await mailAbschnitt(t)}
+<h2>6. Deine AVAs</h2>${instanzenAbschnitt(t)}`);
 }
 
 // ---- HTTP ---------------------------------------------------------------------
@@ -317,6 +446,8 @@ async function setupPost(url: URL, req: IncomingMessage, res: ServerResponse): P
       writeLineSync("INFO ", `[setup] Umzug ${url.pathname.endsWith("holen") ? "holen von" : "senden an"} ${id}: ${r.ok ? "gestartet" : r.grund}`);
     } else if (url.pathname.startsWith("/setup/telegram/")) {
       setupMeldung = await telegramAktion(c, url.pathname.slice("/setup/telegram/".length), form);
+    } else if (url.pathname.startsWith("/setup/mail/")) {
+      setupMeldung = await mailAktion(c, url.pathname.slice("/setup/mail/".length), form);
     } else {
       res.writeHead(404);
       res.end();

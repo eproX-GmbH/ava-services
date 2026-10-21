@@ -218,6 +218,11 @@ export class MailSupervisor extends EventEmitter {
     return { imap: imapOk, smtp: smtpOk };
   }
 
+  /** Gespeicherte Zugangsdaten (Setup-Seite: Zugang aendern ohne neues Passwort). */
+  async getCredentials(): Promise<MailCredentialsPayload | null> {
+    return this.creds.load();
+  }
+
   async deleteAccount(): Promise<void> {
     if (this.imap) {
       await this.imap.stop();
