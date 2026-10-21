@@ -164,6 +164,8 @@ import { resolveConfig } from "../shared/config";
 export interface BootstrapHooks {
   /** Nach dem Aufwachen, sobald die Dienste wieder laufen: die Hülle weckt ihre Fenster. */
   onResume?: () => void;
+  /** Server: kurzlebiger Link zur Setup-Seite (die AVA-App zeigt ihn unter „Deine AVA“). */
+  setupLink?: () => { url: string | null; bereiche: string[] };
 }
 
 export async function bootstrapCore(hooks: BootstrapHooks = {}) {
@@ -4093,6 +4095,11 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     log: (z) => writeLineSync("INFO ", z),
     extras: {
       aufgaben: { alle: (c) => hintergrundAufgaben.alle(c), abbrechen: (id) => hintergrundAufgaben.abbrechen(id) },
+      einstellungen: () => {
+        if (platform().kind === "electron") return { ort: "desktop", url: null, bereiche: ["Modelle und Schlüssel", "Telegram", "E-Mail", "Datenquellen", "Workflows"] };
+        const l = hooks.setupLink?.() ?? { url: null, bereiche: [] };
+        return { ort: "server", url: l.url, bereiche: l.bereiche };
+      },
       anhang: (input) => anhangAufbereiten(attachments, input),
       bild: (b, kante) => bildVerkleinern(b, kante),
       mailEml: async (roh) => {

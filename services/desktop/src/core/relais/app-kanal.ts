@@ -83,6 +83,8 @@ export interface AppKanalExtras {
     verwerfen: (id: string) => boolean;
     alleGesehen: () => number;
   };
+  /** Wo diese AVA ihre Einstellungen hat: Server → kurzlebiger Link zur Setup-Seite; Desktop → in der App. */
+  einstellungen?: () => { ort: "server" | "desktop"; url: string | null; bereiche: string[] };
   push?: {
     schluessel: () => string;
     abonnieren: (abo: { endpoint: string; keys: { p256dh: string; auth: string } }, geraet: string) => number;
@@ -259,6 +261,8 @@ export class AppKanal {
         return this.bild(daten);
       case "mail_stand":
         return this.extra("mailStand")();
+      case "einstellungen":
+        return this.extra("einstellungen")();
       case "mail_postfach": {
         const ablegen = this.extra("mailPostfach");
         try {

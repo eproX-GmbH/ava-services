@@ -376,8 +376,36 @@ async function statusJson(): Promise<Record<string, unknown>> {
   };
 }
 
+/** Kurzlebige Setup-Tokens (15 Minuten), erzeugt auf Anfrage der AVA-App („Deine AVA“ → Server-Einstellungen). */
+const kurzTokens = new Map<string, number>();
+const KURZ_TOKEN_MS = 15 * 60_000;
+
+function oeffentlicheAdresse(): string | null {
+  const a = process.env.AVA_PUBLIC_URL?.trim().replace(/\/$/, "");
+  if (a) return a;
+  const fly = process.env.FLY_APP_NAME?.trim();
+  return fly ? `https://${fly}.fly.dev` : null;
+}
+
+function setupLinkErzeugen(): { url: string | null; bereiche: string[] } {
+  const bereiche = ["Anmeldung", "Modellzugang (API-Schlüssel, ChatGPT-Abo)", "Telegram", "E-Mail", "Deine AVAs (Umzug)"];
+  const basis = oeffentlicheAdresse();
+  if (!basis) return { url: null, bereiche };
+  const jetzt = Date.now();
+  for (const [t, bis] of kurzTokens) if (bis < jetzt) kurzTokens.delete(t);
+  const token = randomBytes(18).toString("base64url");
+  kurzTokens.set(token, jetzt + KURZ_TOKEN_MS);
+  return { url: `${basis}/setup?t=${token}`, bereiche };
+}
+
 function tokenOk(url: URL): boolean {
   const t = url.searchParams.get("t") ?? "";
+  const bis = kurzTokens.get(t);
+  if (bis !== undefined) {
+    if (bis >= Date.now()) return true;
+    kurzTokens.delete(t);
+    return false;
+  }
   if (t.length !== setupToken.length) return false;
   return timingSafeEqual(Buffer.from(t), Buffer.from(setupToken));
 }
@@ -552,7 +580,7 @@ function starteHttp(): void {
   server.on("error", (err) => console.error("[server] HTTP-Fehler:", err));
   server.listen(port, bind, () => {
     console.log(`[server] http://${bind}:${port}  (/healthz /readyz /status /setup)`);
-    const oeffentlich = process.env.AVA_PUBLIC_URL?.replace(/\/$/, "");
+    const oeffentlich = oeffentlicheAdresse();
     console.log(`[server] Setup-Seite: ${oeffentlich ?? `http://127.0.0.1:${port}`}/setup?t=${setupToken}`);
   });
   server.unref();
@@ -626,7 +654,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void beenden("SIGINT"));
 
   lage.phase = "komposition";
-  const c = await bootstrapCore({});
+  const c = await bootstrapCore({ setupLink: setupLinkErzeugen });
   core = c;
   anbieterBeimStartPruefen(c);
   // Hintergrunddienste wie in der App; Producer laufen an, sobald die Anmeldung steht.
