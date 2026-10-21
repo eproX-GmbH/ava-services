@@ -92,6 +92,9 @@ export interface AbgeleiteteAdresse {
   /** Antwortzeile des Mailservers (Beleg fuer abgelehnt/verifiziert, max. 200 Zeichen). */
   smtpAntwort?: string;
   hinweis?: string;
+  /** Reine Annahme ohne Pruefung (2026-10-21): die naechstverbreiteten Schreibweisen,
+   *  damit die Karte nicht nur vorname.nachname zeigt (Befund eproX: jrafflenbeul). */
+  alternativen?: string[];
 }
 
 export type SpeicherErgebnis = "gespeichert" | "vorhanden" | "abgewiesen";
@@ -174,6 +177,17 @@ function repraesentanten(personen: PersonInfo[]): PersonInfo[] {
 
 function artAus(e: PruefErgebnis): Art {
   return e === "existiert" ? "smtp" : e === "catch_all" ? "catchall" : e === "existiert_nicht" ? "abgelehnt" : "offen";
+}
+
+/** Ohne Beleg und ohne Pruefung: die naechstverbreiteten Formate nach vorname.nachname. */
+export function alternativeAdressen(fullName: string, domain: string, ausser: string, max = 2): string[] {
+  const out: string[] = [];
+  for (const id of ["vnachname", "v.nachname", "vorname", "nachname"]) {
+    const a = bildeAdresse(id, fullName, domain);
+    if (a && a !== ausser && !out.includes(a)) out.push(a);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakte, deps: AbleitungDeps): Promise<AbleitungsErgebnis> {
@@ -533,7 +547,9 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
     }
     // Der Beleg muss an der Domain liegen; ohne echten Beleg zeigt er auf die erste abgeleitete Adresse.
     const beleg = baseline && domainVon(baseline) === domain ? baseline : email;
+    const alternativen = annahme && art === "offen" ? alternativeAdressen(p.fullName, domain, email) : [];
     await speichere({
+      ...(alternativen.length > 0 ? { alternativen } : {}),
       personId: p.personId,
       email,
       muster,

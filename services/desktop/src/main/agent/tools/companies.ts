@@ -1165,10 +1165,38 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  const personEmailSetzen = defineTool({
+    name: "person_email_setzen",
+    summary: "E-Mail-Adresse einer Person setzen, wenn der Nutzer sie kennt — ersetzt abgeleitete Adressen und wird Beleg fuer das Adressmuster der Firma.",
+    category: "person kontakt email adresse korrigieren setzen falsch richtig muster",
+    description:
+      "Nutze es, wenn der Nutzer sagt, die angezeigte (abgeleitete) Adresse sei falsch und die richtige nennt. Die Angabe ersetzt abgeleitete oder zugeordnete Adressen dieser Person in dieser Firma, " +
+      "bleibt als 'vom Nutzer angegeben' nachvollziehbar und dient beim naechsten Kontaktlauf als Beleg: AVA leitet daraus das Adressmuster der Domain fuer die uebrigen Personen ab. " +
+      "Gefundene oder verifizierte Adressen werden nicht entfernt. Fragt vorher nach.",
+    parameters: { type: "object", required: ["personId", "companyId", "email"], properties: { personId: { type: "string" }, companyId: { type: "string" }, email: { type: "string" }, hinweis: { type: "string", description: "Woher der Nutzer die Adresse kennt (optional)" } } },
+    schema: yup.object({ personId: yup.string().trim().min(4).required(), companyId: yup.string().trim().min(1).required(), email: yup.string().trim().email().required(), hinweis: yup.string().trim().max(300).optional() }).noUnknown(true),
+    preview: (r: { abgebrochen?: boolean; ersetzt?: string[]; domainPasst?: boolean | null }) => (r.abgebrochen ? "abgebrochen" : `gesetzt${r.ersetzt?.length ? `, ersetzt ${r.ersetzt.join(", ")}` : ""}${r.domainPasst === false ? " (Domain passt nicht zur Firmenwebsite)" : ""}`),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `${args.email} als E-Mail-Adresse dieser Person speichern? Abgeleitete Adressen werden ersetzt; die Angabe gilt als Beleg fuer das Adressmuster der Firma.`,
+          confirmValue: "setzen",
+          options: [{ value: "setzen", label: "Speichern" }, { value: "nein", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "setzen") return { ok: false, abgebrochen: true };
+      const r = await gateway.request<{ factId: string; ersetzt: string[]; domainPasst: boolean | null }>(`/v1/persons/${encodeURIComponent(args.personId)}/email`, { method: "POST", body: { companyId: args.companyId, email: args.email.toLowerCase(), ...(args.hinweis ? { hinweis: args.hinweis } : {}) } });
+      return { ok: true, ...r, hinweis: "Die Angabe wird beim naechsten Kontaktlauf der Firma als Beleg fuer das Adressmuster genutzt (retry_stage companyEmail)." };
+    },
+  });
+
   return [
     personHerkunft,
     personHinweis,
     personInformed,
+    personEmailSetzen,
     personDelete,
     search,
     get,

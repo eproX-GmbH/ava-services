@@ -176,6 +176,8 @@ const derivedRoute = createRoute({
             belegAnzahl: z.number().int().min(0).optional(),
             /** Woher die Domain stammt (2026-10-10): website, firmenmail oder alias (Name/KI-Urteil). */
             domainQuelle: z.enum(["website", "firmenmail", "alias"]).optional(),
+            /** Reine Annahme (2026-10-21): weitere moegliche Schreibweisen fuer die Karte. */
+            alternativen: z.array(z.string().email().max(200)).max(4).optional(),
           }),
         },
       },
@@ -235,7 +237,8 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
         : art === "abgelehnt"
           ? `Mailserver hat die Adresse am ${geprueft.slice(0, 10)} abgelehnt${b.smtpCode ? ` (Antwort ${b.smtpCode}` : ""}${b.mx && b.smtpCode ? `, ${b.mx})` : b.mx ? ` (${b.mx})` : b.smtpCode ? ")" : ""}${b.smtpAntwort ? `: "${b.smtpAntwort.replace(/["\n\r]/g, " ").trim().slice(0, 160)}"` : ""}`
           : `Existenz per SMTP geprueft am ${geprueft.slice(0, 10)}${b.mx ? ` (${b.mx}` : ""}${b.smtpCode ? `, Antwort ${b.smtpCode}` : ""}${b.mx ? ")" : ""}`;
-  const evidence = `${wie}; ${pruefung}. Keine E-Mail zugestellt.`;
+  const alternativen = (b.alternativen ?? []).map((a) => a.toLowerCase().trim()).filter((a) => a !== email && a.endsWith(`@${domain}`));
+  const evidence = `${wie}; ${pruefung}. Keine E-Mail zugestellt.${alternativen.length > 0 ? ` Weitere moegliche Schreibweisen: ${alternativen.join(", ")}.` : ""}`;
   // Konfidenz: SMTP 0,9 (zugeordnet 0,95); Catch-all 0,6/0,75 (zugeordnet 0,8); offen 0,4 (zugeordnet 0,7); abgelehnt 0,2/0,3.
   const konfidenz =
     art === "smtp"

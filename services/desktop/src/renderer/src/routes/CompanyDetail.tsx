@@ -381,6 +381,21 @@ function AbgeleitetBadge({
   );
 }
 
+/** Reine Annahme ohne Pruefung (2026-10-21): die naechstverbreiteten Schreibweisen
+ *  stehen im Herkunftstext; auf der Karte als Hinweis, damit z. B. jrafflenbeul@
+ *  neben joyce.rafflenbeul@ sichtbar ist. */
+function MoeglicheSchreibweisen({ evidence }: { evidence?: string | null }) {
+  const m = evidence?.match(/Weitere moegliche Schreibweisen: ([^.]+?)\.?(?:\s|$)/);
+  if (!m?.[1]) return null;
+  const liste = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+  if (liste.length === 0) return null;
+  return (
+    <span className="muted small" title="Die Adresse ist ungeprüft nach dem häufigsten Format gebildet. Diese Schreibweisen sind ebenfalls üblich.">
+      oder {liste.join(", ")}
+    </span>
+  );
+}
+
 function belegKarte(obs: Observation[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
   for (const o of obs ?? []) {
@@ -2369,6 +2384,9 @@ function PersonCard({
                   )}
                 </span>
                 <span className="pc__fact-meta">
+                  {field === "email" && (
+                    <MoeglicheSchreibweisen evidence={obsId ? obsHerkunft?.get(obsId) : undefined} />
+                  )}
                   {field === "email" && (
                     <AbgeleitetBadge
                       quellen={quellen}

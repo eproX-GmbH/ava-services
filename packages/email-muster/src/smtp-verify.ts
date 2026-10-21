@@ -136,10 +136,23 @@ export interface PruefOptionen {
 export function klassifiziereRcpt(code: number, text: string): PruefErgebnis {
   if (code >= 250 && code < 260) return "existiert";
   const t = text.toLowerCase();
-  const sperre = /\b5\.7\.\d+\b/.test(t) || /blocked|blacklist|spamhaus|banned|reputation|rate ?limit|too many|not allowed to|relay(ing)? denied|client host|policy|unsolicited|abuse/.test(t);
+  // Befund eproX/IONOS 2026-10-21: IONOS weist Privat-IPs mit "554 For explanation visit
+  // https://postmaster.1und1.de/…" ab — ohne 5.7.x und ohne Schluesselwort. Das wurde als
+  // "existiert nicht" gelesen, alle Formate galten als abgelehnt ("kein Format"), und die
+  // Annahme vorname.nachname blieb stehen. Ein Verweis auf eine Postmaster-Seite oder
+  // eine Adresse (URL) spricht ueber den pruefenden Host, nie ueber den Empfaenger.
+  const sperre =
+    /\b5\.7\.\d+\b/.test(t) ||
+    /blocked|blacklist|spamhaus|banned|reputation|rate ?limit|too many|not allowed to|relay(ing)? denied|client host|policy|unsolicited|abuse|postmaster\.|https?:\/\/|dynamic|dialup|rejected due to|access denied\b(?!.*recipient)|try again|temporarily/.test(t);
+  // "Existiert nicht" nur, wenn der Server ueber den Empfaenger spricht.
+  const empfaenger = /\b5\.1\.[0-9]+\b/.test(t) || /\b5\.4\.1\b/.test(t) || /user unknown|unknown user|no such user|unknown recipient|recipient .*(rejected|unknown|not found|does not exist|invalid)|mailbox (unavailable|not found|does not exist)|address rejected|no mailbox|invalid recipient|not exist/.test(t);
   if (code === 550 || code === 551 || code === 553 || code === 554) {
+    // Erweiterter Status zum Empfaenger (5.1.x, Microsoft 5.4.1) schlaegt jedes Schluesselwort.
+    if (/\b5\.1\.[0-9]+\b/.test(t) || /\b5\.4\.1\b/.test(t)) return "existiert_nicht";
     if (sperre) return "gesperrt";
-    return "existiert_nicht";
+    if (empfaenger) return "existiert_nicht";
+    // 55x ohne Empfaengerbezug: kein Urteil ueber die Adresse.
+    return code === 554 ? "gesperrt" : "unbekannt";
   }
   if (code >= 500 && sperre) return "gesperrt";
   return "unbekannt";
@@ -178,7 +191,10 @@ export async function pruefeAdressen(domain: string, adressen: string[], opts: P
   }
   try {
     const greeting = await sock.read();
-    if (greeting.code !== 220) return setzeAlle("unbekannt", mx, greeting.code, greeting.text);
+    // Begruessung mit 5xx (IONOS 554 "postmaster.1und1.de", 421 bei Last): der Server
+    // will mit diesem Host nicht reden — "gesperrt", damit keine Annahme als "kein
+    // Format" entsteht und der Lauf die Domain nicht weiter anfragt.
+    if (greeting.code !== 220) return setzeAlle(greeting.code >= 500 ? "gesperrt" : "unbekannt", mx, greeting.code, greeting.text);
     sock.write(`EHLO ${EHLO_NAME}`);
     let ehlo = await sock.read();
     if (ehlo.code !== 250) {

@@ -11,4 +11,11 @@ test("RCPT-Antworten: Adresse vs. Richtlinie", () => {
   assert.equal(klassifiziereRcpt(554, "554 Your access to this mail system has been rejected due to the sending MTA's poor reputation."), "gesperrt");
   assert.equal(klassifiziereRcpt(451, "451 4.7.1 Greylisted, try again later"), "unbekannt");
   assert.equal(klassifiziereRcpt(550, "550 No such user here"), "existiert_nicht");
+  // IONOS (Befund eproX 2026-10-21): Sperre fuer Privat-IPs ohne 5.7.x, nur ein Link.
+  assert.equal(klassifiziereRcpt(554, "554 For explanation visit https://postmaster.1und1.de/en/case?c=r0602&i=ip&v=1.2.3.4"), "gesperrt");
+  assert.equal(klassifiziereRcpt(550, "550 5.1.1 <x@y.de>: Recipient address rejected: User unknown in virtual mailbox table"), "existiert_nicht");
+  assert.equal(klassifiziereRcpt(550, "550 Requested action not taken: mailbox unavailable"), "existiert_nicht");
+  // 55x ohne jeden Empfaengerbezug ist kein Urteil ueber die Adresse.
+  assert.equal(klassifiziereRcpt(550, "550 Service unavailable"), "unbekannt");
+  assert.equal(klassifiziereRcpt(554, "554 Transaction failed"), "gesperrt");
 });

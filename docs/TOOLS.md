@@ -4,10 +4,10 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-20
-Anzahl Tools: 286
+Stand: 2026-10-21
+Anzahl Tools: 287
 
-## Firmen (24)
+## Firmen (25)
 
 ### `company_contacts`
 
@@ -198,6 +198,18 @@ Loescht eine Person im gesamten geteilten Bestand (alle Organisationen) und sper
 _Parameter:_
 - `personId: string` (required)
 - `grund: string`
+
+### `person_email_setzen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Nutze es, wenn der Nutzer sagt, die angezeigte (abgeleitete) Adresse sei falsch und die richtige nennt. Die Angabe ersetzt abgeleitete oder zugeordnete Adressen dieser Person in dieser Firma, bleibt als 'vom Nutzer angegeben' nachvollziehbar und dient beim naechsten Kontaktlauf als Beleg: AVA leitet daraus das Adressmuster der Domain fuer die uebrigen Personen ab. Gefundene oder verifizierte Adressen werden nicht entfernt. Fragt vorher nach.
+
+_Parameter:_
+- `personId: string` (required)
+- `companyId: string` (required)
+- `email: string` (required)
+- `hinweis: string` — Woher der Nutzer die Adresse kennt (optional)
 
 ### `person_herkunft`
 
