@@ -59,6 +59,10 @@ const profileSchema = yup.object({
   /** T4 — eingesetzte Systeme/Dienstleister, ausschliesslich aus dem
    *  Datenschutz-Abschnitt (CRM, Hosting, Marketing-Tools ...). */
   systeme: yup.array().of(yup.string().trim().min(2).max(60).required()).max(12).default([]),
+  /** 2026-10-22 — Sitz laut Impressum/Kontakt: Kandidaten aus dem Personen-Radar kommen
+   *  ohne Ort an und waren dadurch nicht importierbar (Befund Patrick). */
+  ort: yup.string().trim().max(120).default(""),
+  plz: yup.string().trim().max(10).default(""),
 });
 
 export type MiniProfile = yup.InferType<typeof profileSchema>;
@@ -370,7 +374,9 @@ export async function buildProfile(
     'Antworte NUR als JSON: {"branche": "...", "kurzbeschreibung": ' +
     '"2-3 Saetze", "leistungen": ["..."], "zielkunden": "...", ' +
     '"region": "...", "groessenIndiz": "z. B. Teamgroesse/Standorte, ' +
-    'falls erkennbar, sonst leer", "keywords": ["..."], "systeme": ["..."]}' +
+    'falls erkennbar, sonst leer", "keywords": ["..."], "systeme": ["..."], ' +
+    '"ort": "Sitz der Firma laut Impressum oder Kontaktseite, nur der Ortsname (z. B. Bielefeld), sonst leer", ' +
+    '"plz": "Postleitzahl des Sitzes, falls im Text, sonst leer"}' +
     "\n\nZu \"systeme\": NUR aus einem mitgelieferten Abschnitt " +
     "[Datenschutzerklaerung ...] die dort NAMENTLICH genannten " +
     "Dienstleister und Software-Anbieter uebernehmen (z. B. CRM, " +
@@ -590,7 +596,7 @@ export async function runProfiler(
         radarActivity.profileFirma(cand.name, "fehler", { art: "ki", text: profilFehlerGrund() });
         continue;
       }
-      const profileText = renderProfileText(cand.name, cand.city, profile);
+      const profileText = renderProfileText(cand.name, cand.city || profile.ort || null, profile);
       const embedding = await embedText(profileText);
       if (!embedding) summary.ohneEmbedding++;
       try {
@@ -598,7 +604,13 @@ export async function runProfiler(
           `/v1/discovery/candidates/${encodeURIComponent(cand.discoveryId)}/profile`,
           {
             method: "PUT",
-            body: { profileJson: profile, profileText, embedding },
+            body: {
+              profileJson: profile,
+              profileText,
+              embedding,
+              // Ort nur nachtragen, wenn der Kandidat keinen hat (Personen-Radar).
+              ...(!cand.city && profile.ort ? { ort: profile.ort, plz: profile.plz || undefined } : {}),
+            },
           },
         );
         if (res.saved) {

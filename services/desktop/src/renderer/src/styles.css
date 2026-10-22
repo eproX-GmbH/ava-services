@@ -7967,6 +7967,37 @@ tr.held-row td:first-child::after {
   color: var(--color-fg-muted, #94a3b8);
   font-weight: 500;
 }
+.radar-badge.radar-posts {
+  border-color: var(--color-accent, #00c0a7);
+  color: var(--color-accent, #00c0a7);
+}
+.radar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.radar-chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.5));
+  background: transparent;
+  color: var(--color-fg-muted, #94a3b8);
+  cursor: pointer;
+  text-decoration: none;
+}
+.radar-chip:hover {
+  color: var(--color-fg, inherit);
+  text-decoration: none;
+}
+.radar-chip--aktiv {
+  border-color: var(--color-accent, #00c0a7);
+  color: var(--color-fg, inherit);
+  background: color-mix(in srgb, var(--color-accent, #00c0a7) 14%, transparent);
+}
 .radar-domain {
   background: none;
   border: none;

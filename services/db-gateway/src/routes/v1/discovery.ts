@@ -386,6 +386,10 @@ const saveProfileRoute = createRoute({
             profileJson: z.record(z.string(), z.unknown()),
             profileText: z.string().min(20).max(20000),
             embedding: z.array(z.number()).min(8).max(4096).nullable(),
+            /** 2026-10-22 — Sitz aus dem Website-Text (Impressum): nur nachgetragen,
+             *  wenn der Kandidat noch keinen Ort hat (Personen-Radar liefert keinen). */
+            ort: z.string().trim().min(2).max(120).optional(),
+            plz: z.string().trim().max(10).optional(),
           }),
         },
       },
@@ -413,7 +417,7 @@ discoveryRouter.openapi(saveProfileRoute, async (c) => {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
   const { discoveryId } = c.req.valid("param");
-  const { profileJson, profileText, embedding } = c.req.valid("json");
+  const { profileJson, profileText, embedding, ort, plz } = c.req.valid("json");
   const result = await saveProfile(getGatewayPool(), {
     discoveryId,
     profileJson,
@@ -422,6 +426,12 @@ discoveryRouter.openapi(saveProfileRoute, async (c) => {
   });
   if ("error" in result) {
     throw new HTTPException(404, { message: "candidate_not_found" });
+  }
+  if (ort) {
+    await getGatewayPool().query(
+      `UPDATE "DiscoveredCompany" SET "city" = COALESCE(NULLIF("city", ''), $2), "plz" = COALESCE(NULLIF("plz", ''), $3) WHERE "discoveryId" = $1`,
+      [discoveryId, ort, plz || null],
+    );
   }
   if ("skipped" in result) {
     return c.json(
