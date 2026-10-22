@@ -1102,18 +1102,25 @@ companiesRouter.openapi(contactLinkedinRoute, async (c) => {
     });
   }
   const auth = c.get("auth");
-  const result = await applySingleEmployeeCandidate({
-    companyId,
-    candidate: {
-      fullName: body.fullName,
-      linkedinUrl: normalized,
-      ...(body.title ? { title: body.title } : {}),
-      ...(body.beschreibung ? { beschreibung: body.beschreibung } : {}),
-    },
-    source: body.source ?? "agent:linkedin_lookup",
-    evidenceUrl: body.evidenceUrl ?? null,
-    runId: `linkedin-lookup:${auth?.tenantId ?? "?"}:${Date.now()}`,
-  });
+  let result: { personId: string; created: boolean };
+  try {
+    result = await applySingleEmployeeCandidate({
+      companyId,
+      candidate: {
+        fullName: body.fullName,
+        linkedinUrl: normalized,
+        ...(body.title ? { title: body.title } : {}),
+        ...(body.beschreibung ? { beschreibung: body.beschreibung } : {}),
+      },
+      source: body.source ?? "agent:linkedin_lookup",
+      evidenceUrl: body.evidenceUrl ?? null,
+      runId: `linkedin-lookup:${auth?.tenantId ?? "?"}:${Date.now()}`,
+    });
+  } catch (err) {
+    // 2026-10-22: Uebernahmen aus LinkedIn-Leads scheiterten hier mit 500 ohne Spur im Log.
+    logger.error({ err: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack?.split("\n").slice(0, 8).join(" | ") : undefined, companyId, source: body.source ?? "agent:linkedin_lookup" }, "[contacts/linkedin-url] Kontakt nicht angelegt");
+    throw new HTTPException(500, { message: `Kontakt nicht angelegt: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}` });
+  }
   return c.json(
     {
       saved: true,

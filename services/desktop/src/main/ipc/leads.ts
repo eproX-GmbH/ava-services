@@ -72,6 +72,23 @@ export function registerLeadsIpc(deps: LeadsIpcDeps): void {
     gw<Lead>(`/v1/linkedin-leads/${encodeURIComponent(args.id)}`, { method: "PATCH", body: { status: "offen", ignoriertGrund: null } }),
   );
 
+  /** Uebernommener Lead ohne Kontakt (Kontaktanlage war gescheitert): nur die Person nachlegen. */
+  ipcMain.handle("leads:kontaktNachholen", async (_e, args: { id: string }): Promise<{ ok: boolean; personId?: string | null; error?: string }> => {
+    const lead = await gw<Lead>(`/v1/linkedin-leads/${encodeURIComponent(args.id)}`);
+    if (!lead.companyId) return { ok: false, error: "Zu diesem Lead ist keine Firma hinterlegt." };
+    if (!lead.personName || !/linkedin\.com\/in\//i.test(lead.profileUrl)) return { ok: false, error: "Name oder Profil-URL fehlt." };
+    try {
+      const k = await gw<{ personId: string; created: boolean }>(`/v1/companies/${encodeURIComponent(lead.companyId)}/contacts/linkedin-url`, {
+        method: "POST",
+        body: { fullName: lead.personName, linkedinUrl: lead.profileUrl, ...(lead.rolle ? { title: lead.rolle } : {}), evidenceUrl: lead.postUrl, beschreibung: anlassText(lead), source: "linkedin-lead" },
+      });
+      await gw(`/v1/linkedin-leads/${encodeURIComponent(args.id)}`, { method: "PATCH", body: { personId: k.personId } });
+      return { ok: true, personId: k.personId };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message.slice(0, 300) : String(err) };
+    }
+  });
+
   /** Lead → Firma im Bestand + Person als Kontakt mit Anlass (ein Schritt). */
   ipcMain.handle("leads:uebernehmen", async (_e, args: { id: string }): Promise<{ ok: boolean; companyId?: string; personId?: string | null; transactionId?: string | null; hinweise: string[]; error?: string }> => {
     const hinweise: string[] = [];

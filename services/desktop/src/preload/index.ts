@@ -2047,6 +2047,7 @@ const api = {
       zuruecknehmen: (id: string): Promise<LinkedInLead> => ipcRenderer.invoke("leads:zuruecknehmen", { id }),
       uebernehmen: (id: string): Promise<{ ok: boolean; companyId?: string; personId?: string | null; transactionId?: string | null; hinweise: string[]; error?: string }> =>
         ipcRenderer.invoke("leads:uebernehmen", { id }),
+      kontaktNachholen: (id: string): Promise<{ ok: boolean; personId?: string | null; error?: string }> => ipcRenderer.invoke("leads:kontaktNachholen", { id }),
     },
     getSettings: (): Promise<LinkedInSettings> =>
       ipcRenderer.invoke("linkedin:settings:get"),

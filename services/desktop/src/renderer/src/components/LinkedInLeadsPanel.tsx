@@ -216,6 +216,11 @@ export function LinkedInLeadsPanel(): JSX.Element {
                     {l.status === "ungeklaert" && <button type="button" className="btn" onClick={() => ansprache(l)}>Ansprache vorschlagen</button>}
                     {l.status === "ignoriert" && <button type="button" className="btn" disabled={busy === l.id} onClick={() => void aktion(l.id, () => window.api.linkedin.leads.zuruecknehmen(l.id))}>Zurück zu offen</button>}
                     {l.status === "uebernommen" && l.companyId && <button type="button" className="btn" onClick={() => navigate(`/companies/${encodeURIComponent(l.companyId!)}`)}>Firma öffnen</button>}
+                    {l.status === "uebernommen" && l.companyId && !l.personId && (
+                      <button type="button" className="btn" disabled={busy === l.id} title="Die Person wurde bei der Übernahme nicht als Kontakt angelegt" onClick={() => void aktion(l.id, () => window.api.linkedin.leads.kontaktNachholen(l.id), (r) => { const x = r as { ok: boolean; error?: string }; return x.ok ? "Kontakt angelegt." : x.error ?? "Kontakt nicht angelegt."; })}>
+                        Kontakt nachholen
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
