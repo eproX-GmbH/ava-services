@@ -656,17 +656,22 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
       "(0-50, Default 10; 0 = kein Verlauf). threadBodyCap = Zeichen-Cap " +
       "je Verlaufs-Nachricht (200-5000, Default 1200) — die aktuelle Mail " +
       "bleibt immer ungekuerzt. Hohe Werte = mehr Kontext, aber mehr " +
-      "Tokens pro Triage-Lauf.",
+      "Tokens pro Triage-Lauf. pollIntervalMinutes = wie oft das Postfach " +
+      "zusaetzlich zum sofortigen Push (IMAP IDLE) abgefragt wird (1-120, " +
+      "Default 15); nur relevant, wenn der Mail-Anbieter kein IDLE kann. " +
+      "Ohne Parameter auch: Verbindungszustand und letzter Abruf.",
     parameters: {
       type: "object",
       properties: {
         threadContextLimit: { type: "number", description: "0-50 vorherige Thread-Nachrichten." },
         threadBodyCap: { type: "number", description: "Zeichen-Cap je Verlaufs-Nachricht (200-5000)." },
+        pollIntervalMinutes: { type: "number", description: "Abruf-Intervall des Postfachs in Minuten (1-120)." },
       },
     },
     schema: yup.object({
       threadContextLimit: yup.number().min(0).max(50).optional(),
       threadBodyCap: yup.number().min(200).max(5000).optional(),
+      pollIntervalMinutes: yup.number().integer().min(1).max(120).optional(),
     }),
     preview: (r) => JSON.stringify(r).slice(0, 80),
     run: async (args, c) => {
@@ -675,7 +680,22 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         patch.threadContextLimit = args.threadContextLimit;
       if (args.threadBodyCap !== undefined)
         patch.threadBodyCap = args.threadBodyCap;
-      if (Object.keys(patch).length === 0) return getMailBridgeSettings();
+      if (args.pollIntervalMinutes !== undefined)
+        patch.pollIntervalMinutes = args.pollIntervalMinutes;
+      if (Object.keys(patch).length === 0) {
+        // Lesen: Triage-Einstellungen + Postfach-Zustand in einem Blick.
+        const sup = deps.getSupervisor();
+        const snap = sup ? await sup.snapshot() : null;
+        return {
+          ...getMailBridgeSettings(),
+          pollIntervalMinutes: snap?.account?.pollIntervalMinutes ?? null,
+          verbindung: snap?.connectionState ?? "kein Konto",
+          letzterAbruf: snap?.account?.lastSyncAt ?? null,
+          letzterFehler: snap?.account?.lastErrorMessage ?? null,
+          hinweis:
+            "Neue Mails kommen per IMAP-Push sofort an (Zustand 'idling'); das Intervall ist nur der Rueckfall.",
+        };
+      }
       const beschreibung = Object.entries(patch)
         .map(([k, v]) => `${k} → ${v}`)
         .join(", ");
@@ -692,7 +712,22 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         c.signal,
       );
       if (value !== "save") return userDeclined();
-      return { gespeichert: true, ...setMailBridgeSettings(patch) };
+      const { pollIntervalMinutes, ...bridgePatch } = patch;
+      let abruf: Record<string, unknown> = {};
+      if (pollIntervalMinutes !== undefined) {
+        const sup = deps.getSupervisor();
+        const snap = sup ? await sup.snapshot() : null;
+        const creds = sup ? await sup.getCredentials() : null;
+        if (!sup || !snap?.account || !creds) {
+          abruf = { pollIntervalMinutes: null, fehler: "Kein Mail-Konto eingerichtet — Intervall nicht geaendert." };
+        } else {
+          // configureAccount trennt die Verbindung und startet IMAP mit dem neuen Intervall neu.
+          await sup.configureAccount({ ...snap.account, pollIntervalMinutes }, creds);
+          abruf = { pollIntervalMinutes };
+        }
+      }
+      const bridge = Object.keys(bridgePatch).length > 0 ? setMailBridgeSettings(bridgePatch) : getMailBridgeSettings();
+      return { gespeichert: true, ...bridge, ...abruf };
     },
   });
 

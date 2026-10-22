@@ -359,7 +359,7 @@ export function LinkedIn() {
       [
         beobachterErlaubt && { key: "signale" as const, label: "Signale", lede: "Was sich in den Beiträgen aus deinem LinkedIn-Feed zu deinen Zielfirmen tut — Stärke, Art und gematchte Firmen aus deinem Bestand." },
         watchlistErlaubt && { key: "watchlist" as const, label: "Personen-Watchlist", lede: "Öffentliche LinkedIn-Aktivität deiner Ansprechpartner beobachten und relevante Signale melden." },
-        leadsErlaubt && { key: "leads" as const, label: "Leads", lede: "Wer auf beobachtete Posts reagiert oder kommentiert hat — mit Anlass, Firma und einem Schritt zum Kontakt. Der ICP-Score ist hier nur ein Hinweis." },
+        leadsErlaubt && { key: "leads" as const, label: "Leads", lede: "Wer auf beobachtete Posts reagiert oder kommentiert hat — mit Anlass, Firma und einem Schritt zum Kontakt. Hier zählt der Anlass, nicht der ICP." },
         radarErlaubt && { key: "radar" as const, label: "Beobachtete Posts", lede: "Wer auf beobachtete Posts reagiert, zeigt Interesse — AVA löst diese Personen zu Firmen auf und legt Kandidaten ins Firmen-Radar." },
       ].filter((r): r is Exclude<typeof r, false> => Boolean(r)),
     [beobachterErlaubt, watchlistErlaubt, radarErlaubt, leadsErlaubt],

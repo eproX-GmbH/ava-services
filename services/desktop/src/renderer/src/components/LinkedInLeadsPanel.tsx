@@ -178,7 +178,7 @@ export function LinkedInLeadsPanel(): JSX.Element {
                       <span className="muted small">{datum(l.createdAt)}</span>
                     </div>
                     {l.kommentar && <blockquote className="leads__kommentar">„{l.kommentar}“</blockquote>}
-                    {l.status === "ungeklaert" && <div className="muted small">Keine belastbare Firma: {l.grund ?? "unbekannt"}</div>}
+                    {l.status === "ungeklaert" && <div className="muted small">{l.grund && l.grund !== "keine belastbare Firma" ? `Keine belastbare Firma: ${l.grund}` : "Keine belastbare Firma gefunden (Profil ohne Arbeitgeber oder Firma ohne Website)."}</div>}
                     {l.status === "offen" && l.kollegeUebernommen && <div className="muted small" style={{ color: "var(--color-accent, #00c0a7)" }}>Bereits von {l.kollegeUebernommen} übernommen — bitte abstimmen, bevor du die Person ansprichst.</div>}
                     {l.status === "uebernommen" && <div className="muted small">Übernommen{l.uebernommenVon ? ` von ${l.uebernommenVon}` : ""}{l.uebernommenAt ? ` am ${datum(l.uebernommenAt)}` : ""}</div>}
                     {l.status === "ignoriert" && <div className="muted small">Ignoriert{l.ignoriertVon ? ` von ${l.ignoriertVon}` : ""}{l.ignoriertGrund ? ` · ${l.ignoriertGrund}` : ""}</div>}
@@ -219,7 +219,19 @@ export function LinkedInLeadsPanel(): JSX.Element {
                         )}
                       </>
                     )}
-                    {l.status === "ungeklaert" && <button type="button" className="btn" onClick={() => ansprache(l)}>Ansprache vorschlagen</button>}
+                    {l.status === "ungeklaert" && (
+                      <>
+                        <button type="button" className="btn" onClick={() => ansprache(l)}>Ansprache vorschlagen</button>
+                        {ignorierId === l.id ? (
+                          <select autoFocus defaultValue="" onChange={(e) => { const g = e.target.value; setIgnorierId(null); if (g) void aktion(l.id, () => window.api.linkedin.leads.ignorieren(l.id, g)); }} onBlur={() => setIgnorierId(null)} aria-label="Grund">
+                            <option value="" disabled>Grund wählen…</option>
+                            {IGNORIER_GRUENDE.map((g) => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                        ) : (
+                          <button type="button" className="btn" disabled={busy === l.id} onClick={() => setIgnorierId(l.id)}>Ignorieren</button>
+                        )}
+                      </>
+                    )}
                     {l.status === "ignoriert" && <button type="button" className="btn" disabled={busy === l.id} onClick={() => void aktion(l.id, () => window.api.linkedin.leads.zuruecknehmen(l.id))}>Zurück zu offen</button>}
                     {l.status === "uebernommen" && l.companyId && <button type="button" className="btn" onClick={() => navigate(`/companies/${encodeURIComponent(l.companyId!)}`)}>Firma öffnen</button>}
                     {l.status === "uebernommen" && l.companyId && !l.personId && (

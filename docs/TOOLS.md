@@ -1621,12 +1621,13 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
 
-Liefert Leads aus beobachteten LinkedIn-Posts (Standard: offene und ungeklaerte). Jeder Lead: Person, Rolle, Firma mit Ort und Kurzprofil, Art der Reaktion, Kommentartext, Status, wer uebernommen hat. Leads gelten fuer die ganze Organisation. Der ICP-Score ist hier KEIN Filter: Wer auf einen Post reagiert, ist ein warmer Lead, auch ohne ICP-Match. Nutze es fuer Fragen wie 'Welche Leads habe ich?', 'Wer hat auf Hennings Post kommentiert?', 'Zeig mir die Kommentare'. Fuer eine Ansprache den Kommentar und das Kurzprofil der Firma heranziehen.
+Liefert Leads aus beobachteten LinkedIn-Posts (Standard: eigene, offene und ungeklaerte; alle=true: auch die der Kollegen). Jeder Lead: Person, Rolle, Firma mit Ort und Kurzprofil, Art der Reaktion, Kommentartext, Status, wer uebernommen hat, und ob ein Kollege dieselbe Person schon uebernommen hat (kollegeUebernommen → vor der Ansprache abstimmen). Der ICP-Score ist hier KEIN Filter: Wer auf einen Post reagiert, ist ein warmer Lead, auch ohne ICP-Match. Nutze es fuer Fragen wie 'Welche Leads habe ich?', 'Wer hat auf Hennings Post kommentiert?', 'Zeig mir die Kommentare'. Fuer eine Ansprache den Kommentar und das Kurzprofil der Firma heranziehen.
 
 _Parameter:_
 - `status: string (enum: offen, ungeklaert, uebernommen, ignoriert, alle)` — Standard: offen und ungeklaert.
 - `postUrl: string` — Nur Leads dieses Posts.
 - `nurKommentare: boolean`
+- `alle: boolean` — Auch Leads der Kolleginnen und Kollegen (Standard: nur eigene).
 - `limit: integer`
 
 ### `linkedin_posts_beobachten`
@@ -1765,11 +1766,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
 
-Ohne Parameter: aktuelle Mail-Triage-Einstellungen. Mit Parametern: aendern (Wirkungsklasse mutating). threadContextLimit = wieviele vorherige Thread-Nachrichten maximal in den Triage-Prompt gehen (0-50, Default 10; 0 = kein Verlauf). threadBodyCap = Zeichen-Cap je Verlaufs-Nachricht (200-5000, Default 1200) — die aktuelle Mail bleibt immer ungekuerzt. Hohe Werte = mehr Kontext, aber mehr Tokens pro Triage-Lauf.
+Ohne Parameter: aktuelle Mail-Triage-Einstellungen. Mit Parametern: aendern (Wirkungsklasse mutating). threadContextLimit = wieviele vorherige Thread-Nachrichten maximal in den Triage-Prompt gehen (0-50, Default 10; 0 = kein Verlauf). threadBodyCap = Zeichen-Cap je Verlaufs-Nachricht (200-5000, Default 1200) — die aktuelle Mail bleibt immer ungekuerzt. Hohe Werte = mehr Kontext, aber mehr Tokens pro Triage-Lauf. pollIntervalMinutes = wie oft das Postfach zusaetzlich zum sofortigen Push (IMAP IDLE) abgefragt wird (1-120, Default 15); nur relevant, wenn der Mail-Anbieter kein IDLE kann. Ohne Parameter auch: Verbindungszustand und letzter Abruf.
 
 _Parameter:_
 - `threadContextLimit: number` — 0-50 vorherige Thread-Nachrichten.
 - `threadBodyCap: number` — Zeichen-Cap je Verlaufs-Nachricht (200-5000).
+- `pollIntervalMinutes: number` — Abruf-Intervall des Postfachs in Minuten (1-120).
 
 ## meta (2)
 
