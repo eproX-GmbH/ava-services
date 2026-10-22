@@ -219,3 +219,8 @@ L5 → L6 → L7.
    zusätzlich einen „ICP aus Leads ableiten“-Schritt (Firmenprofile der
    übernommenen Leads → ICP-Vorschlag)? Kleine Erweiterung des vorhandenen
    ICP-Assistenten, nach L4 möglich.
+
+### Stand v0.1.872/873 (2026-10-22, Feedback Patrick)
+- Ungeklärte Leads lassen sich ignorieren; Grund ohne doppelten Text; Lede ohne ICP-Score-Verweis.
+- Übernahme ohne bekannten Sitz (Sellmore GmbH: KI fand keinen Ort, Impressum nur unter `/impressum/`): Rückfall liest das Impressum deterministisch (`discovery/ort-impressum.ts`, PLZ+Ort, 4-stellig nur bei AT/CH-Hinweis), der Mini-Profiler nutzt denselben Rückfall; bleibt der Ort unbekannt, antwortet die Übernahme mit `ortFehlt` und Desktop-Panel, PWA und Chat-Werkzeug (`ort`) nehmen den Ort vom Nutzer entgegen.
+

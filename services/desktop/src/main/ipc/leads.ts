@@ -29,8 +29,8 @@ export function registerLeadsIpc(deps: LeadsIpcDeps): void {
 
   ipcMain.handle("leads:kontaktNachholen", (_e, args: { id: string }) => kontaktNachholen(gw, args.id));
 
-  ipcMain.handle("leads:uebernehmen", async (_e, args: { id: string }) => {
-    const r = await leadUebernehmen(gw, args.id);
+  ipcMain.handle("leads:uebernehmen", async (_e, args: { id: string; ort?: string | null }) => {
+    const r = await leadUebernehmen(gw, args.id, { ort: args.ort ?? null });
     if (r.ok) {
       audit({ actorType: "user", actorId: null, category: "linkedin", action: "linkedin.lead.uebernommen", severity: "info", subjectType: "company", subjectId: r.companyId ?? null, summary: `LinkedIn-Lead übernommen → ${r.companyId}`, metadata: { leadId: args.id, personId: r.personId, transactionId: r.transactionId } });
     }

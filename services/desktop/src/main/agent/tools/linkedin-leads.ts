@@ -75,9 +75,9 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
     category: "linkedin lead uebernehmen kontakt anlegen firma importieren",
     description:
       "Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. " +
-      "Danach ist der Lead fuer die ganze Organisation 'uebernommen'. Braucht die leadId aus linkedin_leads.",
-    parameters: { type: "object", required: ["leadId"], properties: { leadId: { type: "string" } } },
-    schema: yup.object({ leadId: yup.string().trim().min(4).required() }).noUnknown(true),
+      "Fehlt der Sitz der Firma, wird das Impressum gelesen; klappt auch das nicht (ortFehlt=true), den Nutzer nach dem Ort fragen und mit ort erneut aufrufen. Braucht die leadId aus linkedin_leads.",
+    parameters: { type: "object", required: ["leadId"], properties: { leadId: { type: "string" }, ort: { type: "string", description: "Sitz der Firma, falls die Uebernahme ihn nicht selbst findet (Antwort ortFehlt=true)." } } },
+    schema: yup.object({ leadId: yup.string().trim().min(4).required(), ort: yup.string().trim().max(120).optional() }).noUnknown(true),
     preview: (r: { ok?: boolean; companyId?: string; error?: string; abgebrochen?: boolean }) => (r.abgebrochen ? "abgebrochen" : r.ok ? `uebernommen → ${r.companyId}` : `nicht uebernommen: ${r.error ?? "?"}`),
     run: async (args, c) => {
       const value = await c.ui.confirmAction(
@@ -90,7 +90,7 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
         c.signal,
       );
       if (value !== "uebernehmen") return { ok: false, abgebrochen: true };
-      return leadUebernehmen(gw, args.leadId);
+      return leadUebernehmen(gw, args.leadId, { ort: args.ort ?? null });
     },
   });
 

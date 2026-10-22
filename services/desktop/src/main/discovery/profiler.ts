@@ -21,6 +21,7 @@ import { BrowserWindow } from "electron";
 import { platform } from "../../core/platform";
 import type { GatewayClient } from "../agent/gateway-client";
 import { radarActivity } from "./activity";
+import { ortAusImpressum } from "./ort-impressum";
 import { hardenBackgroundWindow } from "../download-guard";
 import type { LlmProviderManager } from "../agent/providers";
 import {
@@ -600,6 +601,14 @@ export async function runProfiler(
         summary.fehlgeschlagenIds.push(cand.discoveryId);
         radarActivity.profileFirma(cand.name, "fehler", { art: "ki", text: profilFehlerGrund() });
         continue;
+      }
+      // Kein Ort von der KI (z. B. Impressum nur mit Schraegstrich erreichbar): Impressum direkt lesen.
+      if (!cand.city && !profile.ort && cand.domain) {
+        const imp = await ortAusImpressum(cand.domain);
+        if (imp) {
+          profile.ort = imp.ort;
+          profile.plz = imp.plz;
+        }
       }
       const profileText = renderProfileText(cand.name, cand.city || profile.ort || null, profile);
       const embedding = await embedText(profileText);

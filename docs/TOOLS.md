@@ -1612,10 +1612,11 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
 
-Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. Danach ist der Lead fuer die ganze Organisation 'uebernommen'. Braucht die leadId aus linkedin_leads.
+Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. Fehlt der Sitz der Firma, wird das Impressum gelesen; klappt auch das nicht (ortFehlt=true), den Nutzer nach dem Ort fragen und mit ort erneut aufrufen. Braucht die leadId aus linkedin_leads.
 
 _Parameter:_
 - `leadId: string` (required)
+- `ort: string` — Sitz der Firma, falls die Uebernahme ihn nicht selbst findet (Antwort ortFehlt=true).
 
 ### `linkedin_leads`
 

@@ -42,6 +42,9 @@ export function LinkedInLeadsPanel(): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [ignorierId, setIgnorierId] = useState<string | null>(null);
+  // Sitz unbekannt (weder Mini-Profil noch Impressum): Nutzer traegt den Ort ein.
+  const [ortId, setOrtId] = useState<string | null>(null);
+  const [ortText, setOrtText] = useState("");
   const groesse = 50;
 
   const ladePosts = useCallback(async () => {
@@ -83,10 +86,16 @@ export function LinkedInLeadsPanel(): JSX.Element {
     }
   };
 
-  const uebernehmen = (l: LinkedInLead) =>
-    aktion(l.id, () => window.api.linkedin.leads.uebernehmen(l.id), (r) => {
-      const x = r as { ok: boolean; hinweise: string[]; error?: string };
-      return x.ok ? `${l.personName ?? "Person"} übernommen. ${x.hinweise.join(" ")}`.trim() : x.error ?? "Übernahme nicht möglich.";
+  const uebernehmen = (l: LinkedInLead, ort?: string) =>
+    aktion(l.id, () => window.api.linkedin.leads.uebernehmen(l.id, ort ?? null), (r) => {
+      const x = r as { ok: boolean; ortFehlt?: boolean; hinweise: string[]; error?: string };
+      if (x.ok) {
+        setOrtId(null);
+        setOrtText("");
+        return `${l.personName ?? "Person"} übernommen. ${x.hinweise.join(" ")}`.trim();
+      }
+      if (x.ortFehlt) setOrtId(l.id);
+      return x.error ?? "Übernahme nicht möglich.";
     });
 
   const ansprache = (l: LinkedInLead): void => {
@@ -205,6 +214,12 @@ export function LinkedInLeadsPanel(): JSX.Element {
                   <div className="leads__aktionen">
                     {l.status === "offen" && (
                       <>
+                        {ortId === l.id && (
+                          <form className="leads__ort" onSubmit={(e) => { e.preventDefault(); if (ortText.trim()) void uebernehmen(l, ortText.trim()); }}>
+                            <input type="text" value={ortText} onChange={(e) => setOrtText(e.target.value)} placeholder="Sitz der Firma (Ort)" autoFocus />
+                            <button type="submit" className="btn btn--primary" disabled={busy === l.id || !ortText.trim()}>Mit Ort übernehmen</button>
+                          </form>
+                        )}
                         <button type="button" className="btn btn--primary" disabled={busy === l.id || !l.firmaName} onClick={() => void uebernehmen(l)} title={l.firmaName ? "Firma in den Bestand, Person als Kontakt mit Anlass" : "Ohne Firma nicht übernehmbar"}>
                           {busy === l.id ? "…" : "Als Kontakt übernehmen"}
                         </button>

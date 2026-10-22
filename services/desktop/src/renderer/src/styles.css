@@ -9257,6 +9257,8 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .leads__kurz { margin: 6px 0 0; font-size: 13px; }
 .leads__aktionen { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 190px; }
 .leads__aktionen .btn { justify-content: center; }
+.leads__ort { display: flex; flex-direction: column; gap: 6px; }
+.leads__ort input { width: 100%; }
 .leads__blaettern { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 @media (max-width: 900px) {
   .leads__lead { grid-template-columns: 1fr; }

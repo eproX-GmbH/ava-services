@@ -4,6 +4,7 @@
 
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LinkedInLead } from "../../shared/types";
+import { ortAusImpressum } from "../discovery/ort-impressum";
 
 type Gw = <T>(pfad: string, opts?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown }) => Promise<T>;
 
@@ -31,6 +32,8 @@ export interface UebernahmeErgebnis {
   transactionId?: string | null;
   hinweise: string[];
   error?: string;
+  /** Firma hat keinen bekannten Sitz: Aufrufer kann den Ort nachliefern (opts.ort). */
+  ortFehlt?: boolean;
 }
 
 /** Person des Leads als Kontakt an der Firma anlegen (LinkedIn-URL, Rolle, Anlass). */
@@ -43,17 +46,28 @@ export async function kontaktAnlegen(gw: Gw, lead: LinkedInLead, companyId: stri
 }
 
 /** Lead → Firma im Bestand + Person als Kontakt mit Anlass (ein Schritt). */
-export async function leadUebernehmen(gw: Gw, id: string): Promise<UebernahmeErgebnis> {
+export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string | null } = {}): Promise<UebernahmeErgebnis> {
   const hinweise: string[] = [];
   const lead = await leadLesen(gw, id);
   if (lead.status === "uebernommen") return { ok: false, hinweise, error: "Dieser Lead ist bereits übernommen." };
 
   // 1. Firma bestimmen: bekannt → Register-Suche nach Name und Ort → ohne Register per Website.
   let companyId = lead.companyId ?? lead.masterCompanyId ?? null;
+  // Sitz: Nutzerangabe → Mini-Profil → Impressum direkt lesen.
+  let firmaOrt = opts.ort?.trim() || lead.firmaOrt || null;
+  let firmaPlz = opts.ort?.trim() ? null : lead.firmaPlz;
+  if (!companyId && !firmaOrt && lead.firmaDomain) {
+    const imp = await ortAusImpressum(lead.firmaDomain);
+    if (imp) {
+      firmaOrt = imp.ort;
+      firmaPlz = imp.plz;
+      hinweise.push(`Sitz ${imp.plz} ${imp.ort} laut Impressum.`);
+    }
+  }
   if (!companyId && lead.firmaName) {
     try {
       const r = await gw<{ items: Array<{ companyId: string; name: string; location?: string | null }> }>(`/v1/companies/search?q=${encodeURIComponent(lead.firmaName)}&limit=5`);
-      const ort = (lead.firmaOrt ?? "").toLowerCase();
+      const ort = (firmaOrt ?? "").toLowerCase();
       const treffer = ort ? r.items.find((i) => (i.location ?? "").toLowerCase().includes(ort)) : r.items.length === 1 ? r.items[0] : undefined;
       if (treffer) {
         companyId = treffer.companyId;
@@ -64,10 +78,10 @@ export async function leadUebernehmen(gw: Gw, id: string): Promise<UebernahmeErg
     }
   }
   if (!companyId && lead.firmaDomain) {
-    if (!lead.firmaOrt) return { ok: false, hinweise, error: "Für diese Firma fehlt noch der Ort (das Mini-Profil ist noch nicht fertig). Bitte in ein paar Minuten erneut versuchen." };
+    if (!firmaOrt) return { ok: false, ortFehlt: true, hinweise, error: "Der Sitz der Firma ist nicht bekannt (weder im Mini-Profil noch im Impressum). Bitte den Ort angeben, dann wird die Firma angelegt." };
     const w = await gw<{ companyId: string; domain: string; neu: boolean; konflikt?: Array<{ companyId: string; name: string | null }> }>("/v1/companies/web", {
       method: "POST",
-      body: { name: lead.firmaName ?? lead.firmaDomain, website: lead.firmaDomain, ort: lead.firmaOrt, ...(lead.firmaPlz ? { plz: lead.firmaPlz } : {}) },
+      body: { name: lead.firmaName ?? lead.firmaDomain, website: lead.firmaDomain, ort: firmaOrt, ...(firmaPlz ? { plz: firmaPlz } : {}) },
     });
     companyId = w.konflikt?.[0]?.companyId ?? w.companyId;
     hinweise.push(w.konflikt?.length ? `Website gehört zur Register-Firma ${w.konflikt[0]!.name ?? w.konflikt[0]!.companyId}.` : w.neu ? "Firma ohne Registereintrag über ihre Website angelegt." : "Firma war bereits angelegt.");
