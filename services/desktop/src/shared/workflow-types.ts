@@ -88,7 +88,7 @@ export type WorkflowCompanySource =
   | { kind: "transaction"; transactionId: string }
   | { kind: "allCompanies"; limit?: number };
 
-export type WorkflowEventKind = "radar.newHot" | "mail.inbound" | "alert.created" | "import.finished";
+export type WorkflowEventKind = "radar.newHot" | "mail.inbound" | "alert.created" | "import.finished" | "linkedin.lead";
 
 export interface WorkflowSettings {
   executionOrder: "v1";

@@ -445,6 +445,10 @@ FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
   Automatik, Aufloesungs-Budget, Ungeklaert-Liste 14d). Quellen v1 =
   Post-URLs; Autoren-Profile + thematische Suche bleiben Ausbaustufe.
 
+**2026-10-22:** Die Ausgabe des Personen-Radars sind seit v0.1.865 Leads (Person mit Anlass)
+im Bereich LinkedIn → Leads, nicht mehr Radar-Kandidaten mit ICP-Tor. Siehe
+docs/PLAN_LINKEDIN_LEADS.md.
+
 ## 8b. Kontakt-Beschaffung ueber das LinkedIn-Firmenprofil (Apify primaer, SERP-Fallback)
 
 User-Vorschlag 2026-08-31: Wenn ein Apify-Key vorhanden ist, soll der

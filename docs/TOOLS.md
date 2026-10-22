@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-21
-Anzahl Tools: 287
+Stand: 2026-10-22
+Anzahl Tools: 291
 
 ## Firmen (25)
 
@@ -1595,6 +1595,50 @@ _Parameter:_
 - `frequencyPreset: string (enum: 5min, 15min, hourly, daily, weekly)`
 - `intervalMinutes: number`
 - `label: string`
+
+## linkedin-leads (4)
+
+### `linkedin_lead_ignorieren`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
+
+Markiert den Lead als ignoriert; der Kommentartext wird dabei geloescht. Grund z. B. 'Kein Entscheider', 'Falsche Branche', 'Wettbewerber'. Laesst sich im Bereich LinkedIn → Leads zuruecknehmen.
+
+_Parameter:_
+- `leadId: string` (required)
+- `grund: string`
+
+### `linkedin_lead_uebernehmen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
+
+Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. Danach ist der Lead fuer die ganze Organisation 'uebernommen'. Braucht die leadId aus linkedin_leads.
+
+_Parameter:_
+- `leadId: string` (required)
+
+### `linkedin_leads`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
+
+Liefert Leads aus beobachteten LinkedIn-Posts (Standard: offene und ungeklaerte). Jeder Lead: Person, Rolle, Firma mit Ort und Kurzprofil, Art der Reaktion, Kommentartext, Status, wer uebernommen hat. Leads gelten fuer die ganze Organisation. Der ICP-Score ist hier KEIN Filter: Wer auf einen Post reagiert, ist ein warmer Lead, auch ohne ICP-Match. Nutze es fuer Fragen wie 'Welche Leads habe ich?', 'Wer hat auf Hennings Post kommentiert?', 'Zeig mir die Kommentare'. Fuer eine Ansprache den Kommentar und das Kurzprofil der Firma heranziehen.
+
+_Parameter:_
+- `status: string (enum: offen, ungeklaert, uebernommen, ignoriert, alle)` — Standard: offen und ungeklaert.
+- `postUrl: string` — Nur Leads dieses Posts.
+- `nurKommentare: boolean`
+- `limit: integer`
+
+### `linkedin_posts_beobachten`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
+
+Ohne Parameter: Liste der beobachteten Posts samt Lead-Zaehlern. addPostUrls/removePostUrls pflegen die Liste (max. 25). jetztPruefen=true startet sofort einen Lauf: wer auf die Posts reagiert oder kommentiert hat, wird zur Firma aufgeloest und erscheint unter LinkedIn → Leads. Automatik, Intervall und Budgets: personen_radar_config.
+
+_Parameter:_
+- `addPostUrls: array`
+- `removePostUrls: array`
+- `jetztPruefen: boolean` — Lauf sofort starten (Apify-Kosten).
 
 ## linkedin-selfservice (5)
 

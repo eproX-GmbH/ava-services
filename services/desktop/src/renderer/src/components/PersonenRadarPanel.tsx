@@ -5,7 +5,6 @@
 // normalen Firmen-Radar. Teilt sich den Apify-Key mit der Watchlist.
 
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 
 interface PrState {
   error?: string;
@@ -67,8 +66,8 @@ export function PersonenRadarPanel(): JSX.Element {
     <div className="ct-card wl">
       <p className="muted small">
         AVA löst reagierende Personen zu ihrer Firma auf — über Berufserfahrung und
-        Unternehmensseite, nie geraten — und legt passende Firmen samt Auslöser-Person als
-        Kandidaten in dein <Link to="/radar">Firmen-Radar</Link>.
+        Unternehmensseite, nie geraten. Jede Person erscheint mit Anlass, Kommentar und
+        Firma im Reiter „Leads“; der Firmen-Radar bleibt davon unberührt.
       </p>
 
       {!(state.apifyVerfuegbar ?? state.hasKey) ? (

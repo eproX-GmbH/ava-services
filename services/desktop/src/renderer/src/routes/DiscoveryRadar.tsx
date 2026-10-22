@@ -32,16 +32,9 @@ interface RadarRow {
 const FREE_VISIBLE_MATCHES = 2;
 
 export function DiscoveryRadar(): JSX.Element {
-  const [alleRows, setRows] = useState<RadarRow[]>([]);
-  // 2026-10-22 — Kandidaten aus beobachteten Posts (Personen-Radar) getrennt zeigen:
-  // sie gingen sonst zwischen den Google-/Register-Kandidaten unter (Befund Patrick).
-  const [quelleFilter, setQuelleFilter] = useState<"alle" | "posts" | "suche">("alle");
-  const ausPosts = (r: RadarRow) => r.quelle === "personen-radar";
-  const rows = useMemo(
-    () => (quelleFilter === "alle" ? alleRows : alleRows.filter((r) => (quelleFilter === "posts" ? ausPosts(r) : !ausPosts(r)))),
-    [alleRows, quelleFilter],
-  );
-  const postsAnzahl = alleRows.filter(ausPosts).length;
+  // Kandidaten aus beobachteten Posts leben seit v0.1.865 im Bereich LinkedIn → Leads;
+  // die Liste kommt bereits ohne sie (docs/PLAN_LINKEDIN_LEADS.md L7).
+  const [rows, setRows] = useState<RadarRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -519,7 +512,7 @@ export function DiscoveryRadar(): JSX.Element {
 
       {loading ? (
         <div className="radar-empty">Lade Kandidaten…</div>
-      ) : alleRows.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="radar-empty">
           Keine offenen Kandidaten. Starte im <Link to="/chat">Chat</Link>{" "}
           einen Scan: <em>„Finde neue Firmen im Umkreis von 30 km um …"</em> —
@@ -527,27 +520,6 @@ export function DiscoveryRadar(): JSX.Element {
         </div>
       ) : (
         <>
-          {postsAnzahl > 0 && (
-            <div className="radar-chips" role="group" aria-label="Herkunft der Kandidaten">
-              {([
-                ["alle", `Alle (${alleRows.length})`],
-                ["posts", `Aus Posts (${postsAnzahl})`],
-                ["suche", `Aus Suche (${alleRows.length - postsAnzahl})`],
-              ] as const).map(([wert, label]) => (
-                <button
-                  key={wert}
-                  type="button"
-                  className={quelleFilter === wert ? "radar-chip radar-chip--aktiv" : "radar-chip"}
-                  aria-pressed={quelleFilter === wert}
-                  onClick={() => setQuelleFilter(wert)}
-                >
-                  {label}
-                </button>
-              ))}
-              <span className="muted small">Aus Posts: Firmen von Personen, die auf einen beobachteten LinkedIn-Post reagiert haben. Der Score ist hier nur ein Hinweis, kein Tor.</span>
-            </div>
-          )}
-          {rows.length === 0 && <div className="radar-empty">Keine Kandidaten aus dieser Herkunft.</div>}
           <div className="radar-meta">
             {rows.length} offene Kandidaten
             {hotCount > 0 ? ` · ${hotCount} heiß (Score ≥ 70)` : ""}
@@ -604,11 +576,6 @@ export function DiscoveryRadar(): JSX.Element {
                     <td>
                       <div className={locked ? "radar-name radar-blur" : "radar-name"}>
                         {r.name}
-                        {!locked && ausPosts(r) && (
-                          <span className="radar-badge radar-posts" title="Aus einem beobachteten LinkedIn-Post (Personen-Radar)">
-                            aus Post
-                          </span>
-                        )}
                         {!locked && r.bereitsInAva && (
                           <span
                             className="radar-badge radar-known"

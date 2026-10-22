@@ -43,6 +43,8 @@ export interface PersonenRadarSupervisorDeps {
   isSignedIn: () => boolean;
   /** Nach neuen Kandidaten den Profil-Worker anstossen. */
   onCandidatesAdded: () => void;
+  /** docs/PLAN_LINKEDIN_LEADS.md L5 — neue Leads mit Firma (Workflow-Ereignis linkedin.lead). */
+  onLeads?: (leads: Array<Record<string, unknown>>) => void;
   onAudit: (entry: {
     action: string;
     severity: "info" | "warning" | "error";
@@ -261,6 +263,13 @@ export class PersonenRadarSupervisor {
         try {
           const r = await this.deps.gateway.request<{ neu: number; aktualisiert: number; vorhanden: number }>("/v1/linkedin-leads/batch", { method: "POST", body: { leads: leads.slice(0, 500) } });
           leadsNeu = r.neu + r.aktualisiert;
+          if (leadsNeu > 0 && this.deps.onLeads) {
+            try {
+              this.deps.onLeads(leads.filter((l) => typeof l.firmaDomain === "string" && l.firmaDomain));
+            } catch {
+              /* best-effort */
+            }
+          }
         } catch (err) {
           probleme.push(`Leads speichern: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`);
         }

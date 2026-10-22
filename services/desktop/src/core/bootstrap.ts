@@ -2893,6 +2893,21 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     onAlertsChanged: broadcastAlertsChanged,
     isSignedIn: () => auth.getStatus().signedIn,
     onCandidatesAdded: () => void profileWorker?.drain(),
+    onLeads: (ls) => {
+      for (const l of ls) {
+        void workflowService?.emitEvent("linkedin.lead", {
+          discoveryId: String(l.firmaDomain),
+          name: l.firmaName ?? null,
+          person: l.personName ?? null,
+          profileUrl: l.profileUrl ?? null,
+          rolle: l.rolle ?? null,
+          aktivitaet: l.aktivitaet ?? null,
+          reactionType: l.reactionType ?? null,
+          kommentar: l.kommentar ?? null,
+          postUrl: l.postUrl ?? null,
+        });
+      }
+    },
     onAudit: ({ action, severity, summary, metadata }) => {
       audit({
         actorType: "system",

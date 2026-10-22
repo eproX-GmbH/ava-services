@@ -192,6 +192,18 @@ zwischengespeichert, damit der teure Profil-Lookup nicht je Post anfällt.
 Reihenfolge: L1 → L2 → L3 → L4 (ein Release, sonst ist der Bereich leer) →
 L5 → L6 → L7.
 
+## Stand
+
+- L1–L4 live mit v0.1.865 (2026-10-22), Nachbesserungen v0.1.866 (wer hat übernommen),
+  v0.1.867 (Fehler der Kontaktanlage protokolliert, „Kontakt nachholen“), v0.1.868
+  (Kommentartext aus dem Feld `commentary`).
+- L5–L7 live mit v0.1.869 (2026-10-22): Werkzeuge `linkedin_leads`,
+  `linkedin_lead_uebernehmen`, `linkedin_lead_ignorieren`, `linkedin_posts_beobachten`;
+  Fähigkeitsgruppe `linkedin_leads`; Workflow-Ereignis `linkedin.lead`; PWA-Seite
+  /leads mit Übernahme und Ansprache; Radar-Chips entfernt, Panel-Text angepasst.
+- Offen: Ursache des 500ers bei `contacts/linkedin-url` (seit v0.1.867 im Log sichtbar),
+  Live-Test mit echtem Post, Entscheidungen unten.
+
 ## Offene Entscheidungen
 
 1. **Aufbewahrung offener Leads:** 90 Tage (Vorschlag) oder 30 Tage wie die
