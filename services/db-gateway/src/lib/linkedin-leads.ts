@@ -52,6 +52,9 @@ export interface LeadZeile {
   ignoriertGrund: string | null;
   personId: string | null;
   uebernommenAt: string | null;
+  /** Leads gelten je Organisation: wer uebernommen/ignoriert hat (Name oder E-Mail aus der Mitgliederliste). */
+  uebernommenVon: string | null;
+  ignoriertVon: string | null;
   createdAt: string;
   /** Aus DiscoveredCompany (Mini-Profil), wenn vorhanden. */
   firmaOrt: string | null;
@@ -98,6 +101,8 @@ export async function ensureLeadsSchema(pool: Pool): Promise<void> {
       ON "LinkedInLead" ("tenantId", "profileUrl", "postUrl");
     CREATE INDEX IF NOT EXISTS "LinkedInLead_tenant_status_idx"
       ON "LinkedInLead" ("tenantId", "status", "createdAt" DESC);
+    ALTER TABLE "LinkedInLead" ADD COLUMN IF NOT EXISTS "uebernommenVon" TEXT;
+    ALTER TABLE "LinkedInLead" ADD COLUMN IF NOT EXISTS "ignoriertVon" TEXT;
   `);
   schemaReady = true;
 }
@@ -160,9 +165,12 @@ export async function leadsListe(pool: Pool, tenantId: string, q: { status?: Lea
   const rows = await pool.query<Record<string, unknown>>(
     `SELECT l.*, dc."city" AS "firmaOrt", dc."plz" AS "firmaPlz", dc."masterCompanyId",
             dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz",
-            (SELECT COUNT(*) FROM "LinkedInLead" x WHERE x."tenantId" = l."tenantId" AND x."profileUrl" = l."profileUrl")::int AS "reaktionen"
+            (SELECT COUNT(*) FROM "LinkedInLead" x WHERE x."tenantId" = l."tenantId" AND x."profileUrl" = l."profileUrl")::int AS "reaktionen",
+            COALESCE(mu."name", mu."email") AS "uebernommenVonName", COALESCE(mi."name", mi."email") AS "ignoriertVonName"
        FROM "LinkedInLead" l
        LEFT JOIN "DiscoveredCompany" dc ON dc."discoveryId" = l."firmaDomain"
+       LEFT JOIN "TenantMember" mu ON mu."actorId" = l."uebernommenVon"
+       LEFT JOIN "TenantMember" mi ON mi."actorId" = l."ignoriertVon"
       WHERE ${where}
       ORDER BY (l."aktivitaet" = 'comment') DESC, l."createdAt" DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -194,6 +202,8 @@ function zeile(r: Record<string, unknown>): LeadZeile {
     ignoriertGrund: s("ignoriertGrund"),
     personId: s("personId"),
     uebernommenAt: iso(r.uebernommenAt),
+    uebernommenVon: s("uebernommenVonName") ?? s("uebernommenVon"),
+    ignoriertVon: s("ignoriertVonName") ?? s("ignoriertVon"),
     createdAt: iso(r.createdAt) ?? new Date().toISOString(),
     firmaOrt: s("firmaOrt"),
     firmaPlz: s("firmaPlz"),
@@ -224,16 +234,16 @@ export async function leadsPosts(pool: Pool, tenantId: string): Promise<Array<{ 
   }));
 }
 
-export async function leadAendern(pool: Pool, tenantId: string, id: string, patch: { status?: LeadStatus; ignoriertGrund?: string | null; companyId?: string | null; personId?: string | null; firmaDomain?: string | null; firmaName?: string | null }): Promise<LeadZeile | null> {
+export async function leadAendern(pool: Pool, tenantId: string, id: string, patch: { status?: LeadStatus; ignoriertGrund?: string | null; companyId?: string | null; personId?: string | null; firmaDomain?: string | null; firmaName?: string | null }, actorId: string | null = null): Promise<LeadZeile | null> {
   await ensureLeadsSchema(pool);
   const sets: string[] = [`"updatedAt" = NOW()`];
   const params: unknown[] = [tenantId, id];
   const setze = (spalte: string, wert: unknown) => { params.push(wert); sets.push(`"${spalte}" = $${params.length}`); };
   if (patch.status) {
     setze("status", patch.status);
-    if (patch.status === "uebernommen") sets.push(`"uebernommenAt" = NOW()`, `"loeschenAb" = NULL`);
-    if (patch.status === "ignoriert") sets.push(`"kommentar" = NULL`, `"loeschenAb" = NOW() + interval '365 days'`);
-    if (patch.status === "offen") { sets.push(`"uebernommenAt" = NULL`, `"loeschenAb" = NOW() + ($${params.length + 1} || ' days')::interval`); params.push(String(AUFBEWAHRUNG_TAGE)); }
+    if (patch.status === "uebernommen") { sets.push(`"uebernommenAt" = NOW()`, `"loeschenAb" = NULL`); setze("uebernommenVon", actorId); }
+    if (patch.status === "ignoriert") { sets.push(`"kommentar" = NULL`, `"loeschenAb" = NOW() + interval '365 days'`); setze("ignoriertVon", actorId); }
+    if (patch.status === "offen") sets.push(`"uebernommenAt" = NULL`, `"uebernommenVon" = NULL`, `"ignoriertVon" = NULL`, `"loeschenAb" = NOW() + interval '${AUFBEWAHRUNG_TAGE} days'`);
   }
   if (patch.ignoriertGrund !== undefined) setze("ignoriertGrund", patch.ignoriertGrund);
   if (patch.companyId !== undefined) setze("companyId", patch.companyId);
@@ -254,8 +264,11 @@ async function leadsListeNachId(pool: Pool, tenantId: string, id: string): Promi
   await ensureLeadsSchema(pool);
   const rows = await pool.query<Record<string, unknown>>(
     `SELECT l.*, dc."city" AS "firmaOrt", dc."plz" AS "firmaPlz", dc."masterCompanyId",
-            dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz", 1 AS reaktionen
+            dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz", 1 AS reaktionen,
+            COALESCE(mu."name", mu."email") AS "uebernommenVonName", COALESCE(mi."name", mi."email") AS "ignoriertVonName"
        FROM "LinkedInLead" l LEFT JOIN "DiscoveredCompany" dc ON dc."discoveryId" = l."firmaDomain"
+       LEFT JOIN "TenantMember" mu ON mu."actorId" = l."uebernommenVon"
+       LEFT JOIN "TenantMember" mi ON mi."actorId" = l."ignoriertVon"
       WHERE l."tenantId" = $1 AND l."id" = $2`,
     [tenantId, id],
   );

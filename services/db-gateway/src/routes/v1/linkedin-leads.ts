@@ -71,7 +71,7 @@ linkedinLeadsRouter.openapi(createRoute({ method: "patch", path: "/linkedin-lead
     ...(b.personId !== undefined ? { personId: b.personId ?? null } : {}),
     ...(b.firmaDomain !== undefined ? { firmaDomain: b.firmaDomain ?? null } : {}),
     ...(b.firmaName !== undefined ? { firmaName: b.firmaName ?? null } : {}),
-  });
+  }, auth.actorId ?? null);
   if (!lead) throw new HTTPException(404, { message: "lead_not_found" });
   return c.json(lead as unknown as Record<string, never>, 200);
 });

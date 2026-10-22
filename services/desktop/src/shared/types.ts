@@ -2419,6 +2419,8 @@ export interface LinkedInLead {
   ignoriertGrund: string | null;
   personId: string | null;
   uebernommenAt: string | null;
+  uebernommenVon: string | null;
+  ignoriertVon: string | null;
   createdAt: string;
   firmaOrt: string | null;
   firmaPlz: string | null;

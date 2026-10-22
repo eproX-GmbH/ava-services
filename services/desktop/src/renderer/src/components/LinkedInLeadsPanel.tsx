@@ -139,6 +139,7 @@ export function LinkedInLeadsPanel(): JSX.Element {
           <input type="checkbox" checked={nurKommentare} onChange={(e) => { setNurKommentare(e.target.checked); setSeite(1); }} /> nur Kommentare
         </label>
       </div>
+      <p className="muted small">Leads gelten für deine ganze Organisation: Was eine Kollegin oder ein Kollege übernimmt oder ignoriert, verschwindet bei allen aus „Offen“ und steht mit Namen unter „Übernommen“ bzw. „Ignoriert“.</p>
       {notice && <p className="muted small">{notice}</p>}
       {laedt && !daten ? <p className="muted">Lädt…</p> : null}
       {daten && daten.items.length === 0 && !laedt && <p className="muted">Keine Leads für diesen Filter.</p>}
@@ -173,7 +174,8 @@ export function LinkedInLeadsPanel(): JSX.Element {
                     </div>
                     {l.kommentar && <blockquote className="leads__kommentar">„{l.kommentar}“</blockquote>}
                     {l.status === "ungeklaert" && <div className="muted small">Keine belastbare Firma: {l.grund ?? "unbekannt"}</div>}
-                    {l.status === "ignoriert" && l.ignoriertGrund && <div className="muted small">Grund: {l.ignoriertGrund}</div>}
+                    {l.status === "uebernommen" && <div className="muted small">Übernommen{l.uebernommenVon ? ` von ${l.uebernommenVon}` : ""}{l.uebernommenAt ? ` am ${datum(l.uebernommenAt)}` : ""}</div>}
+                    {l.status === "ignoriert" && <div className="muted small">Ignoriert{l.ignoriertVon ? ` von ${l.ignoriertVon}` : ""}{l.ignoriertGrund ? ` · ${l.ignoriertGrund}` : ""}</div>}
                   </div>
                   <div className="leads__firma">
                     {l.firmaName ? (
