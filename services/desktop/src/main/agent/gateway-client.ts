@@ -51,7 +51,7 @@ export type QueryValue =
   | Array<string | number | boolean>;
 
 export interface RequestOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   query?: Record<string, QueryValue>;
   /**
    * JSON-serialisable body. For binary uploads use `multipart` instead —

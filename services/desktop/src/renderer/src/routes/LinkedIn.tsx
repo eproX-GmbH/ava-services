@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ExternalLink } from "lucide-react";
 import { WatchlistPanel } from "../components/WatchlistPanel";
 import { PersonenRadarPanel } from "../components/PersonenRadarPanel";
+import { LinkedInLeadsPanel } from "../components/LinkedInLeadsPanel";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { useFeature } from "../store/policy";
@@ -347,6 +348,7 @@ export function LinkedIn() {
   const beobachterErlaubt = useFeature("linkedin.beobachter");
   const watchlistErlaubt = useFeature("linkedin.watchlist");
   const radarErlaubt = useFeature("linkedin.radar");
+  const leadsErlaubt = useFeature("linkedin.leads");
 
   // 2026-09-21 — Drei Themen, drei Reiter. Vorher standen Watchlist,
   // Personen-Radar und der Signal-Feed untereinander auf einer Seite, und
@@ -357,15 +359,16 @@ export function LinkedIn() {
       [
         beobachterErlaubt && { key: "signale" as const, label: "Signale", lede: "Was sich in den Beiträgen aus deinem LinkedIn-Feed zu deinen Zielfirmen tut — Stärke, Art und gematchte Firmen aus deinem Bestand." },
         watchlistErlaubt && { key: "watchlist" as const, label: "Personen-Watchlist", lede: "Öffentliche LinkedIn-Aktivität deiner Ansprechpartner beobachten und relevante Signale melden." },
-        radarErlaubt && { key: "radar" as const, label: "Personen-Radar", lede: "Wer auf beobachtete Posts reagiert, zeigt Interesse — AVA löst diese Personen zu Firmen auf und legt Kandidaten ins Firmen-Radar." },
+        leadsErlaubt && { key: "leads" as const, label: "Leads", lede: "Wer auf beobachtete Posts reagiert oder kommentiert hat — mit Anlass, Firma und einem Schritt zum Kontakt. Der ICP-Score ist hier nur ein Hinweis." },
+        radarErlaubt && { key: "radar" as const, label: "Beobachtete Posts", lede: "Wer auf beobachtete Posts reagiert, zeigt Interesse — AVA löst diese Personen zu Firmen auf und legt Kandidaten ins Firmen-Radar." },
       ].filter((r): r is Exclude<typeof r, false> => Boolean(r)),
-    [beobachterErlaubt, watchlistErlaubt, radarErlaubt],
+    [beobachterErlaubt, watchlistErlaubt, radarErlaubt, leadsErlaubt],
   );
-  type ReiterKey = "signale" | "watchlist" | "radar";
+  type ReiterKey = "signale" | "watchlist" | "radar" | "leads";
   const [tab, setTab] = useState<ReiterKey>(() => {
     try {
       const v = localStorage.getItem("linkedin-tab");
-      if (v === "signale" || v === "watchlist" || v === "radar") return v;
+      if (v === "signale" || v === "watchlist" || v === "radar" || v === "leads") return v;
     } catch { /* ohne Speicher: erster Reiter */ }
     return "signale";
   });
@@ -400,6 +403,7 @@ export function LinkedIn() {
 
       {aktiverReiter?.key === "watchlist" && <WatchlistPanel />}
       {aktiverReiter?.key === "radar" && <PersonenRadarPanel />}
+      {aktiverReiter?.key === "leads" && <LinkedInLeadsPanel />}
 
       {aktiverReiter?.key === "signale" && (<>
       {!settingsQuery.isLoading && !enabled && (

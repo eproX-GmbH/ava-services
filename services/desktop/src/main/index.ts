@@ -8,6 +8,7 @@
 // Plattform-Schicht zuerst: Stores lesen ihre Pfade schon beim Laden.
 import "./platform-electron";
 import { registerPersonenIpc } from "./ipc/personen";
+import { registerLeadsIpc } from "./ipc/leads";
 import { registerDiscoveryIpc } from "./ipc/discovery";
 import { registerSpracheIpc } from "./ipc/sprache";
 import { registerRechercheIpc } from "./ipc/recherche";
@@ -415,6 +416,7 @@ app.whenReady().then(async () => {
   registerStammdatenIpc({ mithelfen: core.mithelfen, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });
   registerVorschlaegeIpc({ agentRegistry, chipErzeugung: core.chipErzeugung, hintergrundAufgaben, nutzerstand: core.nutzerstand, vorschlaegeSettings: core.vorschlaegeSettings });
   registerPersonenIpc({ apifyZugangInfo, audit, cycleCompanyContact, getTenantTierCached, personenRadarStore: core.personenRadarStore, personenRadarSupervisor: core.personenRadarSupervisor, resolveApifyAccess, watchlistKeyStore: core.watchlistKeyStore, watchlistStore: core.watchlistStore, watchlistSupervisor: core.watchlistSupervisor });
+  registerLeadsIpc({ audit, gatewayClient });
   registerAblaeufeIpc({ wf });
   registerDiscoveryIpc({ agent, audit, customerProfiles, discoveryMatches, gatewayClient, icpAnalysisRunning: core.icpAnalysisRunning, icpStore, profileWorker: core.profileWorker, providers, radarAlertEmitter: core.radarAlertEmitter, radarSupervisor: core.radarSupervisor, userProfile });
   registerKontoIpc({ auth });

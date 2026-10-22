@@ -507,6 +507,9 @@ const listRoute = createRoute({
       withoutProfiles: z.coerce.boolean().default(false),
       /** docs/PLAN_RADAR_LAENDER.md: nur Kandidaten dieses Landes. */
       country: z.enum(["DE", "AT", "UK"]).optional(),
+      /** docs/PLAN_LINKEDIN_LEADS.md L2: Kandidaten dieser Quelle ausblenden (Radar-Liste
+       *  zeigt keine Post-Firmen mehr; sie leben im Bereich LinkedIn-Leads). */
+      ohneQuelle: z.string().max(40).optional(),
     }),
   },
   responses: {
@@ -530,7 +533,7 @@ discoveryRouter.openapi(listRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { lat, lon, radiusKm, limit, includeDecided, withProfiles, withoutProfiles, country } =
+  const { lat, lon, radiusKm, limit, includeDecided, withProfiles, withoutProfiles, country, ohneQuelle } =
     c.req.valid("query");
   const candidates = await listCandidates(getGatewayPool(), {
     userId: auth.actorId,
@@ -542,6 +545,7 @@ discoveryRouter.openapi(listRoute, async (c) => {
     withProfiles,
     withoutProfiles,
     country,
+    excludeSource: ohneQuelle,
   });
   return c.json({ candidates }, 200);
 });

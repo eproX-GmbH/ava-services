@@ -158,77 +158,111 @@ export class PersonenRadarSupervisor {
       engagerGesamt = alle.length;
       this.deps.keyStore.addMonthItems(items);
 
-      // 2. Personen-Dedupe (eine Person = ein Aufloesungsversuch, je
-      //    90 Tage) + pro Person den staerksten Auftritt behalten
-      //    (Kommentar > Reaktion).
-      const proPerson = new Map<string, Engager>();
+      // 2. Dedupe je (Person, Post) — docs/PLAN_LINKEDIN_LEADS.md L2: dieselbe Person auf
+      //    einem zweiten Post ist ein eigener Lead (starkes Signal), kostet aber keinen
+      //    zweiten Profil-Lookup (Firmen-Cache 90 Tage). Je Paar den staerksten Auftritt
+      //    behalten (Kommentar > Reaktion).
+      const proPaar = new Map<string, Engager>();
       for (const e of alle) {
-        const vorhanden = proPerson.get(e.profileUrl);
-        if (!vorhanden || (e.activityType === "comment" && vorhanden.activityType !== "comment")) {
-          proPerson.set(e.profileUrl, e);
-        }
+        const k = `${e.profileUrl}|${e.postUrl}`;
+        const vorhanden = proPaar.get(k);
+        if (!vorhanden || (e.activityType === "comment" && vorhanden.activityType !== "comment")) proPaar.set(k, e);
       }
-      const neu = await this.deps.store.filterNewPersons([...proPerson.keys()]);
-      neuePersonen = neu.size;
+      const neuePaare = await this.deps.store.filterNewPersons([...proPaar.keys()]);
+      const proPerson = new Map<string, Engager[]>();
+      for (const k of neuePaare) {
+        const e = proPaar.get(k)!;
+        proPerson.set(e.profileUrl, [...(proPerson.get(e.profileUrl) ?? []), e]);
+      }
+      neuePersonen = proPerson.size;
+      const firmenCache = await this.deps.store.getFirmenCache([...proPerson.keys()]);
 
-      // 3. Budget-Aufloesung (§8.2: teuerster Schritt hart gedeckelt).
+      // 3. Budget-Aufloesung (§8.2: teuerster Schritt hart gedeckelt); gecachte Personen
+      //    kosten nichts und zaehlen nicht gegen das Budget.
       const kandidaten: Array<{
         name: string;
         domain: string;
         meta: Record<string, unknown>;
       }> = [];
+      const leads: Array<Record<string, unknown>> = [];
       const unklar: Array<{ profileUrl: string; name: string | null; headline: string | null; grund: string }> = [];
       const bearbeitet: string[] = [];
+      const firmenImLauf = new Set<string>();
       let budget = cfg.maxResolvesPerRun;
-      for (const url of neu) {
-        if (budget <= 0) break;
-        const engager = proPerson.get(url)!;
-        budget--;
-        bearbeitet.push(url);
-        try {
-          const r = await resolveEngagerCompanies({
-            access: key,
-            actors: cfg.actorIds,
-            gateway: this.deps.gateway,
-            engager,
-            firmaAusHeadline: (h) => this.firmaAusHeadlinePerLlm(h),
-          });
-          this.deps.keyStore.addMonthItems(r.kosteneinheiten);
-          aufgeloest += r.matches.length > 0 ? 1 : 0;
-          if (r.matches.length === 0) {
-            unklar.push({
-              profileUrl: url,
-              name: engager.name,
-              headline: engager.headline,
-              grund: r.unaufgeloest[0] ?? "keine belastbare Firma",
+      for (const [url, auftritte] of proPerson) {
+        const engager = auftritte[0]!;
+        let matches = firmenCache.get(url) as Array<{ domain: string; companyName: string; rolle: string | null; konfidenz: "hart" | "mittel" }> | undefined;
+        let grund: string | null = null;
+        if (!matches) {
+          if (budget <= 0) break;
+          budget--;
+          try {
+            const r = await resolveEngagerCompanies({
+              access: key,
+              actors: cfg.actorIds,
+              gateway: this.deps.gateway,
+              engager,
+              firmaAusHeadline: (h) => this.firmaAusHeadlinePerLlm(h),
             });
+            this.deps.keyStore.addMonthItems(r.kosteneinheiten);
+            matches = r.matches;
+            grund = r.unaufgeloest[0] ?? null;
+            if (matches.length > 0) await this.deps.store.setFirmenCache(url, matches);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS")) {
+              this.finishRun(startedAt, msg, trigger, "error");
+              return msg;
+            }
+            probleme.push(`${engager.name ?? url}: ${msg.slice(0, 80)}`);
             continue;
           }
-          for (const m of r.matches.slice(0, 2)) {
+        }
+        bearbeitet.push(...auftritte.map((e) => `${e.profileUrl}|${e.postUrl}`));
+        if (matches.length > 0) aufgeloest++;
+        else {
+          unklar.push({ profileUrl: url, name: engager.name, headline: engager.headline, grund: grund ?? "keine belastbare Firma" });
+        }
+        for (const e of auftritte) {
+          const basis = { postUrl: e.postUrl, personName: e.name, profileUrl: e.profileUrl, headline: e.headline, aktivitaet: e.activityType, reactionType: e.reactionType, kommentar: e.commentText?.slice(0, 200) ?? null };
+          if (matches.length === 0) {
+            leads.push({ ...basis, status: "ungeklaert", grund: grund ?? "keine belastbare Firma" });
+            continue;
+          }
+          for (const m of matches.slice(0, 2)) {
+            leads.push({ ...basis, rolle: m.rolle, firmaDomain: m.domain, firmaName: m.companyName, konfidenz: m.konfidenz === "hart" ? 0.9 : 0.6 });
+            if (firmenImLauf.has(m.domain)) continue;
+            firmenImLauf.add(m.domain);
             kandidaten.push({
               name: m.companyName,
               domain: m.domain,
               meta: {
                 ausloeser: {
-                  person: engager.name,
-                  profileUrl: engager.profileUrl,
+                  person: e.name,
+                  profileUrl: e.profileUrl,
                   rolle: m.rolle,
-                  aktivitaet: engager.activityType,
-                  reactionType: engager.reactionType,
-                  kommentar: engager.commentText?.slice(0, 200) ?? null,
-                  postUrl: engager.postUrl,
+                  aktivitaet: e.activityType,
+                  reactionType: e.reactionType,
+                  kommentar: e.commentText?.slice(0, 200) ?? null,
+                  postUrl: e.postUrl,
                   konfidenz: m.konfidenz,
                 },
               },
             });
           }
+        }
+      }
+
+      // 3b. Leads ans Gateway (Bereich LinkedIn-Leads); die Firma geht zusaetzlich als
+      //     Direkt-Kandidat in den Trichter, damit Mini-Profil und Ort entstehen — die
+      //     Radar-Liste blendet diese Quelle aus.
+      let leadsNeu = 0;
+      if (leads.length > 0) {
+        try {
+          const r = await this.deps.gateway.request<{ neu: number; aktualisiert: number; vorhanden: number }>("/v1/linkedin-leads/batch", { method: "POST", body: { leads: leads.slice(0, 500) } });
+          leadsNeu = r.neu + r.aktualisiert;
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS")) {
-            this.finishRun(startedAt, msg, trigger, "error");
-            return msg;
-          }
-          probleme.push(`${engager.name ?? url}: ${msg.slice(0, 80)}`);
+          probleme.push(`Leads speichern: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`);
         }
       }
 
@@ -253,26 +287,24 @@ export class PersonenRadarSupervisor {
           });
           firmenNeu = r.added;
           firmenBekannt = r.updated + Object.keys(r.known).length;
-          if (r.added > 0) {
-            this.deps.onCandidatesAdded();
-            for (const k of kandidaten.slice(0, 5)) {
-              const a = k.meta.ausloeser as Record<string, unknown>;
-              const alert = this.deps.alerts.add({
-                tenantId: null,
-                companyId: "",
-                companyName: k.name,
-                kind: "radar-match",
-                severity: "info",
-                headline: `Personen-Radar: ${k.name} entdeckt`,
-                rationale: `${String(a.person ?? "Eine Person")}${a.rolle ? ` (${String(a.rolle)})` : ""} hat auf einen beobachteten Post ${a.aktivitaet === "comment" ? "kommentiert" : "reagiert"} — Firma dem Radar hinzugefuegt. ${String(a.postUrl ?? "")}`,
-                sourceRef: `pradar:${k.domain}`,
-              });
-              if (alert) {
-                try {
-                  this.deps.notify(alert);
-                } catch {
-                  /* best-effort */
-                }
+          if (r.added > 0) this.deps.onCandidatesAdded();
+          if (leadsNeu > 0) {
+            const kommentare = leads.filter((l) => l.aktivitaet === "comment").length;
+            const alert = this.deps.alerts.add({
+              tenantId: null,
+              companyId: "",
+              companyName: "LinkedIn-Leads",
+              kind: "linkedin-signal",
+              severity: "info",
+              headline: `${leadsNeu} neue LinkedIn-Leads`,
+              rationale: `${leadsNeu} Personen haben auf beobachtete Posts reagiert${kommentare > 0 ? `, davon ${kommentare} mit Kommentar` : ""}. Bereich LinkedIn → Leads.`,
+              sourceRef: `leads:${startedAt}`,
+            });
+            if (alert) {
+              try {
+                this.deps.notify(alert);
+              } catch {
+                /* best-effort */
               }
             }
             this.deps.onAlertsChanged();
@@ -295,6 +327,7 @@ export class PersonenRadarSupervisor {
         `${engagerGesamt} Engagements (${items} Items)`,
         `${neuePersonen} neue Personen`,
         `${aufgeloest} aufgeloest`,
+        `${leadsNeu} neue Leads`,
         `${firmenNeu} neue Firmen im Radar` +
           (firmenBekannt > 0 ? ` (${firmenBekannt} bereits bekannt)` : ""),
         unklar.length > 0 ? `${unklar.length} ungeklaert` : null,

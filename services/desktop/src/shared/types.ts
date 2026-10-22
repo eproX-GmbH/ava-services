@@ -61,6 +61,7 @@ export const ORG_FEATURES = [
   { key: "linkedin.beobachter", label: "LinkedIn-Beobachter", hinweis: "Feed-Scans, Signale-Seite, LinkedIn-Chat-Tools" },
   { key: "linkedin.watchlist", label: "Personen-Watchlist", hinweis: "Beobachtete Personen und ihre Beitraege" },
   { key: "linkedin.radar", label: "Personen-Radar", hinweis: "Engagement auf Beitraegen als Firmenkandidaten" },
+  { key: "linkedin.leads", label: "LinkedIn-Leads", hinweis: "Personen, die auf beobachtete Beitraege reagiert haben, als Leads mit Anlass; Uebernahme als Kontakt" },
   { key: "bildanalyse", label: "Bildanalyse", hinweis: "Bilder aus LinkedIn-Beitraegen auswerten (lokal oder Cloud)" },
   { key: "kontakte", label: "Kontakt-Recherche", hinweis: "Mitarbeiter-Suche je Firma (Apify/LinkedIn), Kontakt-Tools, Profil-URLs" },
   { key: "buyingcenter", label: "Buying Center", hinweis: "Power Map je Firma: Einschaetzungen zu benannten Personen (Rolle, Einstellung, Kontakt, Einfluss), Fokuskunden, Chat-Werkzeuge, Reiter in der Firmenansicht. Aus = keine Karte, keine Werkzeuge, keine Nachfragen" },
@@ -2397,6 +2398,46 @@ export type ResearchKeyProbeResult =
 // Main-side `audit-store.ts` re-imports these from this file so
 // there is only one source of truth.
 export type AuditActorType = "user" | "producer" | "scheduler" | "system";
+// ---- LinkedIn-Leads (docs/PLAN_LINKEDIN_LEADS.md) ---------------------------
+export interface LinkedInLead {
+  id: string;
+  postUrl: string;
+  postTitel: string | null;
+  personName: string | null;
+  profileUrl: string;
+  headline: string | null;
+  rolle: string | null;
+  aktivitaet: "reaction" | "comment" | string;
+  reactionType: string | null;
+  kommentar: string | null;
+  firmaDomain: string | null;
+  firmaName: string | null;
+  companyId: string | null;
+  konfidenz: number | null;
+  status: "offen" | "uebernommen" | "ignoriert" | "ungeklaert";
+  grund: string | null;
+  ignoriertGrund: string | null;
+  personId: string | null;
+  uebernommenAt: string | null;
+  createdAt: string;
+  firmaOrt: string | null;
+  firmaPlz: string | null;
+  firmaBranche: string | null;
+  firmaKurz: string | null;
+  masterCompanyId: string | null;
+  reaktionen: number;
+}
+export interface LinkedInLeadPost {
+  postUrl: string;
+  postTitel: string | null;
+  leads: number;
+  offen: number;
+  kommentare: number;
+  uebernommen: number;
+  ungeklaert: number;
+  zuletzt: string;
+}
+
 export type AuditCategory =
   | "producer"
   | "linkedin"

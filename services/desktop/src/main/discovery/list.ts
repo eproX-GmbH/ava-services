@@ -29,7 +29,9 @@ export async function listCandidatesWithMatches(
   matchStore: MatchStore,
   opts: { limit?: number } = {},
 ): Promise<CandidateListRow[]> {
-  const qs = new URLSearchParams({ limit: String(opts.limit ?? 200) });
+  // docs/PLAN_LINKEDIN_LEADS.md L2: Firmen aus beobachteten Posts leben im Bereich
+  // LinkedIn-Leads, nicht in der Radar-Liste (ihr Mini-Profil entsteht trotzdem).
+  const qs = new URLSearchParams({ limit: String(opts.limit ?? 200), ohneQuelle: "personen-radar" });
   const r = await gateway.request<{
     candidates: Array<{
       discoveryId: string;

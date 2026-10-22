@@ -54,6 +54,11 @@ CREATE TABLE IF NOT EXISTS pradar_seen (
   profile_url TEXT PRIMARY KEY,
   first_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS pradar_firma (
+  profile_url TEXT PRIMARY KEY,
+  matches     JSONB NOT NULL,
+  at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS pradar_unklar (
   profile_url TEXT PRIMARY KEY,
   name        TEXT,
@@ -182,6 +187,30 @@ export class PersonenRadarStore {
       );
     }
     await db.query(`DELETE FROM pradar_unklar WHERE first_seen < NOW() - interval '14 days'`);
+  }
+
+  /** docs/PLAN_LINKEDIN_LEADS.md L2 — Firmenaufloesung je Person 90 Tage merken: dieselbe
+   *  Person auf einem zweiten Post kostet keinen Profil-Lookup mehr. */
+  async getFirmenCache(profileUrls: string[]): Promise<Map<string, unknown[]>> {
+    const out = new Map<string, unknown[]>();
+    if (profileUrls.length === 0) return out;
+    const db = await this.db();
+    const r = await db.query<{ profile_url: string; matches: unknown }>(
+      `SELECT profile_url, matches FROM pradar_firma WHERE profile_url = ANY($1::text[]) AND at > NOW() - interval '90 days'`,
+      [profileUrls],
+    );
+    for (const x of r.rows) if (Array.isArray(x.matches)) out.set(x.profile_url, x.matches);
+    return out;
+  }
+
+  async setFirmenCache(profileUrl: string, matches: unknown[]): Promise<void> {
+    const db = await this.db();
+    await db.query(
+      `INSERT INTO pradar_firma (profile_url, matches, at) VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (profile_url) DO UPDATE SET matches = EXCLUDED.matches, at = NOW()`,
+      [profileUrl, JSON.stringify(matches)],
+    );
+    await db.query(`DELETE FROM pradar_firma WHERE at < NOW() - interval '90 days'`);
   }
 
   async listUnklar(): Promise<Array<{ profileUrl: string; name: string | null; headline: string | null; grund: string | null; firstSeen: string }>> {

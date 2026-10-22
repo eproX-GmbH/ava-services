@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { MailEntwurfEinstellungen, MailEntwurfPostfachEingabe } from "../shared/mail-entwurf";
 import type {
+  LinkedInLead,
+  LinkedInLeadPost,
   AgentChoiceAnswer,
   RelevanzWert,
   RelevanzThema,
@@ -2035,6 +2037,16 @@ const api = {
       setConfig: (patch: Record<string, unknown>): Promise<unknown> =>
         ipcRenderer.invoke("pradar:setConfig", patch),
       runNow: (): Promise<string> => ipcRenderer.invoke("pradar:runNow"),
+    },
+    /** Bereich LinkedIn-Leads: Personen, die auf beobachtete Posts reagiert haben. */
+    leads: {
+      list: (q: { status?: string; postUrl?: string; nurKommentare?: boolean; seite?: number; groesse?: number }): Promise<{ gesamt: number; items: LinkedInLead[] }> =>
+        ipcRenderer.invoke("leads:list", q),
+      posts: (): Promise<{ posts: LinkedInLeadPost[] }> => ipcRenderer.invoke("leads:posts"),
+      ignorieren: (id: string, grund?: string | null): Promise<LinkedInLead> => ipcRenderer.invoke("leads:ignorieren", { id, grund }),
+      zuruecknehmen: (id: string): Promise<LinkedInLead> => ipcRenderer.invoke("leads:zuruecknehmen", { id }),
+      uebernehmen: (id: string): Promise<{ ok: boolean; companyId?: string; personId?: string | null; transactionId?: string | null; hinweise: string[]; error?: string }> =>
+        ipcRenderer.invoke("leads:uebernehmen", { id }),
     },
     getSettings: (): Promise<LinkedInSettings> =>
       ipcRenderer.invoke("linkedin:settings:get"),

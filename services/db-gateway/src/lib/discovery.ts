@@ -897,11 +897,17 @@ export async function listCandidates(
     withoutProfiles?: boolean;
     /** docs/PLAN_RADAR_LAENDER.md: nur Kandidaten dieses Landes. */
     country?: RadarLand;
+    /** Kandidaten dieser Quelle auslassen (z. B. personen-radar). */
+    excludeSource?: string;
   },
 ): Promise<CandidateRow[]> {
   await ensureSchema(pool);
   const params: unknown[] = [args.userId];
   const conditions: string[] = [];
+  if (args.excludeSource) {
+    params.push(args.excludeSource);
+    conditions.push(`dc.source <> $${params.length}`);
+  }
   if (args.country) {
     params.push(args.country);
     conditions.push(`dc.country = $${params.length}`);

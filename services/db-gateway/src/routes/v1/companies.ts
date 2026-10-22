@@ -1058,6 +1058,10 @@ const contactLinkedinRoute = createRoute({
             linkedinUrl: z.string().min(10).max(500),
             title: z.string().max(200).optional(),
             evidenceUrl: z.string().max(1000).optional(),
+            /** Ein Satz zum Anlass (LinkedIn-Lead: "Hat am … den Post … kommentiert"). */
+            beschreibung: z.string().max(300).optional(),
+            /** Herkunft des Kontakts; Standard agent:linkedin_lookup. */
+            source: z.enum(["agent:linkedin_lookup", "linkedin-lead"]).optional(),
           }),
         },
       },
@@ -1104,8 +1108,9 @@ companiesRouter.openapi(contactLinkedinRoute, async (c) => {
       fullName: body.fullName,
       linkedinUrl: normalized,
       ...(body.title ? { title: body.title } : {}),
+      ...(body.beschreibung ? { beschreibung: body.beschreibung } : {}),
     },
-    source: "agent:linkedin_lookup",
+    source: body.source ?? "agent:linkedin_lookup",
     evidenceUrl: body.evidenceUrl ?? null,
     runId: `linkedin-lookup:${auth?.tenantId ?? "?"}:${Date.now()}`,
   });

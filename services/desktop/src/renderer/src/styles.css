@@ -9238,3 +9238,29 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
   .mail-entwurf-einst__liste li { grid-template-columns: 1fr; }
 }
 #mail-entwurf-section > .mail-form__row label { max-width: 26rem; }
+
+/* ---- LinkedIn-Leads (docs/PLAN_LINKEDIN_LEADS.md L3) ---------------------- */
+.leads__filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.leads__filter select { max-width: 320px; }
+.leads__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.leads__check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.leads__post { margin-top: 16px; border-top: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.35)); padding-top: 12px; }
+.leads__post-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.leads__liste { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.leads__lead { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 16px; padding: 12px; border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.35)); border-radius: 10px; background: var(--color-surface, transparent); }
+.leads__lead--uebernommen, .leads__lead--ignoriert { opacity: 0.75; }
+.leads__name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.leads__link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; text-decoration: none; }
+.leads__link:hover { color: var(--color-accent, #00c0a7); text-decoration: none; }
+.leads__anlass { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.leads__kommentar { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--color-accent, #00c0a7); font-size: 13px; color: var(--muted); }
+.leads__kurz { margin: 6px 0 0; font-size: 13px; }
+.leads__aktionen { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 190px; }
+.leads__aktionen .btn { justify-content: center; }
+.leads__blaettern { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+@media (max-width: 900px) {
+  .leads__lead { grid-template-columns: 1fr; }
+  .leads__aktionen { flex-direction: row; flex-wrap: wrap; }
+}
+.leads__aktionen .btn--primary { background: var(--color-accent, #00c0a7); color: #0a1f2a; border-color: transparent; font-weight: 600; }
+.leads__aktionen .btn--primary:hover:not(:disabled) { background: #00a893; color: #0a1f2a; }
