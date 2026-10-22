@@ -10,6 +10,9 @@ export interface Felder {
   mitarbeiter: number | null;
   umsatz: number | null;
   jahr: number | null;
+  /** Offene Stellen (Titel) und Arbeitgeberleistungen (docs/PLAN_STELLEN_SIGNALE.md). */
+  stellen?: string[];
+  leistungen?: string[];
 }
 
 /** Woerter ab 4 Zeichen aus einer Liste von Begriffen, klein. */

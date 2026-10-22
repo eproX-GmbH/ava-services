@@ -197,6 +197,7 @@ interface JobPosting {
   description?: string | null;
   requirements?: string[];
   technologies?: string[];
+  benefits?: string[];
   [k: string]: unknown;
 }
 interface Website {
@@ -204,6 +205,8 @@ interface Website {
   companySerp?: CompanySerp | null;
   deepResearches?: DeepResearch[];
   jobPostings?: JobPosting[];
+  /** Karriereseite: Leistungen für Beschäftigte (z. B. betriebliche Altersvorsorge). */
+  karriere?: { benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: string } | null;
 }
 
 interface KpiItem {
@@ -842,7 +845,7 @@ export function CompanyDetail() {
             latest={latest}
           />
         )}
-        {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} />}
+        {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} karriere={website.data?.karriere ?? null} />}
         {tab === "kunden" && (
           <KundenTab items={kunden.data?.items ?? []} onFertig={() => void kunden.refetch()} />
         )}
@@ -2991,14 +2994,35 @@ function topicLabel(t?: string | null): string {
   }
 }
 
-function JobsTab({ jobs }: { jobs: JobPosting[] }) {
+function JobsTab({ jobs, karriere }: { jobs: JobPosting[]; karriere: Website["karriere"] }) {
   const [expanded, setExpanded] = useState(false);
-  if (jobs.length === 0)
+  // Leistungen aus Karriereseite und Anzeigen zusammen, Karriereseite zuerst.
+  const leistungen = [...new Set([...(karriere?.benefits ?? []), ...jobs.flatMap((j) => j.benefits ?? [])])];
+  if (jobs.length === 0 && leistungen.length === 0)
     return <p className="muted">Noch keine Stellenanzeigen.</p>;
   const more = jobs.length > 4;
   const shown = expanded ? jobs : jobs.slice(0, 4);
   return (
     <>
+      {leistungen.length > 0 && (
+        <article className="panel" style={{ marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Was die Firma Beschäftigten bietet</h3>
+          <ul className="chips">
+            {leistungen.map((l) => (
+              <li key={l} className="chip">{l}</li>
+            ))}
+          </ul>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+            {karriere?.quelleUrl ? (
+              <>Laut <a href={karriere.quelleUrl} target="_blank" rel="noreferrer">Karriereseite</a>{jobs.some((j) => (j.benefits ?? []).length > 0) ? " und Stellenanzeigen" : ""}.</>
+            ) : (
+              "Laut Stellenanzeigen."
+            )}
+            {karriere?.auszug ? ` „${karriere.auszug}“` : ""}
+          </p>
+        </article>
+      )}
+      {jobs.length === 0 && <p className="muted">Noch keine einzelnen Stellenanzeigen.</p>}
       <div className="grid-2">
         {shown.map((j, i) => (
           <article key={i} className="panel">
@@ -3026,6 +3050,16 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
                 <ul>
                   {j.requirements.map((r, k) => (
                     <li key={k}>{r}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {Array.isArray(j.benefits) && j.benefits.length > 0 && (
+              <>
+                <h4>Leistungen</h4>
+                <ul className="chips">
+                  {j.benefits.map((b, k) => (
+                    <li key={k} className="chip">{b}</li>
                   ))}
                 </ul>
               </>

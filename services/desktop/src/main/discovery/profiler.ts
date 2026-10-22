@@ -38,7 +38,7 @@ const MAX_TEXT_PER_PAGE = 6_000;
 const PROFILE_MAX_AGE_MS = 6 * 30 * 24 * 3600 * 1000; // A9: 6 Monate
 
 const SUBPAGE_RE =
-  /impressum|imprint|leistung|service|angebot|produkt|portfolio|referenz|ueber-?uns|über-?uns|about|unternehmen|kompetenz|branche/i;
+  /impressum|imprint|leistung|service|angebot|produkt|portfolio|referenz|ueber-?uns|über-?uns|about|unternehmen|kompetenz|branche|karriere|career|jobs/i;
 
 // T4 (v0.1.510) — Datenschutzseite GETRENNT einsammeln. Sie gehoert
 // nicht in die Leistungs-Unterseiten (dort wuerde sie ein Platz aus
@@ -63,6 +63,9 @@ const profileSchema = yup.object({
    *  ohne Ort an und waren dadurch nicht importierbar (Befund Patrick). */
   ort: yup.string().trim().max(120).default(""),
   plz: yup.string().trim().max(10).default(""),
+  /** docs/PLAN_STELLEN_SIGNALE.md — Leistungen fuer Beschaeftigte laut Karriereseite, woertlich
+   *  (nicht zu verwechseln mit `leistungen` = Angebot der Firma). */
+  mitarbeiterLeistungen: yup.array().of(yup.string().trim().min(2).max(80).required()).max(20).default([]),
 });
 
 export type MiniProfile = yup.InferType<typeof profileSchema>;
@@ -82,7 +85,7 @@ export interface ProfilerSummary {
 
 // ---- Crawl -----------------------------------------------------------------
 
-async function fetchPageText(url: string): Promise<string | null> {
+export async function fetchPageText(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
       headers: { "user-agent": USER_AGENT, accept: "text/html" },
@@ -228,7 +231,7 @@ export function pickPrivacyLink(
 
 let browserFetchChain: Promise<unknown> = Promise.resolve();
 
-async function fetchTextViaBrowser(url: string): Promise<string | null> {
+export async function fetchTextViaBrowser(url: string): Promise<string | null> {
   const run = async (): Promise<string | null> => {
     // Beim Beenden keine neuen Fenster mehr (Absturz beim Beenden, 2026-10-04).
     if (appWirdBeendet()) return null;
@@ -376,7 +379,8 @@ export async function buildProfile(
     '"region": "...", "groessenIndiz": "z. B. Teamgroesse/Standorte, ' +
     'falls erkennbar, sonst leer", "keywords": ["..."], "systeme": ["..."], ' +
     '"ort": "Sitz der Firma laut Impressum oder Kontaktseite, nur der Ortsname (z. B. Bielefeld), sonst leer", ' +
-    '"plz": "Postleitzahl des Sitzes, falls im Text, sonst leer"}' +
+    '"plz": "Postleitzahl des Sitzes, falls im Text, sonst leer", ' +
+    '"mitarbeiterLeistungen": ["was die Firma Beschaeftigten bietet, NUR woertlich aus Karriere-/Jobs-Seiten (z. B. betriebliche Altersvorsorge, Jobrad, Homeoffice), sonst leer"]}' +
     "\n\nZu \"systeme\": NUR aus einem mitgelieferten Abschnitt " +
     "[Datenschutzerklaerung ...] die dort NAMENTLICH genannten " +
     "Dienstleister und Software-Anbieter uebernehmen (z. B. CRM, " +
@@ -447,6 +451,7 @@ export function renderProfileText(name: string, city: string | null, p: MiniProf
   if (p.systeme && p.systeme.length > 0) {
     lines.push(`Eingesetzte Systeme: ${p.systeme.join(", ")}.`);
   }
+  if (p.mitarbeiterLeistungen && p.mitarbeiterLeistungen.length > 0) lines.push(`Bietet Beschaeftigten: ${p.mitarbeiterLeistungen.join(", ")}.`);
   return lines.join("\n");
 }
 

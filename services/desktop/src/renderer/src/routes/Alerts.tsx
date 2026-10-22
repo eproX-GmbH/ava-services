@@ -43,6 +43,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   status: "Firmenstatus",
   "contact-change": "Kontakt-Wechsel",
   "customer-change": "Neue Kunden",
+  "job-posting": "Stellenanzeigen",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

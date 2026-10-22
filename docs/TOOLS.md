@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-10-22
-Anzahl Tools: 291
+Anzahl Tools: 292
 
 ## Firmen (25)
 
@@ -2435,6 +2435,18 @@ WICHTIG: prompt ist die KOMPLETTE Reminder-Botschaft die der User später sehen 
 dueAt: ISO-8601-Datetime in Lokalzeit (z. B. "2026-05-28T14:00:00"). Muss in der Zukunft liegen, max 1 Jahr voraus. Tool fragt SELBST via ask_user_choice nach Bestätigung. Cancel via schedule_cancel.
 
 _Parameter:_ keine.
+
+## seite-lesen (1)
+
+### `seite_lesen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/seite-lesen.ts`
+
+Laedt eine Webseite und liefert ihren sichtbaren Text (max. 20.000 Zeichen). Nutze es, wenn der Nutzer eine Adresse nennt oder fragt, was auf einer Seite steht, z. B. 'Lies die Karriereseite und sag mir, ob sie betriebliche Altersvorsorge anbieten'. Bei JavaScript-Seiten wird ein verstecktes Fenster genutzt. Grenzen: keine Logins, keine Downloads, keine privaten Netze; Seiten mit robots.txt-Vollsperre werden nicht gelesen. Fuer das Firmenprofil company_get nutzen.
+
+_Parameter:_
+- `url: string` (required)
+- `frage: string` — Optional: worauf es ankommt (nur fuer das Protokoll).
 
 ## self-correction (1)
 

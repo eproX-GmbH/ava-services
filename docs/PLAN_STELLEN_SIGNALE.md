@@ -104,6 +104,32 @@ Recherche für sie starten und im Chat nach „Firmen, die bAV anbieten“ frage
 - Compute-Lokalität: Läuft wie heute beim Nutzer (Website-Producer), Schlüssel des
   Nutzers oder der Organisation.
 
-## Empfehlung
+## Stand (2026-10-22, Operator: „direkt Option B“)
 
-Option A sofort, damit Henning am Freitag etwas zeigen kann. Danach Messung, dann B.
+Umgesetzt mit v0.1.870 (Desktop + Website-Producer) und Gateway-Deploy:
+
+- Extraktion: `benefits` je Stellenanzeige in allen drei Pipelines (OpenAI Standard,
+  OpenAI Deep, Anthropic) mit der Anweisung, Leistungen wörtlich zu übernehmen.
+- Karriereseite: `research/karriere.ts` lädt Startseite und bis zu drei Karriere-
+  Unterseiten (HTTP, bei dünnem Text Browser-Fallback) und zieht per Modell eine
+  Liste wörtlicher Leistungen; gespeichert als `CompanyKarriere` je Firma. Läuft in
+  beiden Pfaden (normaler Lauf und manueller Lauf).
+- Speicherung: Gateway-Persist schreibt `benefits` und `CompanyKarriere`; Erstsichtung
+  je Stelle (Titel + Quelle) bleibt beim Ersetzen erhalten. Schema wird beim ersten
+  Persist angelegt (`ensureStellenSchema`), die Website-DB kennt keinen Migrations-
+  lauf des Gateways.
+- Ausgabe: `/companies/{id}/website` liefert Stellen und Karriere (vorher leerer
+  Platzhalter); Firmenansicht zeigt „Was die Firma Beschäftigten bietet“ und
+  Leistungen je Anzeige; `company_get` Bereich `website` enthält beides.
+- ICP: `icp-felder` liefert `stellen` und `leistungen`; der Bestandsabgleich sieht
+  „Offene Stellen“ und „Bietet Beschäftigten“. Mini-Profil im Radar liest Karriere-
+  Unterseiten und trägt `mitarbeiterLeistungen` im Profiltext (Radar-Judge).
+- Alarm: Neuheiten-Quelle `job-postings` (gebündelt je Firma, Erst-Crawl keine
+  Neuheit), Meldungsart `job-posting`, Judge-Regel; Workflows über
+  `alert.created` mit filter `{ kind: "job-posting" }`.
+- Chat: Werkzeug `seite_lesen` (HTTP + Browser-Fallback, Sperren für private Netze
+  und robots.txt-Vollsperre).
+- Offen: Pipeline-Stufe mit eigener Auffrischung (heute hängt die Stellen-Recherche
+  am Website-Lauf, Auffrischung über dessen Kadenz); Standardstufe bleibt die
+  Auto-Aktivierung bei vorhandenem Schlüssel; Messung an 50 Firmen; Quelle Websuche
+  vs. direkte Portale.

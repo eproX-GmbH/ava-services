@@ -407,12 +407,36 @@ companiesRouter.openapi(websiteRoute, async (c) => {
           updatedAt: serpRow.rows[0].updatedAt.toISOString(),
         }
       : undefined,
-    // deepResearches + jobPostings still come from their (legacy)
-    // fly producers. When those localize, replace with direct MPG
-    // reads against their tables.
     deepResearches: [],
     jobPostings: [],
   };
+  // 2026-10-22 (docs/PLAN_STELLEN_SIGNALE.md): Stellen und Karriereseite aus der
+  // Website-DB; vorher blieb jobPostings ein leerer Platzhalter.
+  try {
+    const jobs = await pool.query<Record<string, unknown>>(
+      `SELECT id, title, location, "workingModel", description, requirements, technologies,
+              COALESCE(benefits, ARRAY[]::text[]) AS benefits, "sourceUrl", "releaseDate", "createdAt", "updatedAt"
+         FROM "JobPosting" WHERE "companyId" = $1 ORDER BY "releaseDate" DESC NULLS LAST, "createdAt" DESC LIMIT 50`,
+      [companyId],
+    );
+    payload.jobPostings = jobs.rows.map((r) => ({
+      ...r,
+      releaseDate: r.releaseDate instanceof Date ? r.releaseDate.toISOString() : r.releaseDate ?? null,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
+    }));
+    const karriere = await pool.query<{ benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: Date }>(
+      `SELECT benefits, "quelleUrl", auszug, "updatedAt" FROM "CompanyKarriere" WHERE "companyId" = $1`,
+      [companyId],
+    );
+    if (karriere.rows[0]) {
+      const k = karriere.rows[0];
+      payload.karriere = { benefits: k.benefits ?? [], quelleUrl: k.quelleUrl, auszug: k.auszug, updatedAt: k.updatedAt.toISOString() };
+    }
+  } catch (err) {
+    // Spalte/Tabelle fehlt noch (erster Lauf nach dem Update): Rest der Antwort bleibt gueltig.
+    logger.warn({ err: err instanceof Error ? err.message : String(err), companyId }, "[website] Stellen nicht lesbar");
+  }
   return c.json(payload, 200);
 });
 
@@ -839,6 +863,9 @@ const IcpFelderShape = z.object({
   mitarbeiter: z.number().int().nullable(),
   umsatz: z.number().nullable(),
   jahr: z.number().int().nullable(),
+  /** Offene Stellen (Titel) und Arbeitgeberleistungen (docs/PLAN_STELLEN_SIGNALE.md). */
+  stellen: z.array(z.string()).default([]),
+  leistungen: z.array(z.string()).default([]),
 });
 
 const icpFelderRoute = createRoute({
@@ -893,15 +920,37 @@ companiesRouter.openapi(icpFelderRoute, async (c) => {
       [companyIds],
     ),
   ]);
+  // docs/PLAN_STELLEN_SIGNALE.md: offene Stellen (Titel) und Arbeitgeberleistungen
+  // (aus Anzeigen und Karriereseite), damit ein ICP wie "bietet betriebliche
+  // Altersvorsorge" oder "sucht SAP-Entwickler" im Bestand matchbar ist.
+  const [stellen, karriere] = await Promise.all([
+    getProducerPool("website").query<{ companyId: string; title: string; benefits: string[] | null }>(
+      `SELECT "companyId", title, benefits FROM "JobPosting" WHERE "companyId" = ANY($1::text[]) ORDER BY "companyId", "releaseDate" DESC NULLS LAST`,
+      [companyIds],
+    ).catch(() => ({ rows: [] as Array<{ companyId: string; title: string; benefits: string[] | null }> })),
+    getProducerPool("website").query<{ companyId: string; benefits: string[] | null }>(
+      `SELECT "companyId", benefits FROM "CompanyKarriere" WHERE "companyId" = ANY($1::text[])`,
+      [companyIds],
+    ).catch(() => ({ rows: [] as Array<{ companyId: string; benefits: string[] | null }> })),
+  ]);
   const je = new Map<string, z.infer<typeof IcpFelderShape>>();
   const hole = (id: string) => {
     let x = je.get(id);
     if (!x) {
-      x = { companyId: id, profil: null, gegenstand: null, stichworte: [], mitarbeiter: null, umsatz: null, jahr: null };
+      x = { companyId: id, profil: null, gegenstand: null, stichworte: [], mitarbeiter: null, umsatz: null, jahr: null, stellen: [], leistungen: [] };
       je.set(id, x);
     }
     return x;
   };
+  for (const r of stellen.rows) {
+    const x = hole(r.companyId);
+    if (x.stellen.length < 10) x.stellen.push(r.title);
+    for (const b of r.benefits ?? []) if (!x.leistungen.includes(b) && x.leistungen.length < 20) x.leistungen.push(b);
+  }
+  for (const r of karriere.rows) {
+    const x = hole(r.companyId);
+    for (const b of r.benefits ?? []) if (!x.leistungen.includes(b) && x.leistungen.length < 20) x.leistungen.push(b);
+  }
   for (const r of profile.rows) {
     const x = hole(r.id);
     x.profil = r.profile || null;

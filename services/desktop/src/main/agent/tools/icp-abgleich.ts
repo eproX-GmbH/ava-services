@@ -48,6 +48,8 @@ function firmenText(k: Kandidat): string {
     f?.stichworte.length ? `Stichworte: ${f.stichworte.join(", ")}` : "",
     f?.mitarbeiter != null ? `Mitarbeiter: ${f.mitarbeiter}${f.jahr ? ` (${f.jahr})` : ""}` : "",
     f?.umsatz != null ? `Umsatz: ${Math.round(f.umsatz).toLocaleString("de-DE")} EUR${f.jahr ? ` (${f.jahr})` : ""}` : "",
+    f?.stellen?.length ? `Offene Stellen: ${f.stellen.join("; ")}` : "",
+    f?.leistungen?.length ? `Bietet Beschaeftigten: ${f.leistungen.join(", ")}` : "",
   ].filter(Boolean);
   return teile.join("\n  ");
 }

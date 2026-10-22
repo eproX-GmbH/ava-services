@@ -148,6 +148,8 @@ export const WebsiteShape = z
     companySerp: CompanySerpShape.optional(),
     deepResearches: z.array(DeepResearchShape).default([]),
     jobPostings: z.array(JobPostingShape).default([]),
+    /** Karriereseite: Leistungen fuer Beschaeftigte (docs/PLAN_STELLEN_SIGNALE.md). */
+    karriere: z.object({ benefits: z.array(z.string()), quelleUrl: z.string().nullable(), auszug: z.string().nullable(), updatedAt: z.string() }).optional(),
   })
   .openapi("Website");
 

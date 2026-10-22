@@ -101,6 +101,15 @@ type Neuheit =
       anzahl: number;
       personen: Array<{ name: string; title: string | null; seit?: string | null }>;
       occurredAt: string;
+    }
+  | {
+      art: "job-postings";
+      id: string;
+      companyId: string;
+      anzahl: number;
+      stellen: Array<{ title: string; location: string | null; benefits: string[]; sourceUrl: string }>;
+      leistungen: string[];
+      occurredAt: string;
     };
 
 /** „seit 2009“ / „seit 03/2026“ aus einem ISO-Datum. */
@@ -349,6 +358,20 @@ export function kandidatAus(
         occurredAt: n.occurredAt,
         summary: `${n.anzahl} neue Ansprechpartner bei ${companyName} erkannt: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.`,
         payload: { typ: "new-contacts", anzahl: n.anzahl, personen: n.personen, source: "website" },
+      };
+    }
+    case "job-postings": {
+      const liste = n.stellen.slice(0, 5).map((s) => (s.location ? `${s.title} (${s.location})` : s.title)).join(", ");
+      const rest = n.anzahl - Math.min(5, n.stellen.length);
+      const leistungen = n.leistungen.length > 0 ? ` Leistungen laut Anzeigen: ${n.leistungen.slice(0, 8).join(", ")}.` : "";
+      return {
+        kind: "job-posting",
+        companyId: n.companyId,
+        companyName,
+        sourceRef: `job-postings:${n.id}`,
+        occurredAt: n.occurredAt,
+        summary: `${companyName} hat ${n.anzahl} neue Stellenanzeige${n.anzahl === 1 ? "" : "n"}: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.${leistungen}`,
+        payload: { typ: "job-postings", anzahl: n.anzahl, stellen: n.stellen, leistungen: n.leistungen, source: "website" },
       };
     }
     default:

@@ -1293,7 +1293,8 @@ export type AlertKind =
   | "import-finished" // v0.1.593: Vorgang fuer alle Firmen durchgelaufen (mit Fehleruebersicht)
   | "status"           // Firmenstatus: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation
   | "contact-change"   // 2026-10-05: Stellen-/Arbeitgeberwechsel, neue Ansprechpartner, geaenderte Firmenkontakte
-  | "customer-change"; // 2026-10-06: neue Kunden/Referenzen laut Website (docs/PLAN_KUNDEN.md K4)
+  | "customer-change"  // 2026-10-06: neue Kunden/Referenzen laut Website (docs/PLAN_KUNDEN.md K4)
+  | "job-posting";     // 2026-10-22: neue Stellenanzeigen (docs/PLAN_STELLEN_SIGNALE.md)
 
 export interface Alert {
   id: string;

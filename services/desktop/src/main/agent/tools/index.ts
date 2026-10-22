@@ -66,6 +66,7 @@ import { buildRegisterDeltaTools } from "./register-delta";
 import { buildWatchlistTools } from "./watchlist";
 import { buildLinkedInSelfserviceTools } from "./linkedin-selfservice";
 import { buildLinkedInLeadsTools } from "./linkedin-leads";
+import { buildSeiteLesenTools } from "./seite-lesen";
 import { buildIcpTools } from "./icp";
 import { buildIcpAbgleichTools } from "./icp-abgleich";
 import { buildFirmaFindenTools } from "./firma-finden";
@@ -280,6 +281,8 @@ export function buildReadOnlyRegistry(deps: {
     getPradarSupervisor: deps.getPersonenRadarSupervisor,
   }))
     registry.register(t);
+  // docs/PLAN_STELLEN_SIGNALE.md — beliebige Webseite als Text lesen.
+  for (const t of buildSeiteLesenTools()) registry.register(t);
   // docs/PLAN_LINKEDIN_LEADS.md L5 — Leads im Chat.
   for (const t of buildLinkedInLeadsTools({ gateway: deps.gateway, getPradarStore: deps.getPersonenRadarStore, getPradarSupervisor: deps.getPersonenRadarSupervisor })) registry.register(t);
   for (const t of buildDiscoveryTools({

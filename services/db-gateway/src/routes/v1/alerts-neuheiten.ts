@@ -107,6 +107,15 @@ const Item = z.discriminatedUnion("art", [
     vorherGesehenAm: z.string().nullable(),
   }),
   z.object({
+    art: z.literal("job-postings"),
+    id: z.string(),
+    companyId: z.string(),
+    anzahl: z.number().int(),
+    stellen: z.array(z.object({ title: z.string(), location: z.string().nullable(), benefits: z.array(z.string()), sourceUrl: z.string() })),
+    leistungen: z.array(z.string()),
+    occurredAt: z.string(),
+  }),
+  z.object({
     art: z.literal("new-customers"),
     id: z.string(),
     companyId: z.string(),
@@ -170,6 +179,39 @@ const SIGNAL_TYPEN: Record<string, "job-changed" | "employer-changed" | "company
   COMPANY_PHONE_CHANGED: "company-phone-changed",
   COMPANY_EMAIL_CHANGED: "company-email-changed",
 };
+
+/** Neue Stellenanzeigen je Firma, gebuendelt (docs/PLAN_STELLEN_SIGNALE.md). Erst-Crawl ist keine
+ *  Neuheit: nur Firmen, die vor `seit` schon Stellen hatten. createdAt bleibt beim Persist je
+ *  Stelle erhalten (Titel + Quelle), deshalb zaehlt es als Erstsichtung. */
+async function neueStellen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
+  const pool = getProducerPool("website");
+  const r = await pool.query<{ companyId: string; title: string; location: string | null; benefits: string[] | null; sourceUrl: string; createdAt: Date }>(
+    `SELECT jp."companyId", jp.title, jp.location, jp.benefits, jp."sourceUrl", jp."createdAt"
+       FROM "JobPosting" jp
+      WHERE jp."companyId" = ANY($1::text[]) AND jp."createdAt" > $2
+        AND EXISTS (SELECT 1 FROM "JobPosting" j0 WHERE j0."companyId" = jp."companyId" AND j0."createdAt" <= $2)
+      ORDER BY jp."companyId", jp."createdAt" DESC
+      LIMIT 2000`,
+    [ids, seit],
+  ).catch(() => ({ rows: [] as Array<{ companyId: string; title: string; location: string | null; benefits: string[] | null; sourceUrl: string; createdAt: Date }> }));
+  const je = new Map<string, typeof r.rows>();
+  for (const row of r.rows) je.set(row.companyId, [...(je.get(row.companyId) ?? []), row]);
+  const out: NeuheitItem[] = [];
+  for (const [companyId, rows] of je) {
+    const juengste = rows[0]!.createdAt;
+    const leistungen = [...new Set(rows.flatMap((x) => x.benefits ?? []))].slice(0, 12);
+    out.push({
+      art: "job-postings",
+      id: `${companyId}:${juengste.toISOString().slice(0, 10)}`,
+      companyId,
+      anzahl: rows.length,
+      stellen: rows.slice(0, 8).map((x) => ({ title: x.title, location: x.location, benefits: x.benefits ?? [], sourceUrl: x.sourceUrl })),
+      leistungen,
+      occurredAt: juengste.toISOString(),
+    });
+  }
+  return out;
+}
 
 async function publikationen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
   const pool = getProducerPool("company-publication");
@@ -450,9 +492,10 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
     publikationen(ids, seit),
     kontaktAenderungen(ids, seit),
     neueKunden(ids, seit),
+    neueStellen(ids, seit),
   ]);
   const items: NeuheitItem[] = [];
-  const namen = ["profile-change", "publication", "contact", "customers"];
+  const namen = ["profile-change", "publication", "contact", "customers", "job-postings"];
   quellen.forEach((q, i) => {
     if (q.status === "fulfilled") items.push(...q.value);
     else logger.warn({ err: q.reason, quelle: namen[i] }, "neuheiten: quelle ausgefallen");

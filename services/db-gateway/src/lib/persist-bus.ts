@@ -1683,9 +1683,13 @@ interface CompanyEvaluationResult {
     description?: string;
     requirements: string[];
     technologies: string[];
+    /** Arbeitgeberleistungen laut Anzeige (docs/PLAN_STELLEN_SIGNALE.md). */
+    benefits?: string[];
     sourceUrl: string;
     releaseDate?: Date | string;
   }>;
+  /** Karriereseite: Leistungen fuer Beschaeftigte; eine Zeile je Firma. */
+  karriere?: { benefits: string[]; quelleUrl: string | null; auszug: string | null };
   contacts?: Array<{
     fullName?: string;
     linkedinUrl?: string;
@@ -1700,6 +1704,18 @@ interface CompanyEvaluationResult {
       startDate?: Date | string;
     }>;
   }>;
+}
+
+/** Spalte benefits und Tabelle CompanyKarriere (website-DB, Migration 20261022120000) sicherstellen —
+ *  die Website-DB wird nicht vom Gateway migriert, der Producer laeuft beim Nutzer. */
+let stellenSchemaBereit = false;
+async function ensureStellenSchema(client: { query: (q: string, p?: unknown[]) => Promise<unknown> }): Promise<void> {
+  if (stellenSchemaBereit) return;
+  await client.query(`ALTER TABLE "JobPosting" ADD COLUMN IF NOT EXISTS benefits TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`);
+  await client.query(`CREATE TABLE IF NOT EXISTS "CompanyKarriere" (
+    "companyId" TEXT PRIMARY KEY, benefits TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], "quelleUrl" TEXT, auszug TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  stellenSchemaBereit = true;
 }
 
 const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
@@ -1932,19 +1948,30 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
     // ---- jobPostings: replace-all by companyId, only on a NON-EMPTY
     //      list (data-loss guard).
     if (Array.isArray(result.jobPostings) && result.jobPostings.length > 0) {
+      await ensureStellenSchema(client);
+      // 2026-10-22: Erstsichtung je Stelle erhalten (Titel + Quelle), damit der
+      // Neuheiten-Takt nur wirklich neue Anzeigen meldet — replace-all setzte
+      // sonst bei jedem Lauf alle createdAt neu.
+      const vorher = await client.query<{ title: string; sourceUrl: string; createdAt: Date }>(
+        `SELECT title, "sourceUrl", "createdAt" FROM "JobPosting" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      const erstgesehen = new Map<string, Date>();
+      for (const r of vorher.rows) erstgesehen.set(`${r.title.trim().toLowerCase()}|${r.sourceUrl.trim().toLowerCase()}`, r.createdAt);
       await client.query(
         `DELETE FROM "JobPosting" WHERE "companyId" = $1`,
         [companyId],
       );
       for (const jp of result.jobPostings) {
+        const alt = erstgesehen.get(`${jp.title.trim().toLowerCase()}|${jp.sourceUrl.trim().toLowerCase()}`) ?? null;
         await client.query(
           `INSERT INTO "JobPosting"
              (id, title, location, "workingModel", description,
-              requirements, technologies, "sourceUrl", "releaseDate",
+              requirements, technologies, benefits, "sourceUrl", "releaseDate",
               "companyId", "createdAt", "updatedAt")
            VALUES (gen_random_uuid()::text,
-                   $1, $2, $3, $4, $5, $6, $7, $8,
-                   $9, NOW(), NOW())`,
+                   $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                   $10, COALESCE($11, NOW()), NOW())`,
           [
             jp.title,
             jp.location ?? null,
@@ -1952,12 +1979,23 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
             jp.description ?? null,
             jp.requirements ?? [],
             jp.technologies ?? [],
+            jp.benefits ?? [],
             jp.sourceUrl,
             jp.releaseDate ? new Date(jp.releaseDate) : null,
             companyId,
+            alt,
           ],
         );
       }
+    }
+    if (result.karriere) {
+      await ensureStellenSchema(client);
+      await client.query(
+        `INSERT INTO "CompanyKarriere" ("companyId", benefits, "quelleUrl", auszug, "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, NOW(), NOW())
+         ON CONFLICT ("companyId") DO UPDATE SET benefits = EXCLUDED.benefits, "quelleUrl" = EXCLUDED."quelleUrl", auszug = EXCLUDED.auszug, "updatedAt" = NOW()`,
+        [companyId, result.karriere.benefits ?? [], result.karriere.quelleUrl ?? null, result.karriere.auszug ?? null],
+      );
     }
 
     // ---- contacts: replace-all by companyId, plus their employments
