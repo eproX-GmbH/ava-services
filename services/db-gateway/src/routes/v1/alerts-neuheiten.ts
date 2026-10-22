@@ -278,6 +278,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
     id: string; companyId: string; personId: string | null; type: string; before: string | null; after: string | null;
     observedAt: Date; fullName: string | null; title: string | null; startDate: Date | null;
     bekanntSeit: Date | null; vorherGesehenAm: Date | null; neuErstGesehen: Date | null; hinUndHer: boolean;
+    gleicherLauf: boolean; source: string | null; fruehereWerte: Array<{ value: string; erst: string }> | null;
   }>(
     `SELECT s.id, s."companyId", s."personId", s.type, s.before, s.after, s."observedAt",
             p."fullName",
@@ -297,7 +298,22 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
             -- Hin und her (A→B und B→A derselben Person) ist Schreibweise, kein Wechsel.
             EXISTS (SELECT 1 FROM "SignalEvent" t
                      WHERE t."personId" = s."personId" AND t.type = s.type
-                       AND t.before = s.after AND t.after = s.before) AS "hinUndHer"
+                       AND t.before = s.after AND t.after = s.before) AS "hinUndHer",
+            -- Alter Wert im selben Lauf gesehen (andere Seite/Quelle derselben
+            -- Firma): Varianten nebeneinander, kein Wechsel (Befund 2026-10-22).
+            (s."runId" IS NOT NULL AND EXISTS (SELECT 1 FROM "Observation" o
+              WHERE o."personId" = s."personId" AND o.field = s.field
+                AND o.value = s.before AND o."runId" = s."runId"
+                -- runId ist je Vorgang, nicht je Crawl: nur Sichtungen der letzten 24 h zaehlen.
+                AND o."observedAt" > s."observedAt" - interval '1 day')) AS "gleicherLauf",
+            s.source,
+            -- Fruehere Werte dieses Felds (fuer den Rueckfall-Test: "neuer" Wert
+            -- war schon einmal da, nur anders geschrieben).
+            (SELECT json_agg(json_build_object('value', v.value, 'erst', v.erst))
+               FROM (SELECT o.value, min(o."observedAt") AS erst FROM "Observation" o
+                      WHERE o."personId" = s."personId" AND o.field = s.field
+                        AND o."observedAt" < s."observedAt"
+                      GROUP BY o.value) v) AS "fruehereWerte"
        FROM "SignalEvent" s
        LEFT JOIN "Person" p ON p.id = s."personId"
        LEFT JOIN LATERAL (
@@ -326,6 +342,24 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       // Schreibweisen: kein Wechsel.
       if (schreibweise(s.before) === schreibweise(s.after)) continue;
       if (s.hinUndHer) continue;
+      if (s.gleicherLauf) continue;
+      // Rueckfall auf einen frueheren Stand (Befund Elisa Zimmer 2026-10-22:
+      // Suchtreffer-Schnipsel brachte die alte Rolle "Assistentin der
+      // Geschäftsleitung | Assistant to the CEO" zurueck, die vorher als
+      // "Assistentin der Geschäftsleitung" galt): der "neue" Wert war schon
+      // vor der letzten Sichtung des alten da, auch in anderer Schreibweise.
+      const neuNorm = schreibweise(s.after);
+      const altZuletzt = s.vorherGesehenAm ? new Date(s.vorherGesehenAm).getTime() : null;
+      const schonFrueherDa = (s.fruehereWerte ?? []).some((w) => {
+        const n = schreibweise(w.value);
+        if (!n || n === schreibweise(s.before)) return false;
+        const gleich = n === neuNorm || (n.length >= 12 && (neuNorm.startsWith(n) || n.startsWith(neuNorm)));
+        return gleich && (altZuletzt === null || new Date(w.erst).getTime() <= altZuletzt);
+      });
+      if (schonFrueherDa) continue;
+      // Suchtreffer-Schnipsel sind undatiert (Google zeigt oft den alten
+      // Stand): ohne belegten Beginn keine Meldung.
+      if ((s.source ?? "").startsWith("search") && !s.startDate) continue;
     }
     // Zeitbezug (nachgeschaerft 2026-10-06, Befund: fuenf Meldungen zu
     // Personen, die seit Jahrzehnten im Amt sind): Eine Meldung braucht

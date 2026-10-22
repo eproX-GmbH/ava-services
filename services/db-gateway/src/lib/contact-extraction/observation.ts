@@ -312,7 +312,26 @@ export async function applyObservation(
               ? "PERSON_JOB_CHANGED"
               : "FACT_RECONFIRMED";
 
-        if (type !== "FACT_RECONFIRMED") {
+        // Beide Werte im selben Lauf gesehen (Impressum sagt "Geschäftsführerin",
+        // Blog "Board of Directors", LinkedIn "Managing Director"): Varianten
+        // nebeneinander, kein Wechsel. Befund 2026-10-22 (slashwhy, Zimmer Group):
+        // 1047 von 1092 Rollenwechsel-Signalen der letzten 30 Tage waren solche Varianten.
+        const varianteImSelbenLauf =
+          type !== "FACT_RECONFIRMED" && args.runId
+            ? (await prisma.observation.count({
+                where: {
+                  entityType: args.entityType,
+                  entityId: args.entityId,
+                  field: args.field,
+                  value: previousActive.value,
+                  runId: args.runId,
+                  // runId ist je Vorgang, nicht je Crawl: nur Sichtungen der letzten 24 h zaehlen.
+                  observedAt: { gte: new Date(observedAt.getTime() - 24 * 3600 * 1000) },
+                },
+              })) > 0
+            : false;
+
+        if (type !== "FACT_RECONFIRMED" && !varianteImSelbenLauf) {
           const dedupKey = buildSignalDedupKey({
             entityType: args.entityType,
             entityId: args.entityId,
