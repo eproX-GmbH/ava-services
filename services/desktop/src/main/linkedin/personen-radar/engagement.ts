@@ -134,10 +134,12 @@ export async function fetchPostEngagement(
           lauf.kind === "reaction"
             ? pickStr(o, "reactionType", "action", "type")
             : null,
+        // harvestapi/linkedin-post-comments nennt den Text "commentary" (Befund
+        // 2026-10-22: alle Kommentar-Leads kamen ohne Text an).
         commentText:
           lauf.kind === "comment"
-            ? (pickStr(o, "commentText", "text") ??
-               pickStr(asObj(o.comment), "text", "content"))
+            ? (pickStr(o, "commentary", "commentText", "text") ??
+               pickStr(asObj(o.comment), "commentary", "text", "content"))
             : null,
         postUrl,
       });
