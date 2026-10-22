@@ -2040,9 +2040,9 @@ const api = {
     },
     /** Bereich LinkedIn-Leads: Personen, die auf beobachtete Posts reagiert haben. */
     leads: {
-      list: (q: { status?: string; postUrl?: string; nurKommentare?: boolean; seite?: number; groesse?: number }): Promise<{ gesamt: number; items: LinkedInLead[] }> =>
+      list: (q: { status?: string; postUrl?: string; nurKommentare?: boolean; alle?: boolean; seite?: number; groesse?: number }): Promise<{ gesamt: number; items: LinkedInLead[] }> =>
         ipcRenderer.invoke("leads:list", q),
-      posts: (): Promise<{ posts: LinkedInLeadPost[] }> => ipcRenderer.invoke("leads:posts"),
+      posts: (q?: { alle?: boolean }): Promise<{ posts: LinkedInLeadPost[] }> => ipcRenderer.invoke("leads:posts", q),
       ignorieren: (id: string, grund?: string | null): Promise<LinkedInLead> => ipcRenderer.invoke("leads:ignorieren", { id, grund }),
       zuruecknehmen: (id: string): Promise<LinkedInLead> => ipcRenderer.invoke("leads:zuruecknehmen", { id }),
       uebernehmen: (id: string): Promise<{ ok: boolean; companyId?: string; personId?: string | null; transactionId?: string | null; hinweise: string[]; error?: string }> =>

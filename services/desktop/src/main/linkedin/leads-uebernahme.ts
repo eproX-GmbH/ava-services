@@ -117,9 +117,10 @@ export async function leadZuruecknehmen(gw: Gw, id: string): Promise<LinkedInLea
   return gw<LinkedInLead>(`/v1/linkedin-leads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status: "offen", ignoriertGrund: null } });
 }
 
-export async function leadsListe(gw: Gw, q: { status?: string; postUrl?: string; nurKommentare?: boolean; seite?: number; groesse?: number }): Promise<{ gesamt: number; items: LinkedInLead[] }> {
+export async function leadsListe(gw: Gw, q: { status?: string; postUrl?: string; nurKommentare?: boolean; alle?: boolean; seite?: number; groesse?: number }): Promise<{ gesamt: number; items: LinkedInLead[] }> {
   const p = new URLSearchParams();
   if (q.status) p.set("status", q.status);
+  if (q.alle) p.set("alle", "true");
   if (q.postUrl) p.set("postUrl", q.postUrl);
   if (q.nurKommentare) p.set("nurKommentare", "true");
   p.set("seite", String(q.seite ?? 1));

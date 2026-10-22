@@ -24,8 +24,8 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
     summary: "LinkedIn-Leads lesen: Personen, die auf beobachtete Posts reagiert oder kommentiert haben, mit Firma, Anlass und Kommentar.",
     category: "linkedin leads post reaktion kommentar warm lead ansprache",
     description:
-      "Liefert Leads aus beobachteten LinkedIn-Posts (Standard: offene und ungeklaerte). Jeder Lead: Person, Rolle, Firma mit Ort und Kurzprofil, Art der Reaktion, Kommentartext, Status, wer uebernommen hat. " +
-      "Leads gelten fuer die ganze Organisation. Der ICP-Score ist hier KEIN Filter: Wer auf einen Post reagiert, ist ein warmer Lead, auch ohne ICP-Match. " +
+      "Liefert Leads aus beobachteten LinkedIn-Posts (Standard: eigene, offene und ungeklaerte; alle=true: auch die der Kollegen). Jeder Lead: Person, Rolle, Firma mit Ort und Kurzprofil, Art der Reaktion, Kommentartext, Status, wer uebernommen hat, " +
+      "und ob ein Kollege dieselbe Person schon uebernommen hat (kollegeUebernommen → vor der Ansprache abstimmen). Der ICP-Score ist hier KEIN Filter: Wer auf einen Post reagiert, ist ein warmer Lead, auch ohne ICP-Match. " +
       "Nutze es fuer Fragen wie 'Welche Leads habe ich?', 'Wer hat auf Hennings Post kommentiert?', 'Zeig mir die Kommentare'. Fuer eine Ansprache den Kommentar und das Kurzprofil der Firma heranziehen.",
     parameters: {
       type: "object",
@@ -33,16 +33,17 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
         status: { type: "string", enum: ["offen", "ungeklaert", "uebernommen", "ignoriert", "alle"], description: "Standard: offen und ungeklaert." },
         postUrl: { type: "string", description: "Nur Leads dieses Posts." },
         nurKommentare: { type: "boolean" },
+        alle: { type: "boolean", description: "Auch Leads der Kolleginnen und Kollegen (Standard: nur eigene)." },
         limit: { type: "integer", minimum: 1, maximum: 100 },
       },
     },
-    schema: yup.object({ status: yup.string().oneOf(["offen", "ungeklaert", "uebernommen", "ignoriert", "alle"]).optional(), postUrl: yup.string().trim().optional(), nurKommentare: yup.boolean().optional(), limit: yup.number().integer().min(1).max(100).optional() }).noUnknown(true),
+    schema: yup.object({ status: yup.string().oneOf(["offen", "ungeklaert", "uebernommen", "ignoriert", "alle"]).optional(), postUrl: yup.string().trim().optional(), nurKommentare: yup.boolean().optional(), alle: yup.boolean().optional(), limit: yup.number().integer().min(1).max(100).optional() }).noUnknown(true),
     preview: (r: { gesamt: number }) => `${r.gesamt} Leads`,
     run: async (args) => {
-      const r = await leadsListe(gw, { status: args.status, postUrl: args.postUrl, nurKommentare: args.nurKommentare, seite: 1, groesse: args.limit ?? 30 });
+      const r = await leadsListe(gw, { status: args.status, postUrl: args.postUrl, nurKommentare: args.nurKommentare, alle: args.alle, seite: 1, groesse: args.limit ?? 30 });
       return {
         gesamt: r.gesamt,
-        hinweis: "Score ist nur ein Hinweis; Leads gelten fuer die ganze Organisation. Uebernehmen legt Firma und Person in einem Schritt an (linkedin_lead_uebernehmen).",
+        hinweis: "Score ist nur ein Hinweis. Eigene Leads; alle=true zeigt die der Organisation. Uebernehmen legt Firma und Person in einem Schritt an (linkedin_lead_uebernehmen).",
         leads: r.items.map((l) => ({
           id: l.id,
           person: l.personName,
@@ -59,6 +60,7 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
           am: l.createdAt,
           status: l.status,
           ...(l.uebernommenVon ? { uebernommenVon: l.uebernommenVon } : {}),
+          ...(l.kollegeUebernommen ? { kollegeUebernommen: l.kollegeUebernommen } : {}),
           ...(l.ignoriertGrund ? { ignoriertGrund: l.ignoriertGrund } : {}),
           ...(l.reaktionen > 1 ? { reaktionenGesamt: l.reaktionen } : {}),
           ...(l.status === "ungeklaert" ? { grund: l.grund } : {}),

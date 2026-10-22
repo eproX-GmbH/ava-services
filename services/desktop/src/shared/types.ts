@@ -2422,6 +2422,9 @@ export interface LinkedInLead {
   uebernommenAt: string | null;
   uebernommenVon: string | null;
   ignoriertVon: string | null;
+  /** Ein Kollege hat dieselbe Person aus seinem Lead bereits uebernommen. */
+  kollegeUebernommen: string | null;
+  actorId: string | null;
   createdAt: string;
   firmaOrt: string | null;
   firmaPlz: string | null;

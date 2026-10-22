@@ -15,9 +15,9 @@ export function registerLeadsIpc(deps: LeadsIpcDeps): void {
   const { audit } = deps;
   const gw = gwVon(deps.gatewayClient);
 
-  ipcMain.handle("leads:list", (_e, q: { status?: string; postUrl?: string; nurKommentare?: boolean; seite?: number; groesse?: number }) => leadsListe(gw, q ?? {}));
+  ipcMain.handle("leads:list", (_e, q: { status?: string; postUrl?: string; nurKommentare?: boolean; alle?: boolean; seite?: number; groesse?: number }) => leadsListe(gw, q ?? {}));
 
-  ipcMain.handle("leads:posts", () => gw<{ posts: unknown[] }>("/v1/linkedin-leads/posts"));
+  ipcMain.handle("leads:posts", (_e, q?: { alle?: boolean }) => gw<{ posts: unknown[] }>(`/v1/linkedin-leads/posts${q?.alle ? "?alle=true" : ""}`));
 
   ipcMain.handle("leads:ignorieren", async (_e, args: { id: string; grund?: string | null }) => {
     const r = await leadIgnorieren(gw, args.id, args.grund ?? null);

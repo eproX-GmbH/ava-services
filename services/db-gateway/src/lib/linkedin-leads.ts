@@ -55,6 +55,9 @@ export interface LeadZeile {
   /** Leads gelten je Organisation: wer uebernommen/ignoriert hat (Name oder E-Mail aus der Mitgliederliste). */
   uebernommenVon: string | null;
   ignoriertVon: string | null;
+  /** Ein Kollege hat dieselbe Person (aus seinem Lead) bereits uebernommen. */
+  kollegeUebernommen: string | null;
+  actorId: string | null;
   createdAt: string;
   /** Aus DiscoveredCompany (Mini-Profil), wenn vorhanden. */
   firmaOrt: string | null;
@@ -97,8 +100,11 @@ export async function ensureLeadsSchema(pool: Pool): Promise<void> {
       "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "loeschenAb"    TIMESTAMPTZ
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS "LinkedInLead_tenant_person_post_idx"
-      ON "LinkedInLead" ("tenantId", "profileUrl", "postUrl");
+    -- 2026-10-22 (Feedback Patrick): Leads gehoeren dem Nutzer, dessen AVA den Post beobachtet;
+    -- dieselbe Person darf bei zwei Kollegen je ein Lead sein. Alter Org-weiter Index weicht.
+    DROP INDEX IF EXISTS "LinkedInLead_tenant_person_post_idx";
+    CREATE UNIQUE INDEX IF NOT EXISTS "LinkedInLead_tenant_actor_person_post_idx"
+      ON "LinkedInLead" ("tenantId", "actorId", "profileUrl", "postUrl");
     CREATE INDEX IF NOT EXISTS "LinkedInLead_tenant_status_idx"
       ON "LinkedInLead" ("tenantId", "status", "createdAt" DESC);
     ALTER TABLE "LinkedInLead" ADD COLUMN IF NOT EXISTS "uebernommenVon" TEXT;
@@ -107,11 +113,11 @@ export async function ensureLeadsSchema(pool: Pool): Promise<void> {
   schemaReady = true;
 }
 
-function leadId(tenantId: string, profileUrl: string, postUrl: string): string {
-  return createHash("sha256").update(`${tenantId}|${profileUrl}|${postUrl}`).digest("hex").slice(0, 24);
+function leadId(tenantId: string, actorId: string | null, profileUrl: string, postUrl: string): string {
+  return createHash("sha256").update(`${tenantId}|${actorId ?? ""}|${profileUrl}|${postUrl}`).digest("hex").slice(0, 24);
 }
 
-/** Leads eines Laufs ablegen; je (Person, Post) genau einer. Vorhandene bleiben unveraendert,
+/** Leads eines Laufs ablegen; je (Nutzer, Person, Post) genau einer. Vorhandene bleiben unveraendert,
  *  ausser ein bisher ungeklaerter Lead bekommt jetzt eine Firma. */
 export async function leadsAblegen(pool: Pool, tenantId: string, actorId: string | null, leads: LeadEingabe[]): Promise<{ neu: number; aktualisiert: number; vorhanden: number }> {
   await ensureLeadsSchema(pool);
@@ -119,13 +125,13 @@ export async function leadsAblegen(pool: Pool, tenantId: string, actorId: string
   let aktualisiert = 0;
   let vorhanden = 0;
   for (const l of leads) {
-    const id = leadId(tenantId, l.profileUrl, l.postUrl);
+    const id = leadId(tenantId, actorId, l.profileUrl, l.postUrl);
     const status = l.status ?? (l.firmaDomain ? "offen" : "ungeklaert");
     const r = await pool.query<{ eingefuegt: boolean; aktualisiert: boolean }>(
       `INSERT INTO "LinkedInLead" ("id", "tenantId", "actorId", "postUrl", "postTitel", "personName", "profileUrl", "headline", "rolle",
                                    "aktivitaet", "reactionType", "kommentar", "firmaDomain", "firmaName", "konfidenz", "status", "grund", "loeschenAb")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW() + ($18 || ' days')::interval)
-       ON CONFLICT ("tenantId", "profileUrl", "postUrl") DO UPDATE SET
+       ON CONFLICT ("tenantId", "actorId", "profileUrl", "postUrl") DO UPDATE SET
          "firmaDomain" = COALESCE("LinkedInLead"."firmaDomain", EXCLUDED."firmaDomain"),
          "firmaName"   = COALESCE("LinkedInLead"."firmaName", EXCLUDED."firmaName"),
          "rolle"       = COALESCE("LinkedInLead"."rolle", EXCLUDED."rolle"),
@@ -150,11 +156,13 @@ async function aufraeumen(pool: Pool, tenantId: string): Promise<void> {
   await pool.query(`DELETE FROM "LinkedInLead" WHERE "tenantId" = $1 AND "status" IN ('offen', 'ungeklaert') AND "loeschenAb" < NOW()`, [tenantId]).catch(() => undefined);
 }
 
-export async function leadsListe(pool: Pool, tenantId: string, q: { status?: LeadStatus | "alle"; postUrl?: string; nurKommentare?: boolean; seite: number; groesse: number }): Promise<{ gesamt: number; items: LeadZeile[] }> {
+export async function leadsListe(pool: Pool, tenantId: string, q: { status?: LeadStatus | "alle"; postUrl?: string; nurKommentare?: boolean; seite: number; groesse: number; actorId?: string | null }): Promise<{ gesamt: number; items: LeadZeile[] }> {
   await ensureLeadsSchema(pool);
   await aufraeumen(pool, tenantId);
   const params: unknown[] = [tenantId];
   const bed: string[] = [`l."tenantId" = $1`];
+  // Standard: nur die eigenen Leads (Post von der eigenen AVA beobachtet); actorId null = alle der Organisation.
+  if (q.actorId) { params.push(q.actorId); bed.push(`l."actorId" = $${params.length}`); }
   if (q.status && q.status !== "alle") { params.push(q.status); bed.push(`l."status" = $${params.length}`); }
   else if (!q.status) bed.push(`l."status" IN ('offen', 'ungeklaert')`);
   if (q.postUrl) { params.push(q.postUrl); bed.push(`l."postUrl" = $${params.length}`); }
@@ -166,7 +174,9 @@ export async function leadsListe(pool: Pool, tenantId: string, q: { status?: Lea
     `SELECT l.*, dc."city" AS "firmaOrt", dc."plz" AS "firmaPlz", dc."masterCompanyId",
             dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz",
             (SELECT COUNT(*) FROM "LinkedInLead" x WHERE x."tenantId" = l."tenantId" AND x."profileUrl" = l."profileUrl")::int AS "reaktionen",
-            COALESCE(mu."name", mu."email") AS "uebernommenVonName", COALESCE(mi."name", mi."email") AS "ignoriertVonName"
+            COALESCE(mu."name", mu."email") AS "uebernommenVonName", COALESCE(mi."name", mi."email") AS "ignoriertVonName",
+            (SELECT COALESCE(m2."name", m2."email", y."uebernommenVon") FROM "LinkedInLead" y LEFT JOIN "TenantMember" m2 ON m2."actorId" = y."uebernommenVon"
+              WHERE y."tenantId" = l."tenantId" AND y."profileUrl" = l."profileUrl" AND y."status" = 'uebernommen' AND y."id" <> l."id" LIMIT 1) AS "kollegeUebernommen"
        FROM "LinkedInLead" l
        LEFT JOIN "DiscoveredCompany" dc ON dc."discoveryId" = l."firmaDomain"
        LEFT JOIN "TenantMember" mu ON mu."actorId" = l."uebernommenVon"
@@ -204,6 +214,8 @@ function zeile(r: Record<string, unknown>): LeadZeile {
     uebernommenAt: iso(r.uebernommenAt),
     uebernommenVon: s("uebernommenVonName") ?? s("uebernommenVon"),
     ignoriertVon: s("ignoriertVonName") ?? s("ignoriertVon"),
+    kollegeUebernommen: s("kollegeUebernommen"),
+    actorId: s("actorId"),
     createdAt: iso(r.createdAt) ?? new Date().toISOString(),
     firmaOrt: s("firmaOrt"),
     firmaPlz: s("firmaPlz"),
@@ -214,7 +226,7 @@ function zeile(r: Record<string, unknown>): LeadZeile {
   };
 }
 
-export async function leadsPosts(pool: Pool, tenantId: string): Promise<Array<{ postUrl: string; postTitel: string | null; leads: number; offen: number; kommentare: number; uebernommen: number; ungeklaert: number; zuletzt: string }>> {
+export async function leadsPosts(pool: Pool, tenantId: string, actorId: string | null = null): Promise<Array<{ postUrl: string; postTitel: string | null; leads: number; offen: number; kommentare: number; uebernommen: number; ungeklaert: number; zuletzt: string }>> {
   await ensureLeadsSchema(pool);
   const r = await pool.query<Record<string, unknown>>(
     `SELECT "postUrl", MAX("postTitel") AS "postTitel", COUNT(*)::int AS leads,
@@ -223,8 +235,8 @@ export async function leadsPosts(pool: Pool, tenantId: string): Promise<Array<{ 
             COUNT(*) FILTER (WHERE "status" = 'uebernommen')::int AS uebernommen,
             COUNT(*) FILTER (WHERE "status" = 'ungeklaert')::int AS ungeklaert,
             MAX("createdAt") AS zuletzt
-       FROM "LinkedInLead" WHERE "tenantId" = $1 GROUP BY "postUrl" ORDER BY MAX("createdAt") DESC`,
-    [tenantId],
+       FROM "LinkedInLead" WHERE "tenantId" = $1 AND ($2::text IS NULL OR "actorId" = $2) GROUP BY "postUrl" ORDER BY MAX("createdAt") DESC`,
+    [tenantId, actorId],
   );
   return r.rows.map((x) => ({
     postUrl: String(x.postUrl),

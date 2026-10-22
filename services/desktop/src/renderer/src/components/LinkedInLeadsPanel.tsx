@@ -34,6 +34,8 @@ export function LinkedInLeadsPanel(): JSX.Element {
   const [status, setStatus] = useState<Status | "alle">("offen");
   const [postUrl, setPostUrl] = useState<string>("");
   const [nurKommentare, setNurKommentare] = useState(false);
+  // Feedback Patrick 2026-10-22: jeder sieht seine eigenen Leads; die der Organisation auf Wunsch.
+  const [alle, setAlle] = useState(false);
   const [seite, setSeite] = useState(1);
   const [daten, setDaten] = useState<{ gesamt: number; items: LinkedInLead[] } | null>(null);
   const [laedt, setLaedt] = useState(false);
@@ -44,17 +46,17 @@ export function LinkedInLeadsPanel(): JSX.Element {
 
   const ladePosts = useCallback(async () => {
     try {
-      const r = await window.api.linkedin.leads.posts();
+      const r = await window.api.linkedin.leads.posts({ alle });
       setPosts(r.posts);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
       setPosts([]);
     }
-  }, []);
+  }, [alle]);
   const lade = useCallback(async () => {
     setLaedt(true);
     try {
-      const r = await window.api.linkedin.leads.list({ status: status === "offen" ? "offen" : status, postUrl: postUrl || undefined, nurKommentare, seite, groesse });
+      const r = await window.api.linkedin.leads.list({ status: status === "offen" ? "offen" : status, postUrl: postUrl || undefined, nurKommentare, alle, seite, groesse });
       setDaten(r);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
@@ -62,7 +64,7 @@ export function LinkedInLeadsPanel(): JSX.Element {
     } finally {
       setLaedt(false);
     }
-  }, [status, postUrl, nurKommentare, seite]);
+  }, [status, postUrl, nurKommentare, alle, seite]);
   useEffect(() => { void ladePosts(); }, [ladePosts]);
   useEffect(() => { void lade(); }, [lade]);
 
@@ -138,8 +140,11 @@ export function LinkedInLeadsPanel(): JSX.Element {
         <label className="leads__check">
           <input type="checkbox" checked={nurKommentare} onChange={(e) => { setNurKommentare(e.target.checked); setSeite(1); }} /> nur Kommentare
         </label>
+        <label className="leads__check">
+          <input type="checkbox" checked={alle} onChange={(e) => { setAlle(e.target.checked); setSeite(1); }} /> auch Leads der Kolleginnen und Kollegen
+        </label>
       </div>
-      <p className="muted small">Leads gelten für deine ganze Organisation: Was eine Kollegin oder ein Kollege übernimmt oder ignoriert, verschwindet bei allen aus „Offen“ und steht mit Namen unter „Übernommen“ bzw. „Ignoriert“.</p>
+      <p className="muted small">Du siehst die Leads aus den Posts, die deine AVA beobachtet. Hat eine Kollegin oder ein Kollege dieselbe Person schon übernommen, steht das an der Karte.</p>
       {notice && <p className="muted small">{notice}</p>}
       {laedt && !daten ? <p className="muted">Lädt…</p> : null}
       {daten && daten.items.length === 0 && !laedt && <p className="muted">Keine Leads für diesen Filter.</p>}
@@ -174,6 +179,7 @@ export function LinkedInLeadsPanel(): JSX.Element {
                     </div>
                     {l.kommentar && <blockquote className="leads__kommentar">„{l.kommentar}“</blockquote>}
                     {l.status === "ungeklaert" && <div className="muted small">Keine belastbare Firma: {l.grund ?? "unbekannt"}</div>}
+                    {l.status === "offen" && l.kollegeUebernommen && <div className="muted small" style={{ color: "var(--color-accent, #00c0a7)" }}>Bereits von {l.kollegeUebernommen} übernommen — bitte abstimmen, bevor du die Person ansprichst.</div>}
                     {l.status === "uebernommen" && <div className="muted small">Übernommen{l.uebernommenVon ? ` von ${l.uebernommenVon}` : ""}{l.uebernommenAt ? ` am ${datum(l.uebernommenAt)}` : ""}</div>}
                     {l.status === "ignoriert" && <div className="muted small">Ignoriert{l.ignoriertVon ? ` von ${l.ignoriertVon}` : ""}{l.ignoriertGrund ? ` · ${l.ignoriertGrund}` : ""}</div>}
                   </div>

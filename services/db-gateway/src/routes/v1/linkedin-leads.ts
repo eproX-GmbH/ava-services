@@ -39,17 +39,18 @@ linkedinLeadsRouter.openapi(createRoute({ method: "post", path: "/linkedin-leads
   return c.json(await leadsAblegen(getGatewayPool(), auth.tenantId, auth.actorId ?? null, leads), 200);
 });
 
-linkedinLeadsRouter.openapi(createRoute({ method: "get", path: "/linkedin-leads", tags: ["linkedin-leads"], summary: "Leads lesen (Standard: offen und ungeklaert)", request: { query: z.object({ status: Status.or(z.literal("alle")).optional(), postUrl: z.string().max(600).optional(), nurKommentare: z.coerce.boolean().default(false), seite: z.coerce.number().int().min(1).default(1), groesse: z.coerce.number().int().min(1).max(200).default(50) }) }, responses: ok("Leads") }), async (c) => {
+linkedinLeadsRouter.openapi(createRoute({ method: "get", path: "/linkedin-leads", tags: ["linkedin-leads"], summary: "Leads lesen (Standard: offen und ungeklaert)", request: { query: z.object({ status: Status.or(z.literal("alle")).optional(), postUrl: z.string().max(600).optional(), nurKommentare: z.coerce.boolean().default(false), alle: z.coerce.boolean().default(false), seite: z.coerce.number().int().min(1).default(1), groesse: z.coerce.number().int().min(1).max(200).default(50) }) }, responses: ok("Leads") }), async (c) => {
   const auth = c.get("auth");
   if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
   const q = c.req.valid("query");
-  return c.json(await leadsListe(getGatewayPool(), auth.tenantId, q), 200);
+  // Standard: eigene Leads; alle=true zeigt die der ganzen Organisation.
+  return c.json(await leadsListe(getGatewayPool(), auth.tenantId, { ...q, actorId: q.alle ? null : auth.actorId }), 200);
 });
 
-linkedinLeadsRouter.openapi(createRoute({ method: "get", path: "/linkedin-leads/posts", tags: ["linkedin-leads"], summary: "Beobachtete Posts mit Zaehlern", responses: ok("Posts") }), async (c) => {
+linkedinLeadsRouter.openapi(createRoute({ method: "get", path: "/linkedin-leads/posts", tags: ["linkedin-leads"], summary: "Beobachtete Posts mit Zaehlern (eigene; alle=true: Organisation)", request: { query: z.object({ alle: z.coerce.boolean().default(false) }) }, responses: ok("Posts") }), async (c) => {
   const auth = c.get("auth");
   if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
-  return c.json({ posts: await leadsPosts(getGatewayPool(), auth.tenantId) }, 200);
+  return c.json({ posts: await leadsPosts(getGatewayPool(), auth.tenantId, c.req.valid("query").alle ? null : auth.actorId) }, 200);
 });
 
 linkedinLeadsRouter.openapi(createRoute({ method: "get", path: "/linkedin-leads/{id}", tags: ["linkedin-leads"], summary: "Einen Lead lesen", request: { params: z.object({ id: z.string().min(4).max(64) }) }, responses: ok("Lead") }), async (c) => {
