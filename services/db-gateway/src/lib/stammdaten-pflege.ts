@@ -98,9 +98,14 @@ export async function pflegeUebersicht(pool: Pool, tage: number) {
   const helfer = await pool.query<{ aktiv: string; gesamt: string }>(`SELECT COUNT(*) FILTER (WHERE "zuletztAt" > NOW() - INTERVAL '15 minutes')::text AS aktiv, COUNT(*)::text AS gesamt FROM "RegisterWorker" WHERE art = 'desktop'`);
 
   const warnungen: Array<{ stufe: "fehler" | "warnung"; text: string }> = [];
+  // Eine Gruppe gilt als laufend, sobald irgendeine ihrer Maschinen laeuft, auch die
+  // Standby-Maschine (Befund 2026-10-23: worker_at lief auf der Standby-Maschine,
+  // die Seite meldete die gestoppte Hauptmaschine als Ausfall).
+  const gruppeLaeuft = new Set(server.filter((s) => s.gruppe && s.zustand === "started").map((s) => s.gruppe as string));
   for (const s of server) {
     if (s.standby) continue;
     const name = s.gruppe ?? s.workerId;
+    if (s.zustand && s.zustand !== "started" && s.gruppe && gruppeLaeuft.has(s.gruppe)) continue;
     if (s.zustand && s.zustand !== "started") warnungen.push({ stufe: "fehler", text: `Server-Worker ${name} ist ${s.zustand === "stopped" ? "gestoppt" : s.zustand} (seit ${s.maschineAktualisiert ? new Date(s.maschineAktualisiert).toLocaleString("de-DE", { timeZone: "Europe/Berlin" }) : "?"}).` });
     else if (!s.aktiv) warnungen.push({ stufe: "warnung", text: `Server-Worker ${name} hat sich seit über ${Math.round(STILL_MIN / 60)} Stunden nicht gemeldet.` });
     if (s.gesperrtAt && new Date(s.gesperrtAt).getTime() > jetzt - 3_600_000) warnungen.push({ stufe: "warnung", text: `Server-Worker ${name} wurde vom Registerportal vorübergehend gesperrt.` });
