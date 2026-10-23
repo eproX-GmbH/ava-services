@@ -3850,6 +3850,23 @@ input.kontakt-suche__feld:focus { border-color: var(--accent); }
 .chat-composer__icon-btn[data-voice-state="error"] {
   color: var(--color-fg-faint);
 }
+/* Gesperrt (Sprachmodell nicht bereit): sichtbar ausgegraut, durchgestrichen, kein Hover-Effekt;
+ * der Klick fuehrt zur Einrichtung statt zu einer Fehlermeldung. */
+.chat-composer__icon-btn--gesperrt {
+  opacity: 0.45;
+  cursor: help;
+  position: relative;
+}
+.chat-composer__icon-btn--gesperrt:hover { background: transparent; }
+.chat-composer__icon-btn--gesperrt::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 20px; height: 2px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  border-radius: 1px;
+}
 
 /* ---- Topbar Watch chip (Phase 8.t2) ----------------------------------- */
 .watch-chip {

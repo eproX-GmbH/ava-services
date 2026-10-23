@@ -101,8 +101,10 @@ export interface SpracheStand {
   quelle: "eigen" | "organisation" | null;
   /** Lokales Whisper-Modell einsatzbereit (fuer das Aktivierungswort)? */
   whisperBereit: boolean;
-  /** Grund, warum der Sprachmodus trotz Schluessel nicht geht (z. B. Azure OpenAI). */
+  /** Grund, warum der Sprachmodus trotz Schluessel nicht geht (z. B. Azure OpenAI, Schluessel ohne Recht). */
   hinweis?: string | null;
+  /** 2026-10-23 — Diktat (Mikrofon-Knopf): lokal per Whisper oder ueber OpenAI; sonst gesperrt mit Grund. */
+  diktat?: { verfuegbar: boolean; quelle: "whisper" | "openai" | null; hinweis: string | null };
 }
 export interface SpracheSitzung {
   clientSecret: string;

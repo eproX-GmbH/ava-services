@@ -2159,12 +2159,15 @@ function VoiceMicButton({ onActivate }: { onActivate: () => void }) {
     if (ready) onActivate();
     else navigate("/settings#voice-settings");
   };
+  // 2026-10-23 (Vorgabe Joyce): ohne einsatzbereites Sprachmodell sichtbar gesperrt
+  // (kein normaler Knopf, keine Fehlermeldung); der Klick fuehrt zur Einrichtung.
   return (
     <button
       type="button"
-      className="chat-composer__icon-btn"
+      className={`chat-composer__icon-btn${ready ? "" : " chat-composer__icon-btn--gesperrt"}`}
       title={title}
-      aria-label="Sprachmodus"
+      aria-label={ready ? "Diktat" : `Diktat nicht verfügbar: ${title}`}
+      aria-disabled={!ready}
       data-voice-state={status.state}
       onClick={onClick}
     >

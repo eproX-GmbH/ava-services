@@ -4084,21 +4084,77 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     },
     (name) => agentRegistry.get(name)?.summary ?? name,
   );
-  const spracheStand = () => {
+  // 2026-10-23 (Vorgabe Joyce): Der Sprachmodus-Knopf darf nur bedienbar sein, wenn
+  // eine Sitzung wirklich geht. Ein vorhandener Schluessel reicht nicht (Befund
+  // Patrick: Projektschluessel ohne Recht fuer Realtime → "abgelehnt" erst beim
+  // Klick). Deshalb eine Probe: einmal je Schluesselquelle und 6 Stunden eine
+  // Sitzung praegen; schlaegt sie fehl, ist der Modus mit Grund gesperrt.
+  const SPRACHE_PROBE_MS = 6 * 3_600_000;
+  let spracheProbe: { schluessel: string; at: number; ok: boolean; hinweis: string | null } | null = null;
+  let spracheProbeLaeuft = false;
+  const spracheProbeSchluessel = () => `${providers.keySource("openai")}|${providers.hasKey("openai") ? "eigen" : "-"}|${providers.getOrgProviders().openai ? "org" : "-"}`;
+  const spracheProbeStarten = (): void => {
+    if (spracheProbeLaeuft) return;
+    spracheProbeLaeuft = true;
+    const schluessel = spracheProbeSchluessel();
+    void praegeSitzung({ providers, stimme: spracheStore.get().stimme })
+      .then(() => { spracheProbe = { schluessel, at: Date.now(), ok: true, hinweis: null }; })
+      .catch((err: unknown) => {
+        const m = err instanceof Error ? err.message : String(err);
+        // Netzfehler sind kein Urteil ueber den Schluessel: naechster Versuch bald.
+        const netz = /ENOTFOUND|ECONN|fetch failed|timeout|HTTP 5\d\d/i.test(m);
+        spracheProbe = { schluessel, at: netz ? Date.now() - SPRACHE_PROBE_MS + 60_000 : Date.now(), ok: netz, hinweis: netz ? null : m.replace(/^HTTP \d+: /, "") };
+      })
+      .finally(() => {
+        spracheProbeLaeuft = false;
+        windows().broadcast("sprache:standChanged", spracheStand());
+      });
+  };
+  const spracheStand = (): import("../shared/types").SpracheStand => {
     const q = providers.keySource("openai");
     const orgHat = Boolean(providers.getOrgProviders().openai);
     const eigenHat = providers.hasKey("openai");
     // Azure OpenAI: Realtime laeuft dort ueber eigene Endpunkte; der
     // Sprachmodus spricht OpenAI direkt an und ist dann nicht verfuegbar.
     const azure = providers.openaiUeberAzure();
-    const verfuegbar = !azure && (q === "organisation" ? orgHat : eigenHat || orgHat);
+    const schluesselDa = !azure && (q === "organisation" ? orgHat : eigenHat || orgHat);
+    let verfuegbar = schluesselDa;
+    let hinweis = azure ? "Mit Azure OpenAI ist der Sprachmodus nicht verfügbar; er braucht einen Schlüssel direkt bei OpenAI." : null;
+    if (schluesselDa) {
+      const sk = spracheProbeSchluessel();
+      if (!spracheProbe || spracheProbe.schluessel !== sk || Date.now() - spracheProbe.at > SPRACHE_PROBE_MS) spracheProbeStarten();
+      if (spracheProbe && spracheProbe.schluessel === sk && !spracheProbe.ok) {
+        verfuegbar = false;
+        hinweis = spracheProbe.hinweis;
+      }
+    }
     const quelle: "eigen" | "organisation" | null = !verfuegbar ? null : q === "organisation" || !eigenHat ? "organisation" : "eigen";
-    const hinweis = azure ? "Mit Azure OpenAI ist der Sprachmodus nicht verfügbar; er braucht einen Schlüssel direkt bei OpenAI." : null;
-    return { einstellungen: spracheStore.get(), verfuegbar, quelle, whisperBereit: whisper.getStatus().state === "ready", hinweis };
+    const ws = whisper.getStatus();
+    const whisperBereit = ws.state === "ready";
+    const diktatOpenai = !azure && (eigenHat || orgHat);
+    const diktatHinweis = whisperBereit || diktatOpenai
+      ? null
+      : ws.state === "downloading"
+        ? "Das Sprachmodell wird gerade heruntergeladen."
+        : ws.state === "model-missing"
+          ? "Das Sprachmodell ist noch nicht installiert (Einstellungen → Spracherkennung)."
+          : ws.state === "binary-missing"
+            ? "Die Spracherkennung ist auf diesem Gerät nicht eingerichtet (Einstellungen → Spracherkennung)."
+            : "Die Spracherkennung ist nicht bereit.";
+    return {
+      einstellungen: spracheStore.get(),
+      verfuegbar,
+      quelle,
+      whisperBereit,
+      hinweis,
+      diktat: { verfuegbar: whisperBereit || diktatOpenai, quelle: whisperBereit ? "whisper" : diktatOpenai ? "openai" : null, hinweis: diktatHinweis },
+    };
   };
   spracheStore.on("changed", () => {
     windows().broadcast("sprache:standChanged", spracheStand());
   });
+  // Diktat-Stand haengt am Whisper-Zustand (Modell geladen, Download laeuft …).
+  whisper.on("status", () => windows().broadcast("sprache:standChanged", spracheStand()));
 
   // App-Kanal (docs/PLAN_APP_PWA.md §3.2/§3.3): die AVA-App als zweite Oberflaeche
   // ueber das Relais, mit Anhaengen, Diktat, Sprache, Meldungen und Push.
