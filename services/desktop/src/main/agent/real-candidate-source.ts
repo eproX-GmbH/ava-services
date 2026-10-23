@@ -85,6 +85,8 @@ type Neuheit =
       seit?: string | null;
       bekanntSeit?: string | null;
       vorherGesehenAm?: string | null;
+      /** Was andere Quellen ueber die Rolle wissen (Register, belegter Beginn). */
+      kontext?: string[];
     }
   | {
       art: "new-customers";
@@ -328,16 +330,18 @@ export function kandidatAus(
         seit
           ? `Position belegt seit ${seit}.`
           : `Wechsel bemerkt ${fensterText(n.vorherGesehenAm, n.occurredAt)}.`;
+      const kontext = n.kontext?.length ? ` Kontext aus anderen Quellen: ${n.kontext.join(" ")}` : "";
       return {
         kind: "contact-change",
         companyId: n.companyId,
         companyName,
         sourceRef: `contact-change:${n.id}`,
         occurredAt: n.occurredAt,
-        summary: `${summary} ${zeit}`,
+        summary: `${summary} ${zeit}${kontext}`,
         payload: {
           typ: n.typ, person: n.personName, title: n.title, vorher: n.before, nachher: n.after, source: "website",
           seit, bekanntSeit: n.bekanntSeit?.slice(0, 10) ?? null, zeitfenster: fensterText(n.vorherGesehenAm, n.occurredAt),
+          ...(n.kontext?.length ? { kontext: n.kontext } : {}),
         },
       };
     }

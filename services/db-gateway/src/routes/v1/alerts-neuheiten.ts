@@ -36,6 +36,7 @@ import { listeProfilAenderungen } from "../../lib/profile-changes";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import { ErrorShape } from "./schemas";
+import { gleicherName } from "../../lib/buying-center-vorschlag";
 
 export const alertsNeuheitenRouter = new OpenAPIHono();
 alertsNeuheitenRouter.use("*", requireScope("company:read"));
@@ -105,6 +106,8 @@ const Item = z.discriminatedUnion("art", [
     bekanntSeit: z.string().nullable(),
     /** Letzte Beobachtung des ALTEN Werts; der Wechsel liegt dazwischen. */
     vorherGesehenAm: z.string().nullable(),
+    /** Was andere Quellen ueber die Rolle wissen (Register, LinkedIn-Beginn) — fuer das Urteil. */
+    kontext: z.array(z.string()).optional(),
   }),
   z.object({
     art: z.literal("job-postings"),
@@ -267,7 +270,13 @@ async function publikationen(ids: string[], seit: Date): Promise<NeuheitItem[]> 
 
 /** Nur Buchstaben, klein: „Geschäftsleitung“ ≙ „Geschaeftsleitung“ etc. */
 function schreibweise(v: string | null): string {
-  return (v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+  return (v ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    // Aufzaehlungen: "A; B; C" ≙ "A, B und C" ≙ "A, B and C"
+    .replace(/\b(und|and|sowie)\b|&/g, " ")
+    .replace(/[^a-z]/g, "");
 }
 
 async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
@@ -277,43 +286,22 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   const signale = await pool.query<{
     id: string; companyId: string; personId: string | null; type: string; before: string | null; after: string | null;
     observedAt: Date; fullName: string | null; title: string | null; startDate: Date | null;
-    bekanntSeit: Date | null; vorherGesehenAm: Date | null; neuErstGesehen: Date | null; hinUndHer: boolean;
-    gleicherLauf: boolean; source: string | null; fruehereWerte: Array<{ value: string; erst: string }> | null;
+    bekanntSeit: Date | null; beobachtungen: Array<{ value: string; am: string; lauf: string | null }> | null;
+    source: string | null; runId: string | null;
   }>(
     `SELECT s.id, s."companyId", s."personId", s.type, s.before, s.after, s."observedAt",
             p."fullName",
             e.title, e."startDate",
             (SELECT min(e0."firstSeen") FROM "Employment" e0
               WHERE e0."personId" = s."personId" AND e0."companyId" = s."companyId") AS "bekanntSeit",
-            -- Wann wurde der ALTE Wert zuletzt gesehen? Dazwischen liegt der Wechsel.
-            (SELECT max(o."observedAt") FROM "Observation" o
-              WHERE o."personId" = s."personId" AND o.field = s.field
-                AND o.value = s.before AND o."observedAt" < s."observedAt") AS "vorherGesehenAm",
-            -- Wann wurde der NEUE Wert erstmals gesehen? Liegt das VOR der letzten
-            -- Sichtung des alten, standen beide nebeneinander (verschiedene
-            -- Seiten derselben Website): kein Wechsel, nur Varianten.
-            (SELECT min(o."observedAt") FROM "Observation" o
-              WHERE o."personId" = s."personId" AND o.field = s.field
-                AND o.value = s.after) AS "neuErstGesehen",
-            -- Hin und her (A→B und B→A derselben Person) ist Schreibweise, kein Wechsel.
-            EXISTS (SELECT 1 FROM "SignalEvent" t
-                     WHERE t."personId" = s."personId" AND t.type = s.type
-                       AND t.before = s.after AND t.after = s.before) AS "hinUndHer",
-            -- Alter Wert im selben Lauf gesehen (andere Seite/Quelle derselben
-            -- Firma): Varianten nebeneinander, kein Wechsel (Befund 2026-10-22).
-            (s."runId" IS NOT NULL AND EXISTS (SELECT 1 FROM "Observation" o
-              WHERE o."personId" = s."personId" AND o.field = s.field
-                AND o.value = s.before AND o."runId" = s."runId"
-                -- runId ist je Vorgang, nicht je Crawl: nur Sichtungen der letzten 24 h zaehlen.
-                AND o."observedAt" > s."observedAt" - interval '1 day')) AS "gleicherLauf",
-            s.source,
-            -- Fruehere Werte dieses Felds (fuer den Rueckfall-Test: "neuer" Wert
-            -- war schon einmal da, nur anders geschrieben).
-            (SELECT json_agg(json_build_object('value', v.value, 'erst', v.erst))
-               FROM (SELECT o.value, min(o."observedAt") AS erst FROM "Observation" o
-                      WHERE o."personId" = s."personId" AND o.field = s.field
-                        AND o."observedAt" < s."observedAt"
-                      GROUP BY o.value) v) AS "fruehereWerte"
+            -- Alle Beobachtungen dieses Felds (Wert, Zeit, Lauf): die Zeitlogik
+            -- (alter Wert zuletzt, neuer Wert erstmals, gleicher Lauf, Rueckfall)
+            -- laeuft in JS ueber die Schreibweise, nicht ueber exakte Strings —
+            -- Befund 2026-10-23 (TradeMax24): "A; B; C" und "A, B und C" sind derselbe Wert.
+            (SELECT json_agg(json_build_object('value', o.value, 'am', o."observedAt", 'lauf', o."runId") ORDER BY o."observedAt")
+               FROM "Observation" o
+              WHERE o."personId" = s."personId" AND o.field = s.field) AS "beobachtungen",
+            s.source, s."runId"
        FROM "SignalEvent" s
        LEFT JOIN "Person" p ON p.id = s."personId"
        LEFT JOIN LATERAL (
@@ -334,32 +322,85 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       LIMIT 1000`,
     [ids, seit, Object.keys(SIGNAL_TYPEN)],
   );
+  // Register-Kontext je Firma: Geschaeftsfuehrer laut structured-content und
+  // Register-Ereignisse (neu bestellte GF) im Fenster. Eine Website, die
+  // einen seit Jahren eingetragenen GF "neu" nennt, ist keine Neuigkeit
+  // (Befund Joyce 2026-10-23: Justin Rafflenbeul, TradeMax24).
+  const registerGf = new Map<string, string[]>();
+  try {
+    const md = await getProducerPool("structured-content").query<{ companyId: string; firstName: string; lastName: string }>(
+      `SELECT "companyId", "firstName", "lastName" FROM "ManagingDirector" WHERE "companyId" = ANY($1::text[])`,
+      [ids],
+    );
+    for (const r of md.rows) {
+      const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.replace(/\s+/g, " ").trim();
+      if (name) registerGf.set(r.companyId, [...(registerGf.get(r.companyId) ?? []), name]);
+    }
+  } catch (err) {
+    logger.warn({ err }, "neuheiten: Register-Geschaeftsfuehrer nicht lesbar (weiter ohne Kontext)");
+  }
+  const neuBestellt = new Map<string, Array<{ name: string; am: Date }>>();
+  try {
+    const ev = await getGatewayPool().query<{ companyId: string; added: Array<{ firstName?: string; lastName?: string }>; createdAt: Date }>(
+      `SELECT "companyId", added, "createdAt" FROM "ProfileChangeEvent"
+        WHERE "companyId" = ANY($1::text[]) AND kind = 'managing-directors' AND "createdAt" > $2`,
+      [ids, new Date(jetzt - ZEITBEZUG_MS)],
+    );
+    for (const r of ev.rows) {
+      for (const a of r.added ?? []) {
+        const name = `${a.firstName ?? ""} ${a.lastName ?? ""}`.replace(/\s+/g, " ").trim();
+        if (name) neuBestellt.set(r.companyId, [...(neuBestellt.get(r.companyId) ?? []), { name, am: r.createdAt }]);
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "neuheiten: Register-Ereignisse nicht lesbar (weiter ohne Kontext)");
+  }
+  const GF_ROLLE = /gesch(ae|ä)ftsf(ue|ü)hr|managing director|\bceo\b|\bcfo\b|\bcoo\b|\bcto\b|vorstand|inhaber|\bowner\b|gesch(ae|ä)ftsleit/i;
+
   for (const s of signale.rows) {
     const typ = SIGNAL_TYPEN[s.type];
     if (!typ) continue;
+    const kontext: string[] = [];
+    const obs = (s.beobachtungen ?? []).map((o) => ({ norm: schreibweise(o.value), am: new Date(o.am).getTime(), lauf: o.lauf }));
+    const signalAm = new Date(s.observedAt).getTime();
+    const altNorm = schreibweise(s.before);
+    const neuNorm = schreibweise(s.after);
+    // Letzte Sichtung des alten Werts vor dem Signal; erste Sichtung des neuen.
+    const vorherGesehenAm = obs.filter((o) => o.norm === altNorm && o.am < signalAm).reduce<number | null>((m, o) => (m === null || o.am > m ? o.am : m), null);
+    const neuErstGesehen = obs.filter((o) => o.norm === neuNorm).reduce<number | null>((m, o) => (m === null || o.am < m ? o.am : m), null);
     if (typ === "job-changed") {
-      // Umformulierung derselben Rolle oder Hin-und-her zwischen zwei
-      // Schreibweisen: kein Wechsel.
-      if (schreibweise(s.before) === schreibweise(s.after)) continue;
-      if (s.hinUndHer) continue;
-      if (s.gleicherLauf) continue;
-      // Rueckfall auf einen frueheren Stand (Befund Elisa Zimmer 2026-10-22:
-      // Suchtreffer-Schnipsel brachte die alte Rolle "Assistentin der
-      // Geschäftsleitung | Assistant to the CEO" zurueck, die vorher als
-      // "Assistentin der Geschäftsleitung" galt): der "neue" Wert war schon
-      // vor der letzten Sichtung des alten da, auch in anderer Schreibweise.
-      const neuNorm = schreibweise(s.after);
-      const altZuletzt = s.vorherGesehenAm ? new Date(s.vorherGesehenAm).getTime() : null;
-      const schonFrueherDa = (s.fruehereWerte ?? []).some((w) => {
-        const n = schreibweise(w.value);
-        if (!n || n === schreibweise(s.before)) return false;
-        const gleich = n === neuNorm || (n.length >= 12 && (neuNorm.startsWith(n) || n.startsWith(neuNorm)));
-        return gleich && (altZuletzt === null || new Date(w.erst).getTime() <= altZuletzt);
+      // Umformulierung derselben Rolle: kein Wechsel.
+      if (altNorm === neuNorm) continue;
+      // Alter Wert im selben Lauf binnen 24 h gesehen (andere Seite/Quelle derselben
+      // Firma): Varianten nebeneinander, kein Wechsel (Befund 2026-10-22).
+      if (s.runId && obs.some((o) => o.norm === altNorm && o.lauf === s.runId && o.am > signalAm - 86_400_000 && o.am <= signalAm)) continue;
+      // Rueckfall auf einen frueheren Stand (Befund Elisa Zimmer 2026-10-22): der
+      // "neue" Wert war schon vor der letzten Sichtung des alten da, auch in
+      // anderer Schreibweise.
+      const schonFrueherDa = obs.some((o) => {
+        if (!o.norm || o.norm === altNorm || o.am >= signalAm) return false;
+        const gleich = o.norm === neuNorm || (o.norm.length >= 12 && (neuNorm.startsWith(o.norm) || o.norm.startsWith(neuNorm)));
+        return gleich && (vorherGesehenAm === null || o.am <= vorherGesehenAm);
       });
       if (schonFrueherDa) continue;
       // Suchtreffer-Schnipsel sind undatiert (Google zeigt oft den alten
       // Stand): ohne belegten Beginn keine Meldung.
       if ((s.source ?? "").startsWith("search") && !s.startDate) continue;
+      // Register-Kontext: Die Person ist laut Handelsregister Geschaeftsfuehrer.
+      if (s.fullName) {
+        const gfNamen = registerGf.get(s.companyId) ?? [];
+        const istRegisterGf = gfNamen.some((n) => gleicherName(n, s.fullName!));
+        const bestellung = (neuBestellt.get(s.companyId) ?? []).find((b) => gleicherName(b.name, s.fullName!));
+        if (istRegisterGf) {
+          kontext.push(bestellung
+            ? `Handelsregister: als Geschäftsführer eingetragen, Bestellung im Register bemerkt am ${iso(bestellung.am)?.slice(0, 10)}.`
+            : "Handelsregister: seit AVA die Firma kennt als Geschäftsführer eingetragen, keine neue Bestellung im Register.");
+          // Website nennt eine Fuehrungsrolle, die das Register laengst kennt: keine Neuigkeit.
+          if (!bestellung && GF_ROLLE.test(s.after ?? "")) continue;
+        } else if (GF_ROLLE.test(s.after ?? "") && gfNamen.length > 0) {
+          kontext.push(`Handelsregister: nicht als Geschäftsführer eingetragen (eingetragen: ${gfNamen.join(", ")}).`);
+        }
+      }
     }
     // Zeitbezug (nachgeschaerft 2026-10-06, Befund: fuenf Meldungen zu
     // Personen, die seit Jahrzehnten im Amt sind): Eine Meldung braucht
@@ -371,12 +412,12 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
     const beginnAktuell = s.startDate ? jetzt - new Date(s.startDate).getTime() <= ZEITBEZUG_MS : null;
     if (beginnAktuell === false) continue;
     if (beginnAktuell === null) {
-      if (!s.vorherGesehenAm || !s.neuErstGesehen) continue;
-      const alt = new Date(s.vorherGesehenAm).getTime();
-      const neu = new Date(s.neuErstGesehen).getTime();
-      if (neu <= alt) continue; // Varianten nebeneinander, kein Uebergang
-      if (new Date(s.observedAt).getTime() - alt > ZEITBEZUG_MS) continue; // Fenster zu breit
+      if (vorherGesehenAm === null || neuErstGesehen === null) continue;
+      if (neuErstGesehen <= vorherGesehenAm) continue; // Varianten nebeneinander, kein Uebergang
+      if (signalAm - vorherGesehenAm > ZEITBEZUG_MS) continue; // Fenster zu breit
     }
+    if (s.startDate) kontext.push(`Beginn der Position belegt: ${iso(s.startDate)?.slice(0, 10)}.`);
+    else kontext.push("Kein belegter Beginn der Position (weder Website noch LinkedIn).");
     out.push({
       art: "contact-change",
       id: s.id,
@@ -389,7 +430,8 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       occurredAt: iso(s.observedAt) ?? new Date().toISOString(),
       seit: iso(s.startDate),
       bekanntSeit: iso(s.bekanntSeit),
-      vorherGesehenAm: iso(s.vorherGesehenAm),
+      vorherGesehenAm: vorherGesehenAm === null ? null : new Date(vorherGesehenAm).toISOString(),
+      kontext,
     });
   }
   const neue = await pool.query<{ companyId: string; title: string | null; firstSeen: Date; startDate: Date | null; fullName: string }>(
