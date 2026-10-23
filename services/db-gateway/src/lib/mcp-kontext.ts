@@ -58,6 +58,7 @@ function arbeitsweise(s: KontextSchalter, verbunden: boolean): string[] {
     );
   }
   if (!s.kontakte) z.push("- Kontaktdaten sind über diese Verbindung abgeschaltet (Vorgabe der Organisation).");
+  if (s.auftraege) z.push("- Gesprächsprotokolle und Hinweise (aus Teams, Outlook, Dynamics oder dem Chat) mit protokoll_ablegen bei der Firma ablegen; AVA verändert dabei nichts im CRM des Nutzers.");
   if (s.kopf && verbunden) {
     z.push(
       "- Die AVA des Nutzers ist verbunden: Zusätzlich gibt es ihre eigenen Werkzeuge (Gedächtnis, Workflows, Buying Center, Bewertung, Mail, CRM, Skills), dazu werkzeug_suchen (q: '*' für den Überblick) und werkzeug_ausfuehren für alle übrigen.",

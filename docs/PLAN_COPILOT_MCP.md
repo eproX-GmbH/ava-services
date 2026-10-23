@@ -182,3 +182,34 @@ Verflechtungen. Alles, was AVA selbst schreiben würde, bleibt aus.
 4. Auftragsverarbeitungsvertrag mit eproX, Freigabe der Datenflüsse.
 5. Zwei bis drei Pilotnutzer aus dem Vertrieb und einen Ansprechpartner
    aus der IT.
+
+## 9. Stand (2026-10-23, C1 und C2 gebaut)
+
+- **C1 gebaut:** Org-Schalter `mcp.copilot` (Konsole: "MCP: Werkzeugmenge
+  Copilot") beschränkt die sichtbaren MCP-Werkzeuge auf `ava_kontext`,
+  `firma_suchen`, `firma_lesen`, `firma_kontakte` (nur mit `mcp.kontakte`),
+  `meine_firmen`, `meldungen`, `import_anlegen`, `protokoll_ablegen`,
+  `auftrag_status`; Kopf-Werkzeuge sind dann aus. Neues Werkzeug
+  `protokoll_ablegen` (für alle MCP-Clients) legt Notizen in `CompanyNotiz`
+  ab (Routen `GET/POST /v1/companies/{id}/notizen`, `DELETE /v1/notizen/{id}`);
+  `firma_lesen` kennt den Bereich `notizen`. Offen: Anzeige der Notizen in der
+  Desktop-App und in `company_get` (Bereich `notizen`).
+- **C2 gebaut:** Tabelle `TenantSso` (ohne Geheimnis), Keycloak-Identity-
+  Provider `entra-<tenantId>` (OIDC gegen `login.microsoftonline.com/<tid>/v2.0`,
+  versteckt auf der Anmeldeseite, PKCE) mit Mapper "Advanced Claim to Group":
+  Claim `tid` = Entra-Tenant → Gruppe `tenant:<tenantId>` → Claim `tenant_id`
+  → Mitgliedschaft beim ersten Gateway-Aufruf. Routen `GET/PUT/DELETE
+  /v1/tenants/me/sso`, `POST /v1/tenants/me/sso/pruefen`. Konsole: Seite
+  "Anmeldung" (Admin) mit Einrichtungsanleitung und Anmeldelinks
+  `…/auth/login?idp=entra-<tenantId>` für Konsole und AVA-App (beide reichen
+  `idp` als `kc_idp_hint` durch).
+- **Betreiber, einmalig:** Dem Keycloak-Dienstkonto des Gateways
+  (`ava-registrar`) die Realm-Management-Rollen `manage-identity-providers`
+  und `view-identity-providers` geben; sonst meldet die Konsole beim
+  Einrichten einen Keycloak-Fehler. Beim ersten Microsoft-Login zeigt Keycloak
+  einmal "Kontoinformationen prüfen" (Standard-Flow "first broker login");
+  ein eigener Flow ohne diese Seite ist offen.
+- **Offen:** Desktop-Anmeldung mit `idp`-Hinweis, Migration beim nächsten
+  Gateway-Deploy (`prisma migrate deploy`), Live-Test mit einem echten
+  Entra-Tenant, Notizen in der Desktop-App.
+
