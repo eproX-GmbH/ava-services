@@ -25,17 +25,16 @@ Bedient wird AVA über einen Chat-Agenten mit rund 290 Werkzeugen, über die Fir
 
 ### Firmen aufnehmen und recherchieren
 
-- **Import** per Excel/CSV, einzeln per Name und Ort, aus HubSpot oder über den Firmen-Radar. Jede Firma wird öffentlichen Quellen zugeordnet (Fuzzy-Suche über den Stammdaten-Index).
-- **Sechs Producer** je Firma, die sich gegenseitig anstoßen. Status pro Firma und Stufe live als Matrix, mit Pause, Löschen, Wiederholen je Stufe, Logs und Screenshots je Lauf.
+- **Import** per Excel/CSV, einzeln per Name und Ort, per Firmen-ID, aus HubSpot oder über den Firmen-Radar. Jede Firma wird öffentlichen Quellen zugeordnet (Fuzzy-Suche über den Stammdaten-Index). Firmen ohne Registereintrag kommen über ihre eigene Website in den Bestand (Google Places, Website-Prüfung, KI-Urteil); ohne Website nie.
+- **Fünf Producer** je Firma, die sich gegenseitig anstoßen. Status pro Firma und Stufe live als Matrix, mit Pause, Löschen, Wiederholen je Stufe, Logs und Screenshots je Lauf.
 
 | Producer | Quelle | Ergebnis |
 |---|---|---|
 | `structured-content` | Handelsregister (Registerportal), Firmenbuch (AT) und Companies House (UK) über master-data | Stammdaten, Sitz, Geschäftsführung bzw. Officers; für deutsche HRB-Firmen zusätzlich die Gesellschafterliste (siehe Verflechtungen) |
 | `company-publication` | Unternehmensregister / Bundesanzeiger | Jahresabschlüsse und Konzernabschlüsse (Kennzahlen nur der Muttergesellschaft, Töchter und Geschäftsführung in den Verflechtungen), Lagebericht, Bekanntmachungen; Kennzahlen per Lazy-RAG auf Abruf statt Voranalyse |
-| `website` | Websuche + Firmenwebsite | Beste Treffer-Website, Inhalte, Stellenanzeigen, eingesetzte Systeme aus der Datenschutzerklärung |
+| `website` | Websuche + Firmenwebsite | Beste Treffer-Website, Inhalte, Stellenanzeigen mit Arbeitgeberleistungen, Karriereseite, eingesetzte Systeme aus der Datenschutzerklärung |
 | `company-profile` | Website | Firmenprofil (Angebot, Branche, Größe, Standorte) |
 | `company-contact` | Website, Impressum | Ansprechpartner und Kontaktwege mit Beleg, Herkunftsnachweis und Art.-14-Hinweis |
-| `company-evaluation` | alles oben | KI-Bewertung gegen das Idealkundenprofil, Best-Match-Ranking, Angebotsvergleich |
 
 - **Länder:** Deutschland (Handelsregister, Insolvenzbekanntmachungen), Österreich (Firmenbuch über JustizOnline, Ediktsdatei) und Vereinigtes Königreich (Companies House, Gazette). Länderfilter in Firmensuche und „Meine Firmen“, Landeschip und amtliche Kennung je Firma. Schweiz ist bewertet, aber nicht umgesetzt.
 - **Stammdaten aktuell halten (Register-Delta):** Neueintragungen, Änderungen und Löschungen kommen täglich aus den Registern. Die Arbeit teilen sich Betreiber-Worker in der Cloud und Nutzer, die „Stammdaten mitpflegen“ einschalten (Opt-in, höchstens 60 Abfragen je Stunde). Geänderte Registerblätter markieren die betroffene Firma als veraltet.
@@ -43,31 +42,33 @@ Bedient wird AVA über einen Chat-Agenten mit rund 290 Werkzeugen, über die Fir
 - **Firmen-Verflechtungen (Deutschland):** Gesellschafterlisten werden über den Registerordner geladen, mit dem KI-Modell des Nutzers gelesen (zwei unabhängige Lesungen, harter Qualitätsfilter, Bild-Modell ab Stufe A Pflicht) und zu Beteiligungen, Personen und gemeinsamen Adressen verdichtet. Firmen-Gesellschafter werden rekursiv nachgezogen (Besuchsliste, Notbremse Tiefe 6 / 200 Firmen, abschaltbar). Reiter „Verflechtungen“ mit Netzgrafik, Gesellschaftertabelle und Personenseite; Meldung „Gesellschafterwechsel“. Als Org-Feature abschaltbar. Stand: umgesetzt, Ende-zu-Ende-Erprobung läuft.
 - **Neue Firmen finden (Firmen-Radar):** Scan in einer Region in Deutschland, Österreich oder dem Vereinigten Königreich aus öffentlichen Firmeneinträgen, KI-geplanter Web-Recherche und unverarbeitetem Registerbestand; Mini-Profile, Score gegen das Idealkundenprofil, Import erst nach Entscheidung des Nutzers. Automatik täglich oder wöchentlich als Opt-in.
 - **Kunden und Referenzen:** Kunden, Referenzen, Zertifikate und Technologiepartner, die eine Firma auf ihrer Website nennt, per KI erkannt (ohne Heuristik), mit dem Firmenbestand abgeglichen (sicher/unsicher), als eigener Reiter, im Chat abrufbar und umgekehrt suchbar („wer nennt Firma X als Kunden?“); Meldung bei neuem Kunden.
-- **Idealkundenprofil (ICP):** aus der eigenen Website und bis zu fünf Kunden-Websites abgeleitet oder als Fragebogen; liegt in der AVA des Nutzers.
+- **Idealkundenprofil (ICP):** aus der eigenen Website und bis zu fünf Kunden-Websites abgeleitet oder als Fragebogen; liegt in der AVA des Nutzers. Der frühere Bewertungs-Producer ist abgeklemmt; an seine Stelle tritt der ICP-Bestandsabgleich im Chat (lokal, synchron, Vorfilter plus Radar-Urteil), der auch offene Stellen und Arbeitgeberleistungen berücksichtigt.
+- **Stellenanzeigen als Signal:** je Anzeige die genannten Arbeitgeberleistungen, je Firma die Karriereseite; Meldung bei neuen Stellen, Felder im ICP-Abgleich.
 
 ### Beobachten und melden
 
-- **Heartbeat und Meldungen:** neue Veröffentlichungen, Profil- und Stammdatenänderungen, neue und gewechselte Ansprechpartner, Bewertungs-Auffälligkeiten, Firmenstatus, Gesellschafterwechsel, neue Kunden; eine KI-Bewertung mit dem Nutzerprofil entscheidet, was meldenswert ist. Glocke in der App, OS-Benachrichtigung, Telegram, Push in der AVA-App. Ruhezeiten, dringende Meldungen umgehen sie.
+- **Heartbeat und Meldungen:** neue Veröffentlichungen, Profil- und Stammdatenänderungen, neue und gewechselte Ansprechpartner, Firmenstatus, Gesellschafterwechsel, neue Kunden, neue Stellenanzeigen; eine KI-Bewertung mit dem Nutzerprofil entscheidet, was meldenswert ist. Rollenwechsel werden gegen Register und frühere Beobachtungen geprüft, damit Umformulierungen auf der Website keine Meldung auslösen. Glocke in der App, OS-Benachrichtigung, Telegram, Push in der AVA-App. Ruhezeiten, dringende Meldungen umgehen sie.
 - **Auffrischung:** der ganze Firmenbestand wird nach Relevanz in Abständen neu verarbeitet (Website, Profil, Kontakte, Veröffentlichungen), mit Pause nach Fehlversuchen.
 - **Beobachtungsregeln (Watches)** mit eigener Bewertungsvorschrift in Nutzersprache.
 - **Website-Überwachung** beliebiger URLs mit KI-Zusammenfassung der Änderung und Beweis-Screenshot; Bot-Schutz wird abgewartet, nie umgangen.
-- **LinkedIn (Opt-in, eigenes Konto):** Feed-Beobachter für Signale zu Firmen im Bestand, Personen-Watchlist, Personen-Radar aus Beitrags-Engagement. Bildanalyse per Vision-Modell.
+- **LinkedIn (Opt-in, eigenes Konto):** Feed-Beobachter für Signale zu Firmen im Bestand, Personen-Watchlist, beobachtete Posts (Reaktionen und Kommentare werden zur Firma aufgelöst und zu Leads). Bildanalyse per Vision-Modell.
 - **Safe Browsing** vor Website-Abrufen.
 
 ### Kontakte und Kommunikation
 
-- **Ansprechpartner** mit Beleg, Herkunft und Löschfunktion; Datenschutzhinweise (Art. 14) als Text exportierbar. Kontaktangaben bleiben bei der Firma, bei der sie gefunden wurden: Arbeitet eine Person für mehrere Firmen, erscheinen E-Mail, Telefon und Position nur dort.
-- **E-Mail-Muster:** Adressen nach dem Muster der Firma ableiten und gegen den Mail-Server prüfen (Hintergrund mit Vorrang für Chat, Last und Akku; verifizierte Adressen werden nie erneut geprüft, Bounces und Antworten fließen zurück). Firmenadressen mit Namen werden Personen zugeordnet; bei unklarem Muster entscheidet ein KI-Urteil. Abgeleitet wird nur mit der Domain der eigenen Firma (Website oder Firmenadresse), nie mit der Adresse einer anderen Firma derselben Person.
+- **Ansprechpartner** mit Beleg, Herkunft und Löschfunktion; Datenschutzhinweise (Art. 14) als Text exportierbar. Kontaktangaben bleiben bei der Firma, bei der sie gefunden wurden: Arbeitet eine Person für mehrere Firmen, erscheinen E-Mail, Telefon und Position nur dort. Doppelte Personen lassen sich zusammenführen (Protokoll, Rücknahme).
+- **LinkedIn-Leads:** Wer auf einen beobachteten Post reagiert oder kommentiert, erscheint als warmer Lead mit Anlass, Kommentar und Mini-Profil der Firma, getrennt vom Firmen-Radar und ohne ICP-Tor. Übernahme legt Firma und Kontakt in einem Schritt an (Sitz notfalls aus dem Impressum oder vom Nutzer). Leads gehören dem Nutzer, dessen AVA den Post beobachtet; Kollegen sehen, wer eine Person schon übernommen hat. In Desktop, AVA-App und Chat.
+- **E-Mail-Muster:** Adressen nach dem Muster der Firma ableiten und gegen den Mail-Server prüfen (Hintergrund mit Vorrang für Chat, Last und Akku; verifizierte Adressen werden nie erneut geprüft, Bounces und Antworten fließen zurück). Firmenadressen mit Namen werden Personen zugeordnet; bei unklarem Muster entscheidet ein KI-Urteil. Abgeleitet wird nur mit der Domain der eigenen Firma (Website oder Firmenadresse), nie mit der Adresse einer anderen Firma derselben Person. Sperrantworten des Mail-Servers gelten nie als „existiert nicht“; weitere Schreibweisen stehen als Alternative an der Person, eine bekannte Adresse lässt sich im Chat setzen.
 - **Buying Center:** Power Map je Firma nach dem Schema des strategischen Key-Account-Plans (Rolle, Einstellung, Kontaktintensität, Einfluss), Beziehungen zwischen Personen, Vorschläge von AVA aus Website und Kontaktdaten zur Freigabe, Verlauf. Gehört nur dem Ersteller; im Chat und im Sprachmodus als Karte.
 - **Mail-Entwürfe:** Formuliert AVA eine Mail zum Selbstversenden (z. B. Erstansprache mit Ansprechpartner und Anlass), öffnet ein Knopf sie fertig im Mail-Programm: Outlook als Entwurf mit Anhängen, andere Programme per `mailto:`, ohne Mail-Programm Gmail oder Outlook im Web. Optional legt AVA Entwürfe mit Anhängen direkt in den Entwürfe-Ordner des eigenen Postfachs (IMAP, nur Schreiben). Feste Anhänge wie ein Firmenprofil werden einmal hinterlegt. Stand: umgesetzt, Erprobung läuft.
-- **Mail-Postfach** anbinden (IMAP): lesen, antworten, weiterleiten (auch mit im Chat hochgeladenen Dateien), archivieren, Triage mit Kontext je Firma.
+- **Mail-Postfach** anbinden (IMAP): lesen, antworten, weiterleiten (auch mit im Chat hochgeladenen Dateien), archivieren, Triage mit Kontext je Firma; Einrichtung auch auf einer Server-Instanz, Abrufintervall und Triage-Kontext per Chat einstellbar.
 - **Telegram:** Meldungen, Kurzprofile und Freigaben aufs Handy, vollwertiger Chat mit Sprachnachrichten und Bildern; Antworten wahlweise als Text oder Sprachnachricht, Telegram je AVA-Instanz.
 
 ### Arbeiten mit AVA
 
 - **Chat-Agent** mit rund 290 Werkzeugen in 43 Fähigkeitsgruppen, Tool-Suche, Gedächtnis über Gespräche, Nutzerprofil, Vorschlags-Chips für die nächsten Schritte. Diagramme und Buying-Center-Karten direkt in der Antwort. Dateien (Excel, CSV, PDF, Word, Bilder) bekommen ein Handle und werden bei Bedarf gelesen statt vollständig in den Prompt gelegt. Lange Aufgaben wie Importe laufen als Hintergrundaufgabe weiter; AVA meldet sich, wenn sie fertig sind.
 - **Sprachmodus:** Gespräch mit AVA per Stimme (OpenAI GPT Live mit eigenem oder Organisationsschlüssel, Realtime als Rückfall), Aufträge laufen über denselben Agenten mit allen Werkzeugen, Diagramme und Buying Center erscheinen unter der Sprachkugel. Diktat und Aktivierungswort über lokales Whisper.
-- **AVA-App im Browser und auf dem Handy ([app.ava.bi](https://app.ava.bi)):** installierbar als Web-App. Chat mit der eigenen AVA samt Rückfragen, Dateien, Fotos, Diktat und Sprachmodus, Firmensuche und Firmenansicht, Meldungen mit Push. Die App spricht über den Gateway mit der laufenden AVA des Nutzers (Desktop oder Server). Stand: umgesetzt, Erprobung läuft.
+- **AVA-App im Browser und auf dem Handy ([app.ava.bi](https://app.ava.bi)):** installierbar als Web-App. Chat mit der eigenen AVA samt Rückfragen, Dateien, Fotos, Diktat und Sprachmodus, Firmensuche und Firmenansicht, LinkedIn-Leads, Meldungen mit Push, Link zu den Einstellungen der laufenden AVA. Die App spricht über den Gateway mit der laufenden AVA des Nutzers (Desktop oder Server). Stand: umgesetzt, Erprobung läuft.
 - **Claude und ChatGPT per MCP ([mcp.ava.bi](https://mcp.ava.bi)):** Anmeldung per OAuth mit dem AVA-Konto. Firmen suchen und lesen, Recherchen und Neuverarbeitung anstoßen, AVAs eigenen Agenten beauftragen (`ava_fragen`) und den Kontext laden (`ava_kontext`: Rolle, Regeln, Profil, ICP, Gedächtnis, Abläufe). Org-Schalter je Werkzeug.
 - **Workflows:** Abläufe aus dem Gespräch speichern, als Diagramm kontrollieren, per Zeitplan oder Ereignis ausführen (neuer Radar-Treffer, eingehende Mail, Import fertig). Schreibende Schritte nur nach Freigabe; Freigaben in App, Meldungen oder Telegram; Laufhistorie und Audit.
 - **Skills:** wiederverwendbare Routinen per Slash-Befehl, mit Trust-Modell.
@@ -76,14 +77,15 @@ Bedient wird AVA über einen Chat-Agenten mit rund 290 Werkzeugen, über die Fir
 
 ### Organisationen
 
-- Mandanten mit Mitgliedern, Beitrittsanfragen, Vorgaben je Organisation: Anbieter-Sperre, vorgegebene Modelle, Organisationsschlüssel über den Gateway-Proxy (auch Azure OpenAI), Limits, abschaltbare Module (LinkedIn, Bildanalyse, Kontakt-Recherche, Mail, Telegram, Workflows, Vorschläge, Stammdaten mitpflegen, Verflechtungen, MCP-Werkzeuge). Abgeschaltetes verschwindet vollständig aus der App.
+- Organisationen sind Pflicht bei der Einrichtung (anlegen oder beitreten); leere Organisationen werden nur stillgelegt. Mitglieder, Beitrittsanfragen, Vorgaben je Organisation: Anbieter-Sperre, vorgegebene Modelle, Organisationsschlüssel über den Gateway-Proxy (auch Azure OpenAI), Limits, abschaltbare Module (LinkedIn, LinkedIn-Leads, Bildanalyse, Kontakt-Recherche, Mail, Telegram, Workflows, Vorschläge, Stammdaten mitpflegen, Verflechtungen, MCP-Werkzeuge). Abgeschaltetes verschwindet vollständig aus der App.
 - **Web-Konsole [admin.ava.bi](https://admin.ava.bi)** für Organisations-Admins, ohne App-Installation: Mitglieder und Einladungen, Funktionen und Vorgaben, Schlüssel, Limits und Verbrauch (Kennzahlen, Verlauf je Tag nach Bereich oder Mitglied, Kosten je Mitglied, Quelle und Modell, CSV-Export), Abrechnung, Instanzen der Mitglieder mit Aktualisieren von Server-Instanzen auf eine neue Version. Die Organisationsverwaltung liegt nur noch dort.
-- Seat-Abrechnung je Belegungsmonat (Stripe), Kontingente je Plan mit Vorprüfung vor jedem Import, Verbrauch je Mitglied.
+- Abrechnung: ein Plan Pro je Seat und Belegungsmonat plus Stufe je Firma im Bestand, Free-Plan ohne Zeitlimit, Ausgabenlimit, Stripe-Rechnungen, Enterprise-Vertrag mit Fixpreis; echte Anbieterkosten (OpenAI, Apify, Websuche) je Mitglied und Tag.
+- Betreiber (Keycloak-Rolle, nie Organisationsrolle): Kundensicht mit Limits, Stammdaten-Pflege, Vorabanalyse einer CRM-Liste (Abgleich, Website, Mini-Profil, ICP-Urteil, AVA-ready-Export).
 - Mehrere Konten auf einem Gerät (Account-Spaces), mehrere AVAs je Konto (Desktop und Server, Umzug zwischen beiden), Audit-Protokoll für sicherheits- und kostenrelevante Aktionen.
 
 ### AVA als Server-Instanz
 
-- Dieselbe AVA ohne Oberfläche als Container (`services/desktop/src/server`, Docker, Fly): Anmeldung per Device Flow, Einrichtungsseite für Schlüssel und ChatGPT-Abo, Embeddings über einen Ollama-Beiwagen. Bedient über die AVA-App, Telegram und MCP; der LinkedIn-Beobachter läuft nie auf dem Server.
+- Dieselbe AVA ohne Oberfläche als Container (`services/desktop/src/server`, Docker, Fly): Anmeldung per Device Flow, Einrichtungsseite für Schlüssel, ChatGPT-Abo und Mail-Postfach (aus der AVA-App per Kurzzeit-Link erreichbar), Embeddings über einen Ollama-Beiwagen. Bedient über die AVA-App, Telegram und MCP; der LinkedIn-Beobachter läuft nie auf dem Server.
 - Kunden-Instanzen unter `<name>.ava.bi`, an ein Konto gebunden (nur dieses Konto kann sich anmelden), aus einem gemeinsamen Image je Release; Weiterleitung direkt im Gateway. Stand: Betreiber-Instanz in Betrieb, Kunden-Instanzen in Erprobung.
 
 ## Architektur
@@ -97,7 +99,7 @@ Bedient wird AVA über einen Chat-Agenten mit rund 290 Werkzeugen, über die Fir
 │  Chat-Agent · Firmen · Radar · Workflows      │   │  Persist-Bus mit Tier-Gate      │
 │  Meldungen · Mail · Telegram · Sprachmodus    │WS │  Kopf-Relais: App-Kanal, MCP    │
 │                                               │◄──┤  (mcp.ava.bi), Instanz-Router   │
-│  6 Producer-Subprozesse (lokal)               │   │  Register-Delta-Queue, Cron     │
+│  5 Producer-Subprozesse (lokal)               │   │  Register-Delta-Queue, Cron     │
 │  Register-Delta-Worker (Opt-in)               │AMQP  Operator-Proxies, Abrechnung │
 │  LLM lokal (Ollama) oder eigener Schlüssel    │◄──┤                                 │
 │  Whisper-Sidecar, Hintergrund-Browser         │   │ master-data                     │
@@ -165,7 +167,7 @@ ava-services/
 ├── website/                 # Producer: Websuche, Website, Stellen, Tech-Stack (Submodul)
 ├── company-profile/         # Producer: Firmenprofil (Submodul)
 ├── company-contact/         # Producer: Ansprechpartner (Submodul)
-├── company-evaluation/      # Producer: KI-Bewertung, Best-Match (Submodul)
+├── company-evaluation/      # Producer: KI-Bewertung (Submodul, abgeklemmt seit v0.1.829)
 ├── packages/
 │   ├── ai-provider/         # Ein Interface für alle LLM-Anbieter, Katalog mit Qualitätsstufen
 │   ├── events/              # CloudEvents-Builder + AMQP-Client
@@ -215,7 +217,7 @@ Einstieg über [`docs/README.md`](./docs/README.md). Wichtigste Dokumente:
 - [`TOOLS.md`](./docs/TOOLS.md): automatisch erzeugte Referenz aller Chat-Werkzeuge
 - [`SICHERHEIT_HINTERGRUND_BROWSER.md`](./docs/SICHERHEIT_HINTERGRUND_BROWSER.md): Härtung der Hintergrund-Browser, Download-Regeln
 - [`AZURE_OPENAI.md`](./docs/AZURE_OPENAI.md): Azure OpenAI als Variante von OpenAI
-- Feature-Pläne mit Stand: [`PLAN_AVA_CLOUD.md`](./docs/PLAN_AVA_CLOUD.md) (Server-Instanzen, Kopf-Relais), [`PLAN_MCP_OEFFNUNG.md`](./docs/PLAN_MCP_OEFFNUNG.md), [`PLAN_APP_PWA.md`](./docs/PLAN_APP_PWA.md), [`PLAN_ADMIN_WEB.md`](./docs/PLAN_ADMIN_WEB.md), [`PLAN_MAIL_ENTWURF.md`](./docs/PLAN_MAIL_ENTWURF.md), [`PLAN_BUYING_CENTER.md`](./docs/PLAN_BUYING_CENTER.md), [`PLAN_KUNDEN.md`](./docs/PLAN_KUNDEN.md), [`PLAN_SPRACHMODUS.md`](./docs/PLAN_SPRACHMODUS.md), [`PLAN_KONZERNABSCHLUSS.md`](./docs/PLAN_KONZERNABSCHLUSS.md), [`PLAN_STAMMDATEN_DELTA.md`](./docs/PLAN_STAMMDATEN_DELTA.md), [`PLAN_INSOLVENZEN.md`](./docs/PLAN_INSOLVENZEN.md), [`PLAN_OESTERREICH.md`](./docs/PLAN_OESTERREICH.md), [`PLAN_UK.md`](./docs/PLAN_UK.md), [`PLAN_VERFLECHTUNGEN.md`](./docs/PLAN_VERFLECHTUNGEN.md), [`PLAN_WORKFLOWS.md`](./docs/PLAN_WORKFLOWS.md), [`PLAN_FIRMEN_DISCOVERY.md`](./docs/PLAN_FIRMEN_DISCOVERY.md), [`PLAN_EMAIL_MUSTER.md`](./docs/PLAN_EMAIL_MUSTER.md), [`PLAN_ABRECHNUNG_SEATS.md`](./docs/PLAN_ABRECHNUNG_SEATS.md), [`PLAN_ENTERPRISE_FREIGABE.md`](./docs/PLAN_ENTERPRISE_FREIGABE.md)
+- Feature-Pläne mit Stand: [`PLAN_AVA_CLOUD.md`](./docs/PLAN_AVA_CLOUD.md) (Server-Instanzen, Kopf-Relais), [`PLAN_MCP_OEFFNUNG.md`](./docs/PLAN_MCP_OEFFNUNG.md), [`PLAN_APP_PWA.md`](./docs/PLAN_APP_PWA.md), [`PLAN_ADMIN_WEB.md`](./docs/PLAN_ADMIN_WEB.md), [`PLAN_MAIL_ENTWURF.md`](./docs/PLAN_MAIL_ENTWURF.md), [`PLAN_BUYING_CENTER.md`](./docs/PLAN_BUYING_CENTER.md), [`PLAN_KUNDEN.md`](./docs/PLAN_KUNDEN.md), [`PLAN_SPRACHMODUS.md`](./docs/PLAN_SPRACHMODUS.md), [`PLAN_KONZERNABSCHLUSS.md`](./docs/PLAN_KONZERNABSCHLUSS.md), [`PLAN_STAMMDATEN_DELTA.md`](./docs/PLAN_STAMMDATEN_DELTA.md), [`PLAN_INSOLVENZEN.md`](./docs/PLAN_INSOLVENZEN.md), [`PLAN_OESTERREICH.md`](./docs/PLAN_OESTERREICH.md), [`PLAN_UK.md`](./docs/PLAN_UK.md), [`PLAN_VERFLECHTUNGEN.md`](./docs/PLAN_VERFLECHTUNGEN.md), [`PLAN_WORKFLOWS.md`](./docs/PLAN_WORKFLOWS.md), [`PLAN_FIRMEN_DISCOVERY.md`](./docs/PLAN_FIRMEN_DISCOVERY.md), [`PLAN_EMAIL_MUSTER.md`](./docs/PLAN_EMAIL_MUSTER.md), [`PLAN_ABRECHNUNG_SEATS.md`](./docs/PLAN_ABRECHNUNG_SEATS.md), [`PLAN_ENTERPRISE_FREIGABE.md`](./docs/PLAN_ENTERPRISE_FREIGABE.md), [`PLAN_LINKEDIN_LEADS.md`](./docs/PLAN_LINKEDIN_LEADS.md), [`PLAN_STELLEN_SIGNALE.md`](./docs/PLAN_STELLEN_SIGNALE.md), [`PLAN_ABRECHNUNG_ZUGANG.md`](./docs/PLAN_ABRECHNUNG_ZUGANG.md), [`PLAN_VORABANALYSE.md`](./docs/PLAN_VORABANALYSE.md), [`PLAN_FIRMEN_OHNE_REGISTER.md`](./docs/PLAN_FIRMEN_OHNE_REGISTER.md)
 
 ## Lizenz
 
