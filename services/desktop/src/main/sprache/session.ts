@@ -55,9 +55,22 @@ async function praegen(a: { model: string; instructions: string; tools: Array<Re
       },
     },
   };
-  const res = await fetch(`${a.baseURL.replace(/\/+$/, "")}/realtime/client_secrets`, { method: "POST", headers, body: JSON.stringify(body) });
+  const basis = a.baseURL.replace(/\/+$/, "");
+  const res = await fetch(`${basis}/realtime/client_secrets`, { method: "POST", headers, body: JSON.stringify(body) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    // 2026-10-23 — 401/403 unterscheiden (Befund Patrick: "Der OpenAI-Schlüssel wurde
+    // abgelehnt" ohne Hinweis, warum): Schluessel ungueltig oder nur ohne Recht fuer
+    // Realtime (Projektschluessel mit eingeschraenkten Rechten, Organisation ohne Freigabe).
+    if (res.status === 401 || res.status === 403) {
+      const probe = await fetch(`${basis}/models`, { headers: { authorization: headers.authorization ?? "" } }).catch(() => null);
+      if (probe?.ok) {
+        throw new Error(
+          `HTTP ${res.status}: Der OpenAI-Schlüssel ist gültig, darf aber keine Sprachsitzungen anlegen. Bei OpenAI unter Projekt → API-Schlüssel die Rechte des Schlüssels auf "Alle" stellen oder das Modell ${model} für das Projekt freigeben.`,
+        );
+      }
+      throw new Error(`HTTP ${res.status}: Der OpenAI-Schlüssel wurde abgelehnt (ungültig, widerrufen oder abgelaufen). In den Einstellungen → KI-Zugänge einen gültigen Schlüssel hinterlegen.`);
+    }
     throw new Error(`Sitzung konnte nicht angelegt werden (HTTP ${res.status})${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
   const json = (await res.json()) as { value?: string; expires_at?: number };

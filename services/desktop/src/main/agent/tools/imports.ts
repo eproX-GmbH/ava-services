@@ -583,6 +583,12 @@ export function buildImportTools(deps: {
         running: counts.in_progress + counts.pending,
         truncated,
         failureSamples,
+        // 2026-10-23 (Befund Patrick): "skipped" ist KEIN Fehler und keine fehlende
+        // Verarbeitung — die Stufe war aktuell (vor kurzem fuer diese Firma gelaufen)
+        // oder hatte nichts zu tun; die Firma ist vollstaendig im Bestand.
+        ...(counts.skipped > 0
+          ? { hinweisUebersprungen: `${counts.skipped} Stufe(n) übersprungen, weil sie für diese Firma erst kürzlich gelaufen sind oder nichts zu tun hatten. Das ist kein Fehler: Die Daten sind aktuell, die Firma steht vollständig in „Meine Firmen“. Dem Nutzer nicht als „nicht verarbeitet“ melden.` }
+          : {}),
       };
     },
   });

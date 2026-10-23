@@ -656,10 +656,17 @@ export class WhisperSidecar extends EventEmitter {
       }
       const spawnCwd = libexecDir ?? undefined;
 
+      // 2026-10-23 — Zeitlimit nach Laenge der Aufnahme und Modellgroesse (Befund
+      // Patrick: "whisper-cli timed out after 90000ms" beim Diktat aus der App).
+      // Das Standardmodell large-v3 braucht auf einem ausgelasteten Rechner ohne
+      // Metal leicht das Mehrfache der Aufnahmedauer; 90 s pauschal waren zu knapp.
+      const aufnahmeSekunden = Math.max(1, audio.byteLength / 32_000); // 16 kHz, 16 Bit, mono
+      const faktor = /large/.test(model.id) ? 12 : /small/.test(model.id) ? 5 : 3;
+      const zeitlimitMs = Math.min(600_000, Math.max(90_000, 60_000 + aufnahmeSekunden * faktor * 1000));
       let { stdout, stderr, exitCode } = await runWithCapture(
         this.binaryPath,
         args,
-        90_000,
+        zeitlimitMs,
         spawnEnv,
         spawnCwd,
       );
@@ -683,7 +690,7 @@ export class WhisperSidecar extends EventEmitter {
           ({ stdout, stderr, exitCode } = await runWithCapture(
             this.binaryPath,
             args,
-            90_000,
+            zeitlimitMs,
             spawnEnv,
             spawnCwd,
           ));
@@ -939,7 +946,7 @@ async function runWithCapture(
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      rejectRun(new Error(`whisper-cli timed out after ${timeoutMs}ms`));
+      rejectRun(new Error(`Die Spracherkennung hat nach ${Math.round(timeoutMs / 1000)} Sekunden abgebrochen. Der Rechner ist gerade stark ausgelastet oder das Sprachmodell ist zu groß; kürzer sprechen oder in den Einstellungen ein kleineres Modell wählen.`));
     }, timeoutMs);
     child.stdout?.on("data", (b: Buffer) => {
       stdout += b.toString("utf8");

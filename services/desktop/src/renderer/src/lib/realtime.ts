@@ -23,7 +23,7 @@ export function fehlerEinordnen(err: unknown): SpracheFehler {
   const msg = e?.message ?? String(err);
   if (name === "NotAllowedError" || name === "SecurityError" || /permission|verweigert|denied/i.test(msg)) return new SpracheFehler("mikrofon-verweigert", "Der Zugriff auf das Mikrofon wurde verweigert.", msg.slice(0, 240));
   if (name === "NotFoundError" || name === "OverconstrainedError" || /kein mikrofon|no audio|device not found/i.test(msg)) return new SpracheFehler("kein-mikrofon", "Kein Mikrofon gefunden.", msg.slice(0, 240));
-  if (/HTTP 401|HTTP 403|invalid_api_key|incorrect api key|schl(ü|ue)ssel/i.test(msg)) return new SpracheFehler("schluessel", "Der OpenAI-Schlüssel wurde abgelehnt.", msg.slice(0, 240));
+  if (/HTTP 401|HTTP 403|invalid_api_key|incorrect api key|schl(ü|ue)ssel/i.test(msg)) return new SpracheFehler("schluessel", /gültig|Rechte|widerrufen/.test(msg) ? msg.replace(/^HTTP \d+: /, "") : "Der OpenAI-Schlüssel wurde abgelehnt.", msg.slice(0, 240));
   if (/HTTP 429|quota|kontingent|insufficient_quota|rate limit/i.test(msg)) return new SpracheFehler("kontingent", "Das Kontingent bei OpenAI ist erschöpft oder das Limit erreicht.", msg.slice(0, 240));
   if (/Failed to fetch|NetworkError|ECONN|ENOTFOUND|Verbindung (failed|disconnected)|\bICE\b|timeout|upstream_unreachable|HTTP 5\d\d/i.test(msg)) return new SpracheFehler("netz", "Keine Verbindung zu OpenAI.", msg.slice(0, 240));
   return new SpracheFehler("sonstiges", msg || "Unbekannter Fehler.");
