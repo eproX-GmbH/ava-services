@@ -14,6 +14,9 @@ export type SiGeschaeftsfuehrer = {
   /** ISO-Datum (JJJJ-MM-TT) oder null. */
   birthDay: string | null;
   city: string | null;
+  /** Tag der Eintragung, mit der die Person bestellt wurde (nur aus dem
+   *  chronologischen Abdruck; der SI nennt kein Datum). ISO oder null. */
+  bestelltAm?: string | null;
 };
 
 export type StrukturierterInhalt = {

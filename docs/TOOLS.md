@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-22
-Anzahl Tools: 292
+Stand: 2026-10-23
+Anzahl Tools: 293
 
 ## Firmen (25)
 
@@ -1691,7 +1691,7 @@ Liefert das Ergebnis des letzten Personen-Radar-Laufs im Detail: Zusammenfassung
 
 _Parameter:_ keine.
 
-## mail (9)
+## mail (10)
 
 ### `mail_allowlist_add`
 
@@ -1773,6 +1773,17 @@ _Parameter:_
 - `threadContextLimit: number` — 0-50 vorherige Thread-Nachrichten.
 - `threadBodyCap: number` — Zeichen-Cap je Verlaufs-Nachricht (200-5000).
 - `pollIntervalMinutes: number` — Abruf-Intervall des Postfachs in Minuten (1-120).
+
+### `mail_warum_nicht_reagiert`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Diagnose fuer eingegangene Mails: findet die Mail (per messageId oder per Suchtext in Betreff/Absender, Standard: die juengsten 5 ohne Reaktion) und erklaert, warum AVA sie nicht bearbeitet hat: Absender nicht freigegeben (Vertrauensstufe), Einstufung als Spam, Ping-Pong-Schutz, Antwort-Kontingent je Thread (5 Antworten, 5 Minuten Abstand), Bearbeitung ausgeschaltet, oder die Mail hat die Bruecke nie erreicht. Nutze es bei 'AVA hat auf meine Mail nicht geantwortet'.
+
+_Parameter:_
+- `messageId: string`
+- `suche: string` — Teil von Betreff oder Absenderadresse.
+- `limit: integer`
 
 ## meta (2)
 

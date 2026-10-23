@@ -238,6 +238,24 @@ export class MailSupervisor extends EventEmitter {
 
   // ---- Public store-passthrough für IPC ----
 
+  /** Diagnose "Warum hat AVA auf diese Mail nicht reagiert?" (Chat-Werkzeug). */
+  async bridgeDiagnose(messageId: string, threadKey: string): Promise<{
+    ausgeloest: boolean;
+    entscheidungen: Array<{ grund: string; quelle: string | null; at: string }>;
+    kontingent: { replyCount: number; lastReplyAt: string | null } | null;
+  }> {
+    const [ausgeloest, entscheidungen, kontingent] = await Promise.all([
+      this.store.wasMailTriggered(messageId),
+      this.store.bridgeDecisions(messageId),
+      this.store.autoReplyQuotaState(threadKey),
+    ]);
+    return { ausgeloest, entscheidungen, kontingent };
+  }
+
+  async listInboxAlle(limit = 200): Promise<MailMessage[]> {
+    return this.store.listInbox({ limit, includeArchived: true });
+  }
+
   async snapshot(): Promise<MailSnapshot> {
     const snap = await this.store.snapshot();
     snap.connectionState = this.state;

@@ -426,6 +426,36 @@ export class MailStore extends EventEmitter {
     );
   }
 
+  /** Entscheidung der Bruecke zu einer Mail festhalten (uebersprungen: Grund, oder ausgeloest). */
+  async recordBridgeDecision(messageId: string, grund: string, quelle: string | null): Promise<void> {
+    await this.start();
+    const pg = this.requirePg();
+    await pg.query(`INSERT INTO mail_bridge_entscheidung (message_id, grund, quelle) VALUES ($1, $2, $3)`, [messageId, grund.slice(0, 500), quelle]);
+  }
+
+  async bridgeDecisions(messageId: string): Promise<Array<{ grund: string; quelle: string | null; at: string }>> {
+    await this.start();
+    const pg = this.requirePg();
+    const res = await pg.query<{ grund: string; quelle: string | null; at: string }>(
+      `SELECT grund, quelle, at FROM mail_bridge_entscheidung WHERE message_id = $1 ORDER BY at DESC LIMIT 20`,
+      [messageId],
+    );
+    return res.rows.map((r) => ({ grund: r.grund, quelle: r.quelle, at: new Date(r.at).toISOString() }));
+  }
+
+  /** Lesend: Stand des Antwort-Kontingents eines Threads (ohne Reservierung). */
+  async autoReplyQuotaState(threadKey: string): Promise<{ replyCount: number; lastReplyAt: string | null } | null> {
+    await this.start();
+    const pg = this.requirePg();
+    const res = await pg.query<{ reply_count: number | string; last_reply_at: string }>(
+      `SELECT reply_count, last_reply_at FROM mail_auto_reply_log WHERE thread_key = $1`,
+      [threadKey],
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    return { replyCount: Number(row.reply_count), lastReplyAt: row.last_reply_at ? new Date(row.last_reply_at).toISOString() : null };
+  }
+
   /** Prüft ob eine Mail-ID bereits getriggert wurde (DB-persistent). */
   async wasMailTriggered(messageId: string): Promise<boolean> {
     await this.start();
@@ -778,6 +808,18 @@ export class MailStore extends EventEmitter {
         message_id    TEXT PRIMARY KEY,
         triggered_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      -- 2026-10-23: Jede Entscheidung der Mail-Bruecke je Mail (uebersprungen
+      -- mit Grund oder ausgeloest), damit "Warum hat AVA nicht reagiert?" im
+      -- Chat beantwortbar ist (Rueckfrage Patrick).
+      CREATE TABLE IF NOT EXISTS mail_bridge_entscheidung (
+        id          SERIAL PRIMARY KEY,
+        message_id  TEXT NOT NULL,
+        grund       TEXT NOT NULL,
+        quelle      TEXT,
+        at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS mail_bridge_entscheidung_msg ON mail_bridge_entscheidung (message_id, at DESC);
 
       CREATE TABLE IF NOT EXISTS mail_attachments (
         id              TEXT PRIMARY KEY,

@@ -23,6 +23,7 @@ import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { MailSupervisor } from "../../mail/supervisor";
+import { buildThreadKey } from "../../mail/agent-bridge";
 import type { AttachmentStore } from "../attachment-store";
 import type {
   MailAllowlistEntry,
@@ -731,6 +732,78 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     },
   });
 
+  // 2026-10-23 — "Warum hat AVA auf diese Mail nicht reagiert?" (Rueckfrage
+  // Patrick): die Bruecke protokolliert jede Entscheidung je Mail; hier wird
+  // sie zusammen mit Vertrauensstufe, Klassifikation und Thread-Kontingent
+  // in Klartext erklaert.
+  const warumNicht = defineTool({
+    name: "mail_warum_nicht_reagiert",
+    summary: "Erklaert je eingegangener Mail, warum AVA darauf nicht automatisch reagiert hat (oder dass sie es tat).",
+    category: "mail diagnose nicht reagiert keine antwort warum postfach",
+    description:
+      "Diagnose fuer eingegangene Mails: findet die Mail (per messageId oder per Suchtext in Betreff/Absender, Standard: die juengsten 5 ohne Reaktion) " +
+      "und erklaert, warum AVA sie nicht bearbeitet hat: Absender nicht freigegeben (Vertrauensstufe), Einstufung als Spam, Ping-Pong-Schutz, " +
+      "Antwort-Kontingent je Thread (5 Antworten, 5 Minuten Abstand), Bearbeitung ausgeschaltet, oder die Mail hat die Bruecke nie erreicht. " +
+      "Nutze es bei 'AVA hat auf meine Mail nicht geantwortet'.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string" },
+        suche: { type: "string", description: "Teil von Betreff oder Absenderadresse." },
+        limit: { type: "integer", minimum: 1, maximum: 20 },
+      },
+    },
+    schema: yup.object({ messageId: yup.string().trim().optional(), suche: yup.string().trim().max(200).optional(), limit: yup.number().integer().min(1).max(20).optional() }).noUnknown(true),
+    preview: (r: { mails?: unknown[]; error?: string }) => (r.error ? r.error : `${r.mails?.length ?? 0} Mails erklaert`),
+    run: async (args) => {
+      const sup = requireSupervisor(deps);
+      if ("error" in sup) return sup;
+      const alle = await sup.listInboxAlle(300);
+      const suche = (args.suche ?? "").toLowerCase();
+      let treffer = args.messageId
+        ? alle.filter((m) => m.id === args.messageId)
+        : suche
+          ? alle.filter((m) => m.subject.toLowerCase().includes(suche) || m.from.address.toLowerCase().includes(suche) || (m.from.name ?? "").toLowerCase().includes(suche))
+          : alle;
+      const limit = args.limit ?? (args.messageId ? 1 : 5);
+      const snap = await sup.snapshot();
+      const mails: Array<Record<string, unknown>> = [];
+      for (const m of treffer) {
+        if (mails.length >= limit) break;
+        const d = await sup.bridgeDiagnose(m.id, buildThreadKey(m));
+        if (!args.messageId && !suche && d.ausgeloest) continue; // Standard: nur Mails ohne Reaktion
+        const letzte = d.entscheidungen[0] ?? null;
+        let urteil: string;
+        if (d.ausgeloest) urteil = "AVA hat die Mail bearbeitet.";
+        else if (letzte) urteil = `Übersprungen: ${letzte.grund}.`;
+        else if (m.archivedAt) urteil = "Archiviert, archivierte Mails werden nie automatisch bearbeitet.";
+        else urteil = "Keine Entscheidung protokolliert: Die Mail hat die Brücke nicht erreicht (vor dem Update eingegangen, Verbindung getrennt oder Klassifikation ausstehend).";
+        mails.push({
+          messageId: m.id,
+          von: m.from.name ? `${m.from.name} <${m.from.address}>` : m.from.address,
+          betreff: m.subject,
+          datum: m.date,
+          urteil,
+          vertrauensstufe: m.trustLevel,
+          einstufung: m.classification ? { kategorie: m.classification.category, injectionRisk: m.classification.injectionRisk } : null,
+          archiviert: m.archivedAt,
+          antwortenImThread: d.kontingent ? { bisher: d.kontingent.replyCount, zuletzt: d.kontingent.lastReplyAt, limit: 5, abstandMin: 5 } : null,
+          entscheidungen: d.entscheidungen.slice(0, 5),
+        });
+      }
+      return {
+        mails,
+        postfach: {
+          verbindung: snap.connectionState,
+          automatischeBearbeitung: snap.account?.autoTriageEnabled ?? null,
+          senden: snap.account?.outboundEnabled ?? null,
+          letzterAbruf: snap.account?.lastSyncAt ?? null,
+        },
+        hinweis: mails.length === 0 ? "Keine passende Mail gefunden (Suche geht ueber Betreff und Absender der letzten 300 Mails)." : "Abhilfe: Absender freigeben (mail_allowlist_add), neuen Thread beginnen (Kontingent), Bearbeitung einschalten.",
+      };
+    },
+  });
+
   return [
     listInbox,
     getMessage,
@@ -741,6 +814,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     archive,
     allowlistAdd,
     triageConfig,
+    warumNicht,
   ];
 }
 

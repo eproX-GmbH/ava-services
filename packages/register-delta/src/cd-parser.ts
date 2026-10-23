@@ -291,6 +291,9 @@ export function zustandAus(eintraege: CdEintrag[], erwarteterName?: string): Str
       ...(e.zellen.rechtsform?.c ?? []),
     ];
     let modus: "zu" | "ab" = "zu";
+    // Tag der Eintragung dieser Nummer: wird zum Bestelldatum der hier neu
+    // genannten Personen (Befund 2026-10-23: "ist seit Jahren GF" braucht ein Datum).
+    const eintragDatum = isoDatum(e.zellen.tag?.a?.find((z) => /\d{2}\.\d{2}\.\d{4}/.test(z)));
     for (let i = 0; i < zeilenMitPersonen.length; i++) {
       const z = zeilenMitPersonen[i]!;
       if (ABGANG_RE.test(z)) modus = "ab";
@@ -316,7 +319,7 @@ export function zustandAus(eintraege: CdEintrag[], erwarteterName?: string): Str
       }
       const key = `${g.nachname}|${g.vorname}|${geb}`.toLowerCase();
       if (modus === "ab") personen.delete(key);
-      else personen.set(key, { firstName: kappe(g.vorname!.trim(), 200), lastName: kappe(g.nachname!.trim(), 200), birthDay: isoDatum(geb), city: kappe(ort, 120) || null });
+      else personen.set(key, { bestelltAm: personen.get(key)?.bestelltAm ?? eintragDatum, firstName: kappe(g.vorname!.trim(), 200), lastName: kappe(g.nachname!.trim(), 200), birthDay: isoDatum(geb), city: kappe(ort, 120) || null });
     }
   }
 

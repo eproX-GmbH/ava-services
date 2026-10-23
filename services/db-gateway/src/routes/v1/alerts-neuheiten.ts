@@ -326,15 +326,17 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   // Register-Ereignisse (neu bestellte GF) im Fenster. Eine Website, die
   // einen seit Jahren eingetragenen GF "neu" nennt, ist keine Neuigkeit
   // (Befund Joyce 2026-10-23: Justin Rafflenbeul, TradeMax24).
-  const registerGf = new Map<string, string[]>();
+  const registerGf = new Map<string, Array<{ name: string; bestelltAm: Date | null; bekanntSeit: Date }>>();
   try {
-    const md = await getProducerPool("structured-content").query<{ companyId: string; firstName: string; lastName: string }>(
-      `SELECT "companyId", "firstName", "lastName" FROM "ManagingDirector" WHERE "companyId" = ANY($1::text[])`,
+    const sc = getProducerPool("structured-content");
+    await sc.query(`ALTER TABLE "ManagingDirector" ADD COLUMN IF NOT EXISTS "bestelltAm" DATE`).catch(() => {});
+    const md = await sc.query<{ companyId: string; firstName: string; lastName: string; bestelltAm: Date | null; createdAt: Date }>(
+      `SELECT "companyId", "firstName", "lastName", "bestelltAm", "createdAt" FROM "ManagingDirector" WHERE "companyId" = ANY($1::text[])`,
       [ids],
     );
     for (const r of md.rows) {
       const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.replace(/\s+/g, " ").trim();
-      if (name) registerGf.set(r.companyId, [...(registerGf.get(r.companyId) ?? []), name]);
+      if (name) registerGf.set(r.companyId, [...(registerGf.get(r.companyId) ?? []), { name, bestelltAm: r.bestelltAm, bekanntSeit: r.createdAt }]);
     }
   } catch (err) {
     logger.warn({ err }, "neuheiten: Register-Geschaeftsfuehrer nicht lesbar (weiter ohne Kontext)");
@@ -388,17 +390,21 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       if ((s.source ?? "").startsWith("search") && !s.startDate) continue;
       // Register-Kontext: Die Person ist laut Handelsregister Geschaeftsfuehrer.
       if (s.fullName) {
-        const gfNamen = registerGf.get(s.companyId) ?? [];
-        const istRegisterGf = gfNamen.some((n) => gleicherName(n, s.fullName!));
+        const gfs = registerGf.get(s.companyId) ?? [];
+        const registerGfEintrag = gfs.find((g) => gleicherName(g.name, s.fullName!));
         const bestellung = (neuBestellt.get(s.companyId) ?? []).find((b) => gleicherName(b.name, s.fullName!));
-        if (istRegisterGf) {
+        if (registerGfEintrag) {
+          const datum = (d: Date | null | undefined) => (d ? new Date(d).toLocaleDateString("de-DE") : null);
+          const seit = registerGfEintrag.bestelltAm
+            ? `bestellt am ${datum(registerGfEintrag.bestelltAm)} laut Registerabdruck`
+            : `im Register als Geschäftsführer bekannt seit mindestens ${datum(registerGfEintrag.bekanntSeit)}`;
           kontext.push(bestellung
             ? `Handelsregister: als Geschäftsführer eingetragen, Bestellung im Register bemerkt am ${iso(bestellung.am)?.slice(0, 10)}.`
-            : "Handelsregister: seit AVA die Firma kennt als Geschäftsführer eingetragen, keine neue Bestellung im Register.");
+            : `Handelsregister: ${seit}, keine neue Bestellung im Register.`);
           // Website nennt eine Fuehrungsrolle, die das Register laengst kennt: keine Neuigkeit.
           if (!bestellung && GF_ROLLE.test(s.after ?? "")) continue;
-        } else if (GF_ROLLE.test(s.after ?? "") && gfNamen.length > 0) {
-          kontext.push(`Handelsregister: nicht als Geschäftsführer eingetragen (eingetragen: ${gfNamen.join(", ")}).`);
+        } else if (GF_ROLLE.test(s.after ?? "") && gfs.length > 0) {
+          kontext.push(`Handelsregister: nicht als Geschäftsführer eingetragen (eingetragen: ${gfs.map((g) => g.name).join(", ")}).`);
         }
       }
     }

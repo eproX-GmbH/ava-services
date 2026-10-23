@@ -97,9 +97,7 @@ export class MailAgentBridge {
     // v0.1.304 — Dedup-Check zuerst. Wenn der finalized-Pfad schon
     // erfolgreich getriggert hat, soll der updated-Fallback ignorieren.
     if (this.triggeredMailIds.has(msg.id)) {
-      console.log(
-        `[mail-agent-bridge] skip ${msg.id} (${source}): already triggered`,
-      );
+      console.log(`[mail-agent-bridge] skip ${msg.id} (${source}): already triggered`);
       return;
     }
     // v0.1.332 — Archivierte Mails NIE triggern. Der User hat sie
@@ -107,9 +105,7 @@ export class MailAgentBridge {
     // Archivieren selbst und löste vorher noch eine Antwort aus
     // ("Ping-Pong" aus Sicht des Users der dachte er hätte abgewählt).
     if (msg.archivedAt) {
-      console.log(
-        `[mail-agent-bridge] skip ${msg.id} (${source}): already archived`,
-      );
+      console.log(`[mail-agent-bridge] skip ${msg.id} (${source}): already archived`);
       this.triggeredMailIds.add(msg.id);
       return;
     }
@@ -119,32 +115,24 @@ export class MailAgentBridge {
     // bekam mehrfache Antworten auf dieselbe ursprüngliche Mail.
     if (await this.store.wasMailTriggered(msg.id)) {
       this.triggeredMailIds.add(msg.id); // RAM-Cache synchen
-      console.log(
-        `[mail-agent-bridge] skip ${msg.id} (${source}): already triggered (DB-marker)`,
-      );
+      console.log(`[mail-agent-bridge] skip ${msg.id} (${source}): already triggered (DB-marker)`);
       return;
     }
     try {
       // (1) Account-Toggle aktiv?
       const account = await this.store.getAccount();
       if (!account?.autoTriageEnabled) {
-        console.log(
-          `[mail-agent-bridge] skip ${msg.id} (${source}): autoTriageEnabled=false`,
-        );
+        await this.ueberspringen(msg.id, source, "Automatische Bearbeitung eingehender Mails ist ausgeschaltet");
         return;
       }
       if (!account.outboundEnabled) {
-        console.log(
-          `[mail-agent-bridge] skip ${msg.id} (${source}): outboundEnabled=false`,
-        );
+        await this.ueberspringen(msg.id, source, "Senden ist ausgeschaltet, AVA darf nicht antworten");
         return;
       }
 
       // (2) Trust-Level prüfen.
       if (msg.trustLevel !== "trusted") {
-        console.log(
-          `[mail-agent-bridge] skip ${msg.id} (${source}): trustLevel=${msg.trustLevel} (need 'trusted')`,
-        );
+        await this.ueberspringen(msg.id, source, `Absender nicht freigegeben (Vertrauensstufe ${msg.trustLevel}, nötig: trusted). Ursachen: nicht auf der Freigabeliste, SPF/DKIM-Fehler oder mehr als 20 Mails in einer Stunde von dieser Adresse`);
         return;
       }
 
@@ -156,15 +144,11 @@ export class MailAgentBridge {
       const cls = msg.classification;
       if (cls) {
         if (cls.category === "spam" || cls.category === "phishing") {
-          console.log(
-            `[mail-agent-bridge] skip ${msg.id} (${source}): category=${cls.category}`,
-          );
+          await this.ueberspringen(msg.id, source, `Als ${cls.category} eingestuft`);
           return;
         }
         if (cls.injectionRisk >= 0.7) {
-          console.warn(
-            `[mail-agent-bridge] skip ${msg.id} (${source}): injectionRisk=${cls.injectionRisk}`,
-          );
+          await this.ueberspringen(msg.id, source, `Verdacht auf eingeschleuste Anweisungen (Risiko ${cls.injectionRisk})`);
           return;
         }
       } else {
@@ -181,9 +165,7 @@ export class MailAgentBridge {
       // Klassischer Indikator für eine Ping-Pong-Schleife.
       const reCount = countReplyPrefixes(msg.subject);
       if (reCount >= 4) {
-        console.warn(
-          `[mail-agent-bridge] skip ${msg.id}: reply-depth ${reCount} suggests ping-pong`,
-        );
+        await this.ueberspringen(msg.id, source, `Zu viele Re:/AW: im Betreff (${reCount}), sieht nach Ping-Pong aus`);
         return;
       }
 
@@ -191,9 +173,7 @@ export class MailAgentBridge {
       const threadKey = buildThreadKey(msg);
       const quota = await this.store.checkAndReserveAutoReplyQuota(threadKey);
       if (!quota.allowed) {
-        console.warn(
-          `[mail-agent-bridge] skip ${msg.id}: quota — ${quota.reason}`,
-        );
+        await this.ueberspringen(msg.id, source, `Antwort-Kontingent je Thread: ${quota.reason}`);
         return;
       }
 
@@ -204,6 +184,7 @@ export class MailAgentBridge {
       // den Marker nicht verlieren.
       this.triggeredMailIds.add(msg.id);
       await this.store.markMailTriggered(msg.id);
+      await this.store.recordBridgeDecision(msg.id, "ausgeloest: AVA bearbeitet die Mail", source).catch(() => {});
       console.log(
         `[mail-agent-bridge] triggering autonomous session for mail ${msg.id} ` +
           `(source=${source}, thread=${threadKey}, replyCount=${quota.replyCount})`,
@@ -256,6 +237,12 @@ export class MailAgentBridge {
     }
   }
 
+  /** Uebersprungen: ins Log und in die Tabelle mail_bridge_entscheidung (fuer mail_warum_nicht_reagiert). */
+  private async ueberspringen(messageId: string, source: string, grund: string): Promise<void> {
+    console.log(`[mail-agent-bridge] skip ${messageId} (${source}): ${grund}`);
+    await this.store.recordBridgeDecision(messageId, grund, source).catch(() => {});
+  }
+
   /**
    * v0.1.461 — Bisherige Nachrichten desselben Threads laden: gleicher
    * Korrespondent (eingehend VON ihm, ausgehend AN ihn) und gleiches
@@ -289,7 +276,7 @@ export class MailAgentBridge {
  * + "AW: Übersicht zu Strategic IT" + "Übersicht zu Strategic IT" alle
  * im selben Bucket.
  */
-function buildThreadKey(msg: MailMessage): string {
+export function buildThreadKey(msg: MailMessage): string {
   const cleanedSubject = stripReplyPrefixes(msg.subject)
     .toLowerCase()
     .trim();

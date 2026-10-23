@@ -272,6 +272,32 @@ export async function applyObservation(
     }
   }
 
+  // Quellen-Rangfolge fuer die Rolle (Befund 2026-10-22/23: Impressum sagt
+  // "Geschaeftsfuehrer", Team-Seite nennt Zustaendigkeiten, Suchtreffer bringt
+  // den alten Stand zurueck): Ein nachrangiger Fund ersetzt einen hochrangigen,
+  // der in den letzten 60 Tagen bestaetigt wurde, NICHT. Der neue Fakt wird
+  // sofort inaktiv (quelle-nachrangig), die Anzeige bleibt beim besseren Wert.
+  // Gilt fuer neue Fakten und fuer reaktivierte (ein alter Suchtreffer-Wert kommt wieder).
+  const warInaktiv = existingFact ? existingFact.status !== "ACTIVE" : true;
+  if (!multiValue && inactiveOnNew && isChangeField && args.field === "jobTitle" && (createdFact || warInaktiv)) {
+    const bisherAktiv = await prisma.fact.findFirst({
+      where: { entityType: args.entityType, entityId: args.entityId, field: args.field, scopeCompanyId, id: { not: fact.id }, status: "ACTIVE" },
+      orderBy: { lastSeen: "desc" },
+    });
+    if (bisherAktiv && observedAt.getTime() - bisherAktiv.lastSeen.getTime() < 60 * 86_400_000) {
+      const bisherObs = bisherAktiv.lastObsId ? await prisma.observation.findUnique({ where: { id: bisherAktiv.lastObsId } }) : null;
+      const rangBisher = quellenRang(bisherObs?.source ?? null, bisherObs?.evidenceUrl ?? null);
+      const rangNeu = quellenRang(args.source, args.evidenceUrl ?? null);
+      if (rangBisher > rangNeu) {
+        await prisma.fact.update({
+          where: { id: fact.id },
+          data: { status: "INACTIVE" as FactStatus, deactivatedAt: observedAt, deactivatedReason: "quelle-nachrangig" },
+        });
+        return { factId: fact.id, createdFact, emittedSignalIds };
+      }
+    }
+  }
+
   if (!multiValue && inactiveOnNew) {
     // Nur innerhalb desselben Firmenbezugs: die Position bei QUIKK verdraengt
     // nicht die Position bei Strategic IT (scope.ts).
@@ -389,4 +415,17 @@ export async function applyObservation(
   }
 
   return { factId: fact.id, createdFact, emittedSignalIds };
+}
+
+/** Rang einer Quelle fuer Rollenangaben: Nutzerangabe > Impressum > Firmenwebsite >
+ *  LinkedIn-Profil/Lead > Team-Seiten-Extraktion > Suchtreffer-Schnipsel. */
+export function quellenRang(source: string | null, evidenceUrl: string | null): number {
+  const q = (source ?? "").toLowerCase();
+  if (q.startsWith("user:")) return 6;
+  if (/impressum|imprint|legal-notice/i.test(evidenceUrl ?? "")) return 5;
+  if (q === "agent:website") return 4;
+  if (q.startsWith("apify:") || q === "linkedin-lead" || q.startsWith("agent:linkedin")) return 3;
+  if (q === "agent:website_people") return 3;
+  if (q.startsWith("search")) return 1;
+  return 2;
 }

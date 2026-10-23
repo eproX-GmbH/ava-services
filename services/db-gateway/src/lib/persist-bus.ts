@@ -773,7 +773,18 @@ export interface StructuredContentResult {
     lastName: string;
     birthDay?: string | null;
     city?: string | null;
+    /** Bestelldatum (ISO) aus dem chronologischen Abdruck, sonst null. */
+    bestelltAm?: string | null;
   }>;
+}
+
+/** Spalte bestelltAm an ManagingDirector sicherstellen (structured-content-DB wird
+ *  nicht vom Gateway migriert; der Producer laeuft beim Nutzer). */
+let gfSchemaBereit = false;
+async function ensureGfSchema(client: { query: (q: string, p?: unknown[]) => Promise<unknown> }): Promise<void> {
+  if (gfSchemaBereit) return;
+  await client.query(`ALTER TABLE "ManagingDirector" ADD COLUMN IF NOT EXISTS "bestelltAm" DATE`);
+  gfSchemaBereit = true;
 }
 
 /**
@@ -902,14 +913,21 @@ export async function schreibeStructuredContent(
     // Desktop-Heartbeat macht daraus einen "profile-change"-Alert.
     let directorDiff: ManagingDirectorDiff | null = null;
     if (Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0) {
+      await ensureGfSchema(client);
       const existing = await client.query<{
         firstName: string;
         lastName: string;
+        createdAt: Date;
+        bestelltAm: Date | null;
       }>(
-        `SELECT "firstName", "lastName" FROM "ManagingDirector"
+        `SELECT "firstName", "lastName", "createdAt", "bestelltAm" FROM "ManagingDirector"
           WHERE "companyId" = $1`,
         [result.companyId],
       );
+      // "Seit wann kennt AVA die Person als Geschaeftsfuehrer?" ueberlebt den
+      // Replace-all: createdAt und ein frueher gelesenes Bestelldatum je Name bewahren.
+      const bisher = new Map<string, { createdAt: Date; bestelltAm: Date | null }>();
+      for (const r of existing.rows) bisher.set(`${r.firstName}|${r.lastName}`.toLowerCase(), { createdAt: r.createdAt, bestelltAm: r.bestelltAm });
       if (existing.rows.length > 0) {
         const diff = diffManagingDirectors(
           existing.rows,
@@ -924,17 +942,20 @@ export async function schreibeStructuredContent(
         [result.companyId],
       );
       for (const md of result.managingDirectors) {
+        const alt = bisher.get(`${md.firstName}|${md.lastName}`.toLowerCase());
         await client.query(
           `INSERT INTO "ManagingDirector"
              ("firstName", "lastName", "birthDay", city, "companyId",
-              "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+              "createdAt", "updatedAt", "bestelltAm")
+           VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), NOW(), $7)`,
           [
             md.firstName,
             md.lastName,
             md.birthDay ? new Date(md.birthDay) : null,
             md.city ?? null,
             result.companyId,
+            alt?.createdAt ?? null,
+            md.bestelltAm ? new Date(md.bestelltAm) : (alt?.bestelltAm ?? null),
           ],
         );
       }
