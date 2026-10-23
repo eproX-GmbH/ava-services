@@ -5,7 +5,7 @@ import type { Pool } from "pg";
 import { masterData } from "../register-jobs";
 import { logger } from "../logger";
 import { ereignis, laufAendern, laufLesen, zaehlerAktualisieren } from "./store";
-import { crmNameBereinigen, namenUeberlappen } from "./namen";
+import { crmNameBereinigen, kennzeichen, namenUeberlappen } from "./namen";
 
 interface AbgleichZeile {
   name: string; location: string; status: "treffer" | "unsicher" | "keiner"; companyId: string | null; companyName?: string; companyLocation?: string; historie?: boolean;
@@ -63,9 +63,17 @@ export function abgleichStarten(pool: Pool, laufId: string): void {
             continue;
           }
           for (const x of zeilen) {
-            const z = antwort.rows.find((a) => a.name.toLowerCase() === crmNameBereinigen(x.name).toLowerCase() && a.location.toLowerCase() === (x.ort ?? "").trim().toLowerCase());
+            let z = antwort.rows.find((a) => a.name.toLowerCase() === crmNameBereinigen(x.name).toLowerCase() && a.location.toLowerCase() === (x.ort ?? "").trim().toLowerCase());
             if (!z) { keiner++; await pool.query(`UPDATE "VorabFirma" SET "abgleich" = 'keiner', "kandidaten" = '[]'::jsonb, "updatedAt" = NOW() WHERE "id" = $1`, [x.id]); continue; }
-            const kand = z.kandidaten.map((k) => ({ companyId: k.companyId, name: k.name, ort: k.location, score: Math.round((k.score ?? 0) * 100) / 100 }));
+            // 2026-10-23 (Befund Patrick, FMB-Liste): Kandidaten nach Namensbezug ordnen,
+            // nicht nach dem rohen Suchwert — Rechtsform und Ort zaehlen nicht als Name.
+            // Gleiche Kennzeichen und gleicher Ort ("Anton Vogt GmbH" ↔ "Anton Vogt
+            // GmbH & Co.KG", beide Geseke) sind ein Treffer, keine Rueckfrage.
+            const kand = kandidatenOrdnen(x.name, x.ort, z.kandidaten);
+            const sicher = kand.find((k) => k.namensbezug >= 1 && k.ortGleich);
+            if (z.status === "unsicher" && sicher) {
+              z = { ...z, status: "treffer", companyId: sicher.companyId, companyName: sicher.name, companyLocation: sicher.ort, historie: false };
+            }
             if (z.status === "treffer" && z.companyId) {
               treffer++;
               await pool.query(`UPDATE "VorabFirma" SET "abgleich" = 'treffer', "kandidaten" = $2::jsonb, "companyId" = $3, "zuordnung" = 'automatisch', "schritt" = 'abgeglichen', "updatedAt" = NOW() WHERE "id" = $1`,
@@ -95,6 +103,32 @@ export function abgleichStarten(pool: Pool, laufId: string): void {
       laufend.delete(laufId);
     }
   })();
+}
+
+function normOrt(o: string | null | undefined): string {
+  return (o ?? "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Kandidaten nach Namensbezug (Anteil gemeinsamer Kennzeichen, beidseitig) und Ort ordnen;
+ *  ohne jeden Namensbezug fliegen sie heraus, sobald es bessere gibt. */
+export function kandidatenOrdnen(
+  crmName: string,
+  crmOrt: string | null,
+  roh: Array<{ companyId: string; name: string; location: string; score: number }>,
+): Array<{ companyId: string; name: string; ort: string; score: number; namensbezug: number; ortGleich: boolean }> {
+  const kz = kennzeichen(crmName, crmOrt);
+  const ortN = normOrt(crmOrt);
+  const bewertet = roh.map((k) => {
+    const kk = kennzeichen(k.name, k.location);
+    const gemeinsam = kz.filter((t) => kk.includes(t) || kk.some((u) => u.length >= 6 && t.length >= 6 && (u.startsWith(t.slice(0, 5)) || t.startsWith(u.slice(0, 5))))).length;
+    // beidseitig: Anteil an den CRM-Kennzeichen UND an den Kandidaten-Kennzeichen
+    const namensbezug = kz.length === 0 || kk.length === 0 ? 0 : Math.min(gemeinsam / kz.length, gemeinsam / kk.length);
+    const ortGleich = ortN.length > 0 && normOrt(k.location) === ortN;
+    const score = Math.round((namensbezug * 100 + (ortGleich ? 20 : 0) + Math.min(10, (k.score ?? 0) / 5)) * 100) / 100;
+    return { companyId: k.companyId, name: k.name, ort: k.location, score, namensbezug, ortGleich };
+  });
+  const mitBezug = bewertet.filter((k) => k.namensbezug > 0);
+  return (mitBezug.length > 0 ? mitBezug : bewertet).sort((a, b) => b.score - a.score).slice(0, 5);
 }
 
 /** Abgleich zuruecksetzen (z. B. nach neuer Datei). */
