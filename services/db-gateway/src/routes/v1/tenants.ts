@@ -18,6 +18,7 @@ import { getGatewayPool } from "../../lib/producer-pools";
 import { createShare, createRadarShares, listShares, revokeShare, markShare } from "../../lib/org-shares";
 import { getOrgWorkflow, listOrgWorkflows, revokeOrgWorkflow, shareWorkflow } from "../../lib/org-workflows";
 import { callUpstream } from "../../lib/upstream";
+import { ssoEntfernen, ssoLesen, ssoPruefen, ssoSetzen } from "../../lib/sso";
 import {
   createOrganisation,
   requestJoin,
@@ -193,6 +194,81 @@ tenantsRouter.openapi(
   },
 );
 
+
+// ---- C2 (docs/PLAN_COPILOT_MCP.md) — Anmeldung mit Microsoft-Konto -------------
+
+const SsoStandShape = z.object({
+  eingerichtet: z.boolean(),
+  anbieter: z.literal("entra"),
+  entraTenantId: z.string().nullable(),
+  clientId: z.string().nullable(),
+  idpAlias: z.string().nullable(),
+  aktiv: z.boolean(),
+  zuletztGeprueft: z.string().nullable(),
+  fehler: z.string().nullable(),
+  anmeldeHinweis: z.string().nullable(),
+});
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/sso",
+    tags: ["tenants"],
+    summary: "Microsoft-Anmeldung (Entra ID) der Organisation: Stand ohne Geheimnis.",
+    responses: { 200: { content: { "application/json": { schema: SsoStandShape } }, description: "Stand" } },
+  }),
+  async (c) => c.json(await wrap(() => ssoLesen(getGatewayPool(), c.get("auth")))),
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "put",
+    path: "/tenants/me/sso",
+    tags: ["tenants"],
+    summary: "Microsoft-Anmeldung einrichten oder aendern (Admin). Geheimnis geht nur nach Keycloak.",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              entraTenantId: z.string().trim().regex(/^[0-9a-fA-F-]{36}$/, "Entra-Tenant-ID ist eine GUID"),
+              clientId: z.string().trim().min(8).max(200),
+              clientSecret: z.string().min(8).max(500).optional(),
+              aktiv: z.boolean().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 200: { content: { "application/json": { schema: SsoStandShape } }, description: "eingerichtet" } },
+  }),
+  async (c) => c.json(await wrap(() => ssoSetzen(getGatewayPool(), c.get("auth"), c.req.valid("json")))),
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/sso/pruefen",
+    tags: ["tenants"],
+    summary: "Microsoft-Anmeldung pruefen (Entra-Discovery erreichbar?).",
+    responses: { 200: { content: { "application/json": { schema: SsoStandShape } }, description: "geprueft" } },
+  }),
+  async (c) => c.json(await wrap(() => ssoPruefen(getGatewayPool(), c.get("auth")))),
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "delete",
+    path: "/tenants/me/sso",
+    tags: ["tenants"],
+    summary: "Microsoft-Anmeldung entfernen (Admin).",
+    responses: { 200: { content: { "application/json": { schema: Ok } }, description: "entfernt" } },
+  }),
+  async (c) => {
+    await wrap(() => ssoEntfernen(getGatewayPool(), c.get("auth")));
+    return c.json({ ok: true as const });
+  },
+);
 
 // ---- O8 — Freigaben (Transaktionen, Radar-Firmen) ---------------------------
 

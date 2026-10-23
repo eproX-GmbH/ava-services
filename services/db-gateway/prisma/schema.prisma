@@ -458,6 +458,45 @@ model AuditLog {
 /// mit derselben ID an, sodass TenantBilling/UsageEntry/ParkedCompany/
 /// CompanyCrmLink ohne Umschluesselung gueltig bleiben. Pflege vorerst
 /// manuell durch den Operator (Entscheidung 2026-09-03).
+/// C2 (docs/PLAN_COPILOT_MCP.md): Anmeldung mit dem Microsoft-Konto des Unternehmens.
+/// Das Client-Geheimnis liegt nur in Keycloak (Identity Provider "entra-<tenantId>").
+model TenantSso {
+  tenantId        String   @id
+  anbieter        String   @default("entra")
+  /// Entra-Tenant-ID (GUID) des Kunden; Claim `tid` im Token.
+  entraTenantId   String
+  clientId        String
+  /// Keycloak-Alias des Identity Providers.
+  idpAlias        String
+  aktiv           Boolean  @default(true)
+  zuletztGeprueft DateTime?
+  fehler          String?
+  erstelltVon     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+
+  @@index([entraTenantId])
+}
+
+/// C1 (docs/PLAN_COPILOT_MCP.md): Gespraechsprotokolle und Hinweise, die ein
+/// externer Agent (Copilot, Claude) oder ein Mitglied bei AVA ablegt. Je Firma,
+/// optional je Person; sichtbar fuer die Organisation.
+model CompanyNotiz {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actorId   String
+  companyId String
+  personId  String?
+  text      String
+  /// "copilot" | "claude" | "chatgpt" | "mcp" | "app"
+  quelle    String
+  /// Datum des Gespraechs (vom Aufrufer), sonst createdAt.
+  datum     DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, companyId, createdAt])
+}
+
 model Tenant {
   id           String              @id
   name         String?

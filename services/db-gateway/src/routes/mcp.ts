@@ -86,9 +86,26 @@ const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         companyId: { type: "string" },
-        bereiche: { type: "array", items: { type: "string", enum: ["profil", "register", "publikationen", "kunden", "konzern", "gesellschafter", "aenderungen"] } },
+        bereiche: { type: "array", items: { type: "string", enum: ["profil", "register", "publikationen", "kunden", "konzern", "gesellschafter", "aenderungen", "notizen"] } },
       },
       required: ["companyId"],
+    },
+  },
+  {
+    name: "protokoll_ablegen",
+    schalter: "auftraege",
+    description:
+      "Gespraechsprotokoll oder Hinweis zu einer Firma bei AVA ablegen (optional zu einer Person per personId aus firma_kontakte). Fuer Notizen aus Teams, Outlook, Dynamics oder dem Chat. " +
+      "AVA aendert dabei nichts im CRM des Nutzers; die Notiz erscheint in AVA bei der Firma (firma_lesen, Bereich notizen). datum = Zeitpunkt des Gespraechs (ISO), sonst jetzt.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        text: { type: "string", description: "Inhalt, 3 bis 20.000 Zeichen" },
+        personId: { type: "string", description: "Optional: Person, um die es ging" },
+        datum: { type: "string", description: "Optional: ISO-Zeitpunkt des Gespraechs" },
+      },
+      required: ["companyId", "text"],
     },
   },
   {
@@ -194,6 +211,7 @@ const BEREICH_ROUTEN: Record<string, string> = {
   konzern: "/konzern-angaben",
   gesellschafter: "/shareholders",
   aenderungen: "/profile-changes",
+  notizen: "/notizen",
 };
 
 /** Interner Aufruf einer /v1-Route mit dem Token des Nutzers. */
@@ -245,6 +263,19 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
       const j = r.json as { items?: Array<Record<string, unknown>>; total?: number };
       const items = (j.items ?? []).map((c) => ({ companyId: c.companyId, name: c.name, ort: c.location, land: c.country ?? "DE", register: [c.registerType, c.registerNumber].filter(Boolean).join(" "), status: c.registerStatus, insolvenz: c.insolvencyStatus }));
       return { text: kompakt({ treffer: j.total ?? items.length, firmen: items }) };
+    }
+    case "protokoll_ablegen": {
+      const id = String(args.companyId ?? "").trim();
+      const text = String(args.text ?? "").trim();
+      if (!id || text.length < 3) return { text: "companyId und text (mindestens 3 Zeichen) sind Pflicht.", isError: true };
+      const r = await api(app, token, "POST", `/v1/companies/${encodeURIComponent(id)}/notizen`, {
+        text,
+        ...(typeof args.personId === "string" && args.personId.trim() ? { personId: args.personId.trim() } : {}),
+        ...(typeof args.datum === "string" && args.datum.trim() ? { datum: args.datum.trim() } : {}),
+        quelle: "mcp",
+      });
+      if (!r.ok) return { text: fehlerText(r), isError: true };
+      return { text: kompakt({ abgelegt: true, notiz: r.json }) };
     }
     case "firma_lesen": {
       const id = String(args.companyId ?? "").trim();
@@ -390,6 +421,8 @@ interface McpSchalter {
   aktiv: boolean;
   lesen: boolean;
   auftraege: boolean;
+  /** Werkzeugmenge "copilot" (C1): nur die kleine Liste, Kopf-Werkzeuge aus. */
+  copilot: boolean;
   kontakte: boolean;
   /** Werkzeuge der laufenden AVA des Nutzers ueber das Kopf-Relais (Standard an). */
   kopf: boolean;
@@ -397,8 +430,13 @@ interface McpSchalter {
 
 async function schalterFuer(tenantId: string): Promise<McpSchalter> {
   const f = await loadFeatures(getGatewayPool(), tenantId);
-  return { aktiv: f["mcp"] === true, lesen: f["mcp.lesen"] !== false, auftraege: f["mcp.auftraege"] !== false, kontakte: f["mcp.kontakte"] === true, kopf: f["mcp.kopf"] !== false };
+  // C1 (docs/PLAN_COPILOT_MCP.md): Werkzeugmenge "copilot" = kleine, lesbare Liste fuer
+  // die Freigabe im Microsoft-Tenant; Werkzeuge der laufenden AVA sind dann aus.
+  const copilot = f["mcp.copilot"] === true;
+  return { aktiv: f["mcp"] === true, lesen: f["mcp.lesen"] !== false, auftraege: f["mcp.auftraege"] !== false, kontakte: f["mcp.kontakte"] === true, kopf: f["mcp.kopf"] !== false && !copilot, copilot };
 }
+
+const COPILOT_MENGE = new Set([KONTEXT_WERKZEUG, "firma_suchen", "firma_lesen", "firma_kontakte", "meine_firmen", "meldungen", "import_anlegen", "protokoll_ablegen", "auftrag_status"]);
 
 /** Werkzeuge des verbundenen Kopfs, ohne Namenskollisionen mit den Gateway-Werkzeugen. */
 function kopfWerkzeuge(actorId: string, s: McpSchalter) {
@@ -408,7 +446,7 @@ function kopfWerkzeuge(actorId: string, s: McpSchalter) {
 }
 
 function sichtbareTools(s: McpSchalter): ToolDef[] {
-  return TOOLS.filter((t) => (t.schalter === "lesen" && s.lesen) || (t.schalter === "auftraege" && s.auftraege) || (t.schalter === "kontakte" && s.kontakte));
+  return TOOLS.filter((t) => (t.schalter === "lesen" && s.lesen) || (t.schalter === "auftraege" && s.auftraege) || (t.schalter === "kontakte" && s.kontakte)).filter((t) => !s.copilot || COPILOT_MENGE.has(t.name));
 }
 
 function rpcFehler(id: JsonRpcId, code: number, message: string) {

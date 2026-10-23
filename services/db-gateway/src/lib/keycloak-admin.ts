@@ -53,7 +53,9 @@ export class KeycloakAdminError extends Error {
       | "email_taken"
       | "weak_password"
       | "invalid_input"
-      | "keycloak_error",
+      | "keycloak_error"
+      | "entra_discovery"
+      | "secret_missing",
   ) {
     super(`Keycloak admin ${status}: ${body.slice(0, 200)}`);
   }
@@ -411,5 +413,114 @@ export async function widerrufeEinwilligung(userId: string, clientId: string): P
     }
   }
   return { gefunden: true, entfernt };
+}
+
+// ---- C2 (docs/PLAN_COPILOT_MCP.md): Microsoft Entra ID als Identity Provider je Organisation ----
+//
+// Ein OIDC-Identity-Provider "entra-<tenantId>" im Realm, versteckt auf der
+// Anmeldeseite (nur ueber kc_idp_hint erreichbar). Ein "Advanced Claim to Group"-
+// Mapper haengt jeden Nutzer mit passendem Entra-Tenant (Claim `tid`) in die
+// Gruppe tenant:<tenantId>; daraus entsteht der Claim tenant_id, und das Gateway
+// legt die Mitgliedschaft beim ersten Aufruf an (ensureTenantForAuth). Das
+// Client-Geheimnis wird nur hier abgelegt, nie in der Gateway-Datenbank.
+// Braucht am Service-Account die Realm-Rolle manage-identity-providers.
+
+export interface EntraIdpInput {
+  tenantId: string;
+  tenantName: string;
+  entraTenantId: string;
+  clientId: string;
+  clientSecret?: string;
+}
+
+export function entraIdpAlias(tenantId: string): string {
+  return `entra-${tenantId}`.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 100);
+}
+
+function entraDiscoveryUrl(entraTenantId: string): string {
+  return `https://login.microsoftonline.com/${encodeURIComponent(entraTenantId)}/v2.0/.well-known/openid-configuration`;
+}
+
+/** Entra-Discovery lesen: prueft Tenant-ID und liefert die Endpunkte. */
+export async function entraDiscovery(entraTenantId: string): Promise<{ issuer: string; authorization_endpoint: string; token_endpoint: string; jwks_uri: string; end_session_endpoint?: string }> {
+  const r = await fetch(entraDiscoveryUrl(entraTenantId), { signal: AbortSignal.timeout(10_000) });
+  if (!r.ok) throw new KeycloakAdminError(400, `Entra-Tenant nicht gefunden (${r.status}).`, "entra_discovery");
+  return (await r.json()) as { issuer: string; authorization_endpoint: string; token_endpoint: string; jwks_uri: string; end_session_endpoint?: string };
+}
+
+export async function upsertEntraIdp(input: EntraIdpInput): Promise<{ alias: string; neu: boolean }> {
+  const alias = entraIdpAlias(input.tenantId);
+  const d = await entraDiscovery(input.entraTenantId);
+  const config: Record<string, string> = {
+    issuer: d.issuer,
+    authorizationUrl: d.authorization_endpoint,
+    tokenUrl: d.token_endpoint,
+    jwksUrl: d.jwks_uri,
+    useJwksUrl: "true",
+    validateSignature: "true",
+    clientId: input.clientId,
+    clientAuthMethod: "client_secret_post",
+    defaultScope: "openid profile email",
+    syncMode: "FORCE",
+    hideOnLoginPage: "true",
+    pkceEnabled: "true",
+    pkceMethod: "S256",
+    ...(d.end_session_endpoint ? { logoutUrl: d.end_session_endpoint } : {}),
+    ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}),
+  };
+  const vorhanden = await adminFetch(`/identity-provider/instances/${encodeURIComponent(alias)}`);
+  const body = {
+    alias,
+    displayName: `Microsoft (${input.tenantName})`,
+    providerId: "oidc",
+    enabled: true,
+    trustEmail: true,
+    storeToken: false,
+    addReadTokenRoleOnCreate: false,
+    linkOnly: false,
+    firstBrokerLoginFlowAlias: "first broker login",
+    config,
+  };
+  let neu = false;
+  if (vorhanden.ok) {
+    const alt = (await vorhanden.json()) as { config?: Record<string, string> };
+    // Ohne neues Geheimnis bleibt das alte stehen (Keycloak liefert es maskiert zurueck).
+    if (!input.clientSecret && alt.config?.clientSecret) body.config.clientSecret = alt.config.clientSecret;
+    const u = await adminFetch(`/identity-provider/instances/${encodeURIComponent(alias)}`, { method: "PUT", body: JSON.stringify(body) });
+    if (!u.ok) throw new KeycloakAdminError(u.status, await u.text().catch(() => ""), "keycloak_error");
+  } else {
+    if (!input.clientSecret) throw new KeycloakAdminError(400, "Client-Geheimnis fehlt.", "secret_missing");
+    const c = await adminFetch(`/identity-provider/instances`, { method: "POST", body: JSON.stringify(body) });
+    if (!c.ok && c.status !== 409) throw new KeycloakAdminError(c.status, await c.text().catch(() => ""), "keycloak_error");
+    neu = true;
+  }
+  // Gruppen-Mapper: Claim tid == Entra-Tenant → Gruppe tenant:<id> (bei jeder Anmeldung, syncMode FORCE).
+  await ensureTenantGroup(input.tenantId, input.tenantName);
+  const mapperName = "tenant-gruppe";
+  const mappers = await adminFetch(`/identity-provider/instances/${encodeURIComponent(alias)}/mappers`);
+  const liste = mappers.ok ? ((await mappers.json()) as Array<{ id: string; name: string }>) : [];
+  const mapperBody = {
+    name: mapperName,
+    identityProviderAlias: alias,
+    identityProviderMapper: "oidc-advanced-group-idp-mapper",
+    config: {
+      syncMode: "FORCE",
+      claims: JSON.stringify([{ key: "tid", value: input.entraTenantId }]),
+      "are.claim.values.regex": "false",
+      group: `/tenant:${input.tenantId}`,
+    },
+  };
+  const m = liste.find((x) => x.name === mapperName);
+  const mr = m
+    ? await adminFetch(`/identity-provider/instances/${encodeURIComponent(alias)}/mappers/${m.id}`, { method: "PUT", body: JSON.stringify({ ...mapperBody, id: m.id }) })
+    : await adminFetch(`/identity-provider/instances/${encodeURIComponent(alias)}/mappers`, { method: "POST", body: JSON.stringify(mapperBody) });
+  if (!mr.ok && mr.status !== 409) throw new KeycloakAdminError(mr.status, await mr.text().catch(() => ""), "keycloak_error");
+  return { alias, neu };
+}
+
+export async function deleteEntraIdp(tenantId: string): Promise<void> {
+  const alias = entraIdpAlias(tenantId);
+  const r = await adminFetch(`/identity-provider/instances/${encodeURIComponent(alias)}`, { method: "DELETE" });
+  if (!r.ok && r.status !== 404) throw new KeycloakAdminError(r.status, await r.text().catch(() => ""), "keycloak_error");
 }
 
