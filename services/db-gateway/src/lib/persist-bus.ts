@@ -474,7 +474,15 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     // 100 Bloecke). Fuer das Gate zaehlt der Lauf, nicht die Batch — sonst
     // sperrte Batch 1 alle weiteren aus (Befund Strama-MPS 2026-10-09: nur
     // 100 von 893 Bloecken gespeichert).
-    const incomingRunId = basisRunId((data?.runId ?? null) as string | null);
+    // 2026-10-24 (Befund databyte, Joyce): Block-Batches tragen die runId nur in
+    // result.runId und in der Ereignis-ID ("…:blocks:N"), nicht in data.runId —
+    // damit griff die Gleicher-Lauf-Regel nie, und das Gate verwarf alle Bloecke
+    // als "frisch", sobald die Publikationen desselben Laufs geschrieben waren.
+    const rohRunId =
+      (data?.runId as string | undefined) ??
+      ((data?.result as { runId?: string } | undefined)?.runId) ??
+      ((event as { id?: string }).id ?? null);
+    const incomingRunId = basisRunId((rohRunId ?? null) as string | null);
     const transactionId = (event as { transaction?: string }).transaction ?? "";
 
     if (!companyId) {
@@ -483,7 +491,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
       return inner(pool, event, log);
     }
 
-    const decision = await gatePersist(companyId, stage, incomingTier, incomingRunId, log);
+    const decision = await gatePersist(companyId, stage, incomingTier, incomingRunId, log, /:blocks:\d+$/.test(String(rohRunId ?? "")));
     if (!decision.apply) {
       log.info(
         {
@@ -563,6 +571,7 @@ async function gatePersist(
   incomingTier: ModelTier | null,
   incomingRunId: string | null,
   log: typeof logger,
+  istBlockBatch = false,
 ): Promise<{ apply: boolean; reason: string; existingTier: ModelTier | null }> {
   // Sanity: if the stage is non-LLM, force incomingTier null to avoid
   // accidental tier comparisons on Selenium-scraped content. Also
@@ -610,6 +619,14 @@ async function gatePersist(
       reason: "same run (runId match)",
       existingTier,
     };
+  }
+  // 2026-10-24 (Befund databyte, Joyce): Block-Batches gehoeren immer zum Lauf,
+  // der gerade die Publikationen geschrieben hat. Traegt die Frische-Zeile
+  // (noch) keine runId oder eine andere, aber ist sie Minuten jung, sind die
+  // Bloecke der Nachschlag desselben Laufs — sonst blieben sie weg und die
+  // Kennzahlen auf Abruf hatten nichts zum Lesen.
+  if (incomingRunId && istBlockBatch && existingAgeMs <= 15 * 60_000) {
+    return { apply: true, reason: "block batch of a run persisted within 15 min", existingTier };
   }
 
   const decision = tierShouldWrite({
