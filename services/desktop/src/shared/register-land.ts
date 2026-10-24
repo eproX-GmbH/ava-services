@@ -10,4 +10,4 @@ export function landAusCompanyId(companyId: string | null | undefined): Register
 }
 
 /** Länder, deren Firmen sich heute importieren lassen (master-data data-care). */
-export const IMPORTIERBAR: readonly RegisterLand[] = ["DE", "AT", "UK"];
+export const IMPORTIERBAR: readonly RegisterLand[] = ["DE", "AT", "CH", "UK"];

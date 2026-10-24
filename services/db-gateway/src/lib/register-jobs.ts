@@ -18,8 +18,16 @@ import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
-export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz" | "ch_bulk" | "ch_sogc" | "ch_refresh";
+export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh"];
+/**
+ * Schweiz (docs/PLAN_SCHWEIZ.md): ch_bulk = eine LINDAS-Seite des Erstabzugs
+ * (Zeilen kommen als Teilergebnisse), ch_sogc = alle SHAB-Publikationen eines
+ * Tages (Neueintragungen, Mutationen, Loeschungen, Konkurse — das Delta, das
+ * in DE die Nummernfront braucht), ch_refresh = Zefix-Detail je Pool-Firma mit
+ * strukturiertem Inhalt (Zweck, Kapital, Adresse). Kein Browser.
+ */
+export const JOB_ARTEN_CH: JobArt[] = ["ch_bulk", "ch_sogc", "ch_refresh"];
 /**
  * UK (docs/PLAN_UK.md): uk_bulk = ein Teil des monatlichen Companies-House-
  * Abzugs (Zeilen kommen als Teilergebnisse), uk_refresh = Firmenseite je
@@ -88,6 +96,23 @@ const UK_ID_RE = /^UK_(?=[A-Z0-9]{8}$)([A-Z]{0,2}[0-9]{4,8}[A-Z]{0,3})$/;
 export function nummerAusCompanyIdUk(companyId: string): string | null {
   const m = UK_ID_RE.exec(companyId);
   return m ? m[1] : null;
+}
+
+const CH_ID_RE = /^CH_(CHE\d{9})$/;
+/** "CHE-101.602.521" / "CHE101602521" → CH_CHE101602521. */
+export function companyIdCh(uid: string): string {
+  const z = uid.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!/^CHE\d{9}$/.test(z)) throw new JobFehler(400, `ungueltige UID: ${uid}`);
+  return `CH_${z}`;
+}
+/** CH_CHE101602521 → CHE101602521; null fuer fremde Ids. */
+export function uidAusCompanyIdCh(companyId: string): string | null {
+  const m = CH_ID_RE.exec(companyId);
+  return m ? m[1] : null;
+}
+/** CHE101602521 → CHE-101.602.521 (amtliche Schreibweise fuer registerNumber/uid). */
+function uidFormatiert(uid: string): string {
+  return `CHE-${uid.slice(3, 6)}.${uid.slice(6, 9)}.${uid.slice(9, 12)}`;
 }
 
 /** AT_FN588123M → 588123m; null fuer fremde Ids. */
@@ -178,6 +203,35 @@ export type TrefferAt = {
   uid?: string | null;
 };
 
+export type TrefferCh = {
+  uid: string;
+  name: string;
+  sitz: string;
+  kanton: string;
+  amt: string;
+  legalForm: string;
+  legalFormCode: string;
+  status: "ACTIVE" | "CLOSED" | "LOESCHUNG_ANGEKUENDIGT";
+  insolvenz: "NONE" | "VERDACHT" | "EROEFFNET";
+  street?: string | null;
+  zipCode?: string | null;
+  sogcDate?: string | null;
+  fruehereNamen?: string[];
+  si?: {
+    legalForm: string;
+    street: string;
+    houseNumber: string;
+    zipCode: string;
+    city: string;
+    foundingYear: number | null;
+    corporatePurpose: string | null;
+    shareCapital: number | null;
+    capitalCurrency: string | null;
+    lastRegisterEntry: string | null;
+    cantonalExcerptWeb: string | null;
+  };
+};
+
 export type Ergebnis = {
   workerId: string;
   abfragen: number;
@@ -201,10 +255,14 @@ export type Ergebnis = {
   unbearbeitet?: Array<{ gericht: string; art: string; nummer: number; zusatz?: string; hinweis?: string }>;
   /** uk_bulk: Zusammenfassung; die Zeilen kamen als Teilergebnisse. */
   ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
+  /** ch_sogc / ch_refresh: Zefix-Treffer; ch_bulk meldet Zeilen ueber Teilergebnisse. */
+  trefferCh?: TrefferCh[];
+  /** ch_bulk: Zusammenfassung der LINDAS-Seite. */
+  chBulk?: { offset: number; limit: number; zeilen: number; teilergebnisse: number; letzteSeite: boolean };
 };
 
-/** uk_bulk: Buendel Zeilen waehrend der Ausfuehrung. */
-export type Teilergebnis = { workerId: string; teil: number; trefferUk: TrefferUk[] };
+/** uk_bulk / ch_bulk: Buendel Zeilen waehrend der Ausfuehrung. */
+export type Teilergebnis = { workerId: string; teil: number; trefferUk?: TrefferUk[]; trefferCh?: TrefferCh[] };
 
 type Q = { query: pg.Pool["query"] };
 
@@ -343,6 +401,32 @@ function trefferUkZuDelta(t: TrefferUk) {
   };
 }
 
+function trefferChZuDelta(t: TrefferCh) {
+  const companyId = companyIdCh(t.uid);
+  const uid = uidAusCompanyIdCh(companyId)!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  const namen = [...(t.fruehereNamen ?? []), t.name];
+  return {
+    companyId,
+    name: t.name,
+    nameNormalized: nameNormalisiert(t.name),
+    // Keine HRB-Nummer in der Schweiz: die UID ist die amtliche Kennung, die Rechtsform steht als Art.
+    registerType: t.legalForm || "UID",
+    registerNumber: uidFormatiert(uid),
+    location: t.sitz,
+    districtCourt: t.amt,
+    state: t.kanton,
+    registerStatus: t.status,
+    formerCourt: null,
+    country: "CH",
+    insolvencyStatus: t.insolvenz,
+    uid: uidFormatiert(uid),
+    ...(t.legalForm ? { legalForm: t.si?.legalForm ?? t.legalForm } : {}),
+    ...(t.street ? { street: t.street } : {}),
+    ...(t.zipCode ? { zipCode: t.zipCode } : {}),
+    history: namen.map((n, i) => ({ name: n, nameNormalized: nameNormalisiert(n), location: t.sitz, order: i + 1 })),
+  };
+}
+
 type DeltaAntwort = { neu: number; geaendert: number; unveraendert: number; befunde: Array<{ companyId: string; befund: string; felder?: string[] }> };
 
 export async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
@@ -374,7 +458,19 @@ async function schreibeTrefferUk(treffer: TrefferUk[], source: string): Promise<
   return schreibeDelta(zeilen, source);
 }
 
-async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta> | ReturnType<typeof trefferUkZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+async function schreibeTrefferCh(treffer: TrefferCh[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+  const zeilen = [];
+  for (const t of treffer) {
+    try {
+      zeilen.push(trefferChZuDelta(t));
+    } catch {
+      /* ungueltige UID */
+    }
+  }
+  return schreibeDelta(zeilen, source);
+}
+
+async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta> | ReturnType<typeof trefferUkZuDelta> | ReturnType<typeof trefferChZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
   const summe = { neu: 0, geaendert: 0, unveraendert: 0, geaenderteIds: [] as string[] };
   const gesehenAt = new Date().toISOString();
   for (let i = 0; i < zeilen.length; i += 1000) {
@@ -667,6 +763,89 @@ export async function erzeugeUkJobs(pool: pg.Pool, now: Date = new Date(), html?
   return { bulk, refresh, insolvenz, datum };
 }
 
+// ---- Schweiz --------------------------------------------------------------------------
+
+export const CH_REFRESH_BUENDEL = 100;
+export const CH_BULK_SEITE = 5000;
+
+function siAusTrefferCh(t: TrefferCh): import("./register-si").SiAusDelta {
+  const si = t.si!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  return {
+    name: t.name,
+    legalForm: si.legalForm,
+    street: si.street,
+    houseNumber: si.houseNumber,
+    zipCode: si.zipCode,
+    city: si.city,
+    foundingYear: si.foundingYear,
+    corporatePurpose: si.corporatePurpose,
+    shareCapital: si.shareCapital,
+    lastRegisterEntry: si.lastRegisterEntry,
+    lastRegisterModification: si.lastRegisterEntry,
+    managingDirectors: [],
+  };
+}
+
+async function chPoolFirmen(pool: pg.Pool): Promise<Array<{ companyId: string; uid: string }>> {
+  const r = await pool.query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "EntityProgress" WHERE "companyId" LIKE 'CH\\_CHE%' ORDER BY "companyId" LIMIT $1`, [INSOLVENZ_POOL_MAX]);
+  const out: Array<{ companyId: string; uid: string }> = [];
+  for (const row of r.rows) {
+    const uid = uidAusCompanyIdCh(row.companyId);
+    if (uid) out.push({ companyId: row.companyId, uid });
+  }
+  return out;
+}
+
+/**
+ * Taeglich: ein ch_sogc-Job je Tag der letzten drei Tage (idempotent ueber das
+ * Datum; das SHAB publiziert werktags), monatlich ch_refresh je Pool-Firma.
+ */
+export async function erzeugeChJobs(pool: pg.Pool, now: Date = new Date()): Promise<{ sogc: number; refresh: number }> {
+  let sogc = 0;
+  for (let tage = 1; tage <= 3; tage++) {
+    const d = new Date(now.getTime() - tage * 86_400_000);
+    const datum = tagIso(d);
+    if (await legeJobAn(pool, "ch_sogc", `ch_sogc:${datum}`, { datum }, 4)) sogc++;
+  }
+  const monat = monatIso(now);
+  const firmen = await chPoolFirmen(pool);
+  let refresh = 0;
+  for (let i = 0; i < firmen.length; i += CH_REFRESH_BUENDEL) {
+    const b = firmen.slice(i, i + CH_REFRESH_BUENDEL);
+    if (await legeJobAn(pool, "ch_refresh", `ch_refresh:pool-${monat}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund: `pool-${monat}` }, 3)) refresh++;
+  }
+  return { sogc, refresh };
+}
+
+/** Erstabzug aus LINDAS: eine ch_bulk-Seite je OFFSET (idempotent ueber Abzugsdatum und Seite). */
+export async function erzeugeChBulkJobs(pool: pg.Pool, gesamt: number, seite = CH_BULK_SEITE, datum = tagIso(new Date())): Promise<{ jobs: number; seiten: number }> {
+  const seiten = Math.max(1, Math.ceil(gesamt / seite));
+  let jobs = 0;
+  for (let teil = 1; teil <= seiten; teil++) {
+    const offset = (teil - 1) * seite;
+    if (await legeJobAn(pool, "ch_bulk", `ch_bulk:${datum}:${teil}`, { offset, limit: seite, teil, teile: seiten, datum }, 4)) jobs++;
+  }
+  return { jobs, seiten };
+}
+
+/** Schweiz-Pruefung fuer konkrete Firmen (Chat, Import, Firmendetail): Zefix-Detail sofort. */
+export async function chAnfordern(q: Q, companyIds: string[], grund: string): Promise<{ jobs: number; firmen: number }> {
+  const firmen: Array<{ companyId: string; uid: string }> = [];
+  const gesehen = new Set<string>();
+  for (const id of companyIds) {
+    const uid = uidAusCompanyIdCh(id);
+    if (!uid || gesehen.has(id)) continue;
+    gesehen.add(id);
+    firmen.push({ companyId: id, uid });
+  }
+  let jobs = 0;
+  for (let i = 0; i < firmen.length; i += CH_REFRESH_BUENDEL) {
+    const b = firmen.slice(i, i + CH_REFRESH_BUENDEL);
+    if (await legeJobAn(q, "ch_refresh", `ch_refresh:${grund}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund }, 1)) jobs++;
+  }
+  return { jobs, firmen: firmen.length };
+}
+
 /** UK-Pruefung fuer konkrete Firmen (Chat, Import, Firmendetail): Firmenseite und Insolvenz sofort. */
 export async function ukAnfordern(q: Q, companyIds: string[], grund: string): Promise<{ jobs: number; firmen: number }> {
   const firmen: Array<{ companyId: string; nummer: string }> = [];
@@ -694,21 +873,23 @@ export async function ukAnfordern(q: Q, companyIds: string[], grund: string): Pr
  */
 export async function verarbeiteTeilergebnis(pool: pg.Pool, jobId: string, teil: Teilergebnis): Promise<Record<string, unknown>> {
   const job = await ladeGeleastenJob(pool, jobId, teil.workerId);
-  if (job.art !== "uk_bulk") throw new JobFehler(400, "teilergebnis_nur_uk_bulk");
+  if (job.art !== "uk_bulk" && job.art !== "ch_bulk") throw new JobFehler(400, "teilergebnis_nur_bulk");
   const stand = (job.payload.teile_verarbeitet as number[] | undefined) ?? [];
   if (stand.includes(teil.teil)) return { teil: teil.teil, wiederholt: true };
   const t0 = Date.now();
-  const summe = await schreibeTrefferUk(teil.trefferUk, "companieshouse-bulk");
+  const zeilen = job.art === "ch_bulk" ? (teil.trefferCh ?? []) : (teil.trefferUk ?? []);
+  if (zeilen.length === 0) throw new JobFehler(400, "teilergebnis_leer");
+  const summe = job.art === "ch_bulk" ? await schreibeTrefferCh(teil.trefferCh ?? [], "lindas") : await schreibeTrefferUk(teil.trefferUk ?? [], "companieshouse-bulk");
   const tMd = Date.now() - t0;
   const p = job.payload as Record<string, unknown> & { summe?: { neu: number; geaendert: number; unveraendert: number; zeilen: number } };
   const alt = p.summe ?? { neu: 0, geaendert: 0, unveraendert: 0, zeilen: 0 };
-  const neu = { neu: alt.neu + summe.neu, geaendert: alt.geaendert + summe.geaendert, unveraendert: alt.unveraendert + summe.unveraendert, zeilen: alt.zeilen + teil.trefferUk.length };
+  const neu = { neu: alt.neu + summe.neu, geaendert: alt.geaendert + summe.geaendert, unveraendert: alt.unveraendert + summe.unveraendert, zeilen: alt.zeilen + zeilen.length };
   await pool.query(
     `UPDATE "RegisterJob" SET "payload" = $2::jsonb, "leaseUntil" = NOW() + ($3 || ' minutes')::interval, "updatedAt" = NOW() WHERE "id" = $1`,
     [jobId, JSON.stringify({ ...p, teile_verarbeitet: [...stand, teil.teil], summe: neu }), String(LEASE_MINUTEN)],
   );
-  if (summe.geaenderteIds.length > 0) await markiereVeraltet(pool, summe.geaenderteIds, "register-uk_bulk");
-  logger.info({ jobId, teil: teil.teil, zeilen: teil.trefferUk.length, masterDataMs: tMd, gesamtMs: Date.now() - t0 }, "[register-jobs] uk_bulk Teilergebnis");
+  if (summe.geaenderteIds.length > 0) await markiereVeraltet(pool, summe.geaenderteIds, `register-${job.art}`);
+  logger.info({ jobId, teil: teil.teil, zeilen: zeilen.length, masterDataMs: tMd, gesamtMs: Date.now() - t0 }, `[register-jobs] ${job.art} Teilergebnis`);
   return { teil: teil.teil, ...summe, geaenderteIds: undefined };
 }
 
@@ -858,6 +1039,29 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
   }
 
+  if (ergebnis.trefferCh && ergebnis.trefferCh.length > 0) {
+    const quelle = job.art === "ch_sogc" ? "shab" : "zefix";
+    const { geaenderteIds, ...summe } = await schreibeTrefferCh(ergebnis.trefferCh, quelle);
+    Object.assign(zusammenfassung, summe);
+    if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
+    // ch_refresh: strukturierter Inhalt aus dem Zefix-Detail (Zweck, Kapital, Adresse;
+    // Personen liefert Zefix nicht). Je Firma isoliert, Fehler lassen den Treffer stehen.
+    const mitSi = ergebnis.trefferCh.filter((t) => t.si);
+    if (mitSi.length > 0) {
+      const { schreibeSiAusDelta } = await import("./register-si");
+      const si = { geschrieben: 0, uebersprungen: 0, fehler: 0 };
+      for (const t of mitSi) {
+        try {
+          si[await schreibeSiAusDelta(companyIdCh(t.uid), siAusTrefferCh(t), jobId)]++;
+        } catch (err) {
+          si.fehler++;
+          logger.warn({ uid: t.uid, jobId, err: err instanceof Error ? err.message : String(err) }, "[register-jobs] CH-SI nicht geschrieben");
+        }
+      }
+      zusammenfassung.si = si;
+    }
+  }
+
   if (job.art === "at_front" && ergebnis.atFront) {
     const p = job.payload as { gerichtId: string; begriff: string; state?: string };
     zusammenfassung.gesamt = ergebnis.atFront.gesamt;
@@ -1005,7 +1209,7 @@ export type Statistik = {
 };
 
 export async function statistik(pool: pg.Pool): Promise<Statistik> {
-  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {} };
+  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {}, ch_bulk: {}, ch_sogc: {}, ch_refresh: {} };
   const r = await pool.query<{ art: JobArt; status: string; n: string }>(`SELECT "art", "status", count(*)::text AS n FROM "RegisterJob" GROUP BY 1, 2`);
   for (const row of r.rows) if (jobs[row.art]) jobs[row.art][row.status] = Number(row.n);
   const w = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterWorker" WHERE "zuletztAt" > NOW() - interval '1 hour'`);
@@ -1072,6 +1276,14 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
         logger.info(at, "[register-jobs] Oesterreich-Jobs erzeugt");
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Oesterreich-Jobs nicht erzeugt");
+      }
+    }
+    if (process.env.CH_JOBS_DISABLED !== "1") {
+      try {
+        const ch = await erzeugeChJobs(getGatewayPool(), now);
+        logger.info(ch, "[register-jobs] Schweiz-Jobs erzeugt");
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Schweiz-Jobs nicht erzeugt");
       }
     }
   }

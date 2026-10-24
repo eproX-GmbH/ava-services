@@ -11,6 +11,7 @@ import { parseChronologischerAbdruck } from "./cd-parser";
 import { pdfZuSeiten } from "./cd-text";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
+import { companyFullZuTreffer, sogcZuTreffer, uidAusCompanyIdCh, type LindasClient, type TrefferCh, type ZefixAmt, type ZefixClient } from "./ch-zefix";
 import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, type BulkTeil, type FirmaUk, type GazetteEintrag, type InsolvenzFallUk, type TrefferUk } from "./uk-companies-house";
 
 export type PortalSchnittstelle = {
@@ -53,6 +54,15 @@ export type UkSchnittstelle = {
   teilergebnis: (jobId: string, teil: number, trefferUk: TrefferUk[]) => Promise<void>;
 };
 
+/** Schweiz: Zefix (Detail, SHAB-Tag) und LINDAS (Erstabzug), ein Takt fuer Zefix. */
+export type ChSchnittstelle = {
+  zefix: Pick<ZefixClient, "firma" | "sogcTag" | "aemter">;
+  lindas: Pick<LindasClient, "seite">;
+  takt: TaktSchnittstelle;
+  /** ch_bulk: Seite in Buendeln an das Gateway melden (Worker: gateway.teilergebnis). */
+  teilergebnis: (jobId: string, teil: number, trefferCh: TrefferCh[]) => Promise<void>;
+};
+
 export type AusfuehrungsOptionen = {
   workerId: string;
   portal: PortalSchnittstelle;
@@ -63,6 +73,8 @@ export type AusfuehrungsOptionen = {
   at?: AtSchnittstelle;
   /** UK (nur fuer Jobs uk_*). */
   uk?: UkSchnittstelle;
+  /** Schweiz (nur fuer Jobs ch_*). */
+  ch?: ChSchnittstelle;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
   /** Oesterreich: Anfragen je Job bei 0,5/s (Default 300 ≈ 10 min). */
@@ -148,6 +160,12 @@ type AtFrontPayload = { gerichtId: string; begriff: string; abSeite?: number; st
 type AtFirmenPayload = { firmen: Array<{ companyId: string; fnr: string }>; grund?: string };
 type UkBulkPayload = { url: string; datum: string; teil: number; teile: number };
 type UkFirmenPayload = { firmen: Array<{ companyId: string; nummer: string }>; grund?: string };
+type ChBulkPayload = { offset: number; limit: number; teil: number; teile: number };
+type ChSogcPayload = { datum: string };
+type ChFirmenPayload = { firmen: Array<{ companyId: string; uid: string }>; grund?: string };
+/** ch_bulk: Zeilen je Teilergebnis (ein Delta-Aufruf in master-data) und Pause danach, wie UK. */
+export const CH_BULK_BUENDEL = Math.max(50, Math.min(1000, Number(process.env.REGISTER_DELTA_CH_BUENDEL ?? 500) || 500));
+export const CH_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_CH_PAUSE_MS ?? 10_000) || 0);
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
   const log = o.log ?? (() => {});
@@ -255,6 +273,11 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
   if (job.art === "at_front" || job.art === "at_refresh" || job.art === "at_insolvenz") {
     if (!o.at) throw new Error("Oesterreich-Schnittstellen nicht verfuegbar");
     return fuehreAtJobAus(job, o, o.at, o.maxAbfragenJeAtJob ?? MAX_ABFRAGEN_JE_AT_JOB, log);
+  }
+
+  if (job.art === "ch_bulk" || job.art === "ch_sogc" || job.art === "ch_refresh") {
+    if (!o.ch) throw new Error("Schweiz-Schnittstellen nicht verfuegbar");
+    return fuehreChJobAus(job, o, o.ch, o.maxAbfragenJeAtJob ?? MAX_ABFRAGEN_JE_AT_JOB, log);
   }
 
   // refresh
@@ -561,6 +584,78 @@ async function fuehreUkJobAus(job: Job, o: AusfuehrungsOptionen, uk: UkSchnittst
   }
   log(`uk_insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Meldungen, ${basis.abfragen} Abfragen`);
   return { ...basis, insolvenz: { meldungen, geprueft } };
+}
+
+async function fuehreChJobAus(job: Job, o: AusfuehrungsOptionen, ch: ChSchnittstelle, max: number, log: (z: string) => void): Promise<Ergebnis> {
+  const basis: Ergebnis = { workerId: o.workerId, abfragen: 0, treffer: [] };
+
+  if (job.art === "ch_bulk") {
+    // Eine LINDAS-Seite (ORDER BY Firmen-IRI, OFFSET/LIMIT), in Buendeln an das
+    // Gateway; schon verbuchte Buendel nach Neustart ueberspringen (wie uk_bulk).
+    const p = job.payload as unknown as ChBulkPayload;
+    const schonVerbucht = new Set<number>(((job.payload as { teile_verarbeitet?: number[] }).teile_verarbeitet ?? []).filter((n) => Number.isInteger(n)));
+    await ch.takt.warten();
+    basis.abfragen++;
+    const zeilen = await ch.lindas.seite(p.offset, p.limit);
+    let teil = 0;
+    let gemeldet = 0;
+    for (let i = 0; i < zeilen.length; i += CH_BULK_BUENDEL) {
+      teil++;
+      if (schonVerbucht.has(teil)) continue;
+      if (o.abbrechen?.()) throw new Error(`ch_bulk Seite ${p.teil} abgebrochen nach ${teil - 1} Buendeln`);
+      await ch.teilergebnis(job.id, teil, zeilen.slice(i, i + CH_BULK_BUENDEL));
+      gemeldet++;
+      if (CH_BULK_PAUSE_MS > 0 && i + CH_BULK_BUENDEL < zeilen.length) await new Promise((r) => setTimeout(r, CH_BULK_PAUSE_MS));
+    }
+    log(`ch_bulk Seite ${p.teil}/${p.teile} (ab ${p.offset}): ${zeilen.length} Zeilen in ${teil} Buendeln, ${gemeldet} gemeldet`);
+    return { ...basis, chBulk: { offset: p.offset, limit: p.limit, zeilen: zeilen.length, teilergebnisse: gemeldet, letzteSeite: zeilen.length < p.limit } };
+  }
+
+  if (job.art === "ch_sogc") {
+    // Alle SHAB-Publikationen eines Tages: Neueintragungen, Mutationen,
+    // Loeschungen, Konkurse. Eine Abfrage, keine Nummernfront noetig.
+    const p = job.payload as unknown as ChSogcPayload;
+    await ch.takt.warten();
+    basis.abfragen++;
+    const r = await ch.zefix.sogcTag(p.datum);
+    if (r.gesperrt) return { ...basis, gesperrt: true };
+    const aemter = await ch.zefix.aemter().catch(() => null as Map<number, ZefixAmt> | null);
+    const jeUid = new Map<string, TrefferCh>();
+    for (const e of r.eintraege) {
+      const t = sogcZuTreffer(e, aemter);
+      if (!t) continue;
+      // Mehrere Meldungen zur selben Firma am Tag: die strengste Statusfolge gewinnt.
+      const alt = jeUid.get(t.uid);
+      if (!alt) jeUid.set(t.uid, t);
+      else {
+        if (t.status === "CLOSED" || (t.status === "LOESCHUNG_ANGEKUENDIGT" && alt.status === "ACTIVE")) alt.status = t.status;
+        if (t.insolvenz === "EROEFFNET") alt.insolvenz = "EROEFFNET";
+        alt.name = t.name;
+      }
+    }
+    const trefferCh = [...jeUid.values()];
+    log(`ch_sogc ${p.datum}: ${r.eintraege.length} Publikationen, ${trefferCh.length} Firmen`);
+    return { ...basis, trefferCh };
+  }
+
+  // ch_refresh: Zefix-Detail je Firma (Stammdaten + strukturierter Inhalt).
+  const p = job.payload as unknown as ChFirmenPayload;
+  const trefferCh: TrefferCh[] = [];
+  const aemter = await ch.zefix.aemter().catch(() => null as Map<number, ZefixAmt> | null);
+  for (const f of p.firmen) {
+    if (o.abbrechen?.() || basis.abfragen >= max) break;
+    const uid = f.uid || uidAusCompanyIdCh(f.companyId);
+    if (!uid) continue;
+    await ch.takt.warten();
+    const r = await ch.zefix.firma(uid);
+    basis.abfragen++;
+    if (r.gesperrt) return { ...basis, gesperrt: true, trefferCh };
+    if (!r.firma) continue; // unbekannt: Bestand bleibt
+    const t = companyFullZuTreffer(r.firma, aemter);
+    if (t) trefferCh.push(t);
+  }
+  log(`ch_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferCh.length} Treffer`);
+  return { ...basis, trefferCh };
 }
 
 /** Takt-Slots nehmen und dabei den Treiber am Leben halten (Lebenszeichen alle 10 s). */

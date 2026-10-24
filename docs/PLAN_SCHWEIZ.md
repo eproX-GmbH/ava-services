@@ -175,3 +175,27 @@ kantonalen Auszug per Selenium, genau wie heute das deutsche SI-XML.
 
 Empfehlung: erst ein Notebook wie beim Register-Delta (I0-Muster), dann
 master-data, dann structured-content, dann App.
+
+
+## 6. Stand der Umsetzung (2026-10-24)
+
+Zefix-Konto beim Bundesamt für Justiz ist bewilligt (Betreiber, HTTP Basic;
+Secrets `ZEFIX_USER`/`ZEFIX_PASSWORD` nur am Register-Worker `ava-register-worker`,
+Prozess `worker_at`). Umgesetzt ist der schlanke Weg ohne eigenen Namensraum
+und ohne Gateway-Proxy: die Register-Delta-Queue trägt die Schweiz wie AT/UK.
+
+| Baustein | Stand |
+|---|---|
+| companyId `CH_CHE…` (Entscheidung 5.1) | ja; `registerType` = Rechtsform-Kürzel, `registerNumber` = `CHE-xxx.xxx.xxx`, `districtCourt` = Handelsregisteramt, `state` = Kanton, `uid` gesetzt |
+| Erstabzug LINDAS (`ch_bulk`, eine SPARQL-Seite je Job, Zeilen als Teilergebnisse, Quelle `lindas`) | gebaut; Jobs über `POST /internal/register-jobs/ch-bulk {gesamt}` |
+| Tages-Delta SHAB (`ch_sogc`, ein Job je Tag, Quelle `shab`; Löschung → CLOSED, Konkurs → EROEFFNET, Liquidation → Löschung angekündigt) | gebaut; Cron 02:00 UTC legt die letzten drei Tage an (`CH_JOBS_DISABLED=1` schaltet ab) |
+| Detail je Pool-Firma (`ch_refresh`, Zefix `company/uid`): Zweck, Kapital, Adresse, Gründungsjahr aus erster SHAB-Publikation, frühere Namen → structured-content über `schreibeSiAusDelta` | gebaut; monatlich je Pool-Firma, sofort beim Import (`chAnfordern`, Grund `import`) und aus dem Chat (`company_insolvency` mit `pruefen`) |
+| Personen (Organe aus dem kantonalen Auszug, Entscheidung 5.4) | offen; Zefix liefert keine Personen, `ManagingDirector` bleibt für CH leer |
+| Publikationen/Finanzen | bleiben leer (keine öffentlichen Abschlüsse); Hinweis in der App offen |
+| App: Import mit `country: CH` (Name + Ort) und per `companyIds`, Chip CH, UID-Anzeige | ja (Chip/UID gab es schon) |
+| Radar/ICP für CH, `firma_finden` mit `land: CH`, `register_live_suche` | offen |
+| Einzelunternehmen/Vereine (Entscheidung 5.5) | Erstabzug nimmt alle LINDAS-Einträge; Rechtsform steht am Datensatz, Filter später |
+
+Takt: Zefix 1.800 Abfragen je Stunde (0,5/s), LINDAS 5.000 Zeilen je Seite mit
+10 s Pause; der Erstabzug (rund 796.000 Zeilen, 160 Seiten) läuft etwa einen
+Tag neben den UK-Jobs auf derselben Maschine.

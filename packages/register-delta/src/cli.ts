@@ -16,6 +16,8 @@
 //   REGISTER_DELTA_STATUS=1  Zustand als Zeile "__AVA_RD_STATUS__{json}" auf stdout (Desktop-Statuskarte)
 //   REGISTER_DELTA_AT=0      Oesterreich-Jobs (JustizOnline, Ediktsdatei) nicht bedienen (Default: an)
 //   REGISTER_DELTA_UK=0      UK-Jobs (Companies House, Gazette) nicht bedienen (Default: an)
+//   REGISTER_DELTA_CH=0      Schweiz-Jobs (Zefix, LINDAS) nicht bedienen (Default: an, wenn ZEFIX_USER/ZEFIX_PASSWORD gesetzt)
+//   ZEFIX_USER / ZEFIX_PASSWORD  Betreiber-Konto beim Bundesamt fuer Justiz (HTTP Basic)
 //   REGISTER_DELTA_SI=0      refresh ohne strukturierten Registerinhalt (Default: an, S8)
 //   REGISTER_DELTA_CD=0      ohne SI nicht auf den chronologischen Abdruck ausweichen (Default: an, S9)
 
@@ -30,6 +32,7 @@ import { RegisterWorker } from "./worker";
 import { AT_ABFRAGEN_JE_STUNDE, JustizOnlineClient } from "./at-firmenbuch";
 import { EDIKTE_ABFRAGEN_JE_STUNDE, EdikteClient } from "./at-edikte";
 import { CompaniesHouseClient, UK_ABFRAGEN_JE_STUNDE } from "./uk-companies-house";
+import { LindasClient, ZefixClient, ZEFIX_ABFRAGEN_JE_STUNDE } from "./ch-zefix";
 import { Taktgeber } from "./takt";
 
 function tokenQuelle(): () => Promise<string> {
@@ -129,6 +132,14 @@ async function main() {
             taktEdikte: new Taktgeber(EDIKTE_ABFRAGEN_JE_STUNDE),
           },
     uk: process.env.REGISTER_DELTA_UK === "0" ? undefined : { companiesHouse: new CompaniesHouseClient({ log }), takt: new Taktgeber(UK_ABFRAGEN_JE_STUNDE) },
+    ch:
+      process.env.REGISTER_DELTA_CH === "0" || !process.env.ZEFIX_USER || !process.env.ZEFIX_PASSWORD
+        ? undefined
+        : {
+            zefix: new ZefixClient({ user: process.env.ZEFIX_USER, passwort: process.env.ZEFIX_PASSWORD, log }),
+            lindas: new LindasClient({ log }),
+            takt: new Taktgeber(ZEFIX_ABFRAGEN_JE_STUNDE),
+          },
     abfragenJeStunde: Number(process.env.ABFRAGEN_JE_STUNDE ?? 60),
     arten: process.env.REGISTER_DELTA_ARTEN ? (process.env.REGISTER_DELTA_ARTEN.split(",").map((a) => a.trim()) as JobArt[]) : undefined,
     log,

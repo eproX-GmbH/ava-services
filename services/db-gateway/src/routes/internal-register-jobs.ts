@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { internalAuthMiddleware } from "../middleware/internal-auth";
 import { getGatewayPool } from "../lib/producer-pools";
-import { abfragenJeStundeFuer, erzeugeAtJobs, erzeugeUkJobs, JOB_ARTEN_REGISTER, JobFehler, leaseJob, meldeFehler, registriereWorker, verarbeiteErgebnis, verarbeiteTeilergebnis, type Ergebnis, type JobArt } from "../lib/register-jobs";
+import { abfragenJeStundeFuer, erzeugeAtJobs, erzeugeChBulkJobs, erzeugeChJobs, erzeugeUkJobs, JOB_ARTEN_REGISTER, JobFehler, leaseJob, meldeFehler, registriereWorker, verarbeiteErgebnis, verarbeiteTeilergebnis, type Ergebnis, type JobArt, type Teilergebnis } from "../lib/register-jobs";
 import { ErgebnisShape, JobArtSchema, TeilergebnisShape, WorkerId } from "./v1/register-jobs";
 
 export const internalRegisterJobsRouter = new Hono();
@@ -37,7 +37,7 @@ internalRegisterJobsRouter.post("/register-jobs/:id/teilergebnis", async (c) => 
   const body = parse(c.get("internalRawBody"), TeilergebnisShape);
   if (!body) return c.json({ error: "bad_request" }, 400);
   try {
-    return c.json(await verarbeiteTeilergebnis(getGatewayPool(), id, body));
+    return c.json(await verarbeiteTeilergebnis(getGatewayPool(), id, body as Teilergebnis));
   } catch (e) {
     if (e instanceof JobFehler) return c.json({ error: e.message }, e.status);
     throw e;
@@ -49,6 +49,20 @@ internalRegisterJobsRouter.post("/register-jobs/uk/erzeugen", async (c) => {
   const body = parse(c.get("internalRawBody"), z.object({}).passthrough());
   if (!body) return c.json({ error: "bad_request" }, 400);
   return c.json(await erzeugeUkJobs(getGatewayPool()));
+});
+
+// Schweiz — SHAB-Tagesjobs und Monats-Refresh sofort erzeugen (sonst Cron 02:00 UTC). Idempotent ueber Datum/Monat.
+internalRegisterJobsRouter.post("/register-jobs/ch/erzeugen", async (c) => {
+  const body = parse(c.get("internalRawBody"), z.object({}).passthrough());
+  if (!body) return c.json({ error: "bad_request" }, 400);
+  return c.json(await erzeugeChJobs(getGatewayPool()));
+});
+
+// Schweiz — Erstabzug aus LINDAS: eine ch_bulk-Seite je OFFSET ueber die Gesamtzahl (Betrieb, einmalig).
+internalRegisterJobsRouter.post("/register-jobs/ch-bulk", async (c) => {
+  const body = parse(c.get("internalRawBody"), z.object({ gesamt: z.number().int().positive(), seite: z.number().int().positive().max(10_000).optional() }));
+  if (!body) return c.json({ error: "bad_request" }, 400);
+  return c.json(await erzeugeChBulkJobs(getGatewayPool(), body.gesamt, body.seite));
 });
 
 // Oesterreich — Monatsjobs sofort erzeugen (Betrieb; sonst Cron 02:00 UTC). Idempotent ueber den Monatsschluessel.

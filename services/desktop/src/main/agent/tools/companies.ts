@@ -215,7 +215,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) " +
       "mit den gespeicherten Veroeffentlichungen (Datum, Aktenzeichen, Gegenstand, Text; quelle insolvenzportal = Deutschland, ediktsdatei = Oesterreich). Mit pruefen=true wird eine neue " +
-      "Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
+      "Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN..., SHAB/Zefix bei Schweizer Firmen CH_CHE..., Companies House bei UK_...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
     parameters: {
       type: "object",
       properties: { companyId: { type: "string" }, pruefen: { type: "boolean", description: "neue Pruefung im Insolvenzportal anfordern" } },
@@ -226,8 +226,9 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       const daten = await gateway.request<Record<string, unknown>>(`/v1/companies/${encodeURIComponent(args.companyId)}/insolvency-events`, { signal: c.signal });
       let eingereiht: unknown = null;
       if (args.pruefen === true) {
-        // Oesterreich: Ediktsdatei und Firmenbuch-Detail ueber die AT-Route; sonst Insolvenzportal.
-        const route = /^AT_FN/.test(args.companyId) ? "/v1/register-jobs/at" : "/v1/register-jobs/insolvenz";
+        // Oesterreich: Ediktsdatei und Firmenbuch-Detail ueber die AT-Route; Schweiz: Zefix-Detail
+        // (Konkurs steht im SHAB-Tagesabzug, Status im Detail); UK: Companies House; sonst Insolvenzportal.
+        const route = /^AT_FN/.test(args.companyId) ? "/v1/register-jobs/at" : /^CH_CHE/.test(args.companyId) ? "/v1/register-jobs/ch" : /^UK_/.test(args.companyId) ? "/v1/register-jobs/uk" : "/v1/register-jobs/insolvenz";
         eingereiht = await gateway.request<Record<string, unknown>>(route, { method: "POST", body: { companyIds: [args.companyId], grund: "chat" }, signal: c.signal });
       }
       return { ...daten, pruefungEingereiht: eingereiht };

@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle, ChSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {
@@ -16,6 +16,8 @@ export type WorkerOptionen = {
   at?: AtSchnittstelle;
   /** UK (Companies House, kein Browser); `teilergebnis` wird vom Worker an das Gateway gebunden. */
   uk?: Omit<UkSchnittstelle, "teilergebnis">;
+  /** Schweiz (Zefix, LINDAS); Teilergebnis fuellt der Worker. */
+  ch?: Omit<ChSchnittstelle, "teilergebnis">;
   abfragenJeStunde?: number;
   arten?: JobArt[];
   leerlaufMs?: number;
@@ -103,6 +105,7 @@ export class RegisterWorker {
         ...(this.o.insolvenz ? (["insolvenz"] as JobArt[]) : []),
         ...(this.o.at ? (["at_front", "at_refresh", "at_insolvenz"] as JobArt[]) : []),
         ...(this.o.uk ? (["uk_bulk", "uk_refresh", "uk_insolvenz"] as JobArt[]) : []),
+        ...(this.o.ch ? (["ch_bulk", "ch_sogc", "ch_refresh"] as JobArt[]) : []),
       ] as JobArt[]);
     try {
       while (!this.stopSignal) {
@@ -128,7 +131,7 @@ export class RegisterWorker {
         this.log(`job ${job.id} ${job.art} ${job.schluessel}`);
         try {
           // Oesterreich-Jobs brauchen keinen Browser; das Registerportal nur bei Bedarf oeffnen.
-          if (!job.art.startsWith("at_") && !job.art.startsWith("uk_")) portal ??= await this.o.portal();
+          if (!job.art.startsWith("at_") && !job.art.startsWith("uk_") && !job.art.startsWith("ch_")) portal ??= await this.o.portal();
           const ergebnis = await fuehreJobAus(job, {
             workerId: this.o.workerId,
             portal: portal ?? portalFehlt,
@@ -138,6 +141,14 @@ export class RegisterWorker {
                   ...this.o.uk,
                   teilergebnis: async (jobId, teil, trefferUk) => {
                     await this.o.gateway.teilergebnis(jobId, { workerId: this.o.workerId, teil, trefferUk });
+                  },
+                }
+              : undefined,
+            ch: this.o.ch
+              ? {
+                  ...this.o.ch,
+                  teilergebnis: async (jobId, teil, trefferCh) => {
+                    await this.o.gateway.teilergebnis(jobId, { workerId: this.o.workerId, teil, trefferCh });
                   },
                 }
               : undefined,

@@ -80,6 +80,19 @@ export async function seedEntityProgressForTransaction(
     }
   }
 
+  // Schweiz (docs/PLAN_SCHWEIZ.md): kein Handelsregister-Producer; Zweck, Kapital und
+  // Adresse kommen aus dem Zefix-Detail ueber die Register-Worker. Beim Import sofort
+  // anfordern, sonst erst mit dem monatlichen Pool-Refresh.
+  {
+    const ch = companyIds.filter((id) => /^CH_CHE\d{9}$/.test(id));
+    if (ch.length > 0) {
+      const { chAnfordern } = await import("./register-jobs");
+      void chAnfordern(getGatewayPool(), ch, "import").catch((err) =>
+        logger.warn({ transactionId, err: err instanceof Error ? err.message : String(err) }, "seed: Zefix-Abruf nicht eingereiht"),
+      );
+    }
+  }
+
   if (companyIds.length === 0) {
     // Pre-§8.v3 transaction or genuinely empty import. Either way
     // there's nothing to seed.

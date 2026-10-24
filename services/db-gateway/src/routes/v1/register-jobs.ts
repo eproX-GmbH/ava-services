@@ -29,8 +29,7 @@ import {
   statistik,
   verarbeiteErgebnis,
   type JobArt,
-  schreibeTreffer,
-} from "../../lib/register-jobs";
+  schreibeTreffer, chAnfordern } from "../../lib/register-jobs";
 import { companyIdAus } from "../../lib/register-ids";
 import { ErrorShape } from "./schemas";
 
@@ -45,7 +44,7 @@ const err = {
 };
 
 export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"]);
+export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh"]);
 
 const JobShape = z
   .object({
@@ -139,7 +138,41 @@ const TrefferUkShape = z.object({
   fruehereNamen: z.array(z.string().max(500)).max(10).optional(),
 });
 
-export const TeilergebnisShape = z.object({ workerId: WorkerId, teil: z.number().int().positive(), trefferUk: z.array(TrefferUkShape).min(1).max(1000) });
+/** Schweiz: Zeile aus LINDAS (ch_bulk), SHAB-Tagesabzug (ch_sogc) oder Zefix-Detail (ch_refresh); Paket register-delta, ch-zefix.ts. */
+const TrefferChShape = z.object({
+  uid: z.string().regex(/^CHE\d{9}$/),
+  name: z.string().min(1).max(500),
+  sitz: z.string().max(200).default(""),
+  kanton: z.string().max(10).default(""),
+  amt: z.string().max(200).default(""),
+  legalForm: z.string().max(200).default(""),
+  legalFormCode: z.string().max(10).default(""),
+  status: z.enum(["ACTIVE", "CLOSED", "LOESCHUNG_ANGEKUENDIGT"]),
+  insolvenz: z.enum(["NONE", "VERDACHT", "EROEFFNET"]),
+  street: z.string().max(200).nullable().optional(),
+  zipCode: z.string().max(20).nullable().optional(),
+  sogcDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  fruehereNamen: z.array(z.string().max(500)).max(10).optional(),
+  si: z
+    .object({
+      legalForm: z.string().max(200),
+      street: z.string().max(200),
+      houseNumber: z.string().max(40),
+      zipCode: z.string().max(20),
+      city: z.string().max(200),
+      foundingYear: z.number().int().nullable(),
+      corporatePurpose: z.string().max(20_000).nullable(),
+      shareCapital: z.number().nullable(),
+      capitalCurrency: z.string().max(10).nullable(),
+      lastRegisterEntry: z.string().max(40).nullable(),
+      cantonalExcerptWeb: z.string().max(1000).nullable(),
+    })
+    .optional(),
+});
+
+export const TeilergebnisShape = z
+  .object({ workerId: WorkerId, teil: z.number().int().positive(), trefferUk: z.array(TrefferUkShape).min(1).max(1000).optional(), trefferCh: z.array(TrefferChShape).min(1).max(5000).optional() })
+  .refine((t) => !!t.trefferUk || !!t.trefferCh, { message: "trefferUk oder trefferCh" });
 
 /** Oesterreich: Suchtreffer oder Detail aus JustizOnline (Paket register-delta, at-firmenbuch.ts). */
 const TrefferAtShape = z.object({
@@ -165,6 +198,8 @@ export const ErgebnisShape = z.object({
   atFront: z.object({ begriff: z.string().min(2).max(4), naechsteSeite: z.number().int().nonnegative(), fertig: z.boolean(), gesamt: z.number().int().nonnegative() }).optional(),
   trefferUk: z.array(TrefferUkShape).max(5000).optional(),
   ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
+  trefferCh: z.array(TrefferChShape).max(5000).optional(),
+  chBulk: z.object({ offset: z.number().int().nonnegative(), limit: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative(), letzteSeite: z.boolean() }).optional(),
   si: z.object({ geladen: z.number().int().nonnegative(), ohneLink: z.number().int().nonnegative(), fehler: z.number().int().nonnegative() }).optional().catch(undefined),
   // Wie bei `si`: Diese Angabe ist Komfort (Folgejob fuer den Rest). Sie darf
   // die Ergebnismeldung nie ungueltig machen.
@@ -389,7 +424,7 @@ const teilergebnisRoute = createRoute({
   method: "post",
   path: "/register-jobs/{id}/teilergebnis",
   tags: [tag],
-  summary: "Teilergebnis eines uk_bulk-Jobs melden (Buendel bis 1.000 Zeilen)",
+  summary: "Teilergebnis eines uk_bulk- oder ch_bulk-Jobs melden (Buendel)",
   request: { params: z.object({ id: z.string().regex(/^\d+$/) }), body: { content: { "application/json": { schema: TeilergebnisShape } } } },
   responses: { 200: { content: { "application/json": { schema: z.record(z.string(), z.unknown()) } }, description: "verarbeitet" }, ...err },
 });
@@ -425,4 +460,27 @@ registerJobsRouter.openapi(ukRoute, async (c) => {
   auth(c);
   const body = c.req.valid("json");
   return c.json(await ukAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
+});
+
+// Schweiz — Zefix-Detail (Status, Adresse, Zweck, Kapital) fuer konkrete Firmen anfordern.
+const chRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/ch",
+  tags: [tag],
+  summary: "Schweiz: Zefix-Detail fuer konkrete Firmen anfordern (CH_CHE...)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ companyIds: z.array(z.string().regex(/^CH_CHE\d{9}$/)).min(1).max(500), grund: z.string().min(1).max(40).regex(/^[a-z0-9-]+$/).default("anforderung") }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: z.object({ jobs: z.number().int(), firmen: z.number().int() }) } }, description: "ok" }, 401: err[401] },
+});
+registerJobsRouter.openapi(chRoute, async (c) => {
+  auth(c);
+  const body = c.req.valid("json");
+  return c.json(await chAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
 });

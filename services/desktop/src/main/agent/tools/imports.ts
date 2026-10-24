@@ -26,8 +26,8 @@ import {
 // re-issues the same import call without dryRun (or via a follow-up
 // `import_company` / `import_excel` / `import_companies_from_crm` with
 // the corrected company list).
-/** Register-Länder, die master-data beim Import zuordnen kann (CH noch nicht). */
-export const IMPORT_LAENDER = ["DE", "AT", "UK"] as const;
+/** Register-Länder, die master-data beim Import zuordnen kann (CH seit dem Zefix-Zugang, docs/PLAN_SCHWEIZ.md). */
+export const IMPORT_LAENDER = ["DE", "AT", "CH", "UK"] as const;
 export type ImportLand = (typeof IMPORT_LAENDER)[number];
 
 /** „gb“, „GB“, „Vereinigtes Königreich“ → „UK“; sonst Großschreibung. */
@@ -35,6 +35,7 @@ export function landNormal(v: string): string {
   const t = v.trim().toUpperCase();
   if (t === "GB" || t === "GBR" || t === "UNITED KINGDOM" || t === "VEREINIGTES KÖNIGREICH" || t === "ENGLAND") return "UK";
   if (t === "AUT" || t === "ÖSTERREICH" || t === "OESTERREICH" || t === "AUSTRIA") return "AT";
+  if (t === "CHE" || t === "SCHWEIZ" || t === "SWITZERLAND" || t === "SUISSE" || t === "SVIZZERA") return "CH";
   if (t === "DEU" || t === "DEUTSCHLAND" || t === "GERMANY") return "DE";
   return t;
 }
