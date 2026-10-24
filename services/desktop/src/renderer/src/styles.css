@@ -3710,6 +3710,8 @@ input.kontakt-suche__feld:focus { border-color: var(--accent); }
 
 /* External-link warning modal (LinkedIn rate-limit hinweis). */
 .link-warning-overlay {
+  /* Eigener Schriftstand, unabhaengig vom Ausloeser (Kapitaelchen der Quellenangabe). */
+  font-variant: normal; letter-spacing: normal; text-transform: none; font-size: 14px; opacity: 1;
   position: fixed; inset: 0;
   z-index: 200;
   background: rgba(0, 0, 0, 0.55);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 // Reusable external-link wrapper with an optional confirmation gate
 // for LinkedIn URLs.
@@ -135,8 +136,11 @@ function ExternalLinkConfirm({
     window.open(href, "_blank", "noreferrer");
   };
 
-  return (
-    <div className="link-warning-overlay" role="presentation" onClick={onClose}>
+  // 2026-10-24 — Portal an document.body (Befund Joyce, Firmenansicht): Der Dialog
+  // lag sonst im Stapelkontext der Personenkarte (Nachbarkarten ueberdeckten ihn)
+  // und erbte die Kapitaelchen der Quellenangabe, aus der er geoeffnet wurde.
+  return createPortal(
+    <div className="link-warning-overlay" role="presentation" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div
         ref={dialogRef}
         className="link-warning"
@@ -170,7 +174,8 @@ function ExternalLinkConfirm({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
