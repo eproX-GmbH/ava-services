@@ -192,7 +192,7 @@ und ohne Gateway-Proxy: die Register-Delta-Queue trägt die Schweiz wie AT/UK.
 | Detail je Pool-Firma (`ch_refresh`, Zefix `company/uid`): Zweck, Kapital, Adresse, Gründungsjahr aus erster SHAB-Publikation, frühere Namen → structured-content über `schreibeSiAusDelta` | gebaut; monatlich je Pool-Firma, sofort beim Import (`chAnfordern`, Grund `import`) und aus dem Chat (`company_insolvency` mit `pruefen`) |
 | Personen (Organe aus dem kantonalen Auszug, Entscheidung 5.4) | offen; Zefix liefert keine Personen, `ManagingDirector` bleibt für CH leer |
 | Publikationen/Finanzen | bleiben leer (keine öffentlichen Abschlüsse); Hinweis in der App offen |
-| App: Import mit `country: CH` (Name + Ort) und per `companyIds`, Chip CH, UID-Anzeige | ja (Chip/UID gab es schon) |
+| App: Import mit `country: CH` (Name + Ort) und per `companyIds`, Chip CH, UID-Anzeige, Länderfilter in Desktop, app.ava.bi und admin.ava.bi, Finanzen-Reiter entfällt, Insolvenz über SHAB/Zefix (v0.1.880) | ja |
 | Radar/ICP für CH, `firma_finden` mit `land: CH`, `register_live_suche` | offen |
 | Einzelunternehmen/Vereine (Entscheidung 5.5) | Erstabzug nimmt alle LINDAS-Einträge; Rechtsform steht am Datensatz, Filter später |
 
