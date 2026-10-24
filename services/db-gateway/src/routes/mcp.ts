@@ -66,12 +66,12 @@ const TOOLS: ToolDef[] = [
     name: "firma_suchen",
     schalter: "lesen",
     description:
-      "Firmen im Stammdaten-Bestand von AVA suchen (7,9 Mio. Firmen aus Deutschland, Oesterreich und dem Vereinigten Koenigreich, unscharf nach Name/Ort). Liefert companyId, Name, Ort, Land, Registerstatus. Mit der companyId weiter zu firma_lesen.",
+      "Firmen im Stammdaten-Bestand von AVA suchen (8,7 Mio. Firmen aus Deutschland, Oesterreich, der Schweiz und dem Vereinigten Koenigreich, unscharf nach Name/Ort). Liefert companyId, Name, Ort, Land, Registerstatus. Mit der companyId weiter zu firma_lesen.",
     inputSchema: {
       type: "object",
       properties: {
         q: { type: "string", description: "Suchbegriff, mindestens 2 Zeichen (Name, Ort, Registernummer)" },
-        land: { type: "string", enum: ["DE", "AT", "UK"], description: "Optional: nur dieses Land" },
+        land: { type: "string", enum: ["DE", "AT", "CH", "UK"], description: "Optional: nur dieses Land" },
         limit: { type: "integer", minimum: 1, maximum: 50, description: "Standard 10" },
       },
       required: ["q"],
@@ -150,7 +150,7 @@ const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         companyIds: { type: "array", items: { type: "string" }, maxItems: 500, description: "Firmen-IDs aus firma_suchen (bevorzugt)" },
-        firmen: { type: "array", items: { type: "object", properties: { name: { type: "string" }, ort: { type: "string" }, land: { type: "string", enum: ["DE", "AT", "UK"] } }, required: ["name", "ort"] }, maxItems: 500 },
+        firmen: { type: "array", items: { type: "object", properties: { name: { type: "string" }, ort: { type: "string" }, land: { type: "string", enum: ["DE", "AT", "CH", "UK"] } }, required: ["name", "ort"] }, maxItems: 500 },
         dateiBase64: { type: "string", description: "xlsx oder csv, Base64" },
         dateiName: { type: "string" },
         spalteFirma: { type: "string", description: "Spaltenueberschrift mit dem Firmennamen (bei Datei)" },

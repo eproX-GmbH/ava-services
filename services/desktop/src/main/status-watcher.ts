@@ -177,7 +177,11 @@ export class StatusWatcher {
     const quelle =
       row.country === "AT"
         ? "Quelle: Firmenbuch (JustizOnline) und Ediktsdatei über das Register-Delta."
-        : "Quelle: Handelsregister und Insolvenzbekanntmachungen über das Register-Delta.";
+        : row.country === "CH"
+          ? "Quelle: Handelsregister (Zefix) und Schweizerisches Handelsamtsblatt über das Register-Delta."
+          : row.country === "UK"
+            ? "Quelle: Companies House und The Gazette über das Register-Delta."
+            : "Quelle: Handelsregister und Insolvenzbekanntmachungen über das Register-Delta.";
     const rationale = [
       `**${row.name}** (${row.companyId})`,
       ...(land ? [land] : []),

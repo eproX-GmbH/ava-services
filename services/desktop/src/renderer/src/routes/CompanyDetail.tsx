@@ -493,8 +493,9 @@ export function CompanyDetail() {
       }>(`/v1/companies/${id}`),
     enabled: !!id,
   });
-  // Finanzen kommen aus dem Bundesanzeiger; fuer oesterreichische Firmen gibt es diese Quelle nicht.
-  const istAt = summary.data?.country === "AT";
+  // Finanzen kommen aus dem Bundesanzeiger; fuer oesterreichische und Schweizer Firmen gibt es
+  // diese Quelle nicht (Schweizer Abschluesse sind nicht oeffentlich).
+  const istAt = summary.data?.country === "AT" || summary.data?.country === "CH";
   // Verflechtungen (Gesellschafterlisten) gibt es nur fuer deutsche Registerfirmen und nur mit Org-Feature.
   const istDeRegister = /^[A-Z0-9]+_HR[AB]_/.test(id ?? "");
   const verflechtungenSichtbar = verflechtungenErlaubt && istDeRegister;
