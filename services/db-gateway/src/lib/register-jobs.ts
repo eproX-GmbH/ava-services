@@ -298,7 +298,12 @@ export async function masterData<T>(method: "POST" | "PUT", path: string, body?:
     headers: { "content-type": "application/json", "x-internal-signature": sig },
     body: raw,
   });
-  if (!res.ok) throw new Error(`master-data ${method} ${path} → ${res.status}`);
+  if (!res.ok) {
+    // Begruendung mitnehmen (Validierungsfehler stehen im Body als `errors`), sonst ist
+    // ein 400 im Job-Fehler nicht zu deuten (Befund 2026-10-24: refresh-Jobs 1738/1812).
+    const text = await res.text().catch(() => "");
+    throw new Error(`master-data ${method} ${path} → ${res.status}${text ? ` ${text.slice(0, 600)}` : ""}`);
+  }
   return (await res.json()) as T;
 }
 
