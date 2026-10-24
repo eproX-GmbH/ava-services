@@ -2,7 +2,7 @@
 // Die Handler sind unverändert; die Abhängigkeiten kommen explizit über `deps`.
 // Spät gesetzte Dienste (vormals `let` in index.ts) werden als Getter übergeben.
 
-import { BrowserWindow, app, ipcMain, protocol, shell } from "electron";
+import { BrowserWindow, app, clipboard, ipcMain, protocol, shell } from "electron";
 import type { resolveConfig } from "../../shared/config";
 import { paths } from "../../core/platform";
 import { getActiveSpaceId, listAccounts, readIdentity, removeAccount, startNewAccount, switchAccount } from "../account-space";
@@ -85,6 +85,14 @@ export function registerSystemIpc(deps: SystemIpcDeps): void {
   // Refuses any other scheme so the renderer can't open arbitrary
   // URIs (file:, javascript:, custom protocols, etc.) through this
   // path — those should each have their own dedicated IPC.
+  // 2026-10-24 — Zwischenablage ueber den Hauptprozess (Befund Joyce: "Logs
+  // kopieren" tat nichts). navigator.clipboard im Renderer haengt an Fokus und
+  // Berechtigung; Electrons clipboard schreibt immer.
+  ipcMain.handle("clipboard:writeText", (_e, text: unknown) => {
+    if (typeof text !== "string") throw new Error("clipboard:writeText requires a string");
+    clipboard.writeText(text.slice(0, 5_000_000));
+  });
+
   ipcMain.handle("shell:openExternal", async (_e, url: string) => {
     if (typeof url !== "string") {
       throw new Error("shell:openExternal requires a string URL");

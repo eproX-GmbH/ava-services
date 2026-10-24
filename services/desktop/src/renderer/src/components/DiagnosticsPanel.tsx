@@ -205,7 +205,9 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
       })
       .join("\n");
     try {
-      if (navigator.clipboard?.writeText) {
+      if (window.api?.shell?.copyText) {
+        await window.api.shell.copyText(payload);
+      } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(payload);
       } else {
         const ta = document.createElement("textarea");

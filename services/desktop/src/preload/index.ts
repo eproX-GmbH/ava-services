@@ -1336,6 +1336,8 @@ const api = {
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:openExternal", url),
+    /** Text in die Zwischenablage (Hauptprozess, unabhaengig von Fokus und Berechtigung). */
+    copyText: (text: string): Promise<void> => ipcRenderer.invoke("clipboard:writeText", text),
     /**
      * v0.1.155 — reveal a file in Finder/Explorer (selects the file
      * inside its containing directory). Used by the silent-OTA-failure
