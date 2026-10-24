@@ -82,7 +82,7 @@ async function ensureSchema(pool: Pool): Promise<void> {
     -- aus dem Engagement-Trichter (kein Orts-Scan, eigener Deckel).
     ALTER TABLE "DiscoveryScan"
       ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'scan';
-    -- docs/PLAN_RADAR_LAENDER.md (R-L1): Land je Scan und je Kandidat (DE | AT | UK).
+    -- docs/PLAN_RADAR_LAENDER.md (R-L1): Land je Scan und je Kandidat (DE | AT | CH | UK).
     ALTER TABLE "DiscoveryScan"
       ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'DE';
     ALTER TABLE "DiscoveredCompany"
@@ -269,7 +269,7 @@ export type StartScanResult =
       scansUsedInWindow: number;
     };
 
-export type RadarLand = "DE" | "AT" | "UK";
+export type RadarLand = "DE" | "AT" | "CH" | "UK";
 
 export async function startScan(
   pool: Pool,
@@ -613,7 +613,7 @@ export async function findRegisterCandidates(
   // dem Limit bleibt, fuellen Firmen derselben Bezirke mit fremdem
   // location-Text auf — bewusst unscharf (Bezirk ~ Kreis-Skala),
   // deshalb nachrangig und klein gedeckelt.
-  // Gerichtsbezirks-Rueckfall nur fuer DE (AT hat 16 Gerichte, UK drei Registerstellen).
+  // Gerichtsbezirks-Rueckfall nur fuer DE (AT hat 16 Gerichte, CH ein Amt je Kanton, UK drei Registerstellen).
   if (country === "DE" && rows.length > 0 && rows.length < limit * 2) {
     const courtCount = new Map<string, number>();
     for (const r of rows) {
@@ -817,7 +817,7 @@ export async function saveProfile(
 export interface CandidateRow {
   discoveryId: string;
   name: string;
-  /** Land des Kandidaten (DE | AT | UK). */
+  /** Land des Kandidaten (DE | AT | CH | UK). */
   country: string;
   city: string | null;
   plz: string | null;

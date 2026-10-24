@@ -5,8 +5,8 @@
 // gibt es ein Profil fuer die Google-Places-Suche (Domain, Land, Sprache,
 // Ortsangabe) und die Sprache der geplanten Suchanfragen.
 
-export type RadarLand = "DE" | "AT" | "UK";
-export const RADAR_LAENDER: readonly RadarLand[] = ["DE", "AT", "UK"];
+export type RadarLand = "DE" | "AT" | "CH" | "UK";
+export const RADAR_LAENDER: readonly RadarLand[] = ["DE", "AT", "CH", "UK"];
 
 export interface LandProfil {
   land: RadarLand;
@@ -20,12 +20,14 @@ export interface LandProfil {
 export const LAND_PROFILE: Record<RadarLand, LandProfil> = {
   DE: { land: "DE", name: "Deutschland", serp: { google_domain: "google.de", gl: "de", hl: "de", location: "Germany" }, sprache: "de" },
   AT: { land: "AT", name: "Österreich", serp: { google_domain: "google.at", gl: "at", hl: "de", location: "Austria" }, sprache: "de" },
+  // Deutschsprachig geplant; Places liefert in der Romandie und im Tessin trotzdem die lokalen Namen.
+  CH: { land: "CH", name: "Schweiz", serp: { google_domain: "google.ch", gl: "ch", hl: "de", location: "Switzerland" }, sprache: "de" },
   UK: { land: "UK", name: "Vereinigtes Königreich", serp: { google_domain: "google.co.uk", gl: "uk", hl: "en", location: "United Kingdom" }, sprache: "en" },
 };
 
-/** "Wien (AT)" → { ort: "Wien", land: "AT" }; ohne Kuerzel DE. */
+/** "Wien (AT)", "Zürich (CH)" → { ort, land }; ohne Kuerzel DE. */
 export function ortMitLand(eingabe: string): { ort: string; land: RadarLand } {
-  const m = /^(.*?)\s*\((DE|AT|UK|GB)\)\s*$/i.exec(eingabe.trim());
+  const m = /^(.*?)\s*\((DE|AT|CH|UK|GB)\)\s*$/i.exec(eingabe.trim());
   if (!m) return { ort: eingabe.trim(), land: "DE" };
   const code = m[2]!.toUpperCase();
   return { ort: m[1]!.trim(), land: code === "GB" ? "UK" : (code as RadarLand) };
@@ -41,7 +43,8 @@ export function parseAdresse(address: string | undefined, land: RadarLand): { pl
   if (land === "DE") {
     const m = /(\b\d{5}\b)\s+([^,]+)/.exec(address);
     if (m?.[1] && m[2]) return { plz: m[1], city: m[2].trim() };
-  } else if (land === "AT") {
+  } else if (land === "AT" || land === "CH") {
+    // Vierstellige PLZ vor dem Ort ("Bahnhofstrasse 1, 8001 Zürich, Schweiz").
     const m = /(\b\d{4}\b)\s+([^,]+)/.exec(address);
     if (m?.[1] && m[2]) return { plz: m[1], city: m[2].trim() };
   } else {
@@ -51,7 +54,7 @@ export function parseAdresse(address: string | undefined, land: RadarLand): { pl
   }
   const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
   // Letztes Element ist oft das Land ("Deutschland", "United Kingdom"); davor der Ort.
-  const ohneLand = parts.filter((p) => !/^(deutschland|germany|österreich|austria|united kingdom|uk|great britain)$/i.test(p));
+  const ohneLand = parts.filter((p) => !/^(deutschland|germany|österreich|austria|schweiz|switzerland|suisse|svizzera|united kingdom|uk|great britain)$/i.test(p));
   const last = ohneLand[ohneLand.length - 1];
   return { plz: null, city: last && last.length <= 60 ? last : null };
 }

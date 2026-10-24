@@ -22,6 +22,9 @@ const ART_TEXT: Record<string, string> = {
   uk_bulk: "Monatsabzug Vereinigtes Königreich (Companies House)",
   uk_refresh: "Auffrischung Vereinigtes Königreich (Firmenseite)",
   uk_insolvenz: "Insolvenzprüfung Vereinigtes Königreich (Companies House, Gazette)",
+  ch_bulk: "Erstabzug Schweiz (Handelsregister)",
+  ch_sogc: "Tagesmeldungen Schweiz (Handelsamtsblatt)",
+  ch_refresh: "Auffrischung Schweiz (Handelsregister-Detail)",
 };
 
 export function MithelfenSection() {

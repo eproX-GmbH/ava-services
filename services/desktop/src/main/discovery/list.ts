@@ -11,7 +11,7 @@ import { sanitizeCategory } from "./category";
 export interface CandidateListRow {
   discoveryId: string;
   name: string;
-  /** docs/PLAN_RADAR_LAENDER.md: DE | AT | UK. */
+  /** docs/PLAN_RADAR_LAENDER.md: DE | AT | CH | UK. */
   land: string;
   ort: string | null;
   plz: string | null;

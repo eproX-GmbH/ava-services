@@ -174,8 +174,8 @@ export function Companies() {
         <div className="firmensuche__leer">
           <p className="firmensuche__leer-titel">Wonach suchst du?</p>
           <p className="muted">
-            Ab zwei Zeichen sucht AVA unscharf über 7,9 Millionen Firmen aus Deutschland, Österreich und dem Vereinigten
-            Königreich. Tippfehler und Schreibvarianten sind erlaubt.
+            Ab zwei Zeichen sucht AVA unscharf über 8,7 Millionen Firmen aus Deutschland, Österreich, der Schweiz und dem
+            Vereinigten Königreich. Tippfehler und Schreibvarianten sind erlaubt.
           </p>
           <div className="firmensuche__beispiele" aria-label="Beispiele">
             {BEISPIELE.map((b) => (
@@ -207,7 +207,7 @@ export function Companies() {
           <p className="muted">
             {gruendungAn
               ? "Weite den Zeitraum oder entferne das Land."
-              : "Versuch es mit einem kürzeren Begriff, dem Ort oder der Registernummer. Firmen ausserhalb von Deutschland, Österreich und UK sind nicht im Bestand."}
+              : "Versuch es mit einem kürzeren Begriff, dem Ort oder der Registernummer. Firmen außerhalb von Deutschland, Österreich, der Schweiz und UK sind nicht im Bestand."}
           </p>
         </div>
       )}

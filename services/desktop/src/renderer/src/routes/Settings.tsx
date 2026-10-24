@@ -765,6 +765,9 @@ function MithelfenZeile() {
     uk_bulk: "Companies House Monatsabzug",
     uk_refresh: "Companies House (Firmenseite)",
     uk_insolvenz: "Companies House Insolvenz und Gazette",
+    ch_bulk: "Handelsregister Schweiz Erstabzug",
+    ch_sogc: "Handelsamtsblatt Schweiz",
+    ch_refresh: "Handelsregister Schweiz (Detail)",
   };
   const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
   return (

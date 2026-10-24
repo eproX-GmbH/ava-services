@@ -1,6 +1,6 @@
 // Phase 0 Firmen-Discovery — Generator fuer src/data/geo-places.json.
 //
-// Laedt die GeoNames-PLZ-Datensaetze fuer DE, AT und GB (CC-BY 4.0,
+// Laedt die GeoNames-PLZ-Datensaetze fuer DE, AT, CH und GB (CC-BY 4.0,
 // https://download.geonames.org/export/zip/) und destilliert ihn zu einem
 // kompakten, eingecheckten Seed fuer die GeoPlace-Tabelle im Gateway.
 //
@@ -64,13 +64,14 @@ function extractEntry(buf, wantedName) {
   throw new Error(`${wantedName} nicht im Zip gefunden`);
 }
 
-// docs/PLAN_RADAR_LAENDER.md (R-L0): drei Laender in einem Seed. GeoNames
+// docs/PLAN_RADAR_LAENDER.md (R-L0): vier Laender in einem Seed (CH seit docs/PLAN_SCHWEIZ.md). GeoNames
 // fuehrt UK als "GB"; AVA nennt das Land "UK" (master-data country).
 // Fuer GB nimmt GeoNames GB.zip = Outward-Codes (~27k Zeilen), nicht
 // GB_full (1,7 Mio.). Der accuracy-Filter gilt nur fuer DE (Grosskunden-PLZ).
 const LAENDER = [
   { ava: "DE", geonames: "DE", accuracyPflicht: true },
   { ava: "AT", geonames: "AT", accuracyPflicht: false },
+  { ava: "CH", geonames: "CH", accuracyPflicht: false },
   { ava: "UK", geonames: "GB", accuracyPflicht: false },
 ];
 const rows = [];
@@ -87,7 +88,7 @@ for (const land of LAENDER) {
     // f: [0]=land [1]=plz [2]=ort [3]=admin1 [4]=code1 [5]=admin2 [6]=code2
     //    [7]=admin3 [8]=code3 [9]=lat [10]=lon [11]=accuracy
     // DE: admin1=Bundesland, admin3=Kreis, code3=AGS-Kreis.
-    // AT: admin1=Bundesland, admin2=Bezirk. UK: admin1=Landesteil, admin2=County/Region.
+    // AT: admin1=Bundesland, admin2=Bezirk. CH: admin1=Kanton, admin2=Bezirk. UK: admin1=Landesteil, admin2=County/Region.
     const accuracy = (f[11] ?? "").trim();
     if (land.accuracyPflicht && !accuracy) {
       dropped++;
@@ -118,7 +119,7 @@ for (const land of LAENDER) {
 
 const out = {
   meta: {
-    source: "GeoNames postal codes DE, AT, GB (https://download.geonames.org/export/zip/)",
+    source: "GeoNames postal codes DE, AT, CH, GB (https://download.geonames.org/export/zip/)",
     license: "CC-BY 4.0 — Attribution: GeoNames (geonames.org)",
     generatedAt: new Date().toISOString().slice(0, 10),
     columns: ["country", "name", "plz", "bundesland", "kreis", "agsKreis", "lat", "lon"],

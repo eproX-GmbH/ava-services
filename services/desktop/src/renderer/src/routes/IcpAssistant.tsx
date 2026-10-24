@@ -549,7 +549,7 @@ export function IcpAssistant(): JSX.Element {
         <div className="icp-row">
           <label className="icp-field">
             <span>K3/K6 · Standort(e) für den Radar</span>
-            <input value={form.orte} onChange={upd("orte")} placeholder="z. B. Hannover, Wien (AT), Manchester (UK)" />
+            <input value={form.orte} onChange={upd("orte")} placeholder="z. B. Hannover, Wien (AT), Zürich (CH), Manchester (UK)" />
           </label>
           <label className="icp-field icp-field-narrow">
             <span>Umkreis (km)</span>

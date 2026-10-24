@@ -193,7 +193,7 @@ und ohne Gateway-Proxy: die Register-Delta-Queue trägt die Schweiz wie AT/UK.
 | Personen (Organe aus dem kantonalen Auszug, Entscheidung 5.4) | offen; Zefix liefert keine Personen, `ManagingDirector` bleibt für CH leer |
 | Publikationen/Finanzen | bleiben leer (keine öffentlichen Abschlüsse); Hinweis in der App offen |
 | App: Import mit `country: CH` (Name + Ort) und per `companyIds`, Chip CH, UID-Anzeige, Länderfilter in Desktop, app.ava.bi und admin.ava.bi, Finanzen-Reiter entfällt, Insolvenz über SHAB/Zefix (v0.1.880) | ja |
-| Radar/ICP für CH, `firma_finden` mit `land: CH`, `register_live_suche` | offen |
+| Radar/ICP für CH (Ortsgraph aus GeoNames CH, 4.520 PLZ-Zeilen; SERP google.ch; Ort "Zürich (CH)"), `firma_finden` mit `land: CH` | ja (v0.1.881); `register_live_suche` für CH offen |
 | Einzelunternehmen/Vereine (Entscheidung 5.5) | Erstabzug nimmt alle LINDAS-Einträge; Rechtsform steht am Datensatz, Filter später |
 
 Takt: Zefix 1.800 Abfragen je Stunde (0,5/s), LINDAS 5.000 Zeilen je Seite mit

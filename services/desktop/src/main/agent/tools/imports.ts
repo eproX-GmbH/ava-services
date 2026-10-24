@@ -904,11 +904,10 @@ export function buildImportTools(deps: {
       "user is asking about, call this IMMEDIATELY with that id — no " +
       "confirmation, no 'soll ich?': the user expects AVA to simply know the " +
       "company, and processing it is how AVA gets there. " +
-      "Companies OUTSIDE Germany (company_search returned country AT or UK) " +
+      "Companies OUTSIDE Germany (company_search returned country AT, CH or UK) " +
       "need `country` on their row — without it the row is matched against " +
       "the German register and finds nothing. Rows of different countries " +
-      "become one transaction per country. Swiss companies (CH) only via " +
-      "`companyIds`, not by name. " +
+      "become one transaction per country. " +
       "Returns a transactionId on commit; progress via `import_status`. " +
       "The dry-run creates NO transaction — waiting for the user's " +
       "confirmation before committing is the intended flow, never a " +
@@ -939,9 +938,9 @@ export function buildImportTools(deps: {
               city: { type: "string", minLength: 1 },
               country: {
                 type: "string",
-                enum: ["DE", "AT", "UK"],
+                enum: ["DE", "AT", "CH", "UK"],
                 description:
-                  "Register country, taken from company_search (`country`). DE = Handelsregister (default), AT = Firmenbuch, UK = Companies House.",
+                  "Register country, taken from company_search (`country`). DE = Handelsregister (default), AT = Firmenbuch, CH = Handelsregister Schweiz (Zefix), UK = Companies House.",
               },
               crm: {
                 type: "object",

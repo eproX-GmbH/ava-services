@@ -65,7 +65,7 @@ const startScanRoute = createRoute({
             ort: z.string().min(2).max(120),
             radiusKm: z.number().int().min(1).max(250),
             /** docs/PLAN_RADAR_LAENDER.md: Land des Suchgebiets, Standard DE. */
-            country: z.enum(["DE", "AT", "UK"]).default("DE"),
+            country: z.enum(["DE", "AT", "CH", "UK"]).default("DE"),
           }),
         },
       },
@@ -448,7 +448,7 @@ const CandidateRowShape = z
   .object({
     discoveryId: z.string(),
     name: z.string(),
-    /** docs/PLAN_RADAR_LAENDER.md: DE | AT | UK. */
+    /** docs/PLAN_RADAR_LAENDER.md: DE | AT | CH | UK. */
     country: z.string(),
     city: z.string().nullable(),
     plz: z.string().nullable(),
@@ -506,7 +506,7 @@ const listRoute = createRoute({
        *  LIMIT-Fenster und der Backlog bleibt fuer immer liegen. */
       withoutProfiles: z.coerce.boolean().default(false),
       /** docs/PLAN_RADAR_LAENDER.md: nur Kandidaten dieses Landes. */
-      country: z.enum(["DE", "AT", "UK"]).optional(),
+      country: z.enum(["DE", "AT", "CH", "UK"]).optional(),
       /** docs/PLAN_LINKEDIN_LEADS.md L2: Kandidaten dieser Quelle ausblenden (Radar-Liste
        *  zeigt keine Post-Firmen mehr; sie leben im Bereich LinkedIn-Leads). */
       ohneQuelle: z.string().max(40).optional(),
@@ -569,7 +569,7 @@ const registerCandidatesRoute = createRoute({
       near: z.string().min(2).max(80),
       radiusKm: z.coerce.number().min(1).max(200).default(30),
       limit: z.coerce.number().int().min(1).max(50).default(15),
-      country: z.enum(["DE", "AT", "UK"]).default("DE"),
+      country: z.enum(["DE", "AT", "CH", "UK"]).default("DE"),
     }),
   },
   responses: {

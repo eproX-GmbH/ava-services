@@ -14,7 +14,7 @@ import { RadarActivityIndicator } from "../components/RadarActivityIndicator";
 interface RadarRow {
   discoveryId: string;
   name: string;
-  /** DE | AT | UK (docs/PLAN_RADAR_LAENDER.md). */
+  /** DE | AT | CH | UK (docs/PLAN_RADAR_LAENDER.md). */
   land?: string;
   ort: string | null;
   plz: string | null;
