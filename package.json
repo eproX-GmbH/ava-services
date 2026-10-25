@@ -28,6 +28,7 @@
     "test:server": "node scripts/server-testlauf.mjs",
     "vendor:sync": "node scripts/vendor-sync.mjs",
     "vendor:check": "node scripts/check-vendor-drift.mjs",
+    "walker:sync": "node scripts/walker-sync.mjs",
     "postinstall": "node scripts/install-githooks.mjs"
   },
   "pnpm": {

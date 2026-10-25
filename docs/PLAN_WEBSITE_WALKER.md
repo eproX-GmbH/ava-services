@@ -24,8 +24,10 @@ trägt die Fundstelle je Aussage mit.
 
 ## 2. Zielbild
 
-Ein Paket `website/src/infrastructure/walker/` mit drei Schichten, die alle
-Zwecke nacheinander nutzen:
+Kanonisch `packages/website-walker/src` (graph.ts, bloecke.ts, signale.ts),
+vendoriert nach `website/` und `company-contact/` unter
+`src/infrastructure/walker/` (Sync `node scripts/walker-sync.mjs`, Abgleich im
+Drift-Check). Drei Schichten, die alle Zwecke nacheinander nutzen:
 
 1. **Linkgraph** (`graph.ts`): Startseite, Navigation, Sitemap (Index und
    Unter-Sitemaps, bis 500 URLs), Tiefe 2, nur eigener Host. Je Link eine
@@ -52,8 +54,8 @@ Das Modell bekommt also je Firma eine Handvoll belegter Passagen statt 5 bis
 |---|---|---|
 | W0 | Plan, Messgrößen festlegen | 2026-10-25 |
 | W1 | Walker-Paket `website/src/infrastructure/walker/` (graph.ts, bloecke.ts, signale.ts) und Stellen darüber (stellen.ts): Karriere- und Anzeigen-Seiten aus Navigation, Sitemap und Rückfallpfaden (Soft-404 erkannt), Listen nur signalstarke Blöcke, Anzeigen ganz bis 3.500 Zeichen, Modellpass in Bündeln zu 20.000 Zeichen, Fundstelle je Stelle, reichere Fassung bei gleichem Titel | v0.1.883; Messung strategic-it.de: 17 Seiten, 70 Blöcke, 39.575 Zeichen, 2 Modellaufrufe, 59 s, 14 von 14 Stellen (vorher 0) |
-| W2 | Kunden/Referenzen über den Walker (Zweck `referenzen`), Beleg = Block | offen |
-| W3 | Personen (`website_people`) über den Walker (Zweck `team`, `impressum`) | offen |
+| W2 | Kunden/Referenzen über den Walker: `kundenDigest` (company-contact) gibt Referenz-Blöcke mit Fundstelle statt der ersten 6.000 Zeichen; Bildliste bleibt; Rückfall Seitenanfang | v0.1.884 |
+| W3 | Personen-Seiten (`website_people`, company-contact): Blöcke mit Personen-Signalen (Rolle oder Kontaktangabe als Torbedingung), 9.000 Zeichen statt 12.000 samt Navigation; Rückfall ganzer Text. Messung strategic-it.de Team-Seite: 19 Blöcke, 8.650 Zeichen, alle Personen | v0.1.884 |
 | W4 | Profil: Startseite plus `produkt`-Seiten blockweise, Budget auf Blöcke statt Seiten | offen |
 | W5 | Messung an zehn Firmen (Handzählung Stellen, Tokens je Firma) und Nachschärfen der Regeln | offen |
 

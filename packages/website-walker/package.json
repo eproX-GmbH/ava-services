@@ -1,0 +1,8 @@
+{
+  "name": "@ava/website-walker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Website-Walker: Linkgraph, Blockzerlegung, Signalbewertung (docs/PLAN_WEBSITE_WALKER.md). Kanonische Quelle, vendoriert in die Producer.",
+  "main": "src/index.ts",
+  "license": "UNLICENSED"
+}

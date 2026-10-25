@@ -136,5 +136,26 @@ if (drifted.length > 0) {
   process.exit(1);
 }
 
+// ---- Website-Walker (docs/PLAN_WEBSITE_WALKER.md) --------------------------
+// Kanonisch packages/website-walker/src, vendoriert als TS-Quelle unter
+// <producer>/src/infrastructure/walker/. Sync: node scripts/walker-sync.mjs
+const WALKER_DATEIEN = ["graph.ts", "bloecke.ts", "signale.ts"];
+const WALKER_PRODUCER = ["website", "company-contact"];
+const walkerDrift = [];
+for (const p of WALKER_PRODUCER) {
+  for (const d of WALKER_DATEIEN) {
+    const kanon = join(REPO_ROOT, "packages/website-walker/src", d);
+    const kopie = join(REPO_ROOT, p, "src/infrastructure/walker", d);
+    if (!existsSync(kanon) || !existsSync(kopie)) continue;
+    if (readNormalised(kanon).hash !== readNormalised(kopie).hash) walkerDrift.push(`${p}/src/infrastructure/walker/${d}`);
+  }
+}
+if (walkerDrift.length > 0) {
+  console.error(`vendor-drift: Website-Walker out of sync: ${walkerDrift.join(", ")}`);
+  console.error("Fix: node scripts/walker-sync.mjs, then commit the submodules + bump the parent.");
+  process.exit(1);
+}
+console.log("vendor-drift: website-walker — OK");
+
 console.log("");
 console.log("vendor-drift: all producers in sync ✓");
