@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const WALKER_DATEIEN = ["graph.ts", "bloecke.ts", "signale.ts"];
-export const WALKER_PRODUCER = ["website", "company-contact"];
+export const WALKER_PRODUCER = ["website", "company-contact", "company-profile"];
 
 for (const p of WALKER_PRODUCER) {
   const ziel = join(REPO_ROOT, p, "src/infrastructure/walker");

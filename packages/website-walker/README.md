@@ -5,7 +5,7 @@ mit Sitemap und Zweck je Link, Blockzerlegung mit Fundstelle, Signalbewertung
 je Zweck. Keine Producer-Importe; den Browser-Rückfall reicht der Aufrufer
 als Funktion herein.
 
-Die Producer `website` und `company-contact` tragen eine vendorierte Kopie
+Die Producer `website`, `company-contact` und `company-profile` tragen eine vendorierte Kopie
 unter `src/infrastructure/walker/`. Nach jeder Änderung hier:
 
     node scripts/vendor-sync.mjs

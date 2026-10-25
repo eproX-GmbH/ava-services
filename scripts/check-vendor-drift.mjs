@@ -140,7 +140,7 @@ if (drifted.length > 0) {
 // Kanonisch packages/website-walker/src, vendoriert als TS-Quelle unter
 // <producer>/src/infrastructure/walker/. Sync: node scripts/walker-sync.mjs
 const WALKER_DATEIEN = ["graph.ts", "bloecke.ts", "signale.ts"];
-const WALKER_PRODUCER = ["website", "company-contact"];
+const WALKER_PRODUCER = ["website", "company-contact", "company-profile"];
 const walkerDrift = [];
 for (const p of WALKER_PRODUCER) {
   for (const d of WALKER_DATEIEN) {

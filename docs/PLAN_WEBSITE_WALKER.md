@@ -25,7 +25,7 @@ trägt die Fundstelle je Aussage mit.
 ## 2. Zielbild
 
 Kanonisch `packages/website-walker/src` (graph.ts, bloecke.ts, signale.ts),
-vendoriert nach `website/` und `company-contact/` unter
+vendoriert nach `website/`, `company-contact/` und `company-profile/` unter
 `src/infrastructure/walker/` (Sync `node scripts/walker-sync.mjs`, Abgleich im
 Drift-Check). Drei Schichten, die alle Zwecke nacheinander nutzen:
 
@@ -56,7 +56,7 @@ Das Modell bekommt also je Firma eine Handvoll belegter Passagen statt 5 bis
 | W1 | Walker-Paket `website/src/infrastructure/walker/` (graph.ts, bloecke.ts, signale.ts) und Stellen darüber (stellen.ts): Karriere- und Anzeigen-Seiten aus Navigation, Sitemap und Rückfallpfaden (Soft-404 erkannt), Listen nur signalstarke Blöcke, Anzeigen ganz bis 3.500 Zeichen, Modellpass in Bündeln zu 20.000 Zeichen, Fundstelle je Stelle, reichere Fassung bei gleichem Titel | v0.1.883; Messung strategic-it.de: 17 Seiten, 70 Blöcke, 39.575 Zeichen, 2 Modellaufrufe, 59 s, 14 von 14 Stellen (vorher 0) |
 | W2 | Kunden/Referenzen über den Walker: `kundenDigest` (company-contact) gibt Referenz-Blöcke mit Fundstelle statt der ersten 6.000 Zeichen; Bildliste bleibt; Rückfall Seitenanfang | v0.1.884 |
 | W3 | Personen-Seiten (`website_people`, company-contact): Blöcke mit Personen-Signalen (Rolle oder Kontaktangabe als Torbedingung), 9.000 Zeichen statt 12.000 samt Navigation; Rückfall ganzer Text. Messung strategic-it.de Team-Seite: 19 Blöcke, 8.650 Zeichen, alle Personen | v0.1.884 |
-| W4 | Profil: Startseite plus `produkt`-Seiten blockweise, Budget auf Blöcke statt Seiten | offen |
+| W4 | Profil (company-profile `walker/profil.ts`): Hauptinhalt der Startseite blockweise (5.000 Zeichen) plus bis drei Leistungs-/Produktseiten und eine Über-uns-Seite (je 2.200), zusammen 12.000 Zeichen mit Fundstelle; vorher nur Startseite mit Navigation auf 2.048 Tokens gekappt. Rückfall alter Weg. Messung strategic-it.de: 5 Seiten, 29 Blöcke, 11.905 Zeichen | v0.1.885 |
 | W5 | Messung an zehn Firmen (Handzählung Stellen, Tokens je Firma) und Nachschärfen der Regeln | offen |
 
 ## 4. Messgrößen (W5)
