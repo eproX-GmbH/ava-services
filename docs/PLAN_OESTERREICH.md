@@ -214,7 +214,7 @@ bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
   - **Live seit 2026-09-15 11:36 UTC:** Gateway und Worker deployt,
     4.160 `at_front`-Jobs für 2026-09 eingereiht. Fly-Worker hat zwei
     Prozessgruppen: `worker` (DE, Browser, `REGISTER_DELTA_AT=0`) und
-    `worker_at` (nur AT, eigene Maschine, Worker-Id `betreiber-at`).
+    `worker_at` (nur AT, eigene Maschine, Worker-Id `betreiber-at`; 2026-10-25 wieder nur AT, UK und CH haben eigene Maschinen `worker_uk`/`worker_ch`).
     Erster Job: Korneuburg „0a“, 10 Seiten, 97 Firmen neu; nach 30 s
     189 Firmen in master-data mit `country=AT`, `registerType=FN`,
     `source=justizonline`, Historie je Firma. Kontrolle Eisenstadt (309)

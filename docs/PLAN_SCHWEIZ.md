@@ -181,7 +181,7 @@ master-data, dann structured-content, dann App.
 
 Zefix-Konto beim Bundesamt für Justiz ist bewilligt (Betreiber, HTTP Basic;
 Secrets `ZEFIX_USER`/`ZEFIX_PASSWORD` nur am Register-Worker `ava-register-worker`,
-Prozess `worker_at`). Umgesetzt ist der schlanke Weg ohne eigenen Namensraum
+Prozess `worker_ch`, eigene Maschine seit 2026-10-25; Österreich und UK haben seither ebenfalls je eine). Umgesetzt ist der schlanke Weg ohne eigenen Namensraum
 und ohne Gateway-Proxy: die Register-Delta-Queue trägt die Schweiz wie AT/UK.
 
 | Baustein | Stand |

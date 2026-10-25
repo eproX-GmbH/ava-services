@@ -175,7 +175,7 @@ structured-content 1 Tag, App 0,5 Tage.
   `POST /internal/register-jobs/uk/erzeugen`): liest die Download-Seite,
   ein Job je Teil (Schlüssel mit Abzugsdatum), Pool-Refresh und Insolvenz
   für `UK_`-Firmen. `POST /v1/register-jobs/uk` für konkrete Firmen.
-- **Fly-Worker:** `worker_at` bedient jetzt auch `uk_*`, der DE-Worker
+- **Fly-Worker:** seit 2026-10-25 eigene Maschine `worker_uk` (Worker-Id `betreiber-uk`); vorher bediente `worker_at` auch `uk_*`, der DE-Worker
   nicht (`REGISTER_DELTA_UK=0`).
 - **Live seit 2026-09-15 15:09 UTC:** master-data, Gateway und Worker
   deployt, 7 `uk_bulk`-Jobs für den Abzug 2026-09-01 eingereiht. Erster
