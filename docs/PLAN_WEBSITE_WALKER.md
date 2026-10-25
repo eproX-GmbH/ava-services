@@ -74,8 +74,18 @@ Das Modell bekommt also je Firma eine Handvoll belegter Passagen statt 5 bis
 - Kein Vollcrawl, kein Headless-Crawl über die ganze Site: Tiefe 2 plus
   Sitemap reicht; JavaScript-Seiten laufen über den vorhandenen
   Browser-Rückfall (`utils/browser-fetch.ts`).
-- Externe Bewerbungsportale (Personio, softgarden, join.com) werden erkannt
-  (iframe oder Link) und als eine Quelle geladen, nicht mitgecrawlt.
+- Externe Bewerbungsportale werden am Link erkannt (Startseite und
+  Karriereseite) und als eine Quelle geladen, nicht mitgecrawlt
+  (`website/src/infrastructure/walker/portale.ts`, seit v0.1.887). Mit
+  öffentlicher Schnittstelle kommen die Stellen direkt und ohne Modell:
+  Workday (JSON-Suche), Personio (XML-Feed), Greenhouse (Board-API), Lever
+  (Postings-API), SmartRecruiters (Postings-API), Recruitee (Offers-API).
+  Ohne Schnittstelle als HTML-Liste plus bis zwölf Anzeigen für den
+  Modellpass: softgarden, join.com, Jobs-Subdomains. SuccessFactors
+  (Career Site Builder, z. B. jobs.harting.com) rendert die Liste per
+  JavaScript und wird immer über den Browser geladen. Höchstens zwei Portale
+  je Firma. Geprüft 2026-10-25: Workday 60, Greenhouse 19, Personio 1,
+  SmartRecruiters 1 Stelle direkt; softgarden 1 Liste plus 6 Anzeigen.
 - Websuche bleibt als Ergänzung für Portale (LinkedIn, StepStone), die
   Firmenseite hat Vorrang bei gleichem Titel.
 - Der Walker läuft beim Nutzer (Compute-Lokalität), kein Betreiber-Dienst.
@@ -95,6 +105,6 @@ Das Modell bekommt also je Firma eine Handvoll belegter Passagen statt 5 bis
 | eprox-gmbh.de | 15 | 2 | 0 | 2 | 0,60 MB | 0 | 0 | keine Stellen, korrekt leer |
 
 Das Roh-HTML liegt je Firma bei 0,1 bis 3 MB; ans Modell gehen 0 bis 41.000
-Zeichen, also ein bis drei Prozent. Offen für die Handzählung mit Modell:
-Konzerne mit Portal (SuccessFactors, Workday) als eine Quelle laden, sobald der
-Portal-Link erkannt ist (Plan §5), und Browser-Rückfall auf den Messrechnern.
+Zeichen, also ein bis drei Prozent. Konzern-Portale sind seit v0.1.887
+angebunden (§5). Offen für die Handzählung mit Modell: Browser-Rückfall auf
+den Messrechnern (SuccessFactors-Listen, Bot-Schutz).
