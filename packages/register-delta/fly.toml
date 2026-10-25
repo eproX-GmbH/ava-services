@@ -26,10 +26,18 @@ primary_region = 'fra'
   cpu_kind = 'shared'
   cpus = 1
 
-# Zwei Prozesse (je eine Maschine): `worker` bedient die deutschen Job-Arten
+# Schweiz getrennt (2026-10-25): der UK-Monatsabzug belegt worker_at wochenlang,
+# die Schweiz-Jobs (gleiche Prioritaet) kaemen sonst erst danach dran.
+[[vm]]
+  processes = ['worker_ch']
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+# Drei Prozesse (je eine Maschine): `worker` bedient die deutschen Job-Arten
 # mit dem Registerportal-Takt (60/h, Browser); `worker_at` alles ohne Browser
-# (Oesterreich: JustizOnline, Ediktsdatei; UK: Companies House, Gazette; Schweiz:
-# Zefix und LINDAS, Secrets ZEFIX_USER/ZEFIX_PASSWORD), damit
+# (Oesterreich: JustizOnline, Ediktsdatei; UK: Companies House, Gazette), `worker_ch`
+# die Schweiz (Zefix und LINDAS, Secrets ZEFIX_USER/ZEFIX_PASSWORD), damit
 # diese Jobs nicht hinter den deutschen warten. REGISTER_DELTA_AT/UK=0 halten
 # den DE-Worker davon fern. uk_bulk laedt je Teil rund 70 MB nach /tmp.
 # S8 (2026-09-17): refresh-Jobs laden den strukturierten Registerinhalt mit
@@ -38,4 +46,6 @@ primary_region = 'fra'
   worker = 'sh -c "REGISTER_DELTA_AT=0 REGISTER_DELTA_UK=0 node dist/cli.js"'
   # uk_bulk schonend (2026-09-16): 250 Zeilen je Buendel, 20 s Pause; master-data war
   # bei 1000 Zeilen ohne Pause dauerhaft CPU-gedrosselt (Erstimport dauert so ~3 Tage).
-  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz,uk_bulk,uk_refresh,uk_insolvenz,ch_bulk,ch_sogc,ch_refresh REGISTER_DELTA_UK_BUENDEL=250 REGISTER_DELTA_UK_PAUSE_MS=20000 WORKER_ID=betreiber-at node dist/cli.js"'
+  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz,uk_bulk,uk_refresh,uk_insolvenz REGISTER_DELTA_UK_BUENDEL=250 REGISTER_DELTA_UK_PAUSE_MS=20000 WORKER_ID=betreiber-at node dist/cli.js"'
+  # Schweiz: Zefix (Secrets ZEFIX_USER/ZEFIX_PASSWORD) und LINDAS, kein Browser.
+  worker_ch = 'sh -c "REGISTER_DELTA_ARTEN=ch_bulk,ch_sogc,ch_refresh WORKER_ID=betreiber-ch node dist/cli.js"'
