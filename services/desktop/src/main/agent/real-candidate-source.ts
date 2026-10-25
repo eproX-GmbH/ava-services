@@ -87,13 +87,15 @@ type Neuheit =
       vorherGesehenAm?: string | null;
       /** Was andere Quellen ueber die Rolle wissen (Register, belegter Beginn). */
       kontext?: string[];
+      /** Konkrete Fundstellen (neuer und frueherer Stand). */
+      quellen?: Array<{ url: string; titel: string }>;
     }
   | {
       art: "new-customers";
       id: string;
       companyId: string;
       anzahl: number;
-      kunden: Array<{ name: string; art: string; match: { companyId: string; name: string; location: string | null } | null }>;
+      kunden: Array<{ name: string; art: string; match: { companyId: string; name: string; location: string | null } | null; quelle?: string | null }>;
       occurredAt: string;
     }
   | {
@@ -101,7 +103,7 @@ type Neuheit =
       id: string;
       companyId: string;
       anzahl: number;
-      personen: Array<{ name: string; title: string | null; seit?: string | null }>;
+      personen: Array<{ name: string; title: string | null; seit?: string | null; url?: string | null }>;
       occurredAt: string;
     }
   | {
@@ -113,6 +115,18 @@ type Neuheit =
       leistungen: string[];
       occurredAt: string;
     };
+
+/** Fundstellen ohne Doppelte und ohne Leereintraege; Reihenfolge bleibt. */
+function quellenListe(roh: Array<{ url: string | null; titel: string }>): Array<{ url: string; titel: string }> {
+  const out: Array<{ url: string; titel: string }> = [];
+  const gesehen = new Set<string>();
+  for (const q of roh) {
+    if (!q.url || !/^https?:\/\//i.test(q.url) || gesehen.has(q.url)) continue;
+    gesehen.add(q.url);
+    out.push({ url: q.url, titel: q.titel });
+  }
+  return out;
+}
 
 /** „seit 2009“ / „seit 03/2026“ aus einem ISO-Datum. */
 function seitText(iso: string | null | undefined): string | null {
@@ -241,6 +255,7 @@ export function kandidatAus(
           kunden: n.kunden,
           eigeneFirmenDarunter: eigeneTreffer,
           source: "website",
+          quellen: quellenListe(n.kunden.map((k) => ({ url: k.quelle ?? null, titel: "Referenzen auf der Website" }))),
         },
       };
     }
@@ -342,6 +357,7 @@ export function kandidatAus(
           typ: n.typ, person: n.personName, title: n.title, vorher: n.before, nachher: n.after, source: "website",
           seit, bekanntSeit: n.bekanntSeit?.slice(0, 10) ?? null, zeitfenster: fensterText(n.vorherGesehenAm, n.occurredAt),
           ...(n.kontext?.length ? { kontext: n.kontext } : {}),
+          quellen: quellenListe(n.quellen ?? []),
         },
       };
     }
@@ -361,7 +377,7 @@ export function kandidatAus(
         sourceRef: `new-contacts:${n.id}`,
         occurredAt: n.occurredAt,
         summary: `${n.anzahl} neue Ansprechpartner bei ${companyName} erkannt: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.`,
-        payload: { typ: "new-contacts", anzahl: n.anzahl, personen: n.personen, source: "website" },
+        payload: { typ: "new-contacts", anzahl: n.anzahl, personen: n.personen, source: "website", quellen: quellenListe(n.personen.map((p) => ({ url: p.url ?? null, titel: `${p.name} auf der Seite` }))) },
       };
     }
     case "job-postings": {
@@ -375,7 +391,7 @@ export function kandidatAus(
         sourceRef: `job-postings:${n.id}`,
         occurredAt: n.occurredAt,
         summary: `${companyName} hat ${n.anzahl} neue Stellenanzeige${n.anzahl === 1 ? "" : "n"}: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.${leistungen}`,
-        payload: { typ: "job-postings", anzahl: n.anzahl, stellen: n.stellen, leistungen: n.leistungen, source: "website" },
+        payload: { typ: "job-postings", anzahl: n.anzahl, stellen: n.stellen, leistungen: n.leistungen, source: "website", quellen: quellenListe(n.stellen.map((s) => ({ url: s.sourceUrl, titel: `Stellenanzeige: ${s.title}` }))) },
       };
     }
     default:

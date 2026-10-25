@@ -52,6 +52,8 @@ export interface AlertCreateInput {
   sourceRef: string;
   /** v0.1.369 — optionale externe Quell-URL (z. B. LinkedIn-Permalink). */
   url?: string | null;
+  /** Konkrete Fundstellen (Seite, Anzeige, Referenzen-Seite); max. 10, nur http(s). */
+  quellen?: Array<{ url: string; titel: string }> | null;
 }
 
 export class AlertsStore {
@@ -153,6 +155,7 @@ export class AlertsStore {
       seenAt: null,
       dismissedAt: null,
       ...(input.url ? { url: input.url } : {}),
+      ...(input.quellen && input.quellen.length > 0 ? { quellen: input.quellen.slice(0, 10) } : {}),
     };
     if (this.writable) {
       try {

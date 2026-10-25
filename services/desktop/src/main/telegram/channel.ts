@@ -297,6 +297,10 @@ function formatAlert(alert: Alert): string {
   if (alert.companyName) lines.push(escapeHtml(alert.companyName));
   if (alert.rationale) lines.push("", escapeHtml(markdownZuText(alert.rationale)));
   if (alert.url) lines.push("", escapeHtml(alert.url));
+  if (alert.quellen?.length) {
+    lines.push("", "Quellen:");
+    for (const q of alert.quellen.slice(0, 5)) lines.push(`${escapeHtml(q.titel)}: ${escapeHtml(q.url)}`);
+  }
   return lines.join("\n");
 }
 

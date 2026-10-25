@@ -186,6 +186,26 @@ export function Alerts() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <AlertMarkdown text={a.rationale} />
+                      {a.quellen && a.quellen.length > 0 && (
+                        <ul className="alert__quellen" aria-label="Quellen">
+                          {a.quellen.map((q) => (
+                            <li key={q.url}>
+                              <span className="muted">{q.titel}:</span>{" "}
+                              <a
+                                href={q.url}
+                                title={q.url}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void window.api.shell.openExternal(q.url);
+                                }}
+                              >
+                                {quellenAnzeige(q.url)}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       <div className="alert__actions">
                         {a.url && (
                           <a
@@ -260,6 +280,18 @@ function dayLabel(iso: string): string {
     month: "long",
     day: "numeric",
   });
+}
+
+/** Host plus gekürzter Pfad als Linktext der Fundstelle. */
+function quellenAnzeige(url: string): string {
+  try {
+    const u = new URL(url);
+    const pfad = u.pathname.length > 1 ? u.pathname.replace(/\/$/, "") : "";
+    const text = `${u.hostname.replace(/^www\./, "")}${pfad}`;
+    return text.length > 70 ? `${text.slice(0, 67)}…` : text;
+  } catch {
+    return url;
+  }
 }
 
 function formatRelative(iso: string): string {

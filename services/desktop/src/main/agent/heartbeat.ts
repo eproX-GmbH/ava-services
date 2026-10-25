@@ -132,6 +132,24 @@ const MAX_HISTORY = 10;
  *  keeps the IPC payload + UI lines reasonable. */
 const RATIONALE_TRUNC = 280;
 
+/** Fundstellen-Liste aus einem Kandidaten-Payload: nur http(s)-URLs, ohne Doppelte, max. 10. */
+export function quellenAusPayload(payload: Record<string, unknown> | undefined): Array<{ url: string; titel: string }> {
+  const roh = payload?.quellen;
+  if (!Array.isArray(roh)) return [];
+  const out: Array<{ url: string; titel: string }> = [];
+  const gesehen = new Set<string>();
+  for (const q of roh) {
+    if (!q || typeof q !== "object") continue;
+    const url = (q as { url?: unknown }).url;
+    const titel = (q as { titel?: unknown }).titel;
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url) || gesehen.has(url)) continue;
+    gesehen.add(url);
+    out.push({ url, titel: typeof titel === "string" && titel.trim() ? titel.trim().slice(0, 120) : "Quelle" });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 export class Heartbeat extends EventEmitter {
   private readonly store: AlertsStore;
   private intervalMs: number;
@@ -393,6 +411,8 @@ export class Heartbeat extends EventEmitter {
               : typeof c.payload?.url === "string"
                 ? (c.payload.url as string)
                 : null,
+          // Fundstellen aus dem Kandidaten (Gateway-Neuheiten): nur http(s), dedupliziert.
+          quellen: quellenAusPayload(c.payload),
         });
         if (row) {
           alertsCreated += 1;

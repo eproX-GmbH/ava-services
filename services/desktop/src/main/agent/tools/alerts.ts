@@ -93,6 +93,8 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
           rationale: a.rationale,
           createdAt: a.createdAt,
           unread: a.seenAt === null,
+          ...(a.url ? { url: a.url } : {}),
+          ...(a.quellen?.length ? { quellen: a.quellen } : {}),
         })),
       };
     },

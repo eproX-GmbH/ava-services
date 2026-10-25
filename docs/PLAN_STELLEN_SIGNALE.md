@@ -133,3 +133,17 @@ Umgesetzt mit v0.1.870 (Desktop + Website-Producer) und Gateway-Deploy:
   am Website-Lauf, Auffrischung über dessen Kadenz); Standardstufe bleibt die
   Auto-Aktivierung bei vorhandenem Schlüssel; Messung an 50 Firmen; Quelle Websuche
   vs. direkte Portale.
+
+
+## Nachtrag 2026-10-25: Stellen direkt von der Karriereseite
+
+Befund Patrick (strategic-it.de): rund 15 Stellen auf der eigenen Karriereseite, AVA
+fand nur eine über LinkedIn. Zwei Ursachen: der Standardweg schnitt das rohe HTML
+bei 60.000 Zeichen ab (die erste Stelle stand bei 86.000), und die Stellen liegen als
+News-Artikel unter /up2date/, was die Prompts ausschlossen. Seit v0.1.882 liest der
+Website-Producer die Karriereseite immer selbst (`research/karriere.ts`
+`stellenVonWebsite`): Karriere-Links der Startseite, Links zu Anzeigen (m/w/d,
+festanstellung, /jobs/…), bis zu 16 Detailseiten, Modellpass in Bündeln zu vier
+Seiten, Titel ohne Doppelte. Website-Funde haben Vorrang vor Portal-Treffern mit
+gleichem Titel. Der Standardweg kürzt jetzt erst nach der Textumwandlung, und Seiten
+auf der eigenen Domain sind in allen Prompts erlaubt.

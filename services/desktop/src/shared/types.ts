@@ -1334,6 +1334,12 @@ export interface Alert {
    * sehr wohl aber den Originalbeitrag.
    */
   url?: string | null;
+  /**
+   * 2026-10-25 (Befund Patrick): konkrete Fundstellen der Information — die
+   * Seite, auf der der neue Wert stand, die Stellenanzeige, die Referenzen-Seite.
+   * Jede Meldung soll nachvollziehbar sein; die Links stehen unter dem Text.
+   */
+  quellen?: Array<{ url: string; titel: string }>;
 }
 
 /**

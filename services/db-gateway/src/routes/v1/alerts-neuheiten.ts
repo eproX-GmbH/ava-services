@@ -108,6 +108,8 @@ const Item = z.discriminatedUnion("art", [
     vorherGesehenAm: z.string().nullable(),
     /** Was andere Quellen ueber die Rolle wissen (Register, LinkedIn-Beginn) — fuer das Urteil. */
     kontext: z.array(z.string()).optional(),
+    /** Konkrete Fundstellen (Seite, auf der der neue bzw. alte Wert stand) — Befund Patrick 2026-10-24. */
+    quellen: z.array(z.object({ url: z.string(), titel: z.string() })).optional(),
   }),
   z.object({
     art: z.literal("job-postings"),
@@ -128,6 +130,8 @@ const Item = z.discriminatedUnion("art", [
         name: z.string(),
         art: z.string(),
         match: z.object({ companyId: z.string(), name: z.string(), location: z.string().nullable() }).nullable(),
+        /** Seite, auf der der Kunde genannt wird. */
+        quelle: z.string().nullable().optional(),
       }),
     ),
     occurredAt: z.string(),
@@ -137,7 +141,7 @@ const Item = z.discriminatedUnion("art", [
     id: z.string(),
     companyId: z.string(),
     anzahl: z.number(),
-    personen: z.array(z.object({ name: z.string(), title: z.string().nullable(), seit: z.string().nullable() })),
+    personen: z.array(z.object({ name: z.string(), title: z.string().nullable(), seit: z.string().nullable(), url: z.string().nullable().optional() })),
     occurredAt: z.string(),
   }),
 ]);
@@ -268,6 +272,15 @@ async function publikationen(ids: string[], seit: Date): Promise<NeuheitItem[]> 
   }));
 }
 
+/** Lesbarer Name der Beobachtungsquelle fuer die Fundstelle. */
+function quellenName(source: string | null | undefined): string {
+  const s = source ?? "";
+  if (s.startsWith("apify") || s.includes("linkedin")) return "LinkedIn";
+  if (s.startsWith("agent:") || s.startsWith("website")) return "Website";
+  if (s.startsWith("search")) return "Suchtreffer";
+  return "Quelle";
+}
+
 /** Nur Buchstaben, klein: „Geschäftsleitung“ ≙ „Geschaeftsleitung“ etc. */
 function schreibweise(v: string | null): string {
   return (v ?? "")
@@ -286,7 +299,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   const signale = await pool.query<{
     id: string; companyId: string; personId: string | null; type: string; before: string | null; after: string | null;
     observedAt: Date; fullName: string | null; title: string | null; startDate: Date | null;
-    bekanntSeit: Date | null; beobachtungen: Array<{ value: string; am: string; lauf: string | null }> | null;
+    bekanntSeit: Date | null; beobachtungen: Array<{ value: string; am: string; lauf: string | null; url: string | null; quelle: string | null }> | null;
     source: string | null; runId: string | null;
   }>(
     `SELECT s.id, s."companyId", s."personId", s.type, s.before, s.after, s."observedAt",
@@ -298,7 +311,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
             -- (alter Wert zuletzt, neuer Wert erstmals, gleicher Lauf, Rueckfall)
             -- laeuft in JS ueber die Schreibweise, nicht ueber exakte Strings —
             -- Befund 2026-10-23 (TradeMax24): "A; B; C" und "A, B und C" sind derselbe Wert.
-            (SELECT json_agg(json_build_object('value', o.value, 'am', o."observedAt", 'lauf', o."runId") ORDER BY o."observedAt")
+            (SELECT json_agg(json_build_object('value', o.value, 'am', o."observedAt", 'lauf', o."runId", 'url', o."evidenceUrl", 'quelle', o.source) ORDER BY o."observedAt")
                FROM "Observation" o
               WHERE o."personId" = s."personId" AND o.field = s.field) AS "beobachtungen",
             s.source, s."runId"
@@ -363,7 +376,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
     const typ = SIGNAL_TYPEN[s.type];
     if (!typ) continue;
     const kontext: string[] = [];
-    const obs = (s.beobachtungen ?? []).map((o) => ({ norm: schreibweise(o.value), am: new Date(o.am).getTime(), lauf: o.lauf }));
+    const obs = (s.beobachtungen ?? []).map((o) => ({ norm: schreibweise(o.value), am: new Date(o.am).getTime(), lauf: o.lauf, url: o.url, quelle: o.quelle }));
     const signalAm = new Date(s.observedAt).getTime();
     const altNorm = schreibweise(s.before);
     const neuNorm = schreibweise(s.after);
@@ -424,6 +437,12 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
     }
     if (s.startDate) kontext.push(`Beginn der Position belegt: ${iso(s.startDate)?.slice(0, 10)}.`);
     else kontext.push("Kein belegter Beginn der Position (weder Website noch LinkedIn).");
+    // Fundstellen: juengste Seite mit dem neuen Wert, aelteste bekannte mit dem alten.
+    const quellen: Array<{ url: string; titel: string }> = [];
+    const neuObs = obs.filter((o) => o.norm === neuNorm && o.url).sort((a, b) => b.am - a.am)[0];
+    const altObs = obs.filter((o) => o.norm === altNorm && o.url).sort((a, b) => b.am - a.am)[0];
+    if (neuObs?.url) quellen.push({ url: neuObs.url, titel: `${quellenName(neuObs.quelle)}: neuer Stand` });
+    if (altObs?.url && altObs.url !== neuObs?.url) quellen.push({ url: altObs.url, titel: `${quellenName(altObs.quelle)}: früherer Stand` });
     out.push({
       art: "contact-change",
       id: s.id,
@@ -438,10 +457,14 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       bekanntSeit: iso(s.bekanntSeit),
       vorherGesehenAm: vorherGesehenAm === null ? null : new Date(vorherGesehenAm).toISOString(),
       kontext,
+      ...(quellen.length > 0 ? { quellen } : {}),
     });
   }
-  const neue = await pool.query<{ companyId: string; title: string | null; firstSeen: Date; startDate: Date | null; fullName: string }>(
-    `SELECT e."companyId", e.title, e."firstSeen", e."startDate", p."fullName"
+  const neue = await pool.query<{ companyId: string; title: string | null; firstSeen: Date; startDate: Date | null; fullName: string; url: string | null }>(
+    `SELECT e."companyId", e.title, e."firstSeen", e."startDate", p."fullName",
+            (SELECT o."evidenceUrl" FROM "Observation" o
+              WHERE o."personId" = e."personId" AND o."companyId" = e."companyId" AND o."evidenceUrl" IS NOT NULL
+              ORDER BY o."observedAt" DESC LIMIT 1) AS url
        FROM "Employment" e
        JOIN "Person" p ON p.id = e."personId"
       WHERE e."companyId" = ANY($1::text[]) AND e."firstSeen" > $2 AND e."isCurrent"
@@ -456,7 +479,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       LIMIT 3000`,
     [ids, seit],
   );
-  const jeFirma = new Map<string, { anzahl: number; personen: Array<{ name: string; title: string | null; seit: string | null }>; juengst: Date }>();
+  const jeFirma = new Map<string, { anzahl: number; personen: Array<{ name: string; title: string | null; seit: string | null; url: string | null }>; juengst: Date }>();
   for (const e of neue.rows) {
     // Zeitbezug (2026-10-06): "Erstmals gesehen" heisst nur, dass AVA die
     // Person jetzt gefunden hat — nicht, dass sie neu ist. Ohne belegten,
@@ -469,7 +492,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       jeFirma.set(e.companyId, g);
     }
     g.anzahl += 1;
-    if (g.personen.length < 8) g.personen.push({ name: e.fullName, title: e.title ?? null, seit: iso(e.startDate) });
+    if (g.personen.length < 8) g.personen.push({ name: e.fullName, title: e.title ?? null, seit: iso(e.startDate), url: e.url ?? null });
     if (e.firstSeen > g.juengst) g.juengst = e.firstSeen;
   }
   for (const [companyId, g] of jeFirma) {
@@ -497,9 +520,9 @@ async function neueKunden(ids: string[], seit: Date): Promise<NeuheitItem[]> {
   const pool = getGatewayPool();
   const r = await pool.query<{
     companyId: string; name: string; art: string; erstGesehen: Date;
-    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null;
+    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; quelle: string | null;
   }>(
-    `SELECT k."companyId", k.name, k.art, k."erstGesehen", k."matchCompanyId", k."matchName", k."matchLocation"
+    `SELECT k."companyId", k.name, k.art, k."erstGesehen", k."matchCompanyId", k."matchName", k."matchLocation", k.quelle
        FROM "CompanyKunde" k
       WHERE k."companyId" = ANY($1::text[]) AND k."erstGesehen" > $2
         AND EXISTS (SELECT 1 FROM "CompanyKunde" k0
@@ -512,7 +535,7 @@ async function neueKunden(ids: string[], seit: Date): Promise<NeuheitItem[]> {
     logger.info({ err: err instanceof Error ? err.message : err }, "neuheiten: CompanyKunde noch nicht vorhanden");
     return { rows: [] as never[] };
   });
-  const jeFirma = new Map<string, { anzahl: number; kunden: Array<{ name: string; art: string; match: { companyId: string; name: string; location: string | null } | null }>; juengst: Date }>();
+  const jeFirma = new Map<string, { anzahl: number; kunden: Array<{ name: string; art: string; match: { companyId: string; name: string; location: string | null } | null; quelle: string | null }>; juengst: Date }>();
   for (const k of r.rows) {
     let g = jeFirma.get(k.companyId);
     if (!g) {
@@ -525,6 +548,7 @@ async function neueKunden(ids: string[], seit: Date): Promise<NeuheitItem[]> {
         name: k.name,
         art: k.art,
         match: k.matchCompanyId ? { companyId: k.matchCompanyId, name: k.matchName ?? k.matchCompanyId, location: k.matchLocation } : null,
+        quelle: k.quelle && /^https?:\/\//.test(k.quelle) ? k.quelle : null,
       });
     }
     if (k.erstGesehen > g.juengst) g.juengst = k.erstGesehen;

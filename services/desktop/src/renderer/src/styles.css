@@ -2864,6 +2864,19 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   cursor: default;
 }
 .alert__detail p { margin: 0 0 8px; line-height: 1.55; }
+/* Fundstellen unter der Meldung (Befund Patrick 2026-10-24): jede Information mit Link. */
+.alert__quellen {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  font-size: 12.5px;
+  display: grid;
+  gap: 0.2rem;
+}
+.alert__quellen a {
+  word-break: break-all;
+}
+
 .alert__actions {
   display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
   font-size: 13px;
