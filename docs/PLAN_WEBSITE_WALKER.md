@@ -57,7 +57,7 @@ Das Modell bekommt also je Firma eine Handvoll belegter Passagen statt 5 bis
 | W2 | Kunden/Referenzen über den Walker: `kundenDigest` (company-contact) gibt Referenz-Blöcke mit Fundstelle statt der ersten 6.000 Zeichen; Bildliste bleibt; Rückfall Seitenanfang | v0.1.884 |
 | W3 | Personen-Seiten (`website_people`, company-contact): Blöcke mit Personen-Signalen (Rolle oder Kontaktangabe als Torbedingung), 9.000 Zeichen statt 12.000 samt Navigation; Rückfall ganzer Text. Messung strategic-it.de Team-Seite: 19 Blöcke, 8.650 Zeichen, alle Personen | v0.1.884 |
 | W4 | Profil (company-profile `walker/profil.ts`): Hauptinhalt der Startseite blockweise (5.000 Zeichen) plus bis drei Leistungs-/Produktseiten und eine Über-uns-Seite (je 2.200), zusammen 12.000 Zeichen mit Fundstelle; vorher nur Startseite mit Navigation auf 2.048 Tokens gekappt. Rückfall alter Weg. Messung strategic-it.de: 5 Seiten, 29 Blöcke, 11.905 Zeichen | v0.1.885 |
-| W5 | Messung an zehn Firmen (Handzählung Stellen, Tokens je Firma) und Nachschärfen der Regeln | offen |
+| W5 | Messung ohne Modell an acht Websites (Tabelle §6) und Nachschärfen: Browser-Rückfall jetzt auch bei dünnem Text (JavaScript-Stellenlisten), Torbedingungen für Personen- und Stellen-Signale; Handzählung mit Modell an zehn Firmen weiter offen | teilweise 2026-10-25 |
 
 ## 4. Messgrößen (W5)
 
@@ -79,3 +79,22 @@ Das Modell bekommt also je Firma eine Handvoll belegter Passagen statt 5 bis
 - Websuche bleibt als Ergänzung für Portale (LinkedIn, StepStone), die
   Firmenseite hat Vorrang bei gleichem Titel.
 - Der Walker läuft beim Nutzer (Compute-Lokalität), kein Betreiber-Dienst.
+
+
+## 6. Messung 2026-10-25 (Stellen-Stufe, ohne Modell, Standard-HTTP ohne Browser)
+
+| Website | Links im Graph | Listen | Anzeigen | Seiten gelesen | Roh-HTML | Blöcke | Zeichen ans Modell | Befund |
+|---|---|---|---|---|---|---|---|---|
+| strategic-it.de | 67 | 1 | 16 | 17 | 1,63 MB | 76 | 41.499 | 14 von 14 Stellen (mit Modell, 2 Aufrufe) |
+| zimmer-group.com | 309 | 1 | 11 | 12 | 2,99 MB | 16 | 24.409 | Anzeigen erkannt |
+| slashwhy.de | 339 | 4 | 0 | 4 | 1,44 MB | 9 | 3.202 | Liste lädt per JavaScript, dünner Text → Browser-Rückfall nötig |
+| sim-automation.de | 50 | 1 | 0 | 1 | 0,11 MB | 0 | 0 | Karriere-Hub mit wenig Text → Browser-Rückfall nötig |
+| databyte.de | 94 | 2 | 0 | 2 | 0,11 MB | 7 | 2.654 | keine Stellenliste, nur Initiativhinweis |
+| harting.com | 109 | 4 | 0 | 3 | 2,57 MB | 0 | 0 | Karriereseite ist Imagetext, Stellen in externem Portal (JavaScript) |
+| weidmueller.com | 7 | 2 | 0 | 0 | 0 | 0 | 0 | Seiten per HTTP nicht ladbar (Bot-Schutz), nur mit Browser |
+| eprox-gmbh.de | 15 | 2 | 0 | 2 | 0,60 MB | 0 | 0 | keine Stellen, korrekt leer |
+
+Das Roh-HTML liegt je Firma bei 0,1 bis 3 MB; ans Modell gehen 0 bis 41.000
+Zeichen, also ein bis drei Prozent. Offen für die Handzählung mit Modell:
+Konzerne mit Portal (SuccessFactors, Workday) als eine Quelle laden, sobald der
+Portal-Link erkannt ist (Plan §5), und Browser-Rückfall auf den Messrechnern.

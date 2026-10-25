@@ -84,10 +84,24 @@ export async function ladeHtml(url: string, timeoutMs = 15_000): Promise<string 
   }
 }
 
-/** HTML einer Seite, bei leerem oder blockiertem Inhalt ueber den Browser des Producers. */
+/** Sichtbarer Text ohne Skripte, Styles und Tags (grob, nur fuer die Duenn-Pruefung). */
+export function textLaenge(html: string): number {
+  return html
+    .replace(/<(script|style|noscript|svg|template)\b[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z#0-9]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim().length;
+}
+
+/**
+ * HTML einer Seite; bei leerem, blockiertem oder duennem Inhalt (Stellenlisten,
+ * die erst JavaScript nachlaedt: slashwhy.de, sim-automation.de, Messung
+ * 2026-10-25) ueber den Browser des Producers.
+ */
 export async function ladeSeite(url: string, log?: (m: string) => void, browser: BrowserLader = null): Promise<string | null> {
   const html = await ladeHtml(url);
-  if (html && html.length >= 1_500) return html;
+  if (html && html.length >= 1_500 && textLaenge(html) >= 800) return html;
   if (!browser) return html;
   try {
     return (await browser(url)).html;
