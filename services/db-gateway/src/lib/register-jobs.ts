@@ -354,7 +354,10 @@ function trefferZuDelta(t: Treffer) {
     state: t.bundesland,
     registerStatus: t.status,
     formerCourt: t.frueher || null,
-    history: t.historie.map((h) => ({ name: h.name, nameNormalized: nameNormalisiert(h.name), location: h.sitz, order: h.order })),
+    // Leere Historienzeilen (Portal liefert bei manchen Firmen einen Eintrag ohne Namen,
+    // Befund 2026-10-26: refresh-Jobs 1738/1812 scheiterten an "history[0].name is a
+    // required field", COESFELD_HRB_19182) fallen weg, die Firma selbst bleibt.
+    history: t.historie.filter((h) => (h.name ?? "").trim().length > 0).map((h) => ({ name: h.name.trim(), nameNormalized: nameNormalisiert(h.name), location: h.sitz ?? "", order: h.order })),
   };
 }
 
