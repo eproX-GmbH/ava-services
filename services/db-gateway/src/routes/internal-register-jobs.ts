@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { internalAuthMiddleware } from "../middleware/internal-auth";
 import { getGatewayPool } from "../lib/producer-pools";
-import { abfragenJeStundeFuer, erzeugeAtJobs, erzeugeChBulkJobs, erzeugeChJobs, erzeugeUkJobs, JOB_ARTEN_REGISTER, JobFehler, leaseJob, meldeFehler, registriereWorker, verarbeiteErgebnis, verarbeiteTeilergebnis, type Ergebnis, type JobArt, type Teilergebnis } from "../lib/register-jobs";
+import { abfragenJeStundeFuer, erzeugeAtJobs, erzeugeChBulkJobs, erzeugeChJobs, erzeugeNoBulkJob, erzeugeNoJobs, erzeugeUkJobs, JOB_ARTEN_REGISTER, JobFehler, leaseJob, meldeFehler, registriereWorker, verarbeiteErgebnis, verarbeiteTeilergebnis, type Ergebnis, type JobArt, type Teilergebnis } from "../lib/register-jobs";
 import { ErgebnisShape, JobArtSchema, TeilergebnisShape, WorkerId } from "./v1/register-jobs";
 
 export const internalRegisterJobsRouter = new Hono();
@@ -63,6 +63,20 @@ internalRegisterJobsRouter.post("/register-jobs/ch-bulk", async (c) => {
   const body = parse(c.get("internalRawBody"), z.object({ gesamt: z.number().int().positive(), seite: z.number().int().positive().max(10_000).optional() }));
   if (!body) return c.json({ error: "bad_request" }, 400);
   return c.json(await erzeugeChBulkJobs(getGatewayPool(), body.gesamt, body.seite));
+});
+
+// Norwegen — Aenderungsfeed-Tagesjobs und Monats-Refresh sofort erzeugen (sonst Cron 02:00 UTC).
+internalRegisterJobsRouter.post("/register-jobs/no/erzeugen", async (c) => {
+  const body = parse(c.get("internalRawBody"), z.object({}).passthrough());
+  if (!body) return c.json({ error: "bad_request" }, 400);
+  return c.json(await erzeugeNoJobs(getGatewayPool()));
+});
+
+// Norwegen — Erstabzug (Gesamtdownload, ein Job, Betrieb, einmalig).
+internalRegisterJobsRouter.post("/register-jobs/no-bulk", async (c) => {
+  const body = parse(c.get("internalRawBody"), z.object({}).passthrough());
+  if (!body) return c.json({ error: "bad_request" }, 400);
+  return c.json(await erzeugeNoBulkJob(getGatewayPool()));
 });
 
 // Oesterreich — Monatsjobs sofort erzeugen (Betrieb; sonst Cron 02:00 UTC). Idempotent ueber den Monatsschluessel.

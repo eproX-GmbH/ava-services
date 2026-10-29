@@ -5,13 +5,16 @@ import type { Bekanntmachung, Treffer } from "./parser";
 import type { TrefferAt } from "./at-firmenbuch";
 import type { TrefferUk } from "./uk-companies-house";
 import type { TrefferCh } from "./ch-zefix";
+import type { TrefferNo } from "./no-brreg";
 import type { InsolvenzGegenstand } from "./insolvenz-parser";
 import type { StrukturierterInhalt } from "./si-parser";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz" | "ch_bulk" | "ch_sogc" | "ch_refresh";
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz" | "ch_bulk" | "ch_sogc" | "ch_refresh" | "no_bulk" | "no_oppdatering" | "no_refresh";
 export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh"];
 /** Schweiz (docs/PLAN_SCHWEIZ.md): ch_bulk = LINDAS-Seite (Erstabzug), ch_sogc = SHAB-Tag, ch_refresh = Zefix-Detail je Pool-Firma; kein Browser. */
 export const JOB_ARTEN_CH: JobArt[] = ["ch_bulk", "ch_sogc", "ch_refresh"];
+/** Norwegen (docs/PLAN_SKANDINAVIEN.md §3): Gesamtdownload, Aenderungsfeed je Tag, Detail plus Rollen je Pool-Firma. */
+export const JOB_ARTEN_NO: JobArt[] = ["no_bulk", "no_oppdatering", "no_refresh"];
 /** UK (docs/PLAN_UK.md): Bulk-Abzug, Firmenseite, Insolvenz und Gazette, kein Browser. */
 export const JOB_ARTEN_UK: JobArt[] = ["uk_bulk", "uk_refresh", "uk_insolvenz"];
 /** Oesterreich (docs/PLAN_OESTERREICH.md): JSON-API und Ediktsdatei, kein Browser. */
@@ -77,6 +80,10 @@ export type Ergebnis = {
   trefferCh?: TrefferCh[];
   /** ch_bulk: Zusammenfassung der LINDAS-Seite. */
   chBulk?: { offset: number; limit: number; zeilen: number; teilergebnisse: number; letzteSeite: boolean };
+  /** no_oppdatering / no_refresh: Brreg-Treffer (Norwegen); no_bulk meldet Buendel ueber Teilergebnisse. */
+  trefferNo?: TrefferNo[];
+  /** no_bulk: Zusammenfassung des Gesamtdownloads. */
+  noBulk?: { datum: string; zeilen: number; teilergebnisse: number };
   /** refresh: Bilanz der SI-Abrufe (nur Protokoll; Fehler brechen den Job nie ab). */
   si?: { geladen: number; ohneLink: number; fehler: number };
   /** refresh: Firmen, fuer die das Abfragebudget des Jobs nicht mehr reichte (Gateway reiht sie neu ein). */
@@ -84,7 +91,7 @@ export type Ergebnis = {
 };
 
 /** uk_bulk: ein Buendel Zeilen waehrend der Ausfuehrung (verlaengert die Lease). */
-export type Teilergebnis = { workerId: string; teil: number; trefferUk?: TrefferUk[]; trefferCh?: TrefferCh[] };
+export type Teilergebnis = { workerId: string; teil: number; trefferUk?: TrefferUk[]; trefferCh?: TrefferCh[]; trefferNo?: TrefferNo[] };
 
 export type GatewayClientOptionen = {
   baseUrl: string;

@@ -117,9 +117,9 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       properties: {
         ort: {
           type: "string",
-          description: "Ortsname als Zentrum, z. B. 'Hannover'. Ausserhalb Deutschlands mit Landkuerzel: 'Wien (AT)', 'Zürich (CH)', 'Manchester (UK)'.",
+          description: "Ortsname als Zentrum, z. B. 'Hannover'. Ausserhalb Deutschlands mit Landkuerzel: 'Wien (AT)', 'Zürich (CH)', 'Manchester (UK)', 'Oslo (NO)'.",
         },
-        land: { type: "string", enum: ["DE", "AT", "CH", "UK"], description: "Land des Suchgebiets; Standard aus dem Kuerzel im Ort, sonst DE." },
+        land: { type: "string", enum: ["DE", "AT", "CH", "UK", "NO"], description: "Land des Suchgebiets; Standard aus dem Kuerzel im Ort, sonst DE." },
         radiusKm: {
           type: "integer",
           description: "Umkreis in km (Default 30, max 100).",
@@ -134,7 +134,7 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
     },
     schema: yup.object({
       ort: yup.string().trim().min(2).max(80).required(),
-      land: yup.string().oneOf(["DE", "AT", "CH", "UK"]).optional(),
+      land: yup.string().oneOf(["DE", "AT", "CH", "UK", "NO"]).optional(),
       radiusKm: yup.number().integer().min(1).max(100).optional(),
       branchen: yup
         .array()

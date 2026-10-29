@@ -18,8 +18,8 @@ import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz" | "ch_bulk" | "ch_sogc" | "ch_refresh";
-export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz" | "ch_bulk" | "ch_sogc" | "ch_refresh" | "no_bulk" | "no_oppdatering" | "no_refresh";
+export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh", "no_bulk", "no_oppdatering", "no_refresh"];
 /**
  * Schweiz (docs/PLAN_SCHWEIZ.md): ch_bulk = eine LINDAS-Seite des Erstabzugs
  * (Zeilen kommen als Teilergebnisse), ch_sogc = alle SHAB-Publikationen eines
@@ -28,6 +28,13 @@ export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "ins
  * strukturiertem Inhalt (Zweck, Kapital, Adresse). Kein Browser.
  */
 export const JOB_ARTEN_CH: JobArt[] = ["ch_bulk", "ch_sogc", "ch_refresh"];
+/**
+ * Norwegen (docs/PLAN_SKANDINAVIEN.md §3): no_bulk = Gesamtdownload des
+ * Enhetsregisteret (Zeilen als Teilergebnisse), no_oppdatering = Aenderungsfeed
+ * eines Tages (Ny, Endring, Sletting) mit Detail je Orgnr, no_refresh = Einheit
+ * plus Rollen je Pool-Firma (Geschaeftsfuehrung in den strukturierten Inhalt).
+ */
+export const JOB_ARTEN_NO: JobArt[] = ["no_bulk", "no_oppdatering", "no_refresh"];
 /**
  * UK (docs/PLAN_UK.md): uk_bulk = ein Teil des monatlichen Companies-House-
  * Abzugs (Zeilen kommen als Teilergebnisse), uk_refresh = Firmenseite je
@@ -105,6 +112,21 @@ export function companyIdCh(uid: string): string {
   if (!/^CHE\d{9}$/.test(z)) throw new JobFehler(400, `ungueltige UID: ${uid}`);
   return `CH_${z}`;
 }
+/** "916 627 939" → NO_916627939. */
+export function companyIdNo(orgnr: string): string {
+  const z = orgnr.replace(/\D/g, "");
+  if (!/^\d{9}$/.test(z)) throw new JobFehler(400, `ungueltige Organisationsnummer: ${orgnr}`);
+  return `NO_${z}`;
+}
+/** NO_916627939 → 916627939; null fuer fremde Ids. */
+export function orgnrAusCompanyIdNo(companyId: string): string | null {
+  const m = /^NO_(\d{9})$/.exec(companyId);
+  return m ? m[1] : null;
+}
+function orgnrFormatiert(orgnr: string): string {
+  return `${orgnr.slice(0, 3)} ${orgnr.slice(3, 6)} ${orgnr.slice(6, 9)}`;
+}
+
 /** CH_CHE101602521 → CHE101602521; null fuer fremde Ids. */
 export function uidAusCompanyIdCh(companyId: string): string | null {
   const m = CH_ID_RE.exec(companyId);
@@ -232,6 +254,37 @@ export type TrefferCh = {
   };
 };
 
+export type TrefferNo = {
+  orgnr: string;
+  name: string;
+  sitz: string;
+  kommune: string;
+  fylke: string;
+  legalForm: string;
+  legalFormLang: string;
+  status: "ACTIVE" | "CLOSED" | "LOESCHUNG_ANGEKUENDIGT";
+  insolvenz: "NONE" | "VERDACHT" | "EROEFFNET";
+  street?: string | null;
+  zipCode?: string | null;
+  mva: boolean;
+  nace?: string | null;
+  gegruendet?: string | null;
+  fruehereNamen?: string[];
+  si?: {
+    legalForm: string;
+    street: string;
+    houseNumber: string;
+    zipCode: string;
+    city: string;
+    foundingYear: number | null;
+    corporatePurpose: string | null;
+    shareCapital: number | null;
+    capitalCurrency: string | null;
+    lastRegisterEntry: string | null;
+    managingDirectors: Array<{ firstName: string; lastName: string; birthDay: string | null; rolle: string }>;
+  };
+};
+
 export type Ergebnis = {
   workerId: string;
   abfragen: number;
@@ -259,10 +312,14 @@ export type Ergebnis = {
   trefferCh?: TrefferCh[];
   /** ch_bulk: Zusammenfassung der LINDAS-Seite. */
   chBulk?: { offset: number; limit: number; zeilen: number; teilergebnisse: number; letzteSeite: boolean };
+  /** no_oppdatering / no_refresh: Brreg-Treffer; no_bulk meldet Zeilen ueber Teilergebnisse. */
+  trefferNo?: TrefferNo[];
+  /** no_bulk: Zusammenfassung des Gesamtdownloads. */
+  noBulk?: { datum: string; zeilen: number; teilergebnisse: number };
 };
 
 /** uk_bulk / ch_bulk: Buendel Zeilen waehrend der Ausfuehrung. */
-export type Teilergebnis = { workerId: string; teil: number; trefferUk?: TrefferUk[]; trefferCh?: TrefferCh[] };
+export type Teilergebnis = { workerId: string; teil: number; trefferUk?: TrefferUk[]; trefferCh?: TrefferCh[]; trefferNo?: TrefferNo[] };
 
 type Q = { query: pg.Pool["query"] };
 
@@ -435,6 +492,34 @@ function trefferChZuDelta(t: TrefferCh) {
   };
 }
 
+function trefferNoZuDelta(t: TrefferNo) {
+  const companyId = companyIdNo(t.orgnr);
+  const orgnr = orgnrAusCompanyIdNo(companyId)!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  const namen = [...(t.fruehereNamen ?? []), t.name].filter((n) => n.trim().length > 0);
+  return {
+    companyId,
+    name: t.name,
+    nameNormalized: nameNormalisiert(t.name),
+    // Keine Registernummer wie HRB: die Organisationsnummer ist die amtliche Kennung,
+    // die Organisationsform (AS, ENK, NUF …) steht als Art.
+    registerType: t.legalForm || "ORG",
+    registerNumber: orgnrFormatiert(orgnr),
+    location: t.sitz || t.kommune,
+    districtCourt: "Brønnøysundregistrene",
+    state: t.fylke,
+    registerStatus: t.status,
+    formerCourt: null,
+    country: "NO",
+    insolvencyStatus: t.insolvenz,
+    ...(t.mva ? { uid: `NO${orgnr}MVA` } : {}),
+    ...(t.legalFormLang ? { legalForm: t.legalFormLang } : {}),
+    ...(t.street ? { street: t.street } : {}),
+    ...(t.zipCode ? { zipCode: t.zipCode } : {}),
+    ...(t.gegruendet && /^\d{4}-\d{2}-\d{2}$/.test(t.gegruendet) ? { incorporatedAt: t.gegruendet } : {}),
+    history: namen.map((n, i) => ({ name: n, nameNormalized: nameNormalisiert(n), location: t.sitz || t.kommune, order: i + 1 })),
+  };
+}
+
 type DeltaAntwort = { neu: number; geaendert: number; unveraendert: number; befunde: Array<{ companyId: string; befund: string; felder?: string[] }> };
 
 export async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
@@ -478,7 +563,19 @@ async function schreibeTrefferCh(treffer: TrefferCh[], source: string): Promise<
   return schreibeDelta(zeilen, source);
 }
 
-async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta> | ReturnType<typeof trefferUkZuDelta> | ReturnType<typeof trefferChZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+async function schreibeTrefferNo(treffer: TrefferNo[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+  const zeilen = [];
+  for (const t of treffer) {
+    try {
+      zeilen.push(trefferNoZuDelta(t));
+    } catch {
+      /* ungueltige Orgnr */
+    }
+  }
+  return schreibeDelta(zeilen, source);
+}
+
+async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta> | ReturnType<typeof trefferUkZuDelta> | ReturnType<typeof trefferChZuDelta> | ReturnType<typeof trefferNoZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
   const summe = { neu: 0, geaendert: 0, unveraendert: 0, geaenderteIds: [] as string[] };
   const gesehenAt = new Date().toISOString();
   for (let i = 0; i < zeilen.length; i += 1000) {
@@ -854,6 +951,78 @@ export async function chAnfordern(q: Q, companyIds: string[], grund: string): Pr
   return { jobs, firmen: firmen.length };
 }
 
+// ---- Norwegen --------------------------------------------------------------------------
+
+export const NO_REFRESH_BUENDEL = 100;
+
+function siAusTrefferNo(t: TrefferNo): import("./register-si").SiAusDelta {
+  const si = t.si!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  return {
+    name: t.name,
+    legalForm: si.legalForm,
+    street: si.street,
+    houseNumber: si.houseNumber,
+    zipCode: si.zipCode,
+    city: si.city,
+    foundingYear: si.foundingYear,
+    corporatePurpose: si.corporatePurpose,
+    shareCapital: si.shareCapital,
+    lastRegisterEntry: si.lastRegisterEntry,
+    lastRegisterModification: si.lastRegisterEntry,
+    managingDirectors: si.managingDirectors.map((g) => ({ firstName: g.firstName, lastName: g.lastName, birthDay: g.birthDay, city: null })),
+  };
+}
+
+async function noPoolFirmen(pool: pg.Pool): Promise<Array<{ companyId: string; orgnr: string }>> {
+  const r = await pool.query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "EntityProgress" WHERE "companyId" LIKE 'NO\\_%' ORDER BY "companyId" LIMIT $1`, [INSOLVENZ_POOL_MAX]);
+  const out: Array<{ companyId: string; orgnr: string }> = [];
+  for (const row of r.rows) {
+    const orgnr = orgnrAusCompanyIdNo(row.companyId);
+    if (orgnr) out.push({ companyId: row.companyId, orgnr });
+  }
+  return out;
+}
+
+/** Taeglich: ein no_oppdatering-Job je Tag der letzten drei Tage, monatlich no_refresh je Pool-Firma. */
+export async function erzeugeNoJobs(pool: pg.Pool, now: Date = new Date()): Promise<{ oppdatering: number; refresh: number }> {
+  let oppdatering = 0;
+  for (let tage = 1; tage <= 3; tage++) {
+    const datum = tagIso(new Date(now.getTime() - tage * 86_400_000));
+    if (await legeJobAn(pool, "no_oppdatering", `no_oppdatering:${datum}`, { datum }, 4)) oppdatering++;
+  }
+  const monat = monatIso(now);
+  const firmen = await noPoolFirmen(pool);
+  let refresh = 0;
+  for (let i = 0; i < firmen.length; i += NO_REFRESH_BUENDEL) {
+    const b = firmen.slice(i, i + NO_REFRESH_BUENDEL);
+    if (await legeJobAn(pool, "no_refresh", `no_refresh:pool-${monat}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund: `pool-${monat}` }, 3)) refresh++;
+  }
+  return { oppdatering, refresh };
+}
+
+/** Erstabzug: ein no_bulk-Job (Gesamtdownload, idempotent ueber das Abzugsdatum). */
+export async function erzeugeNoBulkJob(pool: pg.Pool, datum = tagIso(new Date())): Promise<{ jobs: number }> {
+  return { jobs: (await legeJobAn(pool, "no_bulk", `no_bulk:${datum}`, { datum }, 4)) ? 1 : 0 };
+}
+
+/** Norwegen-Pruefung fuer konkrete Firmen (Chat, Import, Firmendetail): Einheit plus Rollen sofort. */
+export async function noAnfordern(q: Q, companyIds: string[], grund: string): Promise<{ jobs: number; firmen: number }> {
+  const firmen: Array<{ companyId: string; orgnr: string }> = [];
+  const gesehen = new Set<string>();
+  for (const id of companyIds) {
+    const orgnr = orgnrAusCompanyIdNo(id);
+    if (!orgnr || gesehen.has(id)) continue;
+    gesehen.add(id);
+    firmen.push({ companyId: id, orgnr });
+  }
+  let jobs = 0;
+  for (let i = 0; i < firmen.length; i += NO_REFRESH_BUENDEL) {
+    const b = firmen.slice(i, i + NO_REFRESH_BUENDEL);
+    if (await legeJobAn(q, "no_refresh", `no_refresh:${grund}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund }, 1)) jobs++;
+  }
+  return { jobs, firmen: firmen.length };
+}
+
 /** UK-Pruefung fuer konkrete Firmen (Chat, Import, Firmendetail): Firmenseite und Insolvenz sofort. */
 export async function ukAnfordern(q: Q, companyIds: string[], grund: string): Promise<{ jobs: number; firmen: number }> {
   const firmen: Array<{ companyId: string; nummer: string }> = [];
@@ -881,13 +1050,13 @@ export async function ukAnfordern(q: Q, companyIds: string[], grund: string): Pr
  */
 export async function verarbeiteTeilergebnis(pool: pg.Pool, jobId: string, teil: Teilergebnis): Promise<Record<string, unknown>> {
   const job = await ladeGeleastenJob(pool, jobId, teil.workerId);
-  if (job.art !== "uk_bulk" && job.art !== "ch_bulk") throw new JobFehler(400, "teilergebnis_nur_bulk");
+  if (job.art !== "uk_bulk" && job.art !== "ch_bulk" && job.art !== "no_bulk") throw new JobFehler(400, "teilergebnis_nur_bulk");
   const stand = (job.payload.teile_verarbeitet as number[] | undefined) ?? [];
   if (stand.includes(teil.teil)) return { teil: teil.teil, wiederholt: true };
   const t0 = Date.now();
-  const zeilen = job.art === "ch_bulk" ? (teil.trefferCh ?? []) : (teil.trefferUk ?? []);
+  const zeilen = job.art === "ch_bulk" ? (teil.trefferCh ?? []) : job.art === "no_bulk" ? (teil.trefferNo ?? []) : (teil.trefferUk ?? []);
   if (zeilen.length === 0) throw new JobFehler(400, "teilergebnis_leer");
-  const summe = job.art === "ch_bulk" ? await schreibeTrefferCh(teil.trefferCh ?? [], "lindas") : await schreibeTrefferUk(teil.trefferUk ?? [], "companieshouse-bulk");
+  const summe = job.art === "ch_bulk" ? await schreibeTrefferCh(teil.trefferCh ?? [], "lindas") : job.art === "no_bulk" ? await schreibeTrefferNo(teil.trefferNo ?? [], "brreg-bulk") : await schreibeTrefferUk(teil.trefferUk ?? [], "companieshouse-bulk");
   const tMd = Date.now() - t0;
   const p = job.payload as Record<string, unknown> & { summe?: { neu: number; geaendert: number; unveraendert: number; zeilen: number } };
   const alt = p.summe ?? { neu: 0, geaendert: 0, unveraendert: 0, zeilen: 0 };
@@ -1070,6 +1239,28 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     }
   }
 
+  if (ergebnis.trefferNo && ergebnis.trefferNo.length > 0) {
+    const quelle = job.art === "no_oppdatering" ? "brreg-oppdatering" : "brreg";
+    const { geaenderteIds, ...summe } = await schreibeTrefferNo(ergebnis.trefferNo, quelle);
+    Object.assign(zusammenfassung, summe);
+    if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
+    // no_refresh: strukturierter Inhalt mit Geschaeftsfuehrung aus den Rollen.
+    const mitSi = ergebnis.trefferNo.filter((t) => t.si);
+    if (mitSi.length > 0) {
+      const { schreibeSiAusDelta } = await import("./register-si");
+      const si = { geschrieben: 0, uebersprungen: 0, fehler: 0 };
+      for (const t of mitSi) {
+        try {
+          si[await schreibeSiAusDelta(companyIdNo(t.orgnr), siAusTrefferNo(t), jobId)]++;
+        } catch (err) {
+          si.fehler++;
+          logger.warn({ orgnr: t.orgnr, jobId, err: err instanceof Error ? err.message : String(err) }, "[register-jobs] NO-SI nicht geschrieben");
+        }
+      }
+      zusammenfassung.si = si;
+    }
+  }
+
   if (job.art === "at_front" && ergebnis.atFront) {
     const p = job.payload as { gerichtId: string; begriff: string; state?: string };
     zusammenfassung.gesamt = ergebnis.atFront.gesamt;
@@ -1217,7 +1408,7 @@ export type Statistik = {
 };
 
 export async function statistik(pool: pg.Pool): Promise<Statistik> {
-  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {}, ch_bulk: {}, ch_sogc: {}, ch_refresh: {} };
+  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {}, ch_bulk: {}, ch_sogc: {}, ch_refresh: {}, no_bulk: {}, no_oppdatering: {}, no_refresh: {} };
   const r = await pool.query<{ art: JobArt; status: string; n: string }>(`SELECT "art", "status", count(*)::text AS n FROM "RegisterJob" GROUP BY 1, 2`);
   for (const row of r.rows) if (jobs[row.art]) jobs[row.art][row.status] = Number(row.n);
   const w = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterWorker" WHERE "zuletztAt" > NOW() - interval '1 hour'`);
@@ -1292,6 +1483,14 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
         logger.info(ch, "[register-jobs] Schweiz-Jobs erzeugt");
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Schweiz-Jobs nicht erzeugt");
+      }
+    }
+    if (process.env.NO_JOBS_DISABLED !== "1") {
+      try {
+        const no = await erzeugeNoJobs(getGatewayPool(), now);
+        logger.info(no, "[register-jobs] Norwegen-Jobs erzeugt");
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Norwegen-Jobs nicht erzeugt");
       }
     }
   }

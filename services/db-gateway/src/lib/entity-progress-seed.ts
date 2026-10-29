@@ -91,6 +91,14 @@ export async function seedEntityProgressForTransaction(
         logger.warn({ transactionId, err: err instanceof Error ? err.message : String(err) }, "seed: Zefix-Abruf nicht eingereiht"),
       );
     }
+    // Norwegen ebenso: Einheit plus Rollen (Geschaeftsfuehrung) beim Import sofort.
+    const no = companyIds.filter((id) => /^NO_\d{9}$/.test(id));
+    if (no.length > 0) {
+      const { noAnfordern } = await import("./register-jobs");
+      void noAnfordern(getGatewayPool(), no, "import").catch((err) =>
+        logger.warn({ transactionId, err: err instanceof Error ? err.message : String(err) }, "seed: Brreg-Abruf nicht eingereiht"),
+      );
+    }
   }
 
   if (companyIds.length === 0) {

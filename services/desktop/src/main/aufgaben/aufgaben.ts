@@ -135,7 +135,7 @@ export function meldungsText(a: HintergrundAufgabe): string {
   if (a.grund === "leer") {
     return (
       `${MELDUNG_PRAEFIX} abgebrochen] ${a.titel} (Transaktion ${a.transactionId}) enthielt keine einzige zugeordnete Firma; es wurde nichts verarbeitet.` +
-      " Sag dem Nutzer, dass die Firma im Register nicht gefunden wurde. Pruefe mit company_search die genaue Schreibweise und den Ort; Firmen ausserhalb Deutschlands brauchen beim Import das Land (country AT, CH oder UK)." +
+      " Sag dem Nutzer, dass die Firma im Register nicht gefunden wurde. Pruefe mit company_search die genaue Schreibweise und den Ort; Firmen ausserhalb Deutschlands brauchen beim Import das Land (country AT, CH, UK oder NO)." +
       " Biete an, sie richtig zu importieren. Nicht von dir aus neu starten."
     );
   }

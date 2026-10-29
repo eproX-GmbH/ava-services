@@ -19,10 +19,11 @@ export function abgleichLaeuft(laufId: string): boolean {
   return laufend.has(laufId);
 }
 
-function landAus(land: string | null): "DE" | "AT" | "CH" | "UK" {
+function landAus(land: string | null): "DE" | "AT" | "CH" | "UK" | "NO" {
   const l = (land ?? "").trim().toUpperCase();
   if (["AT", "A", "AUT", "ÖSTERREICH", "OESTERREICH", "AUSTRIA"].includes(l)) return "AT";
   if (["CH", "CHE", "SCHWEIZ", "SWITZERLAND", "SUISSE", "SVIZZERA"].includes(l)) return "CH";
+  if (["NO", "NOR", "NORWEGEN", "NORWAY", "NORGE"].includes(l)) return "NO";
   if (["UK", "GB", "GBR", "ENGLAND", "UNITED KINGDOM", "GROSSBRITANNIEN", "GROßBRITANNIEN"].includes(l)) return "UK";
   return "DE";
 }

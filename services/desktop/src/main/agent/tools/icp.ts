@@ -71,7 +71,7 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
         angebot: { type: "string", description: "Eigenes Angebot (Produkte/Leistungen)." },
         nutzen: { type: "string", description: "Geloestes Problem / Nutzenversprechen." },
         branchen: { type: "array", items: { type: "string" }, description: "Max 12." },
-        orte: { type: "array", items: { type: "string" }, description: "Heimat-Orte fuer den Radar, max 5. Orte ausserhalb Deutschlands mit Landkuerzel: \"Wien (AT)\", \"Zürich (CH)\", \"Manchester (UK)\"." },
+        orte: { type: "array", items: { type: "string" }, description: "Heimat-Orte fuer den Radar, max 5. Orte ausserhalb Deutschlands mit Landkuerzel: \"Wien (AT)\", \"Zürich (CH)\", \"Manchester (UK)\", \"Oslo (NO)\"." },
         radiusKm: { type: "integer", description: "Radar-Umkreis (Default 50, max 200)." },
         groesse: { type: "string", description: "Groessen-Praeferenz, z. B. '10-200 Mitarbeiter'." },
         merkmale: { type: "array", items: { type: "string" }, description: "Weitere Merkmale idealer Kunden, max 10." },

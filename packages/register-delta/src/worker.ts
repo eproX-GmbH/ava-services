@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle, ChSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle, type NoSchnittstelle, ChSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {

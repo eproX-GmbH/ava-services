@@ -21,7 +21,7 @@ import type { GatewayClient } from "../agent/gateway-client";
 import { radarActivity } from "./activity";
 import type { LlmProviderManager } from "../agent/providers";
 import { sanitizeCategory } from "./category";
-import { LAND_PROFILE, parseAdresse, type RadarLand } from "./land";
+import { LAND_PROFILE, SPRACHE_NAME, parseAdresse, type RadarLand } from "./land";
 import {
   buildMessages,
   parseJsonObject,
@@ -362,9 +362,9 @@ async function planSerpQueries(
     "- Die Suchen ueber mehrere der genannten Orte verteilen (groessere " +
     "Orte bevorzugen), nicht alles auf den Zentrums-Ort.\n" +
     "- Ausschluesse im ICP respektieren: danach gar nicht erst suchen.\n" +
-    (LAND_PROFILE[land].sprache === "en"
-      ? `- Das Suchgebiet liegt in ${LAND_PROFILE[land].name}: Suchanfragen auf ENGLISCH formulieren (Kategoriebegriffe, wie ein Brite googelt).\n`
-      : `- Das Suchgebiet liegt in ${LAND_PROFILE[land].name}: Suchanfragen auf Deutsch, landesuebliche Begriffe.\n`) +
+    (LAND_PROFILE[land].sprache === "de"
+      ? `- Das Suchgebiet liegt in ${LAND_PROFILE[land].name}: Suchanfragen auf Deutsch, landesuebliche Begriffe.\n`
+      : `- Das Suchgebiet liegt in ${LAND_PROFILE[land].name}: Suchanfragen auf ${SPRACHE_NAME[LAND_PROFILE[land].sprache].toUpperCase()} formulieren (Kategoriebegriffe, wie jemand vor Ort googelt).\n`) +
     'Antworte NUR als JSON: {"queries": ["...", "..."]}';
   const zuletzt = rotation.recentQueries.slice(-40);
   const user =

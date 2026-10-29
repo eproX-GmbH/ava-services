@@ -27,6 +27,8 @@ export function InsolvenzAbschnitt({ companyId, status, country }: { companyId: 
   // stehen im SHAB-Tagesdelta, der Status kommt aus dem Zefix-Detail.
   const istAt = country === "AT";
   const istCh = country === "CH";
+  // Norwegen: Konkurs steht im Enhetsregisteret selbst (Feld konkurs), Pruefung ueber die NO-Route.
+  const istNo = country === "NO";
   const qc = useQueryClient();
   const [offen, setOffen] = useState<number | null>(null);
   const [angefordert, setAngefordert] = useState(false);
@@ -38,7 +40,7 @@ export function InsolvenzAbschnitt({ companyId, status, country }: { companyId: 
   const pruefen = async () => {
     setAngefordert(true);
     try {
-      await gatewayFetch(istCh ? `/v1/register-jobs/ch` : `/v1/register-jobs/insolvenz`, { method: "POST", body: { companyIds: [companyId], grund: "firmendetail" } });
+      await gatewayFetch(istCh ? `/v1/register-jobs/ch` : istNo ? `/v1/register-jobs/no` : `/v1/register-jobs/insolvenz`, { method: "POST", body: { companyIds: [companyId], grund: "firmendetail" } });
     } catch {
       setAngefordert(false);
     }
@@ -49,7 +51,7 @@ export function InsolvenzAbschnitt({ companyId, status, country }: { companyId: 
     if (istAt) return null;
     return (
       <p className="muted small" style={{ marginBottom: "0.75rem" }}>
-        {istCh ? "Handelsregister (SHAB)" : "Insolvenzportal"}: {d?.insolvencyCheckedAt ? `keine Veröffentlichung, zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : "noch nicht geprüft."}{" "}
+        {istCh ? "Handelsregister (SHAB)" : istNo ? "Enhetsregisteret" : "Insolvenzportal"}: {d?.insolvencyCheckedAt ? `keine Veröffentlichung, zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : "noch nicht geprüft."}{" "}
         <button type="button" className="btn" disabled={angefordert} onClick={() => void pruefen()}>
           {angefordert ? "Prüfung eingereiht" : "Jetzt prüfen"}
         </button>
@@ -63,7 +65,7 @@ export function InsolvenzAbschnitt({ companyId, status, country }: { companyId: 
         {d.insolvencyAt ? <span className="muted small"> seit {new Date(d.insolvencyAt).toLocaleDateString("de-DE")}</span> : null}
       </h3>
       <p className="muted small">
-        Quelle: {istAt ? "Ediktsdatei der österreichischen Justiz" : istCh ? "Schweizerisches Handelsamtsblatt (SHAB)" : "Insolvenzbekanntmachungen der Justiz"}. {d.insolvencyCheckedAt ? `Zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : ""}{" "}
+        Quelle: {istAt ? "Ediktsdatei der österreichischen Justiz" : istCh ? "Schweizerisches Handelsamtsblatt (SHAB)" : istNo ? "Enhetsregisteret (Brønnøysundregistrene)" : "Insolvenzbekanntmachungen der Justiz"}. {d.insolvencyCheckedAt ? `Zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : ""}{" "}
         {!istAt && (
           <button type="button" className="btn" disabled={angefordert} onClick={() => void pruefen().then(() => qc.invalidateQueries({ queryKey: ["insolvenz", companyId] }))}>
             {angefordert ? "Prüfung eingereiht" : "Erneut prüfen"}
@@ -73,7 +75,7 @@ export function InsolvenzAbschnitt({ companyId, status, country }: { companyId: 
       <ul className="kv">
         {d.events.map((e: Ereignis) => (
           <li key={e.id}>
-            <span className="muted">{new Date(e.datum).toLocaleDateString("de-DE")}</span> · {GEGENSTAND[e.gegenstand] ?? e.gegenstand} · {istAt || istCh ? "" : "Amtsgericht "}{e.insolvenzgericht}, {e.aktenzeichen}{" "}
+            <span className="muted">{new Date(e.datum).toLocaleDateString("de-DE")}</span> · {GEGENSTAND[e.gegenstand] ?? e.gegenstand} · {istAt || istCh || istNo ? "" : "Amtsgericht "}{e.insolvenzgericht}, {e.aktenzeichen}{" "}
             <button type="button" className="btn" onClick={() => setOffen(offen === e.id ? null : e.id)}>
               {offen === e.id ? "Text ausblenden" : "Text anzeigen"}
             </button>

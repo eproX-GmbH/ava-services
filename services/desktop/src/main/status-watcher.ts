@@ -179,6 +179,8 @@ export class StatusWatcher {
         ? "Quelle: Firmenbuch (JustizOnline) und Ediktsdatei über das Register-Delta."
         : row.country === "CH"
           ? "Quelle: Handelsregister (Zefix) und Schweizerisches Handelsamtsblatt über das Register-Delta."
+          : row.country === "NO"
+            ? "Quelle: Enhetsregisteret (Brønnøysundregistrene) über das Register-Delta."
           : row.country === "UK"
             ? "Quelle: Companies House und The Gazette über das Register-Delta."
             : "Quelle: Handelsregister und Insolvenzbekanntmachungen über das Register-Delta.";

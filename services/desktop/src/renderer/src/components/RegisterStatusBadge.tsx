@@ -67,6 +67,7 @@ const LAND_TEXT: Record<string, { kurz: string; lang: string; register: string }
   AT: { kurz: "AT", lang: "Österreich", register: "Firmenbuch" },
   CH: { kurz: "CH", lang: "Schweiz", register: "Handelsregister" },
   UK: { kurz: "UK", lang: "Vereinigtes Königreich", register: "Companies House" },
+  NO: { kurz: "NO", lang: "Norwegen", register: "Enhetsregisteret" },
 };
 
 export function LandBadge({ country }: { country: string | null | undefined }) {
@@ -88,6 +89,7 @@ export function registerKennung(c: { country?: string | null; registerType?: str
   // Firma ohne Registereintrag (docs/PLAN_FIRMEN_OHNE_REGISTER.md): ID ist die Domain.
   if (art === "WEB") return `ohne Registereintrag · Website ${nr}`;
   if (c.country === "CH") return nr;
+  if (c.country === "NO") return `Org.nr. ${nr}`;
   return art ? `${art} ${nr}` : nr; // UK: "CRN 00077570" (Company Registration Number)
 }
 
@@ -102,6 +104,7 @@ export const LAENDER: Array<{ code: string; name: string }> = [
   { code: "AT", name: "Österreich" },
   { code: "CH", name: "Schweiz" },
   { code: "UK", name: "Vereinigtes Königreich" },
+  { code: "NO", name: "Norwegen" },
 ];
 
 /** Auswahl fuer Listen und Suche; leer = alle Laender. */

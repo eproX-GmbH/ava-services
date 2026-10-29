@@ -269,7 +269,7 @@ export type StartScanResult =
       scansUsedInWindow: number;
     };
 
-export type RadarLand = "DE" | "AT" | "CH" | "UK";
+export type RadarLand = "DE" | "AT" | "CH" | "UK" | "NO";
 
 export async function startScan(
   pool: Pool,

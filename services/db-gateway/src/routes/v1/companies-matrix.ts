@@ -89,7 +89,7 @@ const CompaniesMatrixQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   search: z.string().min(1).max(200).optional(),
   /** Laenderfilter DE | AT | CH | UK; fehlt = alle. */
-  country: z.enum(["DE", "AT", "CH", "UK"]).optional(),
+  country: z.enum(["DE", "AT", "CH", "UK", "NO"]).optional(),
   /** Nur diese eine Firma. Die Firmenansicht fragt damit "steht sie in
    *  Meine Firmen?", ohne die ganze Liste zu holen: count ist 0 oder 1. */
   companyId: z.string().min(1).max(200).optional(),

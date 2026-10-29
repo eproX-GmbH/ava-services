@@ -36,7 +36,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const search = defineTool({
     name: "company_search",
     description:
-      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
+      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Norwegen seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
     parameters: {
       type: "object",
       properties: {
@@ -215,7 +215,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) " +
       "mit den gespeicherten Veroeffentlichungen (Datum, Aktenzeichen, Gegenstand, Text; quelle insolvenzportal = Deutschland, ediktsdatei = Oesterreich). Mit pruefen=true wird eine neue " +
-      "Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN..., SHAB/Zefix bei Schweizer Firmen CH_CHE..., Companies House bei UK_...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
+      "Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN..., SHAB/Zefix bei Schweizer Firmen CH_CHE..., Enhetsregisteret bei norwegischen Firmen NO_..., Companies House bei UK_...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
     parameters: {
       type: "object",
       properties: { companyId: { type: "string" }, pruefen: { type: "boolean", description: "neue Pruefung im Insolvenzportal anfordern" } },
@@ -228,7 +228,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       if (args.pruefen === true) {
         // Oesterreich: Ediktsdatei und Firmenbuch-Detail ueber die AT-Route; Schweiz: Zefix-Detail
         // (Konkurs steht im SHAB-Tagesabzug, Status im Detail); UK: Companies House; sonst Insolvenzportal.
-        const route = /^AT_FN/.test(args.companyId) ? "/v1/register-jobs/at" : /^CH_CHE/.test(args.companyId) ? "/v1/register-jobs/ch" : /^UK_/.test(args.companyId) ? "/v1/register-jobs/uk" : "/v1/register-jobs/insolvenz";
+        const route = /^AT_FN/.test(args.companyId) ? "/v1/register-jobs/at" : /^CH_CHE/.test(args.companyId) ? "/v1/register-jobs/ch" : /^NO_/.test(args.companyId) ? "/v1/register-jobs/no" : /^UK_/.test(args.companyId) ? "/v1/register-jobs/uk" : "/v1/register-jobs/insolvenz";
         eingereiht = await gateway.request<Record<string, unknown>>(route, { method: "POST", body: { companyIds: [args.companyId], grund: "chat" }, signal: c.signal });
       }
       return { ...daten, pruefungEingereiht: eingereiht };

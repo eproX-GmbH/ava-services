@@ -25,6 +25,9 @@ const ART_TEXT: Record<string, string> = {
   ch_bulk: "Erstabzug Schweiz (Handelsregister)",
   ch_sogc: "Tagesmeldungen Schweiz (Handelsamtsblatt)",
   ch_refresh: "Auffrischung Schweiz (Handelsregister-Detail)",
+  no_bulk: "Erstabzug Norwegen (Enhetsregisteret)",
+  no_oppdatering: "Tagesänderungen Norwegen (Enhetsregisteret)",
+  no_refresh: "Auffrischung Norwegen (Einheit und Rollen)",
 };
 
 export function MithelfenSection() {

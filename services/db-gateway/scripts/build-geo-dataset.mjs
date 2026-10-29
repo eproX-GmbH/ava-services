@@ -72,6 +72,7 @@ const LAENDER = [
   { ava: "DE", geonames: "DE", accuracyPflicht: true },
   { ava: "AT", geonames: "AT", accuracyPflicht: false },
   { ava: "CH", geonames: "CH", accuracyPflicht: false },
+  { ava: "NO", geonames: "NO", accuracyPflicht: false },
   { ava: "UK", geonames: "GB", accuracyPflicht: false },
 ];
 const rows = [];
@@ -88,7 +89,7 @@ for (const land of LAENDER) {
     // f: [0]=land [1]=plz [2]=ort [3]=admin1 [4]=code1 [5]=admin2 [6]=code2
     //    [7]=admin3 [8]=code3 [9]=lat [10]=lon [11]=accuracy
     // DE: admin1=Bundesland, admin3=Kreis, code3=AGS-Kreis.
-    // AT: admin1=Bundesland, admin2=Bezirk. CH: admin1=Kanton, admin2=Bezirk. UK: admin1=Landesteil, admin2=County/Region.
+    // AT: admin1=Bundesland, admin2=Bezirk. CH: admin1=Kanton, admin2=Bezirk. NO: admin1=Fylke, admin2=Kommune. UK: admin1=Landesteil, admin2=County/Region.
     const accuracy = (f[11] ?? "").trim();
     if (land.accuracyPflicht && !accuracy) {
       dropped++;
@@ -119,7 +120,7 @@ for (const land of LAENDER) {
 
 const out = {
   meta: {
-    source: "GeoNames postal codes DE, AT, CH, GB (https://download.geonames.org/export/zip/)",
+    source: "GeoNames postal codes DE, AT, CH, NO, GB (https://download.geonames.org/export/zip/)",
     license: "CC-BY 4.0 — Attribution: GeoNames (geonames.org)",
     generatedAt: new Date().toISOString().slice(0, 10),
     columns: ["country", "name", "plz", "bundesland", "kreis", "agsKreis", "lat", "lon"],

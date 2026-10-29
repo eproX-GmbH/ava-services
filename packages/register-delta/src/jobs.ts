@@ -12,6 +12,7 @@ import { pdfZuSeiten } from "./cd-text";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
 import { companyFullZuTreffer, sogcZuTreffer, uidAusCompanyIdCh, type LindasClient, type TrefferCh, type ZefixAmt, type ZefixClient } from "./ch-zefix";
+import { enhetZuTreffer, orgnrAusCompanyIdNo, type BrregClient, type TrefferNo } from "./no-brreg";
 import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, type BulkTeil, type FirmaUk, type GazetteEintrag, type InsolvenzFallUk, type TrefferUk } from "./uk-companies-house";
 
 export type PortalSchnittstelle = {
@@ -63,6 +64,14 @@ export type ChSchnittstelle = {
   teilergebnis: (jobId: string, teil: number, trefferCh: TrefferCh[]) => Promise<void>;
 };
 
+/** Norwegen: Brreg-Client (Einheit, Rollen, Aenderungsfeed, Gesamtdownload), ein Takt. */
+export type NoSchnittstelle = {
+  brreg: Pick<BrregClient, "enhet" | "roller" | "oppdateringer" | "lastned">;
+  takt: TaktSchnittstelle;
+  /** no_bulk: Buendel an das Gateway melden (Worker: gateway.teilergebnis). */
+  teilergebnis: (jobId: string, teil: number, trefferNo: TrefferNo[]) => Promise<void>;
+};
+
 export type AusfuehrungsOptionen = {
   workerId: string;
   portal: PortalSchnittstelle;
@@ -75,6 +84,8 @@ export type AusfuehrungsOptionen = {
   uk?: UkSchnittstelle;
   /** Schweiz (nur fuer Jobs ch_*). */
   ch?: ChSchnittstelle;
+  /** Norwegen (nur fuer Jobs no_*). */
+  no?: NoSchnittstelle;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
   /** Oesterreich: Anfragen je Job bei 0,5/s (Default 300 ≈ 10 min). */
@@ -163,9 +174,15 @@ type UkFirmenPayload = { firmen: Array<{ companyId: string; nummer: string }>; g
 type ChBulkPayload = { offset: number; limit: number; teil: number; teile: number };
 type ChSogcPayload = { datum: string };
 type ChFirmenPayload = { firmen: Array<{ companyId: string; uid: string }>; grund?: string };
+type NoBulkPayload = { datum: string };
+type NoOppdateringPayload = { datum: string };
+type NoFirmenPayload = { firmen: Array<{ companyId: string; orgnr: string }>; grund?: string };
 /** ch_bulk: Zeilen je Teilergebnis (ein Delta-Aufruf in master-data) und Pause danach, wie UK. */
 export const CH_BULK_BUENDEL = Math.max(50, Math.min(1000, Number(process.env.REGISTER_DELTA_CH_BUENDEL ?? 500) || 500));
 export const CH_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_CH_PAUSE_MS ?? 10_000) || 0);
+/** no_bulk: Zeilen je Teilergebnis und Pause danach (ein Gesamtdownload, ~1,1 Mio. Zeilen). */
+export const NO_BULK_BUENDEL = Math.max(50, Math.min(1000, Number(process.env.REGISTER_DELTA_NO_BUENDEL ?? 500) || 500));
+export const NO_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_NO_PAUSE_MS ?? 5_000) || 0);
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
   const log = o.log ?? (() => {});
@@ -278,6 +295,11 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
   if (job.art === "ch_bulk" || job.art === "ch_sogc" || job.art === "ch_refresh") {
     if (!o.ch) throw new Error("Schweiz-Schnittstellen nicht verfuegbar");
     return fuehreChJobAus(job, o, o.ch, o.maxAbfragenJeAtJob ?? MAX_ABFRAGEN_JE_AT_JOB, log);
+  }
+
+  if (job.art === "no_bulk" || job.art === "no_oppdatering" || job.art === "no_refresh") {
+    if (!o.no) throw new Error("Norwegen-Schnittstellen nicht verfuegbar");
+    return fuehreNoJobAus(job, o, o.no, log);
   }
 
   // refresh
@@ -656,6 +678,88 @@ async function fuehreChJobAus(job: Job, o: AusfuehrungsOptionen, ch: ChSchnittst
   }
   log(`ch_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferCh.length} Treffer`);
   return { ...basis, trefferCh };
+}
+
+async function fuehreNoJobAus(job: Job, o: AusfuehrungsOptionen, no: NoSchnittstelle, log: (z: string) => void): Promise<Ergebnis> {
+  const basis: Ergebnis = { workerId: o.workerId, abfragen: 0, treffer: [] };
+
+  if (job.art === "no_bulk") {
+    // Gesamtdownload gestreamt, Buendel je NO_BULK_BUENDEL an das Gateway; schon
+    // verbuchte Buendel nach Neustart ueberspringen (Reihenfolge der Datei ist stabil
+    // genug fuer einen Lauf; nach Tagen lieber neu beginnen).
+    const p = job.payload as unknown as NoBulkPayload;
+    const schonVerbucht = new Set<number>(((job.payload as { teile_verarbeitet?: number[] }).teile_verarbeitet ?? []).filter((n) => Number.isInteger(n)));
+    await no.takt.warten();
+    basis.abfragen++;
+    let puffer: TrefferNo[] = [];
+    let teil = 0;
+    let gemeldet = 0;
+    const melden = async () => {
+      teil++;
+      if (!schonVerbucht.has(teil)) {
+        if (o.abbrechen?.()) throw new Error(`no_bulk abgebrochen nach ${teil - 1} Buendeln`);
+        await no.teilergebnis(job.id, teil, puffer);
+        gemeldet++;
+        if (NO_BULK_PAUSE_MS > 0) await new Promise((r) => setTimeout(r, NO_BULK_PAUSE_MS));
+      }
+      puffer = [];
+    };
+    const zeilen = await no.brreg.lastned(async (t) => {
+      puffer.push(t);
+      if (puffer.length >= NO_BULK_BUENDEL) await melden();
+    });
+    if (puffer.length > 0) await melden();
+    log(`no_bulk ${p.datum}: ${zeilen} Zeilen in ${teil} Buendeln, ${gemeldet} gemeldet`);
+    return { ...basis, noBulk: { datum: p.datum, zeilen, teilergebnisse: gemeldet } };
+  }
+
+  if (job.art === "no_oppdatering") {
+    // Aenderungen eines Tages: Orgnr-Liste aus dem Feed, Detail je Orgnr.
+    const p = job.payload as unknown as NoOppdateringPayload;
+    const ab = `${p.datum}T00:00:00.000Z`;
+    const bisDatum = new Date(Date.parse(ab) + 86_400_000).toISOString();
+    const feed = await no.brreg.oppdateringer(ab, bisDatum, () => no.takt.warten());
+    basis.abfragen += feed.abfragen;
+    if (feed.gesperrt) return { ...basis, gesperrt: true };
+    const trefferNo: TrefferNo[] = [];
+    let unbekannt = 0;
+    for (const [orgnr] of feed.aenderungen) {
+      if (o.abbrechen?.()) break;
+      await no.takt.warten();
+      const r = await no.brreg.enhet(orgnr);
+      basis.abfragen++;
+      if (r.gesperrt) return { ...basis, gesperrt: true, trefferNo };
+      if (!r.enhet) {
+        unbekannt++;
+        continue;
+      }
+      const t = enhetZuTreffer(r.enhet);
+      if (t) trefferNo.push(t);
+    }
+    log(`no_oppdatering ${p.datum}: ${feed.aenderungen.size} Aenderungen, ${trefferNo.length} Treffer, ${unbekannt} ohne Detail`);
+    return { ...basis, trefferNo };
+  }
+
+  // no_refresh: Einheit plus Rollen je Pool-Firma (Stammdaten + strukturierter Inhalt).
+  const p = job.payload as unknown as NoFirmenPayload;
+  const trefferNo: TrefferNo[] = [];
+  for (const f of p.firmen) {
+    if (o.abbrechen?.()) break;
+    const orgnr = f.orgnr || orgnrAusCompanyIdNo(f.companyId);
+    if (!orgnr) continue;
+    await no.takt.warten();
+    const r = await no.brreg.enhet(orgnr);
+    basis.abfragen++;
+    if (r.gesperrt) return { ...basis, gesperrt: true, trefferNo };
+    if (!r.enhet) continue;
+    await no.takt.warten();
+    const rollen = await no.brreg.roller(orgnr);
+    basis.abfragen++;
+    const t = enhetZuTreffer(r.enhet, rollen.gesperrt ? [] : rollen.rollen);
+    if (t) trefferNo.push(t);
+  }
+  log(`no_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferNo.length} Treffer`);
+  return { ...basis, trefferNo };
 }
 
 /** Takt-Slots nehmen und dabei den Treiber am Leben halten (Lebenszeichen alle 10 s). */

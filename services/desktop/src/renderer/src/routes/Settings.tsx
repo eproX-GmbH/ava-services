@@ -768,6 +768,9 @@ function MithelfenZeile() {
     ch_bulk: "Handelsregister Schweiz Erstabzug",
     ch_sogc: "Handelsamtsblatt Schweiz",
     ch_refresh: "Handelsregister Schweiz (Detail)",
+    no_bulk: "Enhetsregisteret Norwegen Erstabzug",
+    no_oppdatering: "Enhetsregisteret Norwegen Änderungen",
+    no_refresh: "Enhetsregisteret Norwegen (Detail)",
   };
   const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
   return (
