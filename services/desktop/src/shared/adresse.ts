@@ -14,6 +14,7 @@ export const LAND_NAME: Record<RegisterLand, string> = {
   CH: "Schweiz",
   UK: "United Kingdom",
   NO: "Norwegen",
+  FI: "Finnland",
 };
 
 const UK_LAND = /^(england|scotland|wales|northern ireland|united kingdom|uk|great britain|gb)$/i;

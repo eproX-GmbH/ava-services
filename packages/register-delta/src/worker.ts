@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle, type NoSchnittstelle, ChSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle, type NoSchnittstelle, type FiSchnittstelle, ChSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {
@@ -18,6 +18,10 @@ export type WorkerOptionen = {
   uk?: Omit<UkSchnittstelle, "teilergebnis">;
   /** Schweiz (Zefix, LINDAS); Teilergebnis fuellt der Worker. */
   ch?: Omit<ChSchnittstelle, "teilergebnis">;
+  /** Norwegen (Brreg, kein Browser); ohne Angabe werden no_*-Jobs nicht geleast. */
+  no?: Omit<NoSchnittstelle, "teilergebnis">;
+  /** Finnland (PRH, kein Browser); ohne Angabe werden fi_*-Jobs nicht geleast. */
+  fi?: Omit<FiSchnittstelle, "teilergebnis">;
   abfragenJeStunde?: number;
   arten?: JobArt[];
   leerlaufMs?: number;
@@ -106,6 +110,8 @@ export class RegisterWorker {
         ...(this.o.at ? (["at_front", "at_refresh", "at_insolvenz"] as JobArt[]) : []),
         ...(this.o.uk ? (["uk_bulk", "uk_refresh", "uk_insolvenz"] as JobArt[]) : []),
         ...(this.o.ch ? (["ch_bulk", "ch_sogc", "ch_refresh"] as JobArt[]) : []),
+        ...(this.o.no ? (["no_bulk", "no_oppdatering", "no_refresh"] as JobArt[]) : []),
+        ...(this.o.fi ? (["fi_bulk", "fi_neu", "fi_refresh"] as JobArt[]) : []),
       ] as JobArt[]);
     try {
       while (!this.stopSignal) {
@@ -149,6 +155,22 @@ export class RegisterWorker {
                   ...this.o.ch,
                   teilergebnis: async (jobId, teil, trefferCh) => {
                     await this.o.gateway.teilergebnis(jobId, { workerId: this.o.workerId, teil, trefferCh });
+                  },
+                }
+              : undefined,
+            no: this.o.no
+              ? {
+                  ...this.o.no,
+                  teilergebnis: async (jobId, teil, trefferNo) => {
+                    await this.o.gateway.teilergebnis(jobId, { workerId: this.o.workerId, teil, trefferNo });
+                  },
+                }
+              : undefined,
+            fi: this.o.fi
+              ? {
+                  ...this.o.fi,
+                  teilergebnis: async (jobId, teil, trefferFi) => {
+                    await this.o.gateway.teilergebnis(jobId, { workerId: this.o.workerId, teil, trefferFi });
                   },
                 }
               : undefined,

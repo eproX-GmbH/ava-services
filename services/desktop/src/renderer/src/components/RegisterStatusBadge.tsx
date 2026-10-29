@@ -68,6 +68,7 @@ const LAND_TEXT: Record<string, { kurz: string; lang: string; register: string }
   CH: { kurz: "CH", lang: "Schweiz", register: "Handelsregister" },
   UK: { kurz: "UK", lang: "Vereinigtes Königreich", register: "Companies House" },
   NO: { kurz: "NO", lang: "Norwegen", register: "Enhetsregisteret" },
+  FI: { kurz: "FI", lang: "Finnland", register: "Kaupparekisteri" },
 };
 
 export function LandBadge({ country }: { country: string | null | undefined }) {
@@ -90,6 +91,7 @@ export function registerKennung(c: { country?: string | null; registerType?: str
   if (art === "WEB") return `ohne Registereintrag · Website ${nr}`;
   if (c.country === "CH") return nr;
   if (c.country === "NO") return `Org.nr. ${nr}`;
+  if (c.country === "FI") return `Y-Tunnus ${nr}`;
   return art ? `${art} ${nr}` : nr; // UK: "CRN 00077570" (Company Registration Number)
 }
 
@@ -105,6 +107,7 @@ export const LAENDER: Array<{ code: string; name: string }> = [
   { code: "CH", name: "Schweiz" },
   { code: "UK", name: "Vereinigtes Königreich" },
   { code: "NO", name: "Norwegen" },
+  { code: "FI", name: "Finnland" },
 ];
 
 /** Auswahl fuer Listen und Suche; leer = alle Laender. */

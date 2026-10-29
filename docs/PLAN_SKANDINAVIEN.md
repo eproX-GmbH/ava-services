@@ -31,7 +31,7 @@ Anträge für 3 und 4 sofort stellen (Betreiber), damit sie bis dahin da sind.
 | registerStatus | slettedato → CLOSED; underAvvikling/Tvangsavvikling → LOESCHUNG_ANGEKUENDIGT | endDate → CLOSED; Liquidation → LOESCHUNG_ANGEKUENDIGT | avregistrerad → CLOSED; likvidation → LOESCHUNG_ANGEKUENDIGT | ophørt → CLOSED; under likvidation → LOESCHUNG_ANGEKUENDIGT |
 | insolvencyStatus | konkurs → EROEFFNET | konkurssi → EROEFFNET | konkurs → EROEFFNET | konkurs → EROEFFNET |
 | uid | `NO<Orgnr>MVA` wenn im MVA-Register | `FI<8 Stellen>` | `SE<Orgnr>01` | `DK<CVR>` |
-| Personen (SI) | Rollen-Endpunkt (DAGL, LEDE, …) | Vertretungsberechtigte im Datensatz | keine (Basis) | Deltagere |
+| Personen (SI) | Rollen-Endpunkt (DAGL, LEDE, …) | keine in den offenen Daten (geprüft 29.10.) | keine (Basis) | Deltagere |
 | Zweck (SI) | vedtektsfestetFormaal | Geschäftszweck im Datensatz | nicht in der Basis | Formål |
 | Abschlüsse (später) | Regnskapsregisteret offen | PRH Tilinpäätös offen | kostenpflichtig | CVR XBRL offen |
 
@@ -45,7 +45,7 @@ Quelle: `https://data.brreg.no/enhetsregisteret/api` (Enheter, keine Unterenhete
 | N2 | Job-Arten `no_bulk` (ein Job, Gesamtdownload gestreamt, Bündel je 500 als Teilergebnisse, Fortsetzen nach Neustart), `no_oppdatering` (Änderungsfeed eines Tages: Ny/Endring/Sletting, Detail je Orgnr), `no_refresh` (Detail plus Rollen je Pool-Firma → strukturierter Inhalt mit Geschäftsführung) | 2026-10-29 |
 | N3 | Gateway: TrefferNo, companyIdNo, Abbildung, Cron (täglich Vortag, monatlich Pool), Anforderung beim Import und aus dem Chat, Routen; master-data Validator (NO, UID-Muster) | 2026-10-29 |
 | N4 | Oberflächen: Land NO in Desktop (Import, Filter, Chip, Register-Zeile, Insolvenz-Quelle, Finanzen-Hinweis), app.ava.bi, admin.ava.bi; Radar (GeoNames NO, google.no, Sprache nb) | 2026-10-29 |
-| N5 | Maschine `worker_no`, Erstabzug (rund 1,1 Mio. Einheiten) | 2026-10-29 |
+| N5 | Maschine `worker_no` (deployt 29.10.), Erstabzug: Trigger `POST /internal/register-jobs/no-bulk` offen (Betreiber) | 2026-10-29 |
 
 Takt: 2 Abfragen je Sekunde (keine amtliche Grenze dokumentiert, höflich bleiben).
 Änderungsfeed liefert nur Orgnr und Art; das Detail wird je Orgnr nachgeladen
@@ -53,10 +53,22 @@ Takt: 2 Abfragen je Sekunde (keine amtliche Grenze dokumentiert, höflich bleibe
 
 ## 4. Finnland (F1 bis F5)
 
-Quelle: `https://avoindata.prh.fi/opendata-ytj-api/v3`. Kein Gesamtdownload:
-Erstabzug über `companies?registrationDateStart/End` in Monatsscheiben (ab
-1900), je Seite 100 Treffer; rund 0,7 Mio. Firmen. Delta über
-`companies?...` mit Änderungsdatum. Personen und Zweck stehen im Datensatz.
+Quelle: `https://avoindata.prh.fi/opendata-ytj-api/v3`, offen ohne Schlüssel.
+Kein Gesamtdownload und kein Änderungsfeed (geprüft 29.10.): Erstabzug über
+`companies?registrationDateStart/End` in Zeitscheiben (bis 1999 je Jahr, 2000
+bis 2015 je Halbjahr, danach je Quartal), je Seite 100 Firmen, Paging ohne
+Obergrenze (1990 = 269 Seiten). Neue Firmen täglich über das
+Registrierungsdatum, Änderungen an bekannten Firmen über den monatlichen
+Refresh je Pool-Firma. Keine Personen in den offenen Daten; Rechtsform,
+Branche, Adresse, Status, Website und Namenshistorie dreisprachig im Datensatz.
+
+| Stufe | Inhalt | Stand |
+|---|---|---|
+| F1 | Adapter `packages/register-delta/src/fi-prh.ts`: Client (Firma, Seite nach Registrierungsdatum), Abbildung mit Rechtsform-Kürzeln (OY, OYJ, KY, …), Konkurs/Liquidation aus Situationen | v0.1.889 |
+| F2 | Job-Arten `fi_bulk` (Zeitscheibe, Bündel zu 5 Seiten als Teilergebnisse), `fi_neu` (Tag), `fi_refresh` (Pool) | v0.1.889 |
+| F3 | Gateway: TrefferFi, companyIdFi, Abbildung (Y-Tunnus als Registernummer, UID FI…), Cron, Zeitscheiben-Erzeugung, Routen; master-data | v0.1.889 |
+| F4 | Oberflächen Desktop/app.ava.bi/admin.ava.bi, Radar (google.fi, Finnisch), Ortsgraph FI | v0.1.889 |
+| F5 | Maschine `worker_fi`, Erstabzug (rund 0,7 Mio. Firmen in etwa 300 Zeitscheiben) | Trigger offen |
 
 ## 5. Schweden (S1 bis S5)
 

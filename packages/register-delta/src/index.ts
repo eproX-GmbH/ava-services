@@ -12,3 +12,4 @@ export * from "./at-edikte";
 export * from "./uk-companies-house";
 export * from "./ch-zefix";
 export * from "./no-brreg";
+export * from "./fi-prh";

@@ -138,7 +138,7 @@ export function beschreibeBefund(b: VorgangsBefund): { headline: (name: string) 
       // (UK: Companies House, AT: Firmenbuch, CH: Zefix).
       const laender = new Set(b.firmen.map((f) => landAusCompanyId(f.companyId)));
       const einzig = laender.size === 1 ? [...laender][0] : null;
-      const quelle = einzig === "DE" ? "die Quelle (Handelsregister/Unternehmensanzeiger)" : einzig === "UK" ? "Companies House" : einzig === "AT" ? "das Firmenbuch" : einzig === "CH" ? "das Zefix" : einzig === "NO" ? "das Enhetsregisteret" : "die Registerquelle";
+      const quelle = einzig === "DE" ? "die Quelle (Handelsregister/Unternehmensanzeiger)" : einzig === "UK" ? "Companies House" : einzig === "AT" ? "das Firmenbuch" : einzig === "CH" ? "das Zefix" : einzig === "NO" ? "das Enhetsregisteret" : einzig === "FI" ? "das Kaupparekisteri" : "die Registerquelle";
       zeilen.push(`Vermutlich ist ${quelle} gerade nicht erreichbar. Die Schritte lassen sich spaeter unter Vorgaenge → „Schritt erneut starten“ wiederholen.`);
     }
   }

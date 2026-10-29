@@ -92,6 +92,13 @@ export async function seedEntityProgressForTransaction(
       );
     }
     // Norwegen ebenso: Einheit plus Rollen (Geschaeftsfuehrung) beim Import sofort.
+    const fi = companyIds.filter((id) => /^FI_\d{8}$/.test(id));
+    if (fi.length > 0) {
+      const { fiAnfordern } = await import("./register-jobs");
+      void fiAnfordern(getGatewayPool(), fi, "import").catch((err) =>
+        logger.warn({ transactionId, err: err instanceof Error ? err.message : String(err) }, "seed: PRH-Abruf nicht eingereiht"),
+      );
+    }
     const no = companyIds.filter((id) => /^NO_\d{9}$/.test(id));
     if (no.length > 0) {
       const { noAnfordern } = await import("./register-jobs");

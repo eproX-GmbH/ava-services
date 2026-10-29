@@ -26,7 +26,7 @@ export type GruendungsAbfrage = {
   sortierung?: GruendungsSortierung;
   /** Namensteil; sucht im Namen des Registerauszugs. */
   suche?: string;
-  country?: "DE" | "AT" | "CH" | "UK" | "NO";
+  country?: "DE" | "AT" | "CH" | "UK" | "NO" | "FI";
   page: number;
   pageSize: number;
 };

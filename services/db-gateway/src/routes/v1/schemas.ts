@@ -24,7 +24,7 @@ export const CompanyIdParam = z.object({
 export const PaginationQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
-  country: z.enum(["DE", "AT", "CH", "UK", "NO"]).optional(),
+  country: z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]).optional(),
 });
 
 /**
@@ -38,7 +38,7 @@ export const GruendungsjahrQuery = z.object({
   sortierung: z.enum(["gruendung_auf", "gruendung_ab"]).optional(),
 });
 
-export const CountryQuery = z.enum(["DE", "AT", "CH", "UK", "NO"]).optional();
+export const CountryQuery = z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]).optional();
 
 export const SearchQuery = z.object({
   q: z.string().min(1).max(200),
@@ -743,7 +743,7 @@ export const FromListIngestBody = z
     /** v0.1.57 — dry-run preview. Returns ImportPreview JSON instead of
      *  starting a transaction. */
     /** docs/PLAN_RADAR_LAENDER.md: Land der Firmen fuer den Abgleich (DE | AT | CH | UK), Standard DE. */
-    country: z.enum(["DE", "AT", "CH", "UK", "NO"]).optional(),
+    country: z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]).optional(),
     dryRun: z.boolean().optional().default(false),
   })
   .openapi("FromListIngest");

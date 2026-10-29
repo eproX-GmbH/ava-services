@@ -73,6 +73,7 @@ const LAENDER = [
   { ava: "AT", geonames: "AT", accuracyPflicht: false },
   { ava: "CH", geonames: "CH", accuracyPflicht: false },
   { ava: "NO", geonames: "NO", accuracyPflicht: false },
+  { ava: "FI", geonames: "FI", accuracyPflicht: false },
   { ava: "UK", geonames: "GB", accuracyPflicht: false },
 ];
 const rows = [];

@@ -122,7 +122,7 @@ export function buildFirmaFindenTools(deps: { gateway: GatewayClient; providers:
       properties: {
         name: { type: "string", description: "Firmenname, wie der Nutzer ihn nennt." },
         ort: { type: "string", description: "Stadt/Ort, wenn bekannt — verbessert die Google-Suche deutlich." },
-        land: { type: "string", enum: ["DE", "AT", "CH", "UK", "NO"], description: "Standard DE." },
+        land: { type: "string", enum: ["DE", "AT", "CH", "UK", "NO", "FI"], description: "Standard DE." },
         website: { type: "string", description: "Vom Nutzer bestaetigte Website: ueberspringt die Google-Suche, prueft nur diese Domain." },
       },
       required: ["name"],
@@ -130,7 +130,7 @@ export function buildFirmaFindenTools(deps: { gateway: GatewayClient; providers:
     schema: yup.object({
       name: yup.string().trim().min(2).max(200).required(),
       ort: yup.string().trim().max(120).optional(),
-      land: yup.string().oneOf(["DE", "AT", "CH", "UK", "NO"]).optional(),
+      land: yup.string().oneOf(["DE", "AT", "CH", "UK", "NO", "FI"]).optional(),
       website: yup.string().trim().max(500).optional(),
     }),
     preview: (r) => {

@@ -34,7 +34,7 @@ const PlaceShape = z
 
 const NearbyResponseShape = z
   .object({
-    country: z.enum(["DE", "AT", "CH", "UK", "NO"]),
+    country: z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]),
     origin: PlaceShape.omit({ distanceKm: true }),
     /** Gleichnamige (Ort, Kreis)-Gruppen, die NICHT als Origin gewaehlt
      *  wurden (es gibt z. B. zwei "Minden"). */
@@ -63,7 +63,7 @@ const nearbyRoute = createRoute({
       near: z.string().min(2).max(80),
       radiusKm: z.coerce.number().min(1).max(200).default(50),
       /** docs/PLAN_RADAR_LAENDER.md: Land des Suchgebiets, Standard DE. */
-      country: z.enum(["DE", "AT", "CH", "UK", "NO"]).default("DE"),
+      country: z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]).default("DE"),
     }),
   },
   responses: {

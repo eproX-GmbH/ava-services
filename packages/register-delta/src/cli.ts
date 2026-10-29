@@ -18,6 +18,8 @@
 //   REGISTER_DELTA_UK=0      UK-Jobs (Companies House, Gazette) nicht bedienen (Default: an)
 //   REGISTER_DELTA_CH=0      Schweiz-Jobs (Zefix, LINDAS) nicht bedienen (Default: an, wenn ZEFIX_USER/ZEFIX_PASSWORD gesetzt)
 //   ZEFIX_USER / ZEFIX_PASSWORD  Betreiber-Konto beim Bundesamt fuer Justiz (HTTP Basic)
+//   REGISTER_DELTA_NO=0      Norwegen-Jobs (Brreg, offen ohne Schluessel) nicht bedienen (Default: an)
+//   REGISTER_DELTA_FI=0      Finnland-Jobs (PRH Open Data, offen ohne Schluessel) nicht bedienen (Default: an)
 //   REGISTER_DELTA_SI=0      refresh ohne strukturierten Registerinhalt (Default: an, S8)
 //   REGISTER_DELTA_CD=0      ohne SI nicht auf den chronologischen Abdruck ausweichen (Default: an, S9)
 
@@ -33,6 +35,8 @@ import { AT_ABFRAGEN_JE_STUNDE, JustizOnlineClient } from "./at-firmenbuch";
 import { EDIKTE_ABFRAGEN_JE_STUNDE, EdikteClient } from "./at-edikte";
 import { CompaniesHouseClient, UK_ABFRAGEN_JE_STUNDE } from "./uk-companies-house";
 import { LindasClient, ZefixClient, ZEFIX_ABFRAGEN_JE_STUNDE } from "./ch-zefix";
+import { BrregClient, NO_ABFRAGEN_JE_STUNDE } from "./no-brreg";
+import { PrhClient, FI_ABFRAGEN_JE_STUNDE } from "./fi-prh";
 import { Taktgeber } from "./takt";
 
 function tokenQuelle(): () => Promise<string> {
@@ -140,6 +144,8 @@ async function main() {
             lindas: new LindasClient({ log }),
             takt: new Taktgeber(ZEFIX_ABFRAGEN_JE_STUNDE),
           },
+    no: process.env.REGISTER_DELTA_NO === "0" ? undefined : { brreg: new BrregClient({ log }), takt: new Taktgeber(NO_ABFRAGEN_JE_STUNDE) },
+    fi: process.env.REGISTER_DELTA_FI === "0" ? undefined : { prh: new PrhClient({ log }), takt: new Taktgeber(FI_ABFRAGEN_JE_STUNDE) },
     abfragenJeStunde: Number(process.env.ABFRAGEN_JE_STUNDE ?? 60),
     arten: process.env.REGISTER_DELTA_ARTEN ? (process.env.REGISTER_DELTA_ARTEN.split(",").map((a) => a.trim()) as JobArt[]) : undefined,
     log,

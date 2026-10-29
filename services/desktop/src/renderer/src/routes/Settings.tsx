@@ -771,6 +771,9 @@ function MithelfenZeile() {
     no_bulk: "Enhetsregisteret Norwegen Erstabzug",
     no_oppdatering: "Enhetsregisteret Norwegen Änderungen",
     no_refresh: "Enhetsregisteret Norwegen (Detail)",
+    fi_bulk: "Kaupparekisteri Finnland Erstabzug",
+    fi_neu: "Kaupparekisteri Finnland neue Firmen",
+    fi_refresh: "Kaupparekisteri Finnland (Detail)",
   };
   const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
   return (

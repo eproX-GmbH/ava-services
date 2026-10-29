@@ -29,7 +29,7 @@ import {
   statistik,
   verarbeiteErgebnis,
   type JobArt,
-  schreibeTreffer, chAnfordern, noAnfordern } from "../../lib/register-jobs";
+  schreibeTreffer, chAnfordern, noAnfordern, fiAnfordern } from "../../lib/register-jobs";
 import { companyIdAus } from "../../lib/register-ids";
 import { ErrorShape } from "./schemas";
 
@@ -44,7 +44,7 @@ const err = {
 };
 
 export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh", "no_bulk", "no_oppdatering", "no_refresh"]);
+export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz", "ch_bulk", "ch_sogc", "ch_refresh", "no_bulk", "no_oppdatering", "no_refresh", "fi_bulk", "fi_neu", "fi_refresh"]);
 
 const JobShape = z
   .object({
@@ -204,9 +204,27 @@ const TrefferNoShape = z.object({
     .optional(),
 });
 
+/** Finnland: Firma aus PRH Open Data (fi_bulk, fi_neu, fi_refresh); Paket register-delta, fi-prh.ts. */
+const TrefferFiShape = z.object({
+  businessId: z.string().regex(/^\d{7}-\d$/),
+  name: z.string().min(1).max(500),
+  sitz: z.string().max(200).default(""),
+  legalForm: z.string().max(20).default(""),
+  legalFormLang: z.string().max(200).default(""),
+  status: z.enum(["ACTIVE", "CLOSED", "LOESCHUNG_ANGEKUENDIGT"]),
+  insolvenz: z.enum(["NONE", "VERDACHT", "EROEFFNET"]),
+  street: z.string().max(200).nullable().optional(),
+  zipCode: z.string().max(20).nullable().optional(),
+  website: z.string().max(300).nullable().optional(),
+  nace: z.string().max(20).nullable().optional(),
+  gegruendet: z.string().max(40).nullable().optional(),
+  fruehereNamen: z.array(z.string().max(500)).max(10).optional(),
+  si: z.object({ legalForm: z.string().max(200), street: z.string().max(200), houseNumber: z.string().max(40), zipCode: z.string().max(20), city: z.string().max(200), foundingYear: z.number().int().nullable(), corporatePurpose: z.string().max(20_000).nullable(), lastRegisterEntry: z.string().max(40).nullable() }).optional(),
+});
+
 export const TeilergebnisShape = z
-  .object({ workerId: WorkerId, teil: z.number().int().positive(), trefferUk: z.array(TrefferUkShape).min(1).max(1000).optional(), trefferCh: z.array(TrefferChShape).min(1).max(5000).optional(), trefferNo: z.array(TrefferNoShape).min(1).max(5000).optional() })
-  .refine((t) => !!t.trefferUk || !!t.trefferCh || !!t.trefferNo, { message: "trefferUk, trefferCh oder trefferNo" });
+  .object({ workerId: WorkerId, teil: z.number().int().positive(), trefferUk: z.array(TrefferUkShape).min(1).max(1000).optional(), trefferCh: z.array(TrefferChShape).min(1).max(5000).optional(), trefferNo: z.array(TrefferNoShape).min(1).max(5000).optional(), trefferFi: z.array(TrefferFiShape).min(1).max(5000).optional() })
+  .refine((t) => !!t.trefferUk || !!t.trefferCh || !!t.trefferNo || !!t.trefferFi, { message: "trefferUk, trefferCh, trefferNo oder trefferFi" });
 
 /** Oesterreich: Suchtreffer oder Detail aus JustizOnline (Paket register-delta, at-firmenbuch.ts). */
 const TrefferAtShape = z.object({
@@ -235,6 +253,8 @@ export const ErgebnisShape = z.object({
   trefferCh: z.array(TrefferChShape).max(5000).optional(),
   trefferNo: z.array(TrefferNoShape).max(5000).optional(),
   noBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
+  trefferFi: z.array(TrefferFiShape).max(5000).optional(),
+  fiBulk: z.object({ von: z.string().max(10), bis: z.string().max(10), gesamt: z.number().int().nonnegative(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
   chBulk: z.object({ offset: z.number().int().nonnegative(), limit: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative(), letzteSeite: z.boolean() }).optional(),
   si: z.object({ geladen: z.number().int().nonnegative(), ohneLink: z.number().int().nonnegative(), fehler: z.number().int().nonnegative() }).optional().catch(undefined),
   // Wie bei `si`: Diese Angabe ist Komfort (Folgejob fuer den Rest). Sie darf
@@ -542,4 +562,19 @@ registerJobsRouter.openapi(noRoute, async (c) => {
   auth(c);
   const body = c.req.valid("json");
   return c.json(await noAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
+});
+
+// Finnland — PRH-Firma fuer konkrete Firmen anfordern.
+const fiRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/fi",
+  tags: [tag],
+  summary: "Finnland: PRH-Firma fuer konkrete Firmen anfordern (FI_...)",
+  request: { body: { content: { "application/json": { schema: z.object({ companyIds: z.array(z.string().regex(/^FI_\d{8}$/)).min(1).max(500), grund: z.string().min(1).max(40).regex(/^[a-z0-9-]+$/).default("anforderung") }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ jobs: z.number().int(), firmen: z.number().int() }) } }, description: "ok" }, 401: err[401] },
+});
+registerJobsRouter.openapi(fiRoute, async (c) => {
+  auth(c);
+  const body = c.req.valid("json");
+  return c.json(await fiAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
 });

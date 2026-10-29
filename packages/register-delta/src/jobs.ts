@@ -13,6 +13,7 @@ import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
 import { companyFullZuTreffer, sogcZuTreffer, uidAusCompanyIdCh, type LindasClient, type TrefferCh, type ZefixAmt, type ZefixClient } from "./ch-zefix";
 import { enhetZuTreffer, orgnrAusCompanyIdNo, type BrregClient, type TrefferNo } from "./no-brreg";
+import { businessIdAusCompanyIdFi, companyZuTreffer, FI_SEITE, type PrhClient, type TrefferFi } from "./fi-prh";
 import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, type BulkTeil, type FirmaUk, type GazetteEintrag, type InsolvenzFallUk, type TrefferUk } from "./uk-companies-house";
 
 export type PortalSchnittstelle = {
@@ -72,6 +73,14 @@ export type NoSchnittstelle = {
   teilergebnis: (jobId: string, teil: number, trefferNo: TrefferNo[]) => Promise<void>;
 };
 
+/** Finnland: PRH-Client (Firma, Seite nach Registrierungsdatum), ein Takt. */
+export type FiSchnittstelle = {
+  prh: Pick<PrhClient, "firma" | "seite">;
+  takt: TaktSchnittstelle;
+  /** fi_bulk: Seiten in Buendeln an das Gateway melden (Worker: gateway.teilergebnis). */
+  teilergebnis: (jobId: string, teil: number, trefferFi: TrefferFi[]) => Promise<void>;
+};
+
 export type AusfuehrungsOptionen = {
   workerId: string;
   portal: PortalSchnittstelle;
@@ -86,6 +95,8 @@ export type AusfuehrungsOptionen = {
   ch?: ChSchnittstelle;
   /** Norwegen (nur fuer Jobs no_*). */
   no?: NoSchnittstelle;
+  /** Finnland (nur fuer Jobs fi_*). */
+  fi?: FiSchnittstelle;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
   /** Oesterreich: Anfragen je Job bei 0,5/s (Default 300 ≈ 10 min). */
@@ -177,12 +188,18 @@ type ChFirmenPayload = { firmen: Array<{ companyId: string; uid: string }>; grun
 type NoBulkPayload = { datum: string };
 type NoOppdateringPayload = { datum: string };
 type NoFirmenPayload = { firmen: Array<{ companyId: string; orgnr: string }>; grund?: string };
+type FiBulkPayload = { von: string; bis: string };
+type FiNeuPayload = { datum: string };
+type FiFirmenPayload = { firmen: Array<{ companyId: string; businessId: string }>; grund?: string };
 /** ch_bulk: Zeilen je Teilergebnis (ein Delta-Aufruf in master-data) und Pause danach, wie UK. */
 export const CH_BULK_BUENDEL = Math.max(50, Math.min(1000, Number(process.env.REGISTER_DELTA_CH_BUENDEL ?? 500) || 500));
 export const CH_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_CH_PAUSE_MS ?? 10_000) || 0);
 /** no_bulk: Zeilen je Teilergebnis und Pause danach (ein Gesamtdownload, ~1,1 Mio. Zeilen). */
 export const NO_BULK_BUENDEL = Math.max(50, Math.min(1000, Number(process.env.REGISTER_DELTA_NO_BUENDEL ?? 500) || 500));
 export const NO_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_NO_PAUSE_MS ?? 5_000) || 0);
+/** fi_bulk: Seiten je Teilergebnis (5 Seiten = 500 Firmen) und Pause danach. */
+export const FI_BULK_SEITEN_JE_TEIL = Math.max(1, Math.min(10, Number(process.env.REGISTER_DELTA_FI_SEITEN ?? 5) || 5));
+export const FI_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_FI_PAUSE_MS ?? 5_000) || 0);
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
   const log = o.log ?? (() => {});
@@ -300,6 +317,11 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
   if (job.art === "no_bulk" || job.art === "no_oppdatering" || job.art === "no_refresh") {
     if (!o.no) throw new Error("Norwegen-Schnittstellen nicht verfuegbar");
     return fuehreNoJobAus(job, o, o.no, log);
+  }
+
+  if (job.art === "fi_bulk" || job.art === "fi_neu" || job.art === "fi_refresh") {
+    if (!o.fi) throw new Error("Finnland-Schnittstellen nicht verfuegbar");
+    return fuehreFiJobAus(job, o, o.fi, log);
   }
 
   // refresh
@@ -760,6 +782,80 @@ async function fuehreNoJobAus(job: Job, o: AusfuehrungsOptionen, no: NoSchnittst
   }
   log(`no_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferNo.length} Treffer`);
   return { ...basis, trefferNo };
+}
+
+async function fuehreFiJobAus(job: Job, o: AusfuehrungsOptionen, fi: FiSchnittstelle, log: (z: string) => void): Promise<Ergebnis> {
+  const basis: Ergebnis = { workerId: o.workerId, abfragen: 0, treffer: [] };
+
+  if (job.art === "fi_bulk" || job.art === "fi_neu") {
+    // Zeitscheibe nach Registrierungsdatum, Seite fuer Seite. fi_bulk meldet
+    // Buendel von FI_BULK_SEITEN_JE_TEIL Seiten (verbuchte nach Neustart
+    // ueberspringen), fi_neu gibt den Tag am Stueck zurueck.
+    const { von, bis } = job.art === "fi_bulk" ? (job.payload as unknown as FiBulkPayload) : { von: (job.payload as unknown as FiNeuPayload).datum, bis: (job.payload as unknown as FiNeuPayload).datum };
+    const schonVerbucht = new Set<number>(((job.payload as { teile_verarbeitet?: number[] }).teile_verarbeitet ?? []).filter((n) => Number.isInteger(n)));
+    const alle: TrefferFi[] = [];
+    let puffer: TrefferFi[] = [];
+    let gemeldet = 0;
+    let gesamt = -1;
+    let seiten = 0;
+    for (let page = 1; page < 100_000; page++) {
+      if (o.abbrechen?.()) throw new Error(`${job.art} ${von}..${bis} abgebrochen auf Seite ${page}`);
+      const teilNr = Math.floor((page - 1) / FI_BULK_SEITEN_JE_TEIL) + 1;
+      const teilEnde = page % FI_BULK_SEITEN_JE_TEIL === 0;
+      if (job.art === "fi_bulk" && schonVerbucht.has(teilNr) && gesamt >= 0) {
+        // Verbuchtes Buendel: Seiten nicht laden; am Ende der Scheibe aufhoeren.
+        if (page * FI_SEITE >= gesamt) break;
+        continue;
+      }
+      await fi.takt.warten();
+      const r = await fi.prh.seite(von, bis, page);
+      basis.abfragen++;
+      seiten++;
+      if (r.gesperrt) return { ...basis, gesperrt: true };
+      gesamt = r.gesamt;
+      if (!(job.art === "fi_bulk" && schonVerbucht.has(teilNr))) {
+        for (const c of r.firmen) {
+          const t = companyZuTreffer(c);
+          if (t) {
+            if (job.art === "fi_bulk") puffer.push(t);
+            else alle.push(t);
+          }
+        }
+      }
+      const ende = r.firmen.length < FI_SEITE || page * FI_SEITE >= gesamt;
+      if (job.art === "fi_bulk" && (teilEnde || ende) && puffer.length > 0) {
+        await fi.teilergebnis(job.id, teilNr, puffer);
+        gemeldet++;
+        puffer = [];
+        if (FI_BULK_PAUSE_MS > 0 && !ende) await new Promise((res) => setTimeout(res, FI_BULK_PAUSE_MS));
+      }
+      if (ende) break;
+    }
+    if (job.art === "fi_bulk") {
+      log(`fi_bulk ${von}..${bis}: ${Math.max(0, gesamt)} Firmen, ${seiten} Seiten geladen, ${gemeldet} Buendel gemeldet`);
+      return { ...basis, fiBulk: { von, bis, gesamt: Math.max(0, gesamt), zeilen: seiten * FI_SEITE, teilergebnisse: gemeldet } };
+    }
+    log(`fi_neu ${von}: ${alle.length} neue Firmen`);
+    return { ...basis, trefferFi: alle };
+  }
+
+  // fi_refresh: Firma je Pool-Firma (Stammdaten + strukturierter Inhalt ohne Personen).
+  const p = job.payload as unknown as FiFirmenPayload;
+  const trefferFi: TrefferFi[] = [];
+  for (const f of p.firmen) {
+    if (o.abbrechen?.()) break;
+    const businessId = f.businessId || businessIdAusCompanyIdFi(f.companyId);
+    if (!businessId) continue;
+    await fi.takt.warten();
+    const r = await fi.prh.firma(businessId);
+    basis.abfragen++;
+    if (r.gesperrt) return { ...basis, gesperrt: true, trefferFi };
+    if (!r.firma) continue;
+    const t = companyZuTreffer(r.firma, true);
+    if (t) trefferFi.push(t);
+  }
+  log(`fi_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferFi.length} Treffer`);
+  return { ...basis, trefferFi };
 }
 
 /** Takt-Slots nehmen und dabei den Treiber am Leben halten (Lebenszeichen alle 10 s). */

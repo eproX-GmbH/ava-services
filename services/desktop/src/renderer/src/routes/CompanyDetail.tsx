@@ -496,7 +496,7 @@ export function CompanyDetail() {
   // Finanzen kommen aus dem Bundesanzeiger; fuer oesterreichische und Schweizer Firmen gibt es
   // diese Quelle nicht (Schweizer Abschluesse sind nicht oeffentlich).
   // Norwegen: Abschluesse liegen offen im Regnskapsregisteret, sind aber noch nicht angebunden.
-  const istAt = summary.data?.country === "AT" || summary.data?.country === "CH" || summary.data?.country === "NO";
+  const istAt = summary.data?.country === "AT" || summary.data?.country === "CH" || summary.data?.country === "NO" || summary.data?.country === "FI";
   // Verflechtungen (Gesellschafterlisten) gibt es nur fuer deutsche Registerfirmen und nur mit Org-Feature.
   const istDeRegister = /^[A-Z0-9]+_HR[AB]_/.test(id ?? "");
   const verflechtungenSichtbar = verflechtungenErlaubt && istDeRegister;
@@ -736,6 +736,8 @@ export function CompanyDetail() {
                   ? "Handelsregister CH"
                   : summary.data?.country === "NO"
                   ? "Enhetsregisteret"
+                  : summary.data?.country === "FI"
+                  ? "Kaupparekisteri"
                   : "Handelsregister"
               }
             >

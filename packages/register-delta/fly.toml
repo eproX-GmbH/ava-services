@@ -47,11 +47,17 @@ primary_region = 'fra'
   cpu_kind = 'shared'
   cpus = 1
 
-# Fuenf Prozesse (je eine Maschine): `worker` bedient die deutschen Job-Arten
+[[vm]]
+  processes = ['worker_fi']
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+# Sechs Prozesse (je eine Maschine): `worker` bedient die deutschen Job-Arten
 # mit dem Registerportal-Takt (60/h, Browser); die anderen laufen ohne Browser:
 # `worker_at` Oesterreich (JustizOnline, Ediktsdatei), `worker_uk` das Vereinigte
 # Koenigreich (Companies House, Gazette), `worker_ch` die Schweiz (Zefix und
-# LINDAS, Secrets ZEFIX_USER/ZEFIX_PASSWORD), `worker_no` Norwegen (Brreg, offen).
+# LINDAS, Secrets ZEFIX_USER/ZEFIX_PASSWORD), `worker_no` Norwegen (Brreg, offen), `worker_fi` Finnland (PRH, offen).
 # Jedes Land wartet so nur auf sich
 # selbst. REGISTER_DELTA_AT/UK=0 halten den DE-Worker davon fern.
 # S8 (2026-09-17): refresh-Jobs laden den strukturierten Registerinhalt mit
@@ -66,3 +72,5 @@ primary_region = 'fra'
   worker_ch = 'sh -c "REGISTER_DELTA_ARTEN=ch_bulk,ch_sogc,ch_refresh WORKER_ID=betreiber-ch node dist/cli.js"'
   # Norwegen: Brreg offen ohne Schluessel; no_bulk laedt ~80 MB gz nach /tmp.
   worker_no = 'sh -c "REGISTER_DELTA_ARTEN=no_bulk,no_oppdatering,no_refresh WORKER_ID=betreiber-no node dist/cli.js"'
+  # Finnland: PRH Open Data offen ohne Schluessel, 1 Abfrage je Sekunde.
+  worker_fi = 'sh -c "REGISTER_DELTA_ARTEN=fi_bulk,fi_neu,fi_refresh WORKER_ID=betreiber-fi node dist/cli.js"'

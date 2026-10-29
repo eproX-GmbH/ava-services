@@ -26,7 +26,7 @@ stammdatenRouter.openapi(createRoute({ method: "get", path: "/betreiber/stammdat
   return c.json(await helferListe(getGatewayPool(), { seite: q.seite, groesse: q.groesse, nurAktiv: q.nurAktiv === "1" }), 200);
 });
 
-stammdatenRouter.openapi(createRoute({ method: "get", path: "/betreiber/stammdaten/ereignisse", tags: ["stammdaten"], summary: "Betreiber: Aenderungsprotokoll der Stammdaten (neu, geaendert, geschlossen)", request: { query: Seite.extend({ art: z.string().max(30).optional(), land: z.string().regex(/^(DE|AT|UK|CH|NO)(,(DE|AT|UK|CH|NO))*$/).max(20).optional(), suche: z.string().max(100).optional(), companyId: z.string().max(120).optional() }) }, responses: ok200("Protokoll") }), async (c) => {
+stammdatenRouter.openapi(createRoute({ method: "get", path: "/betreiber/stammdaten/ereignisse", tags: ["stammdaten"], summary: "Betreiber: Aenderungsprotokoll der Stammdaten (neu, geaendert, geschlossen)", request: { query: Seite.extend({ art: z.string().max(30).optional(), land: z.string().regex(/^(DE|AT|UK|CH|NO|FI)(,(DE|AT|UK|CH|NO|FI))*$/).max(20).optional(), suche: z.string().max(100).optional(), companyId: z.string().max(120).optional() }) }, responses: ok200("Protokoll") }), async (c) => {
   if (!istBetreiber(c.get("auth"))) throw new HTTPException(404, { message: "not_found" });
   const q = c.req.valid("query");
   const { masterData } = await import("../../lib/register-jobs");

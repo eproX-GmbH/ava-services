@@ -27,7 +27,7 @@ import {
 // `import_company` / `import_excel` / `import_companies_from_crm` with
 // the corrected company list).
 /** Register-Länder, die master-data beim Import zuordnen kann (CH seit dem Zefix-Zugang, docs/PLAN_SCHWEIZ.md). */
-export const IMPORT_LAENDER = ["DE", "AT", "CH", "UK", "NO"] as const;
+export const IMPORT_LAENDER = ["DE", "AT", "CH", "UK", "NO", "FI"] as const;
 export type ImportLand = (typeof IMPORT_LAENDER)[number];
 
 /** „gb“, „GB“, „Vereinigtes Königreich“ → „UK“; sonst Großschreibung. */
@@ -37,6 +37,7 @@ export function landNormal(v: string): string {
   if (t === "AUT" || t === "ÖSTERREICH" || t === "OESTERREICH" || t === "AUSTRIA") return "AT";
   if (t === "CHE" || t === "SCHWEIZ" || t === "SWITZERLAND" || t === "SUISSE" || t === "SVIZZERA") return "CH";
   if (t === "NOR" || t === "NORWEGEN" || t === "NORWAY" || t === "NORGE") return "NO";
+  if (t === "FIN" || t === "FINNLAND" || t === "FINLAND" || t === "SUOMI") return "FI";
   if (t === "DEU" || t === "DEUTSCHLAND" || t === "GERMANY") return "DE";
   return t;
 }
@@ -905,7 +906,7 @@ export function buildImportTools(deps: {
       "user is asking about, call this IMMEDIATELY with that id — no " +
       "confirmation, no 'soll ich?': the user expects AVA to simply know the " +
       "company, and processing it is how AVA gets there. " +
-      "Companies OUTSIDE Germany (company_search returned country AT, CH, UK or NO) " +
+      "Companies OUTSIDE Germany (company_search returned country AT, CH, UK, NO or FI) " +
       "need `country` on their row — without it the row is matched against " +
       "the German register and finds nothing. Rows of different countries " +
       "become one transaction per country. " +
@@ -939,9 +940,9 @@ export function buildImportTools(deps: {
               city: { type: "string", minLength: 1 },
               country: {
                 type: "string",
-                enum: ["DE", "AT", "CH", "UK", "NO"],
+                enum: ["DE", "AT", "CH", "UK", "NO", "FI"],
                 description:
-                  "Register country, taken from company_search (`country`). DE = Handelsregister (default), AT = Firmenbuch, CH = Handelsregister Schweiz (Zefix), UK = Companies House, NO = Enhetsregisteret (Brønnøysund).",
+                  "Register country, taken from company_search (`country`). DE = Handelsregister (default), AT = Firmenbuch, CH = Handelsregister Schweiz (Zefix), UK = Companies House, NO = Enhetsregisteret (Brønnøysund), FI = Kaupparekisteri (PRH).",
               },
               crm: {
                 type: "object",

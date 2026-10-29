@@ -701,7 +701,7 @@ const WebFirmaEingabe = z.object({
   ort: z.string().trim().min(1).max(200),
   plz: z.string().trim().max(20).optional(),
   strasse: z.string().trim().max(200).optional(),
-  land: z.enum(["DE", "AT", "CH", "UK", "NO"]).default("DE"),
+  land: z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]).default("DE"),
   bundesland: z.string().trim().max(100).optional(),
   telefon: z.string().trim().max(60).optional(),
   kategorie: z.string().trim().max(120).optional(),

@@ -28,6 +28,9 @@ const ART_TEXT: Record<string, string> = {
   no_bulk: "Erstabzug Norwegen (Enhetsregisteret)",
   no_oppdatering: "Tagesänderungen Norwegen (Enhetsregisteret)",
   no_refresh: "Auffrischung Norwegen (Einheit und Rollen)",
+  fi_bulk: "Erstabzug Finnland (Kaupparekisteri)",
+  fi_neu: "Neue Firmen Finnland (Kaupparekisteri)",
+  fi_refresh: "Auffrischung Finnland (Firma)",
 };
 
 export function MithelfenSection() {
