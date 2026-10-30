@@ -2207,6 +2207,22 @@ class PersistBus {
               if (!foundUrl) {
                 progressState = "failed";
                 progressError = "Keine Unternehmenswebseite gefunden";
+              } else if ((event.data as { rechercheFolgt?: boolean } | undefined)?.rechercheFolgt) {
+                // 2026-10-30 (Befund Joyce): Stellen/Expansionen laufen noch —
+                // die Stufe bleibt "laeuft" (Lebenszeichen des Producers) und
+                // wird erst mit dem website-research-Persist abgeschlossen.
+                log.info({ companyId }, "website persist: Recherche folgt, Stufe bleibt offen");
+                return;
+              }
+            } else if (binding.routingKey === "tenant.persist.website-research.v1") {
+              const d = event.data as { fehler?: string[]; result?: { jobPostings?: unknown; deepResearches?: unknown; karriere?: unknown } } | undefined;
+              const etwas = Array.isArray(d?.result?.jobPostings) || Array.isArray(d?.result?.deepResearches) || Boolean(d?.result?.karriere);
+              if (!etwas && d?.fehler?.length) {
+                progressState = "failed";
+                progressError = d.fehler.join(" | ").slice(0, 500);
+              } else if (d?.fehler?.length) {
+                // Teilweise gescheitert: Ergebnis gespeichert, Fehler als Hinweis.
+                progressError = d.fehler.join(" | ").slice(0, 500);
               }
             }
             await recordEntityProgress(
