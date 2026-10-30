@@ -84,6 +84,7 @@ type TabKey =
   | "contacts"
   | "insights"
   | "jobs"
+  | "expansion"
   | "verflechtungen"
   | "buyingcenter"
   | "kunden";
@@ -95,6 +96,7 @@ const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "contacts", label: "Kontakte", workflow: "W12" },
   { key: "insights", label: "Erkenntnisse", workflow: "W11" },
   { key: "jobs", label: "Stellenanzeigen", workflow: "W10" },
+  { key: "expansion", label: "Expansion & Ausschreibungen", workflow: "W10" },
   { key: "verflechtungen", label: "Verflechtungen", workflow: "V6" },
   { key: "buyingcenter", label: "Buying Center", workflow: "BC2" },
   { key: "kunden", label: "Kunden", workflow: "K3" },
@@ -581,7 +583,12 @@ export function CompanyDetail() {
     insights: Boolean(
       parseNaceFromProfile(profile.data?.profile) || structured.data?.foundingYear,
     ),
-    jobs: (website.data?.jobPostings ?? []).length > 0,
+    // Stellen ODER Leistungen laut Karriereseite — die Leistungen sind auch ohne
+    // einzelne Anzeigen ein Befund (docs/PLAN_RECHERCHE_PERSIST.md R4).
+    jobs:
+      (website.data?.jobPostings ?? []).length > 0 ||
+      (website.data?.karriere?.benefits ?? []).length > 0,
+    expansion: (website.data?.deepResearches ?? []).length > 0,
     // Ausnahme, und zwar eine bewusste: Verflechtungen ist kein reiner
     // Anzeige-Reiter, sondern der einzige Ort, an dem sich "Tiefer
     // verfolgen" anstossen laesst. Waere er bei leerem Stand verborgen,
@@ -790,12 +797,6 @@ export function CompanyDetail() {
         </div>
       </header>
 
-      {/* ---- Deep-research strip ------------------------------------------ */}
-      {website.data?.deepResearches &&
-        website.data.deepResearches.length > 0 && (
-          <DeepResearchStrip items={website.data.deepResearches} />
-        )}
-
       {/* ---- Tabs --------------------------------------------------------- */}
       <nav className="tabs">
         {/* Bis die Daten da sind, bleibt die Leiste leer, behaelt aber ihre
@@ -852,6 +853,7 @@ export function CompanyDetail() {
           />
         )}
         {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} karriere={website.data?.karriere ?? null} />}
+        {tab === "expansion" && <ExpansionTab items={website.data?.deepResearches ?? []} />}
         {tab === "kunden" && (
           <KundenTab items={kunden.data?.items ?? []} onFertig={() => void kunden.refetch()} />
         )}
@@ -873,6 +875,7 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   kunden: ["company-contact"],
   insights: ["website"],
   jobs: ["website"],
+  expansion: ["website"],
   verflechtungen: ["structured-content"],
   buyingcenter: [],
 };
@@ -892,89 +895,80 @@ function KpiTile({
   );
 }
 
-// ---- Deep-research strip ---------------------------------------------------
+// ---- Expansion & Ausschreibungen -------------------------------------------
 
-function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
+const EXPANSION_ART: Record<string, string> = {
+  EXPANSION: "Expansion",
+  TENDER: "Ausschreibung",
+  PROCUREMENT: "Beschaffung",
+};
+
+/** Quelle lesbar: Hostname ohne www. */
+function hostVon(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function ExpansionTab({ items }: { items: DeepResearch[] }) {
   const [expanded, setExpanded] = useState(false);
-  const more = items.length > 4;
-  const shown = expanded ? items : items.slice(0, 4);
-
-  const labelFor = (t?: string) => {
-    switch ((t ?? "").toUpperCase()) {
-      case "EXPANSION":
-        return "Expansion";
-      case "TENDER":
-        return "Ausschreibung";
-      case "PROCUREMENT":
-        return "Beschaffung";
-      default:
-        return "Sonstiges";
-    }
-  };
-
+  if (items.length === 0) return <p className="muted">Noch keine Expansionen oder Ausschreibungen gefunden.</p>;
+  const more = items.length > 6;
+  const shown = expanded ? items : items.slice(0, 6);
   return (
-    <section style={{ marginTop: "1.5rem" }}>
-      <h3 style={{ marginBottom: "0.25rem" }}>
-        Aktuelle Ereignisse &amp; Signale
-      </h3>
+    <>
       <p className="muted" style={{ marginTop: 0 }}>
-        Expansionen, Ausschreibungen und Beschaffungschancen
+        Expansionsankündigungen, öffentliche Ausschreibungen und Beschaffungsmeldungen laut Recherche. Jeder Eintrag
+        trägt seine Quelle.
       </p>
-      <div className="grid-2" style={{ marginTop: "1rem" }}>
-        {shown.map((r, i) => (
-          <article key={i} className="panel">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "0.5rem",
-              }}
-            >
-              <span className="badge">{labelFor(r.type)}</span>
-              {r.company && <span className="muted">{r.company}</span>}
-            </div>
-            <h4 style={{ margin: "0.5rem 0 0.25rem" }}>
-              {r.title ?? "Ohne Titel"}
-            </h4>
-            <div
-              className="muted"
-              style={{ fontSize: 12, marginBottom: "0.5rem" }}
-            >
-              {[r.country, r.date ? fmtDate(r.date) : null]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-            {Array.isArray(r.citations) && r.citations.length > 0 && (
-              <ul className="list" style={{ marginBottom: "0.5rem" }}>
-                {r.citations.slice(0, 3).map((c, j) => (
-                  <li key={j} style={{ wordBreak: "break-all" }}>
-                    <a href={c} target="_blank" rel="noreferrer">
-                      {c}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {r.url && (
-              <a href={r.url} target="_blank" rel="noreferrer">
-                Details ↗
-              </a>
-            )}
-          </article>
-        ))}
+      <div className="grid-2">
+        {shown.map((r, i) => {
+          const belege = (r.citations ?? []).filter((c) => c && c !== r.url);
+          return (
+            <article key={i} className="panel">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
+                <span className="badge">{EXPANSION_ART[(r.type ?? "").toUpperCase()] ?? "Sonstiges"}</span>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {[r.country, r.date ? fmtDate(r.date) : null].filter(Boolean).join(" · ")}
+                </span>
+              </div>
+              <h3 style={{ margin: "0.5rem 0 0.25rem" }}>{r.title ?? "Ohne Titel"}</h3>
+              {r.company && <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>{r.company}</p>}
+              {typeof r.value === "string" && r.value && <p style={{ marginTop: 0 }}>{r.value}</p>}
+              {r.url && (
+                <p style={{ marginBottom: belege.length ? "0.25rem" : 0 }}>
+                  <a href={r.url} target="_blank" rel="noreferrer">
+                    Quelle: {hostVon(r.url)} ↗
+                  </a>
+                </p>
+              )}
+              {belege.length > 0 && (
+                <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+                  Weitere Belege:{" "}
+                  {belege.slice(0, 3).map((c, j) => (
+                    <span key={j}>
+                      {j > 0 ? ", " : ""}
+                      <a href={c} target="_blank" rel="noreferrer">
+                        {hostVon(c)}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </article>
+          );
+        })}
       </div>
       {more && (
         <div style={{ marginTop: "0.75rem" }}>
-          <button
-            type="button"
-            className="tab"
-            onClick={() => setExpanded((p) => !p)}
-          >
+          <button type="button" className="tab" onClick={() => setExpanded((p) => !p)}>
             {expanded ? "Weniger anzeigen" : `Alle anzeigen (${items.length})`}
           </button>
         </div>
       )}
-    </section>
+    </>
   );
 }
 
@@ -3045,7 +3039,7 @@ function JobsTab({ jobs, karriere }: { jobs: JobPosting[]; karriere: Website["ka
             {j.sourceUrl && (
               <p>
                 <a href={j.sourceUrl} target="_blank" rel="noreferrer">
-                  Quelle öffnen ↗
+                  Quelle: {hostVon(j.sourceUrl)} ↗
                 </a>
               </p>
             )}

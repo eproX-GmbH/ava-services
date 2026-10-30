@@ -864,9 +864,75 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   };
 
+  // Stellen und Expansionen als Bereiche von company_get (docs/PLAN_RECHERCHE_PERSIST.md R4):
+  // kompakt, mit Quelle je Eintrag — keine eigenen Werkzeugnamen.
+  type WebsiteAntwort = {
+    jobPostings?: Array<{ title?: string; location?: string | null; workingModel?: string | null; releaseDate?: string | null; sourceUrl?: string; benefits?: string[]; technologies?: string[] }>;
+    deepResearches?: Array<{ type?: string; title?: string; company?: string | null; country?: string | null; date?: string | null; value?: string | null; url?: string; citations?: string[] }>;
+    karriere?: { benefits: string[]; quelleUrl: string | null; updatedAt: string } | null;
+  };
+  const ladeWebsite = (companyId: string, signal: AbortSignal) =>
+    gateway.request<WebsiteAntwort>(`/v1/companies/${encodeURIComponent(companyId)}/website`, { signal });
+  const stellen = defineTool({
+    name: "company_stellen",
+    description: "Stellenanzeigen einer Firma und Leistungen laut Karriereseite.",
+    parameters: { type: "object", properties: { companyId: { type: "string" } }, required: ["companyId"] },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
+    run: async (args, c) => {
+      const w = await ladeWebsite(args.companyId, c.signal);
+      const jobs = w.jobPostings ?? [];
+      return {
+        anzahl: jobs.length,
+        leistungenLautKarriereseite: w.karriere?.benefits ?? [],
+        karriereseite: w.karriere?.quelleUrl ?? null,
+        stellen: jobs.slice(0, 25).map((j) => ({
+          titel: j.title ?? "",
+          ...(j.location ? { ort: j.location } : {}),
+          ...(j.workingModel ? { modell: j.workingModel } : {}),
+          ...(j.releaseDate ? { datum: j.releaseDate.slice(0, 10) } : {}),
+          quelle: j.sourceUrl ?? null,
+          ...((j.benefits ?? []).length ? { leistungen: j.benefits } : {}),
+          ...((j.technologies ?? []).length ? { technologien: j.technologies } : {}),
+        })),
+        ...(jobs.length === 0 && !(w.karriere?.benefits ?? []).length
+          ? { hinweis: "Keine Stellen gespeichert. Ein Lauf laesst sich mit research_run (feature jobs) anstossen." }
+          : {}),
+      };
+    },
+    preview: (r) => `${r.anzahl} Stellen`,
+  });
+  const expansion = defineTool({
+    name: "company_expansion",
+    description: "Expansionsankuendigungen, Ausschreibungen und Beschaffungsmeldungen einer Firma laut Recherche.",
+    parameters: { type: "object", properties: { companyId: { type: "string" } }, required: ["companyId"] },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
+    run: async (args, c) => {
+      const w = await ladeWebsite(args.companyId, c.signal);
+      const ART: Record<string, string> = { EXPANSION: "Expansion", TENDER: "Ausschreibung", PROCUREMENT: "Beschaffung" };
+      const items = (w.deepResearches ?? []).filter((d) => (d.type ?? "").toUpperCase() !== "NONE");
+      return {
+        anzahl: items.length,
+        eintraege: items.slice(0, 25).map((d) => ({
+          art: ART[(d.type ?? "").toUpperCase()] ?? d.type ?? "Sonstiges",
+          titel: d.title ?? "",
+          ...(d.company ? { firma: d.company } : {}),
+          ...(d.country ? { land: d.country } : {}),
+          ...(d.date ? { datum: d.date } : {}),
+          ...(d.value ? { wert: d.value } : {}),
+          quelle: d.url ?? null,
+          ...((d.citations ?? []).filter((x) => x !== d.url).length ? { belege: (d.citations ?? []).filter((x) => x !== d.url).slice(0, 3) } : {}),
+        })),
+        ...(items.length === 0 ? { hinweis: "Keine Eintraege gespeichert. Ein Lauf laesst sich mit research_run (feature expansion) anstossen." } : {}),
+      };
+    },
+    preview: (r) => `${r.anzahl} Eintraege`,
+  });
+
   const BEREICHE = {
     profil: profile,
     website,
+    stellen,
+    expansion,
     register: structuredContent,
     stichworte: keywords,
     publikationen: publications,
@@ -888,7 +954,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
       "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
-      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). " +
+      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss), stellen (Stellenanzeigen + Leistungen laut Karriereseite, je mit Quelle), expansion (Expansionen, Ausschreibungen, Beschaffung laut Recherche, je mit Quelle). " +
       "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. " +
       "`verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.",
     parameters: {

@@ -4,10 +4,10 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-23
-Anzahl Tools: 293
+Stand: 2026-10-30
+Anzahl Tools: 295
 
-## Firmen (25)
+## Firmen (27)
 
 ### `company_contacts`
 
@@ -36,11 +36,20 @@ Get per-stage LLM provenance for a company: which model produced each cell, what
 _Parameter:_
 - `companyId: string` (required)
 
+### `company_expansion`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Expansionsankuendigungen, Ausschreibungen und Beschaffungsmeldungen einer Firma laut Recherche.
+
+_Parameter:_
+- `companyId: string` (required)
+
 ### `company_get`
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. `verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.
+Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss), stellen (Stellenanzeigen + Leistungen laut Karriereseite, je mit Quelle), expansion (Expansionen, Ausschreibungen, Beschaffung laut Recherche, je mit Quelle). Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. `verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.
 
 _Parameter:_ keine.
 
@@ -48,7 +57,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) mit den gespeicherten Veroeffentlichungen (Datum, Aktenzeichen, Gegenstand, Text; quelle insolvenzportal = Deutschland, ediktsdatei = Oesterreich). Mit pruefen=true wird eine neue Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).
+Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) mit den gespeicherten Veroeffentlichungen (Datum, Aktenzeichen, Gegenstand, Text; quelle insolvenzportal = Deutschland, ediktsdatei = Oesterreich). Mit pruefen=true wird eine neue Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN..., SHAB/Zefix bei Schweizer Firmen CH_CHE..., Enhetsregisteret bei norwegischen Firmen NO_..., PRH bei finnischen Firmen FI_..., Companies House bei UK_...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).
 
 _Parameter:_
 - `companyId: string` (required)
@@ -128,7 +137,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
+Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Norwegen, Finnland seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
 
 _Parameter:_ keine.
 
@@ -137,6 +146,15 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
 Gesellschafter einer deutschen Firma aus der neuesten Gesellschafterliste des Handelsregisters (Personen mit Geburtsjahr und Wohnort, Firmen mit Registerangabe, Nennbetrag, Prozent) sowie Beteiligungen der Firma an anderen Firmen. `stand` sagt, ob und wann die Liste gelesen wurde (LISTE, KEINE = keine Liste im Registerordner, UNSICHER/FEHLER = Lesung verworfen, mit Gruenden). Nur fuer HRB-Firmen; HRA-Firmen haben keine Gesellschafterliste.
+
+_Parameter:_
+- `companyId: string` (required)
+
+### `company_stellen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Stellenanzeigen einer Firma und Leistungen laut Karriereseite.
 
 _Parameter:_
 - `companyId: string` (required)
@@ -256,7 +274,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, kicking off the full master-data pipeline (profile, website, publications, contacts). This is THE import tool when the user names or pastes companies in chat (no file attachment): a single company ("leg mir Foo GmbH aus Berlin an") is just a one-item list, a pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL companies in this ONE call — never split into multiple calls, that scatters the Transactions view into one transaction per company. WORKFLOW for lists: call FIRST with `dryRun: true` — you get a matching preview AND a downloadable Excel report (path in `reportPath`); show the user matched / not-uniquely-matched + the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. For a single, clearly-specified company you may commit directly. Each row needs name + city (city disambiguates same-named companies); if the user gave no city, use the best-known HQ — the dry-run report flags wrong guesses. BEST: when company_search already gave you the company, pass its id in `companyIds` — exact, works for every country, no dry-run needed. When company_get reports `verarbeitung.stand: fehlt` for a company the user is asking about, call this IMMEDIATELY with that id — no confirmation, no 'soll ich?': the user expects AVA to simply know the company, and processing it is how AVA gets there. Companies OUTSIDE Germany (company_search returned country AT or UK) need `country` on their row — without it the row is matched against the German register and finds nothing. Rows of different countries become one transaction per country. Swiss companies (CH) only via `companyIds`, not by name. Returns a transactionId on commit; progress via `import_status`. The dry-run creates NO transaction — waiting for the user's confirmation before committing is the intended flow, never a mistake. If the user claims something was or wasn't imported, VERIFY with `transactions_list` / `import_status` before agreeing: an older transaction with a similar name (e.g. an earlier single-company import) is easily mistaken for this one.
+Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, kicking off the full master-data pipeline (profile, website, publications, contacts). This is THE import tool when the user names or pastes companies in chat (no file attachment): a single company ("leg mir Foo GmbH aus Berlin an") is just a one-item list, a pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL companies in this ONE call — never split into multiple calls, that scatters the Transactions view into one transaction per company. WORKFLOW for lists: call FIRST with `dryRun: true` — you get a matching preview AND a downloadable Excel report (path in `reportPath`); show the user matched / not-uniquely-matched + the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. For a single, clearly-specified company you may commit directly. Each row needs name + city (city disambiguates same-named companies); if the user gave no city, use the best-known HQ — the dry-run report flags wrong guesses. BEST: when company_search already gave you the company, pass its id in `companyIds` — exact, works for every country, no dry-run needed. When company_get reports `verarbeitung.stand: fehlt` for a company the user is asking about, call this IMMEDIATELY with that id — no confirmation, no 'soll ich?': the user expects AVA to simply know the company, and processing it is how AVA gets there. Companies OUTSIDE Germany (company_search returned country AT, CH, UK, NO or FI) need `country` on their row — without it the row is matched against the German register and finds nothing. Rows of different countries become one transaction per country. Returns a transactionId on commit; progress via `import_status`. The dry-run creates NO transaction — waiting for the user's confirmation before committing is the intended flow, never a mistake. If the user claims something was or wasn't imported, VERIFY with `transactions_list` / `import_status` before agreeing: an older transaction with a similar name (e.g. an earlier single-company import) is easily mistaken for this one.
 
 _Parameter:_ keine.
 
