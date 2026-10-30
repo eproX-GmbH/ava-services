@@ -26,6 +26,7 @@ import { radarActivity } from "../main/discovery/activity";
 import { NutzerstandService } from "../main/suggestions/nutzerstand";
 import { ChipErzeugung } from "../main/suggestions/erzeugung";
 import { VorschlaegeSettingsStore } from "../main/suggestions/settings";
+import { ThemenStore } from "../main/themen/store";
 import { MithelfenSettingsStore, MithelfenSupervisor } from "../main/register-delta/supervisor";
 import { HintergrundAufgaben, AUTO_WERKZEUGE, setzeAufgabenInstanz } from "../main/aufgaben/aufgaben";
 import { workerModus } from "../main/worker-modus";
@@ -644,6 +645,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
               // shared-Client-Reuse funktioniert und der Boot-Log meldet
               // keinen scheinbaren Fehler mehr. Außer producer-supervisor
               // setzt es schon aus dem Haupt-LLM (dann bleibt's so).
+              // Website-Themen (docs/PLAN_THEMEN.md): Datei je Lauf neu gelesen.
+              env.AVA_THEMEN_CONFIG = themenStore.pfad();
               const fallbackOpenaiKey =
                 expansion && expansion.provider === "openai" && !expansion.viaGateway
                   ? expansion.apiKey
@@ -1797,6 +1800,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // lokal) + Match-Store (nutzerbezogene Scores). Von Tools UND den
   // Radar-IPC-Handlern unten geteilt.
   const icpStore = new IcpStore();
+  // Website-Themen (docs/PLAN_THEMEN.md): lokal, Datei geht an den Website-Producer.
+  const themenStore = new ThemenStore(paths().get("userData"));
   const discoveryMatches = new MatchStore();
   // I5 — lokale Top-Kunden-Profile (Aehnlichkeits-Signal im Match).
   const customerProfiles = new CustomerProfileStore();
@@ -1833,6 +1838,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     getPersonenAbgleich: () => personenAbgleich,
     getNutzerstand: () => nutzerstand,
     getVorschlaegeSettings: () => vorschlaegeSettings,
+    getThemen: () => themenStore,
     getMithelfen: () => mithelfen,
     browserStand: () => eigenerBrowser?.aktuellerStand() ?? { zustand: "aus" },
     browserLaden: async () => (await eigenerBrowser?.stelleSicher()) ?? { zustand: "aus" },
@@ -4342,6 +4348,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     skillsEigene: () => skillStoreRef?.list().length ?? 0,
     watchlistAnzahl: async () => (watchlistStore ? (await watchlistStore.list()).length : 0),
     emailAbleitungAktiv: () => emailMuster?.getConfig().enabled ?? false,
+    themen: () => ({ anzahl: themenStore.list().length, aktiv: themenStore.aktive().length }),
     modell: () => {
       const s = providers.getStatus();
       return { ready: s.ready, kind: s.kind ?? null, model: s.model, sStufe: s.model ? pruefeModellstufe(String(s.kind), s.model).erlaubt : false };
@@ -4351,6 +4358,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     featureKeys: () => ORG_FEATURES.map((f) => f.key),
     organisation: () => (auth.getStatus().tenantId ?? "").startsWith("org_"),
   });
+  themenStore.on("changed", () => nutzerstand?.invalidate());
   // v0.1.647 (V2) — Chips fuer die Startseite: KI ueber Hintergrundkanal, gecacht, feste Rueckfalliste.
   chipErzeugung = new ChipErzeugung({
     providers,
@@ -4826,6 +4834,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     radarSupervisor: { get current() { return radarSupervisor; } },
     scheduledJobsSupervisor: { get current() { return scheduledJobsSupervisor; } },
     vorschlaegeSettings: { get current() { return vorschlaegeSettings; } },
+    themenStore,
     watchlistKeyStore: { get current() { return watchlistKeyStore; } },
     watchlistStore: { get current() { return watchlistStore; } },
     watchlistSupervisor: { get current() { return watchlistSupervisor; } },

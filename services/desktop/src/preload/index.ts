@@ -1811,6 +1811,13 @@ const api = {
     setSettings: (patch: { startseite?: boolean; gespraech?: boolean }): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> =>
       ipcRenderer.invoke("suggestions:setSettings", patch),
   },
+  // Website-Themen (docs/PLAN_THEMEN.md).
+  themen: {
+    list: (): Promise<import("../shared/themen-types").Thema[]> => ipcRenderer.invoke("themen:list"),
+    save: (eingabe: import("../shared/themen-types").ThemaEingabe): Promise<import("../shared/themen-types").Thema> => ipcRenderer.invoke("themen:save", eingabe),
+    remove: (id: string): Promise<boolean> => ipcRenderer.invoke("themen:remove", id),
+    begriffe: (id: string): Promise<import("../shared/themen-types").Thema> => ipcRenderer.invoke("themen:begriffe", id),
+  },
   // Eigener Browser fuer die Hintergrundverarbeitung (Chrome for Testing).
   instanz: {
     get: (): Promise<{ id: string; name: string; mcp: boolean; art: "desktop" | "server" }> => ipcRenderer.invoke("instanz:get"),

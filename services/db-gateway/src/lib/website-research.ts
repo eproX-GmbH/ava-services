@@ -33,10 +33,22 @@ export type RechercheExpansion = {
   updatedAt: string;
 };
 export type RechercheKarriere = { benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: string };
+export type RechercheThema = {
+  schluessel: string;
+  name: string;
+  status: "gefunden" | "nicht_gefunden" | "unklar";
+  zitat: string | null;
+  quelleUrl: string | null;
+  ueberschrift: string | null;
+  begruendung: string | null;
+  erstgesehenAt: string | null;
+  updatedAt: string;
+};
 export type WebsiteRecherche = {
   jobPostings: RechercheStelle[];
   deepResearches: RechercheExpansion[];
   karriere: RechercheKarriere | null;
+  themen: RechercheThema[];
   quelle: "website" | "leer";
 };
 
@@ -64,6 +76,13 @@ async function lese(pool: pg.Pool, companyId: string): Promise<Omit<WebsiteReche
       [companyId],
     )
     .catch(() => ({ rows: [] as Array<{ benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: Date }> }));
+  const themen = await pool
+    .query<Record<string, unknown>>(
+      `SELECT schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "erstgesehenAt", "updatedAt"
+         FROM "CompanyThema" WHERE "companyId" = $1 ORDER BY (status = 'gefunden') DESC, name`,
+      [companyId],
+    )
+    .catch(() => ({ rows: [] as Record<string, unknown>[] }));
   const k = karriere.rows[0];
   return {
     jobPostings: jobs.rows.map((r) => ({
@@ -94,11 +113,22 @@ async function lese(pool: pg.Pool, companyId: string): Promise<Omit<WebsiteReche
       updatedAt: iso(r.updatedAt) ?? "",
     })),
     karriere: k ? { benefits: k.benefits ?? [], quelleUrl: k.quelleUrl, auszug: k.auszug, updatedAt: k.updatedAt.toISOString() } : null,
+    themen: themen.rows.map((r) => ({
+      schluessel: String(r.schluessel),
+      name: String(r.name ?? ""),
+      status: (r.status === "gefunden" || r.status === "unklar" ? r.status : "nicht_gefunden") as RechercheThema["status"],
+      zitat: (r.zitat as string | null) ?? null,
+      quelleUrl: (r.quelleUrl as string | null) ?? null,
+      ueberschrift: (r.ueberschrift as string | null) ?? null,
+      begruendung: (r.begruendung as string | null) ?? null,
+      erstgesehenAt: iso(r.erstgesehenAt),
+      updatedAt: iso(r.updatedAt) ?? "",
+    })),
   };
 }
 
 export async function ladeWebsiteRecherche(companyId: string, _logger: typeof basisLogger = basisLogger): Promise<WebsiteRecherche> {
   const aktuell = await lese(getProducerPool("website"), companyId);
-  const quelle = aktuell.jobPostings.length || aktuell.deepResearches.length || aktuell.karriere ? "website" : "leer";
+  const quelle = aktuell.jobPostings.length || aktuell.deepResearches.length || aktuell.karriere || aktuell.themen.length ? "website" : "leer";
   return { ...aktuell, quelle };
 }

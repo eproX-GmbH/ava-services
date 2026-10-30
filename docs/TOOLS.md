@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-10-30
-Anzahl Tools: 295
+Anzahl Tools: 298
 
 ## Firmen (27)
 
@@ -2411,12 +2411,12 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/research-lauf.ts`
 
-Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs) oder nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) — stufe=standard (guenstig, ca. 0,02–0,15 € je Firma) oder stufe=deep (Deep Research, gruendlicher, ca. 1–5 € je Firma, dauert Minuten). Laeuft unabhaengig von der globalen Einstellung, also auch wenn die Funktion dort auf 'Aus' steht. Braucht einen OpenAI-Schluessel (eigener oder der der Organisation). Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.
+Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Website-Themen des Nutzers (feature=themen, nur stufe=standard, laeuft auf dem allgemeinen Modell ohne Recherche-Schluessel) — stufe=standard (guenstig, ca. 0,02–0,15 € je Firma) oder stufe=deep (Deep Research, gruendlicher, ca. 1–5 € je Firma, dauert Minuten). Laeuft unabhaengig von der globalen Einstellung, also auch wenn die Funktion dort auf 'Aus' steht. Braucht einen OpenAI-Schluessel (eigener oder der der Organisation). Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.
 
 _Parameter:_
 - `companyId: string` (required)
 - `name: string` — Firmenname fuer die Rueckfrage
-- `feature: string (enum: jobs, expansion)` (required)
+- `feature: string (enum: jobs, expansion, themen)` (required)
 - `stufe: string (enum: standard, deep)` (required)
 
 ## scheduler (4)
@@ -2637,6 +2637,42 @@ _Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
 Read the current Telegram configuration: whether a bot token is stored, whether a chat is linked, whether delivery is enabled, and the severity threshold. Never returns the token itself.
 
 _Parameter:_ keine.
+
+## themen (3)
+
+### `themen_begriffe`
+
+_Datei:_ `services/desktop/src/main/agent/tools/themen.ts`
+
+Speichert von AVA vorgeschlagene Suchbegriffe zu einem Thema (ersetzt die bisherigen AVA-Begriffe, Nutzer-Begriffe bleiben). Schlage 8 bis 15 Begriffe vor: Synonyme, Wortstaemme, Schreibweisen, englische Entsprechungen, Abkuerzungen — nur Woerter oder kurze Wortgruppen, die so auf einer Website stehen koennten.
+
+_Parameter:_
+- `id: string` (required)
+- `begriffe: array` (required)
+
+### `themen_get`
+
+_Datei:_ `services/desktop/src/main/agent/tools/themen.ts`
+
+Liest die Website-Themen: Name, Beschreibung, Wozu, Suchbegriffe, aktiv. Der Website-Producer prueft jedes aktive Thema bei jeder Firma auf deren Website (Seitenwahl, Begriffssuche, Urteil mit Zitat); der Befund steht in company_get Bereich themen. Hat der Nutzer noch keine Themen, schlage ihm aus seinem ICP (Angebot, Nutzen) zwei bis drei vor und lege sie nach Bestaetigung mit themen_set an.
+
+_Parameter:_ keine.
+
+### `themen_set`
+
+_Datei:_ `services/desktop/src/main/agent/tools/themen.ts`
+
+Legt ein Website-Thema an oder aendert es: name (kurz, z. B. "Betriebliche Altersvorsorge"), beschreibung (ein Satz, was gemeint ist), warum (wozu der Nutzer es braucht, fliesst in das Urteil ein), begriffe (Suchbegriffe des Nutzers), aktiv. Mit loeschen=true wird das Thema entfernt. Hoechstens ${MAX_AKTIVE_THEMEN} Themen gleichzeitig aktiv. Nach dem Anlegen Synonyme ergaenzen: themen_begriffe. Immer erst mit dem Nutzer abstimmen; das Werkzeug fragt zusaetzlich nach Bestaetigung.
+
+_Parameter:_
+- `id: string` — Bestehendes Thema (sonst neu)
+- `name: string`
+- `beschreibung: string`
+- `warum: string`
+- `begriffe: array`
+- `aktiv: boolean`
+- `loeschen: boolean`
+- `quelle: string (enum: nutzer, icp)` — icp = aus dem ICP vorgeschlagen
 
 ## umzug (1)
 

@@ -11,7 +11,7 @@ import { getGatewayPool } from "./producer-pools";
 import { logger } from "./logger";
 
 export const LAUF_STALE_MS = 45 * 60 * 1000;
-export type ResearchFeature = "jobs" | "expansion";
+export type ResearchFeature = "jobs" | "expansion" | "themen";
 
 const RE = /#research:([a-z]+=[a-z]+(?:,[a-z]+=[a-z]+)*)\b/;
 
@@ -19,12 +19,12 @@ const RE = /#research:([a-z]+=[a-z]+(?:,[a-z]+=[a-z]+)*)\b/;
 export function researchFeaturesAusSource(source: string | null | undefined): ResearchFeature[] | null {
   const m = RE.exec(source ?? "");
   if (!m) return null;
-  const aus = m[1]!.split(",").map((p) => p.split("=")[0]).filter((k): k is ResearchFeature => k === "jobs" || k === "expansion");
+  const aus = m[1]!.split(",").map((p) => p.split("=")[0]).filter((k): k is ResearchFeature => k === "jobs" || k === "expansion" || k === "themen");
   return aus.length ? aus : null;
 }
 
 /** Persist-Ereignis angekommen: je Funktion die juengste laufende Zeile abschliessen. */
-export async function laufAbschliessen(companyId: string, source: string | null | undefined, anzahl: { jobs?: number; expansion?: number }): Promise<void> {
+export async function laufAbschliessen(companyId: string, source: string | null | undefined, anzahl: { jobs?: number; expansion?: number; themen?: number }): Promise<void> {
   const features = researchFeaturesAusSource(source);
   if (!features) return;
   const pool = getGatewayPool();

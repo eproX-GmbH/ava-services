@@ -48,6 +48,7 @@ const deps = {
   skillsEigene: () => 3,
   watchlistAnzahl: async () => 2,
   emailAbleitungAktiv: () => true,
+  themen: () => ({ anzahl: 0, aktiv: 0 }),
   modell: () => ({ ready: true, kind: "anthropic", model: "claude-x", sStufe: true }),
   tier: () => "enterprise",
   featureAn: (k) => k !== "telegram",

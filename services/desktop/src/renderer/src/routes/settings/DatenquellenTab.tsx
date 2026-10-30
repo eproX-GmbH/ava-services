@@ -1,6 +1,7 @@
 import { LinkedInSection, CrmSection } from "../Settings";
 import { MailAccountSection } from "./MailAccountSection";
 import { MailEntwurfSection } from "./MailEntwurfSection";
+import { ThemenSection } from "./ThemenSection";
 import { useFeature } from "../../store/policy";
 
 // v0.1.273 — Datenquellen-Tab.
@@ -21,6 +22,8 @@ export function DatenquellenTab() {
       {mail && <MailAccountSection />}
       {/* Mail-Entwürfe gelten auch ohne AVAs eigenes Postfach. */}
       <MailEntwurfSection />
+      {/* Website-Themen (docs/PLAN_THEMEN.md): wonach der Website-Producer zusätzlich sucht. */}
+      <ThemenSection />
     </>
   );
 }

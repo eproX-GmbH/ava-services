@@ -77,6 +77,7 @@ export function harteSchranke(chips: Chip[], faehigkeiten: Faehigkeit[], stand: 
     [stand.icp === "vollstaendig", /\bicp\b.*(erstell|anleg|festleg)|idealkundenprofil.*(erstell|anleg|festleg)/i],
     [stand.radar.automatik, /radar-?automatik\s+(einschalt|aktivier)/i],
     [stand.emailAbleitung.aktiv, /e-?mail-ableitung\s+(einschalt|aktivier)/i],
+    [stand.themen.aktiv > 0, /website-?them(a|en)\s*(festleg|anleg|erstell)/i],
   ];
   const out: Chip[] = [];
   const gesehen = new Set<string>();
@@ -105,6 +106,7 @@ export function festeChips(stand: Nutzerstand, faehigkeiten: Faehigkeit[]): Chip
     { chip: { titel: "Telegram verbinden", auftrag: "Richte Telegram ein, damit ich Meldungen und Freigaben aufs Handy bekomme.", gruppe: "telegram", aktion: "Verbinden", stufe: 1 }, wenn: stand.verbindungen.telegram === "offen" && ids.has("telegram") },
     { chip: { titel: "Mail-Postfach verbinden", auftrag: "Verbinde mein Mail-Postfach mit AVA.", gruppe: "mail", aktion: "Verbinden", stufe: 1 }, wenn: stand.verbindungen.mail === "offen" && ids.has("mail") },
     { chip: { titel: "Idealkundenprofil erstellen", auftrag: "Lass uns mein Idealkundenprofil (ICP) festlegen. Ich nenne dir meine Website und die Websites meiner besten Kunden.", gruppe: "icp", aktion: "Starten", stufe: 2 }, wenn: stand.icp !== "vollstaendig" && ids.has("icp") },
+    { chip: { titel: "Website-Themen festlegen", auftrag: "Lass uns Website-Themen festlegen, nach denen du bei jeder Firma auf der Website zusätzlich suchst. Schlag mir aus meinem Angebot zwei bis drei Themen vor.", gruppe: "themen", aktion: "Festlegen", stufe: 2 }, wenn: stand.themen.aktiv === 0 && ids.has("themen") },
     { chip: { titel: "Firmen-Radar starten", auftrag: "Starte den Firmen-Radar für meine Region und zeig mir die besten Treffer.", gruppe: "radar", aktion: "Starten", stufe: 2 }, wenn: stand.icp === "vollstaendig" && stand.radar.bewertet === 0 && ids.has("radar") },
     { chip: { titel: "Firmen aus HubSpot importieren", auftrag: "Importiere meine Firmen aus HubSpot und reichere sie an.", gruppe: "import", aktion: "Importieren", stufe: 2 }, wenn: stand.verbindungen.hubspot === "verbunden" && (stand.firmen.importiert ?? 0) === 0 && ids.has("import") },
     { chip: { titel: "Excel-Liste importieren", auftrag: "Ich möchte eine Excel-Liste mit Firmen importieren und anreichern lassen.", gruppe: "import", aktion: "Importieren", stufe: 2 }, wenn: (stand.firmen.importiert ?? 0) === 0 && ids.has("import") },

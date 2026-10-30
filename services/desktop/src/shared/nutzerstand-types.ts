@@ -29,6 +29,8 @@ export interface Nutzerstand {
   skills: { eigene: number };
   watchlist: { personen: number };
   emailAbleitung: { aktiv: boolean };
+  /** Website-Themen (docs/PLAN_THEMEN.md): angelegt / aktiv. */
+  themen: { anzahl: number; aktiv: number };
   modell: { bereit: boolean; anbieter: string | null; modell: string | null; sStufe: boolean };
   plan: "free" | "starter" | "pro" | "enterprise" | "unbekannt";
   organisation: { mitglied: boolean };

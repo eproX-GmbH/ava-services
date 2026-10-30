@@ -150,6 +150,16 @@ export const WebsiteShape = z
     jobPostings: z.array(JobPostingShape).default([]),
     /** Karriereseite: Leistungen fuer Beschaeftigte (docs/PLAN_STELLEN_SIGNALE.md). */
     karriere: z.object({ benefits: z.array(z.string()), quelleUrl: z.string().nullable(), auszug: z.string().nullable(), updatedAt: z.string() }).optional(),
+    /** Website-Themen (docs/PLAN_THEMEN.md): Befund je Thema mit Zitat und Quelle. */
+    themen: z
+      .array(
+        z.object({
+          schluessel: z.string(), name: z.string(), status: z.enum(["gefunden", "nicht_gefunden", "unklar"]),
+          zitat: z.string().nullable(), quelleUrl: z.string().nullable(), ueberschrift: z.string().nullable(), begruendung: z.string().nullable(),
+          erstgesehenAt: z.string().nullable(), updatedAt: z.string(),
+        }),
+      )
+      .default([]),
   })
   .openapi("Website");
 

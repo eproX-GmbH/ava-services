@@ -18,6 +18,7 @@ import { registerInstanzIpc } from "./ipc/instanz";
 import { registerCrmIpc } from "./ipc/crm";
 import { registerStammdatenIpc } from "./ipc/stammdaten";
 import { registerVorschlaegeIpc } from "./ipc/vorschlaege";
+import { registerThemenIpc } from "./ipc/themen";
 import { registerKontoIpc } from "./ipc/konto";
 import { registerLaufzeitIpc } from "./ipc/laufzeit";
 import { registerSystemIpc } from "./ipc/system";
@@ -414,6 +415,7 @@ app.whenReady().then(async () => {
   registerSpracheIpc({ auth, gatewayClient, providers, spracheRelay, spracheStand, spracheStore, userProfile });
   registerRechercheIpc({ producers, providers, researchBundle, researchStore });
   registerStammdatenIpc({ mithelfen: core.mithelfen, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });
+  registerThemenIpc({ themen: { current: core.themenStore }, providers });
   registerVorschlaegeIpc({ agentRegistry, chipErzeugung: core.chipErzeugung, hintergrundAufgaben, nutzerstand: core.nutzerstand, vorschlaegeSettings: core.vorschlaegeSettings });
   registerPersonenIpc({ apifyZugangInfo, audit, cycleCompanyContact, getTenantTierCached, personenRadarStore: core.personenRadarStore, personenRadarSupervisor: core.personenRadarSupervisor, resolveApifyAccess, watchlistKeyStore: core.watchlistKeyStore, watchlistStore: core.watchlistStore, watchlistSupervisor: core.watchlistSupervisor });
   registerLeadsIpc({ audit, gatewayClient });

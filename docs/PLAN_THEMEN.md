@@ -105,8 +105,8 @@ Themen-Weg gleich gut ist, wird er darauf umgestellt.
 | Stufe | Inhalt | Stand |
 |---|---|---|
 | T0 | Plan, Messgrößen | 2026-10-30 |
-| T1 | Desktop: `ThemenStore`, IPC `themen:*`, Einstellungs-Abschnitt, Werkzeuge `themen_*`, Fähigkeitsgruppe, Nutzerstand + Chip, Vorschlag nach dem ICP, Datei an den Producer | |
-| T2 | Producer: `walker/themen.ts` (T-a bis T-c), Einbau in Normal- und Manuell-Lauf, `themen[]` im Research-Persist; Gateway: `CompanyThema`, Persist, `/website` liefert `themen` | |
+| T1 | Desktop: `ThemenStore`, IPC `themen:*`, Einstellungs-Abschnitt, Werkzeuge `themen_*`, Fähigkeitsgruppe, Nutzerstand + Chip, Vorschlag nach dem ICP, Datei an den Producer | v0.1.892 (2026-10-30) |
+| T2 | Producer: `walker/themen.ts` (T-a bis T-c), Einbau in Normal- und Manuell-Lauf, `themen[]` im Research-Persist; Gateway: `CompanyThema`, Persist, `/website` liefert `themen`; Recherche-Zeile „Themen prüfen“ und `research_run feature=themen` | v0.1.892 (2026-10-30), Gateway-Deploy offen |
 | T3 | Messung an zehn Firmen mit drei Themen (§6), Nachschärfen der Begriffssuche | |
 | T4 | Anzeige: Reiter Desktop, Bereich PWA, `company_get` Bereich `themen`, Recherche-Zeile, manueller Lauf | |
 | T5 | Filter in der Firmenliste, Alarm `thema.gefunden` | |

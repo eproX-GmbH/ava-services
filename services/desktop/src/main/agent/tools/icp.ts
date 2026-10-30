@@ -26,6 +26,8 @@ export interface IcpToolDeps {
   profile: UserProfileStore;
   /** Hochgeladene Dateien der Unterhaltung (fuer icp_aus_dokument). */
   attachments?: AttachmentStore;
+  /** Website-Themen angelegt? (docs/PLAN_THEMEN.md: nach dem ICP Themen vorschlagen) */
+  themenAnzahl?: () => number;
 }
 
 function textVonDatei(d: StagedAttachment): string {
@@ -109,6 +111,11 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
       if (fehlt.length > 0) {
         hinweise.push(
           `Fuer den Firmen-Radar fehlt noch: ${fehlt.join("; ")}. Frag den Nutzer danach, bevor du einen Scan startest.`,
+        );
+      }
+      if (fehlt.length === 0 && (deps.themenAnzahl?.() ?? 0) === 0) {
+        hinweise.push(
+          "Website-Themen: Der Nutzer hat noch keine. Schlag ihm aus Angebot und Nutzen zwei bis drei Website-Themen vor (wonach AVA auf jeder Firmen-Website zusaetzlich sucht, z. B. ein Produktthema oder eine Zertifizierung) und lege sie nach Bestaetigung mit themen_set an.",
         );
       }
       return {

@@ -62,6 +62,7 @@ import { buildWorkflowTools } from "./workflows";
 import { buildEmailMusterTools } from "./email-muster";
 import { buildPersonenZusammenfuehrenTools } from "./personen-zusammenfuehren";
 import { buildVorschlaegeTools } from "./vorschlaege";
+import { buildThemenTools } from "./themen";
 import { buildRegisterDeltaTools } from "./register-delta";
 import { buildWatchlistTools } from "./watchlist";
 import { buildLinkedInSelfserviceTools } from "./linkedin-selfservice";
@@ -200,6 +201,8 @@ export function buildReadOnlyRegistry(deps: {
   /** v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (lazy, entsteht im Boot). */
   getNutzerstand?: () => import("../../suggestions/nutzerstand").NutzerstandService | null;
   getVorschlaegeSettings?: () => import("../../suggestions/settings").VorschlaegeSettingsStore | null;
+  /** Website-Themen (docs/PLAN_THEMEN.md). */
+  getThemen?: () => import("../../themen/store").ThemenStore | null;
   /** Register-Delta S6 — Mithelfen (lazy, entsteht im Boot). */
   getMithelfen?: () => import("../../register-delta/supervisor").MithelfenSupervisor | null;
   getRegisterQueueStatus?: () => Promise<Record<string, unknown> | null>;
@@ -315,6 +318,7 @@ export function buildReadOnlyRegistry(deps: {
     customerStore: deps.discoveryCustomerProfiles,
     profile: deps.profile,
     attachments: deps.attachments,
+    themenAnzahl: () => deps.getThemen?.()?.list().length ?? 0,
   }))
     registry.register(t);
   for (const t of buildSettingsTools({
@@ -449,6 +453,7 @@ export function buildReadOnlyRegistry(deps: {
       browserStand: () => deps.browserStand?.() ?? { zustand: "aus" },
       browserLaden: () => deps.browserLaden?.() ?? Promise.resolve({ zustand: "aus" }),
     })) registry.register(t);
+  for (const t of buildThemenTools({ get: () => deps.getThemen?.() ?? null })) registry.register(t);
   for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name), settings: () => deps.getVorschlaegeSettings?.() ?? null })) registry.register(t);
   for (const t of buildSkillsTools({
     getSkillStore: deps.getSkillStore,

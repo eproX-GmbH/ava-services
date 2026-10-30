@@ -410,12 +410,14 @@ companiesRouter.openapi(websiteRoute, async (c) => {
       : undefined,
     deepResearches: [],
     jobPostings: [],
+    themen: [],
   };
   // Stellen, Karriereseite, Expansionen aus der Website-DB (docs/PLAN_RECHERCHE_PERSIST.md).
   const recherche = await ladeWebsiteRecherche(companyId, logger);
   payload.jobPostings = recherche.jobPostings;
   payload.deepResearches = recherche.deepResearches;
   if (recherche.karriere) payload.karriere = recherche.karriere;
+  payload.themen = recherche.themen;
   return c.json(payload, 200);
 });
 

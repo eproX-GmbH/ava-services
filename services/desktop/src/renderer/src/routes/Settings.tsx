@@ -220,6 +220,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "linkedin-image-analysis", label: "LinkedIn-Bildanalyse" },
     { anchor: "crm-connections", label: "CRM-Verbindungen" },
     { anchor: "mail-account-section", label: "Mail-Konto" },
+    { anchor: "themen-section", label: "Website-Themen" },
   ],
   automatisierungen: [
     { anchor: "watches-section", label: "Watches" },

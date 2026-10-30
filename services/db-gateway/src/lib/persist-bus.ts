@@ -1690,6 +1690,16 @@ interface WebsiteResearchResult {
   }>;
   /** Karriereseite: Leistungen fuer Beschaeftigte; eine Zeile je Firma. */
   karriere?: { benefits: string[]; quelleUrl: string | null; auszug: string | null };
+  /** Website-Themen (docs/PLAN_THEMEN.md): Liste = geprueft (ersetzt), fehlt = nicht gelaufen. */
+  themen?: Array<{
+    schluessel: string;
+    name: string;
+    status: "gefunden" | "nicht_gefunden" | "unklar";
+    zitat: string | null;
+    quelleUrl: string | null;
+    ueberschrift: string | null;
+    begruendung: string | null;
+  }>;
 }
 
 /** Spalte benefits und Tabelle CompanyKarriere in der Website-DB sicherstellen
@@ -1702,6 +1712,13 @@ async function ensureStellenSchema(client: { query: (q: string, p?: unknown[]) =
   await client.query(`CREATE TABLE IF NOT EXISTS "CompanyKarriere" (
     "companyId" TEXT PRIMARY KEY, benefits TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], "quelleUrl" TEXT, auszug TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  // Website-Themen (docs/PLAN_THEMEN.md §2): Befund je Firma und Thema.
+  await client.query(`CREATE TABLE IF NOT EXISTS "CompanyThema" (
+    "companyId" TEXT NOT NULL, schluessel TEXT NOT NULL, name TEXT NOT NULL,
+    status TEXT NOT NULL, zitat TEXT, "quelleUrl" TEXT, ueberschrift TEXT, begruendung TEXT,
+    "erstgesehenAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("companyId", schluessel))`);
   stellenSchemaBereit = true;
 }
 
@@ -1763,6 +1780,29 @@ const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
       }
     }
 
+    if (Array.isArray(result.themen)) {
+      // Erstsichtung je Thema bleibt erhalten (Alarm "neu gefunden"); sonst ersetzt der Lauf alles.
+      const vorher = await client.query<{ schluessel: string; status: string; erstgesehenAt: Date | null; createdAt: Date }>(
+        `SELECT schluessel, status, "erstgesehenAt", "createdAt" FROM "CompanyThema" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      const erst = new Map(vorher.rows.map((r) => [r.schluessel, r.status === "gefunden" ? (r.erstgesehenAt ?? r.createdAt) : null]));
+      const angelegt = new Map(vorher.rows.map((r) => [r.schluessel, r.createdAt]));
+      await client.query(`DELETE FROM "CompanyThema" WHERE "companyId" = $1`, [companyId]);
+      for (const t of result.themen) {
+        if (!t.schluessel || !t.name) continue;
+        await client.query(
+          `INSERT INTO "CompanyThema" ("companyId", schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "erstgesehenAt", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, NOW()), NOW())`,
+          [
+            companyId, t.schluessel, t.name, t.status, t.zitat ?? null, t.quelleUrl ?? null, t.ueberschrift ?? null, t.begruendung ?? null,
+            t.status === "gefunden" ? (erst.get(t.schluessel) ?? new Date()) : null,
+            angelegt.get(t.schluessel) ?? null,
+          ],
+        );
+      }
+    }
+
     if (result.karriere) {
       await client.query(
         `INSERT INTO "CompanyKarriere" ("companyId", benefits, "quelleUrl", auszug, "createdAt", "updatedAt")
@@ -1786,6 +1826,7 @@ const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
     await laufAbschliessen(companyId, event.source, {
       jobs: Array.isArray(result.jobPostings) ? result.jobPostings.length : undefined,
       expansion: Array.isArray(result.deepResearches) ? result.deepResearches.length : undefined,
+      themen: Array.isArray(result.themen) ? result.themen.filter((t) => t.status === "gefunden").length : undefined,
     });
   }
   log.info(
@@ -1796,6 +1837,7 @@ const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
       jobs: Array.isArray(result.jobPostings) ? result.jobPostings.length : "-",
       expansion: Array.isArray(result.deepResearches) ? result.deepResearches.length : "-",
       karriere: Boolean(result.karriere),
+      themen: Array.isArray(result.themen) ? result.themen.length : "-",
     },
     "website-research persist ✓",
   );
@@ -2216,7 +2258,7 @@ class PersistBus {
               }
             } else if (binding.routingKey === "tenant.persist.website-research.v1") {
               const d = event.data as { fehler?: string[]; result?: { jobPostings?: unknown; deepResearches?: unknown; karriere?: unknown } } | undefined;
-              const etwas = Array.isArray(d?.result?.jobPostings) || Array.isArray(d?.result?.deepResearches) || Boolean(d?.result?.karriere);
+              const etwas = Array.isArray(d?.result?.jobPostings) || Array.isArray(d?.result?.deepResearches) || Boolean(d?.result?.karriere) || Array.isArray((d?.result as { themen?: unknown } | undefined)?.themen);
               if (!etwas && d?.fehler?.length) {
                 progressState = "failed";
                 progressError = d.fehler.join(" | ").slice(0, 500);

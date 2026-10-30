@@ -35,7 +35,7 @@ const err = {
   409: { content: { "application/json": { schema: ErrorShape } }, description: "laeuft bereits" },
 };
 const Param = z.object({ companyId: z.string().min(1).max(200) });
-const Feature = z.enum(["jobs", "expansion"]);
+const Feature = z.enum(["jobs", "expansion", "themen"]);
 const Stufe = z.enum(["standard", "deep"]);
 
 /** Stand des Website-Producers zur Firma: juengste Zeile in EntityProgress. */
@@ -51,14 +51,16 @@ async function websiteStand(companyId: string): Promise<{ transactionId: string;
 
 const startRoute = createRoute({
   method: "post", path: "/companies/{companyId}/research", tags: [tag],
-  summary: "Manuelle Recherche je Firma anstossen (Stellenanzeigen oder Ausschreibungen/Expansion; Standard oder Deep Research)",
+  summary: "Manuelle Recherche je Firma anstossen (Stellenanzeigen, Ausschreibungen/Expansion oder Website-Themen; Standard oder Deep Research — Themen nur Standard)",
   request: { params: Param, body: { content: { "application/json": { schema: z.object({ feature: Feature, stufe: Stufe }) } } } },
   responses: { 200: { content: { "application/json": { schema: z.object({ angestossen: z.boolean(), grund: z.string().optional(), transactionId: z.string().nullable() }) } }, description: "ok" }, ...err },
 });
 companiesResearchRouter.openapi(startRoute, async (c) => {
   const auth = c.get("auth") as AuthContext;
   const { companyId } = c.req.valid("param");
-  const { feature, stufe } = c.req.valid("json");
+  const { feature, stufe: stufeRoh } = c.req.valid("json");
+  // Website-Themen laufen auf dem allgemeinen Modell: nur Standard.
+  const stufe = feature === "themen" ? "standard" : stufeRoh;
   const pool = getGatewayPool();
 
   // Der Lauf haengt an einer Transaktion; die juengste der Firma reicht.
@@ -121,7 +123,7 @@ const verlaufRoute = createRoute({
 companiesResearchRouter.openapi(verlaufRoute, async (c) => {
   const auth = c.get("auth") as AuthContext;
   const { companyId } = c.req.valid("param");
-  const r = await getGatewayPool().query<{ id: string; actorId: string; feature: "jobs" | "expansion"; stufe: "standard" | "deep"; state: string; ergebnisse: number | null; fehler: string | null; gestartetAt: Date; beendetAt: Date | null }>(
+  const r = await getGatewayPool().query<{ id: string; actorId: string; feature: "jobs" | "expansion" | "themen"; stufe: "standard" | "deep"; state: string; ergebnisse: number | null; fehler: string | null; gestartetAt: Date; beendetAt: Date | null }>(
     `SELECT id, "actorId", feature, stufe, state, ergebnisse, fehler, "gestartetAt", "beendetAt"
        FROM "CompanyResearchLauf" WHERE "tenantId" = $1 AND "companyId" = $2 ORDER BY "gestartetAt" DESC LIMIT 30`,
     [auth.tenantId, companyId],
