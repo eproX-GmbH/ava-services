@@ -410,10 +410,14 @@ companiesRouter.openapi(websiteRoute, async (c) => {
     deepResearches: [],
     jobPostings: [],
   };
-  // 2026-10-22 (docs/PLAN_STELLEN_SIGNALE.md): Stellen und Karriereseite aus der
-  // Website-DB; vorher blieb jobPostings ein leerer Platzhalter.
+  // 2026-10-22 (docs/PLAN_STELLEN_SIGNALE.md): Stellen und Karriereseite.
+  // 2026-10-30 (Befund Joyce, Muenstermann): der Persist schreibt beides in die
+  // Evaluation-DB (applyCompanyEvaluation), gelesen wurde aber aus der Website-DB,
+  // deren JobPosting-Tabelle weder benefits noch neue Zeilen hat — die Stellen
+  // blieben in den Firmendetails unsichtbar.
   try {
-    const jobs = await pool.query<Record<string, unknown>>(
+    const evalPool = getProducerPool("company-evaluation");
+    const jobs = await evalPool.query<Record<string, unknown>>(
       `SELECT id, title, location, "workingModel", description, requirements, technologies,
               COALESCE(benefits, ARRAY[]::text[]) AS benefits, "sourceUrl", "releaseDate", "createdAt", "updatedAt"
          FROM "JobPosting" WHERE "companyId" = $1 ORDER BY "releaseDate" DESC NULLS LAST, "createdAt" DESC LIMIT 50`,
@@ -425,7 +429,7 @@ companiesRouter.openapi(websiteRoute, async (c) => {
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
       updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
     }));
-    const karriere = await pool.query<{ benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: Date }>(
+    const karriere = await evalPool.query<{ benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: Date }>(
       `SELECT benefits, "quelleUrl", auszug, "updatedAt" FROM "CompanyKarriere" WHERE "companyId" = $1`,
       [companyId],
     );

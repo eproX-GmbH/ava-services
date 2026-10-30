@@ -2272,7 +2272,12 @@ const BINDINGS: ProducerBinding[] = [
     producer: "company-evaluation",
     routingKey: "tenant.persist.company-evaluation.v1",
     queue: "db-gateway-persist-company-evaluation",
-    apply: withTierGate("company-evaluation", applyCompanyEvaluation),
+    // 2026-10-30: kein Tier-Gate. Unter diesem Typ kommen nur noch Stellen,
+    // Karriereseite und Recherche aus dem Website-Producer (Bewertung ist seit
+    // v0.1.829 abgeklemmt); die Laeufe sind ausdruecklich angestossen, und das
+    // Gate sperrte sie nach dem ersten Schreiben 30 Tage ("non-LLM stage, fresh")
+    // — Befund Joyce 2026-10-30, Muenstermann: 6 Stellen gefunden, nichts gespeichert.
+    apply: applyCompanyEvaluation,
   },
   {
     producer: "company-contact",

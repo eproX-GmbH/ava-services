@@ -191,7 +191,8 @@ const SIGNAL_TYPEN: Record<string, "job-changed" | "employer-changed" | "company
  *  Neuheit: nur Firmen, die vor `seit` schon Stellen hatten. createdAt bleibt beim Persist je
  *  Stelle erhalten (Titel + Quelle), deshalb zaehlt es als Erstsichtung. */
 async function neueStellen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
-  const pool = getProducerPool("website");
+  // Stellen liegen in der Evaluation-DB (Persist ueber applyCompanyEvaluation), nicht in der Website-DB.
+  const pool = getProducerPool("company-evaluation");
   const r = await pool.query<{ companyId: string; title: string; location: string | null; benefits: string[] | null; sourceUrl: string; createdAt: Date }>(
     `SELECT jp."companyId", jp.title, jp.location, jp.benefits, jp."sourceUrl", jp."createdAt"
        FROM "JobPosting" jp

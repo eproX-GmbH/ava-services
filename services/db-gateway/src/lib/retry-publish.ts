@@ -320,7 +320,9 @@ export async function publishWebsiteRetry(opts: {
     published += 1;
   }
 
-  const drRes = await pool.query<{
+  // Deep-Research und Stellen persistiert applyCompanyEvaluation in die Evaluation-DB.
+  const evalPool = getProducerPool("company-evaluation");
+  const drRes = await evalPool.query<{
     company: string | null;
     type: string;
     title: string;
@@ -355,7 +357,7 @@ export async function publishWebsiteRetry(opts: {
     published += 1;
   }
 
-  const jpRes = await pool.query<{
+  const jpRes = await evalPool.query<{
     title: string;
     location: string | null;
     workingModel: string | null;
