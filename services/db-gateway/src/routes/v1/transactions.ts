@@ -1742,7 +1742,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
             break;
           case "website":
             res = await publishWebsiteRetry({
-              stage: producerStage as "companyProfile" | "companyContact" | "companyEvaluation",
+              stage: producerStage as "companyProfile" | "companyContact",
               transactionId,
               companyId,
               companyName,

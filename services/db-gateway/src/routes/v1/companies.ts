@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
+import { ladeWebsiteRecherche } from "../../lib/website-research";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
 import { listProfileChanges } from "../../lib/profile-changes";
@@ -410,37 +411,11 @@ companiesRouter.openapi(websiteRoute, async (c) => {
     deepResearches: [],
     jobPostings: [],
   };
-  // 2026-10-22 (docs/PLAN_STELLEN_SIGNALE.md): Stellen und Karriereseite.
-  // 2026-10-30 (Befund Joyce, Muenstermann): der Persist schreibt beides in die
-  // Evaluation-DB (applyCompanyEvaluation), gelesen wurde aber aus der Website-DB,
-  // deren JobPosting-Tabelle weder benefits noch neue Zeilen hat — die Stellen
-  // blieben in den Firmendetails unsichtbar.
-  try {
-    const evalPool = getProducerPool("company-evaluation");
-    const jobs = await evalPool.query<Record<string, unknown>>(
-      `SELECT id, title, location, "workingModel", description, requirements, technologies,
-              COALESCE(benefits, ARRAY[]::text[]) AS benefits, "sourceUrl", "releaseDate", "createdAt", "updatedAt"
-         FROM "JobPosting" WHERE "companyId" = $1 ORDER BY "releaseDate" DESC NULLS LAST, "createdAt" DESC LIMIT 50`,
-      [companyId],
-    );
-    payload.jobPostings = jobs.rows.map((r) => ({
-      ...r,
-      releaseDate: r.releaseDate instanceof Date ? r.releaseDate.toISOString() : r.releaseDate ?? null,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
-      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
-    }));
-    const karriere = await evalPool.query<{ benefits: string[]; quelleUrl: string | null; auszug: string | null; updatedAt: Date }>(
-      `SELECT benefits, "quelleUrl", auszug, "updatedAt" FROM "CompanyKarriere" WHERE "companyId" = $1`,
-      [companyId],
-    );
-    if (karriere.rows[0]) {
-      const k = karriere.rows[0];
-      payload.karriere = { benefits: k.benefits ?? [], quelleUrl: k.quelleUrl, auszug: k.auszug, updatedAt: k.updatedAt.toISOString() };
-    }
-  } catch (err) {
-    // Spalte/Tabelle fehlt noch (erster Lauf nach dem Update): Rest der Antwort bleibt gueltig.
-    logger.warn({ err: err instanceof Error ? err.message : String(err), companyId }, "[website] Stellen nicht lesbar");
-  }
+  // Stellen, Karriereseite, Expansionen aus der Website-DB (docs/PLAN_RECHERCHE_PERSIST.md).
+  const recherche = await ladeWebsiteRecherche(companyId, logger);
+  payload.jobPostings = recherche.jobPostings;
+  payload.deepResearches = recherche.deepResearches;
+  if (recherche.karriere) payload.karriere = recherche.karriere;
   return c.json(payload, 200);
 });
 

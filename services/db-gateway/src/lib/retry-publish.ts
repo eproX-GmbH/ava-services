@@ -31,9 +31,6 @@ import {
   CompanyContactUpsertPayload,
   EvaluationUpsertCompanyContactsPayload,
   EvaluationUpsertCompanyProfilePayload,
-  EvaluationUpsertCompanySerpPayload,
-  EvaluationUpsertDeepResearchPayload,
-  EvaluationUpsertJobPostingsPayload,
   EvaluationUpsertKeyFiguresPayload,
   EvaluationUpsertKeywordsPayload,
   EvaluationUpsertStructuredContentPayload,
@@ -220,13 +217,13 @@ export async function publishStructuredContentRetry(opts: {
 
 /**
  * Republishes website's slice for the requested stage.
- * `stage` is one of: "companyProfile" | "companyContact" | "companyEvaluation".
+ * `stage` is one of: "companyProfile" | "companyContact".
  *
  * `companyName` is required for stage="companyContact" (mirrors the
  * legacy command).
  */
 export async function publishWebsiteRetry(opts: {
-  stage: "companyProfile" | "companyContact" | "companyEvaluation";
+  stage: "companyProfile" | "companyContact";
   transactionId: string;
   companyId: string;
   companyName?: string;
@@ -290,113 +287,7 @@ export async function publishWebsiteRetry(opts: {
     return { published: 1 };
   }
 
-  // companyEvaluation: re-emit website's three evaluation slices.
-  // Each is conditional on the corresponding child row existing in MPG.
-  let published = 0;
-
-  const serpRes = await pool.query<{
-    address: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    category: string | null;
-  }>(
-    `SELECT address, latitude, longitude, category
-     FROM "CompanySerp" WHERE "companyId" = $1 LIMIT 1`,
-    [companyId],
-  );
-  if ((serpRes.rowCount ?? 0) > 0) {
-    const serp = serpRes.rows[0];
-    const event: CloudEvent<EvaluationUpsertCompanySerpPayload> =
-      new EventBuilder().companyEvaluation.upsertCompanySerp
-        .header(header)
-        .data({
-          address: serp.address ?? undefined,
-          latitude: serp.latitude ?? undefined,
-          longitude: serp.longitude ?? undefined,
-          category: serp.category ?? undefined,
-        })
-        .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
-    published += 1;
-  }
-
-  // Deep-Research und Stellen persistiert applyCompanyEvaluation in die Evaluation-DB.
-  const evalPool = getProducerPool("company-evaluation");
-  const drRes = await evalPool.query<{
-    company: string | null;
-    type: string;
-    title: string;
-    country: string | null;
-    value: string | null;
-    date: string | null;
-    url: string;
-    citations: string[];
-  }>(
-    `SELECT company, type, title, country, value, date, url, citations
-     FROM "DeepResearch" WHERE "companyId" = $1`,
-    [companyId],
-  );
-  if ((drRes.rowCount ?? 0) > 0) {
-    const event: CloudEvent<EvaluationUpsertDeepResearchPayload> =
-      new EventBuilder().companyEvaluation.upsertDeepResearch
-        .header(header)
-        .data({
-          deepResearches: drRes.rows.map((r) => ({
-            company: r.company ?? undefined,
-            type: r.type,
-            title: r.title,
-            country: r.country ?? undefined,
-            value: r.value ?? undefined,
-            date: r.date ?? undefined,
-            url: r.url,
-            citations: r.citations ?? [],
-          })),
-        })
-        .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
-    published += 1;
-  }
-
-  const jpRes = await evalPool.query<{
-    title: string;
-    location: string | null;
-    workingModel: string | null;
-    description: string | null;
-    requirements: string[];
-    technologies: string[];
-    sourceUrl: string;
-    releaseDate: Date | null;
-  }>(
-    `SELECT title, location, "workingModel", description,
-            requirements, technologies, "sourceUrl", "releaseDate"
-     FROM "JobPosting" WHERE "companyId" = $1`,
-    [companyId],
-  );
-  if ((jpRes.rowCount ?? 0) > 0) {
-    const event: CloudEvent<EvaluationUpsertJobPostingsPayload> =
-      new EventBuilder().companyEvaluation.upsertJobPostings
-        .header(header)
-        .data({
-          jobPostings: jpRes.rows.map((r) => ({
-            title: r.title,
-            location: r.location ?? undefined,
-            workingModel: r.workingModel ?? undefined,
-            description: r.description ?? undefined,
-            requirements: r.requirements ?? [],
-            technologies: r.technologies ?? [],
-            sourceUrl: r.sourceUrl,
-            releaseDate: r.releaseDate ?? undefined,
-          })),
-        })
-        .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
-    published += 1;
-  }
-
-  if (published === 0) {
-    notFound(`No evaluation slices to republish for ${companyId}`);
-  }
-  return { published };
+  notFound(`Stage ${stage} kann fuer website nicht wiederholt werden`);
 }
 
 // =============================================================================

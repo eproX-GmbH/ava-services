@@ -1654,56 +1654,21 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
 };
 
 // =============================================================================
-// company-evaluation
+// website-research (Stellen, Karriereseite, Expansionen/Ausschreibungen)
 // =============================================================================
 //
-// Highest fan-in producer: 8 inbound event types from the legacy chain, each
-// carrying a different slice. The compute-worker normalises all 8 into a
-// single `tenant.persist.company-evaluation.v1` family with partial slices;
-// this apply handler does a partial upsert that mirrors the legacy
-// `evaluationDataRepository.upsert` semantics — fields not present in the
-// event don't overwrite existing values.
+// `tenant.persist.website-research.v1` vom Website-Producer (docs/PLAN_RECHERCHE_PERSIST.md).
+// Bis 2026-10-30 kamen diese Daten als `tenant.persist.company-evaluation.v1`
+// und landeten in der Evaluation-DB; der Bewertungs-Producer ist seit v0.1.829
+// abgeklemmt. Jetzt: Website-DB (JobPosting, DeepResearch, CompanyKarriere).
 //
-// Replace-all semantics on the children: when the slice contains a list
-// field (e.g. `keywords`, `managingDirectors`, `keyFigures.sales`), we
-// delete-then-insert. The legacy producer did the same. The "merge by id"
-// alternative would need stable per-row keys upstream that we don't have.
-//
-// Phase 2a: persist only. Embedding compute + ES indexing follow in Phase
-// 2b — until then `demandEmbedding` stays null for new transactions, which
-// degrades the company-search vector index for those companies.
+// Semantik je Liste: Array (auch leer) = Pipeline lief erfolgreich, Ergebnis
+// ERSETZT den Bestand; fehlt = nicht gelaufen oder gescheitert, Bestand bleibt.
+// Kein Tier-Gate: die Laeufe sind ausdruecklich angestossen oder an den
+// Website-Lauf gekoppelt (das Gate sperrte sie 30 Tage, Befund Muenstermann).
 
-interface CompanyEvaluationResult {
+interface WebsiteResearchResult {
   companyId: string;
-  companyName?: string;
-  companyProfile?: string;
-  businessPurpose?: string | null;
-  companyAddress?: string;
-  latitude?: number;
-  longitude?: number;
-  serpCategory?: string;
-  keywords?: string[];
-  keyFigures?: {
-    sales?: { value: number; currency: string; year: number }[];
-    totalAssets?: { value: number; currency: string; year: number }[];
-    profits?: { value: number; currency: string; year: number }[];
-    employees?: { value: number; year: number }[];
-  };
-  stateOfAffairs?: Array<{
-    year: number;
-    isRelevant: boolean;
-    topic: string;
-    bullets: string[];
-    guidance: string[];
-    risksOpportunities: string[];
-    kpis: { name: string; value: string; period?: string }[];
-  }>;
-  managingDirectors?: Array<{
-    firstName: string;
-    lastName: string;
-    birthDay?: Date | string | null;
-    city?: string | null;
-  }>;
   deepResearches?: Array<{
     company?: string;
     type: string;
@@ -1721,31 +1686,17 @@ interface CompanyEvaluationResult {
     description?: string;
     requirements: string[];
     technologies: string[];
-    /** Arbeitgeberleistungen laut Anzeige (docs/PLAN_STELLEN_SIGNALE.md). */
     benefits?: string[];
     sourceUrl: string;
     releaseDate?: Date | string;
   }>;
   /** Karriereseite: Leistungen fuer Beschaeftigte; eine Zeile je Firma. */
   karriere?: { benefits: string[]; quelleUrl: string | null; auszug: string | null };
-  contacts?: Array<{
-    fullName?: string;
-    linkedinUrl?: string;
-    xingUrl?: string;
-    email?: string;
-    phone?: string;
-    employments: Array<{
-      title?: string;
-      department?: string;
-      seniority?: string;
-      confidence: number;
-      startDate?: Date | string;
-    }>;
-  }>;
 }
 
-/** Spalte benefits und Tabelle CompanyKarriere (website-DB, Migration 20261022120000) sicherstellen —
- *  die Website-DB wird nicht vom Gateway migriert, der Producer laeuft beim Nutzer. */
+/** Spalte benefits und Tabelle CompanyKarriere in der Website-DB sicherstellen
+ *  (Prisma-Migration 20261022120000 des Producers; der laeuft beim Nutzer ohne DB
+ *  und migriert die Cloud-Datenbank nie). */
 let stellenSchemaBereit = false;
 async function ensureStellenSchema(client: { query: (q: string, p?: unknown[]) => Promise<unknown> }): Promise<void> {
   if (stellenSchemaBereit) return;
@@ -1756,211 +1707,23 @@ async function ensureStellenSchema(client: { query: (q: string, p?: unknown[]) =
   stellenSchemaBereit = true;
 }
 
-const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
-  const data = event.data as PersistEvent<CompanyEvaluationResult> | undefined;
+const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
+  const data = event.data as PersistEvent<WebsiteResearchResult> | undefined;
   if (!data) throw new Error("empty payload");
   const { result, computedAt, tenantId, runId } = data;
   if (!result?.companyId) throw new Error("missing result.companyId");
   if (!computedAt) throw new Error("missing computedAt");
-  const updatedAt = new Date(computedAt);
   const companyId = result.companyId;
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await ensureStellenSchema(client);
 
-    // Parent row. Partial upsert: only overwrite columns the event
-    // brought. companyName has a NOT NULL constraint, so on first
-    // insert we need a value — fall back to companyId so the row
-    // can be created and a later structured-content event can set
-    // the real name.
-    const parentInsert = await client.query(
-      `INSERT INTO "EvaluationData"
-         ("companyId", "companyName",
-          "companyProfile", "businessPurpose",
-          "companyAddress", latitude, longitude, "serpCategory",
-          keywords,
-          "createdAt", "updatedAt")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW(), $10)
-       ON CONFLICT ("companyId") DO UPDATE
-       SET "companyName" = COALESCE(EXCLUDED."companyName", "EvaluationData"."companyName"),
-           "companyProfile" = COALESCE(EXCLUDED."companyProfile", "EvaluationData"."companyProfile"),
-           "businessPurpose" = COALESCE(EXCLUDED."businessPurpose", "EvaluationData"."businessPurpose"),
-           "companyAddress" = COALESCE(EXCLUDED."companyAddress", "EvaluationData"."companyAddress"),
-           latitude = COALESCE(EXCLUDED.latitude, "EvaluationData".latitude),
-           longitude = COALESCE(EXCLUDED.longitude, "EvaluationData".longitude),
-           "serpCategory" = COALESCE(EXCLUDED."serpCategory", "EvaluationData"."serpCategory"),
-           keywords = CASE
-             WHEN cardinality(EXCLUDED.keywords) > 0 THEN EXCLUDED.keywords
-             ELSE "EvaluationData".keywords
-           END,
-           "updatedAt" = EXCLUDED."updatedAt"`,
-      [
-        companyId,
-        result.companyName ?? companyId,
-        result.companyProfile ?? null,
-        result.businessPurpose ?? null,
-        result.companyAddress ?? null,
-        result.latitude ?? null,
-        result.longitude ?? null,
-        result.serpCategory ?? null,
-        result.keywords ?? [],
-        updatedAt,
-      ],
-    );
-    void parentInsert;
-
-    // ---- managingDirectors: replace-all, but ONLY when the slice carries
-    //      a NON-EMPTY list. A present-but-empty `[]` must never trigger the
-    //      DELETE — otherwise a successful-but-data-less run (e.g. a partial
-    //      scrape that still reports "ok" and emits `[]`) would wipe the
-    //      previously-stored rows and insert nothing → silent data loss.
-    //      Same class of bug as the v0.1.218 applyCompanyPublication fix.
-    if (Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0) {
-      await client.query(
-        `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
-        [companyId],
-      );
-      for (const md of result.managingDirectors) {
-        await client.query(
-          `INSERT INTO "ManagingDirector"
-             ("firstName", "lastName", "birthDay", city, "companyId",
-              "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-          [
-            md.firstName,
-            md.lastName,
-            md.birthDay ? new Date(md.birthDay) : null,
-            md.city ?? null,
-            companyId,
-          ],
-        );
-      }
-    }
-
-    // ---- keyFigures: parent row 1:1 with EvaluationData, four
-    //      child figure tables. Replace all four — but ONLY when the slice
-    //      actually carries at least one figure. A keyFigures object whose
-    //      four lists are all empty must not wipe the existing figures
-    //      (same data-loss guard as the lists above).
-    const kf = result.keyFigures;
-    const kfHasData =
-      !!kf &&
-      ((Array.isArray(kf.sales) && kf.sales.length > 0) ||
-        (Array.isArray(kf.totalAssets) && kf.totalAssets.length > 0) ||
-        (Array.isArray(kf.profits) && kf.profits.length > 0) ||
-        (Array.isArray(kf.employees) && kf.employees.length > 0));
-    if (kfHasData) {
-      // Ensure parent KeyFigures row exists; PK is (companyId).
-      const kfRes = await client.query<{ id: number }>(
-        `INSERT INTO "KeyFigures" ("companyId", "createdAt", "updatedAt")
-         VALUES ($1, NOW(), NOW())
-         ON CONFLICT ("companyId") DO UPDATE
-         SET "updatedAt" = NOW()
-         RETURNING id`,
-        [companyId],
-      );
-      const keyFiguresId = kfRes.rows[0].id;
-      // Wipe the four figure tables and re-insert.
-      await client.query(
-        `DELETE FROM "SalesFigure" WHERE "keyFiguresId" = $1`,
-        [keyFiguresId],
-      );
-      await client.query(
-        `DELETE FROM "TotalAssetsFigure" WHERE "keyFiguresId" = $1`,
-        [keyFiguresId],
-      );
-      await client.query(
-        `DELETE FROM "ProfitFigure" WHERE "keyFiguresId" = $1`,
-        [keyFiguresId],
-      );
-      await client.query(
-        `DELETE FROM "EmployeesFigure" WHERE "keyFiguresId" = $1`,
-        [keyFiguresId],
-      );
-      for (const f of kf!.sales ?? []) {
-        await client.query(
-          `INSERT INTO "SalesFigure"
-             (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-          [f.value, f.currency, f.year, keyFiguresId],
-        );
-      }
-      for (const f of kf!.totalAssets ?? []) {
-        await client.query(
-          `INSERT INTO "TotalAssetsFigure"
-             (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-          [f.value, f.currency, f.year, keyFiguresId],
-        );
-      }
-      for (const f of kf!.profits ?? []) {
-        await client.query(
-          `INSERT INTO "ProfitFigure"
-             (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-          [f.value, f.currency, f.year, keyFiguresId],
-        );
-      }
-      for (const f of kf!.employees ?? []) {
-        await client.query(
-          `INSERT INTO "EmployeesFigure"
-             (value, year, "keyFiguresId", "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, NOW(), NOW())`,
-          [f.value, f.year, keyFiguresId],
-        );
-      }
-    }
-
-    // ---- stateOfAffairs: list keyed by (companyId, year). Replace-all
-    //      only when the slice carries a NON-EMPTY list (data-loss guard).
-    if (Array.isArray(result.stateOfAffairs) && result.stateOfAffairs.length > 0) {
-      // Drop existing aggregates for this company; KPI rows cascade.
-      await client.query(
-        `DELETE FROM "StateOfAffairsAggregate" WHERE "companyId" = $1`,
-        [companyId],
-      );
-      for (const soa of result.stateOfAffairs) {
-        // Topic enum is uppercase in Postgres but producer emits
-        // lowercase — same fix as the per-publication-aggregate path.
-        const normalisedTopic = String(soa.topic ?? "nothing").toUpperCase();
-        const aggRes = await client.query<{ id: number }>(
-          `INSERT INTO "StateOfAffairsAggregate"
-             ("companyId", "isRelevant", topic, year,
-              bullets, guidance, "risksOpportunities",
-              "createdAt", "updatedAt")
-           VALUES ($1, $2, $3::"Topic", $4, $5, $6, $7, NOW(), NOW())
-           RETURNING id`,
-          [
-            companyId,
-            soa.isRelevant,
-            normalisedTopic,
-            soa.year,
-            soa.bullets,
-            soa.guidance,
-            soa.risksOpportunities,
-          ],
-        );
-        const aggregateId = aggRes.rows[0].id;
-        for (const kpi of soa.kpis ?? []) {
-          await client.query(
-            `INSERT INTO "StateOfAffairsKPI"
-               (name, value, period, "aggregateId", "createdAt", "updatedAt")
-             VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-            [kpi.name, kpi.value, kpi.period ?? null, aggregateId],
-          );
-        }
-      }
-    }
-
-    // ---- deepResearches: replace-all by companyId, only on a NON-EMPTY
-    //      list (data-loss guard).
-    if (Array.isArray(result.deepResearches) && result.deepResearches.length > 0) {
-      await client.query(
-        `DELETE FROM "DeepResearch" WHERE "companyId" = $1`,
-        [companyId],
-      );
+    if (Array.isArray(result.deepResearches)) {
+      await client.query(`DELETE FROM "DeepResearch" WHERE "companyId" = $1`, [companyId]);
       for (const dr of result.deepResearches) {
+        if (dr.type === "NONE") continue;
         await client.query(
           `INSERT INTO "DeepResearch"
              (id, company, type, title, country, value, date, url, citations,
@@ -1968,38 +1731,21 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
            VALUES (gen_random_uuid()::text,
                    $1, $2::"DeepResearchType", $3, $4, $5, $6, $7, $8,
                    $9, NOW(), NOW())`,
-          [
-            dr.company ?? null,
-            dr.type,
-            dr.title,
-            dr.country ?? null,
-            dr.value ?? null,
-            dr.date ?? null,
-            dr.url,
-            dr.citations ?? [],
-            companyId,
-          ],
+          [dr.company ?? null, dr.type, dr.title, dr.country ?? null, dr.value ?? null, dr.date ?? null, dr.url, dr.citations ?? [], companyId],
         );
       }
     }
 
-    // ---- jobPostings: replace-all by companyId, only on a NON-EMPTY
-    //      list (data-loss guard).
-    if (Array.isArray(result.jobPostings) && result.jobPostings.length > 0) {
-      await ensureStellenSchema(client);
-      // 2026-10-22: Erstsichtung je Stelle erhalten (Titel + Quelle), damit der
-      // Neuheiten-Takt nur wirklich neue Anzeigen meldet — replace-all setzte
-      // sonst bei jedem Lauf alle createdAt neu.
+    if (Array.isArray(result.jobPostings)) {
+      // Erstsichtung je Stelle erhalten (Titel + Quelle), damit der Neuheiten-Takt
+      // nur wirklich neue Anzeigen meldet.
       const vorher = await client.query<{ title: string; sourceUrl: string; createdAt: Date }>(
         `SELECT title, "sourceUrl", "createdAt" FROM "JobPosting" WHERE "companyId" = $1`,
         [companyId],
       );
       const erstgesehen = new Map<string, Date>();
       for (const r of vorher.rows) erstgesehen.set(`${r.title.trim().toLowerCase()}|${r.sourceUrl.trim().toLowerCase()}`, r.createdAt);
-      await client.query(
-        `DELETE FROM "JobPosting" WHERE "companyId" = $1`,
-        [companyId],
-      );
+      await client.query(`DELETE FROM "JobPosting" WHERE "companyId" = $1`, [companyId]);
       for (const jp of result.jobPostings) {
         const alt = erstgesehen.get(`${jp.title.trim().toLowerCase()}|${jp.sourceUrl.trim().toLowerCase()}`) ?? null;
         await client.query(
@@ -2011,23 +1757,15 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
                    $1, $2, $3, $4, $5, $6, $7, $8, $9,
                    $10, COALESCE($11, NOW()), NOW())`,
           [
-            jp.title,
-            jp.location ?? null,
-            jp.workingModel ?? null,
-            jp.description ?? null,
-            jp.requirements ?? [],
-            jp.technologies ?? [],
-            jp.benefits ?? [],
-            jp.sourceUrl,
-            jp.releaseDate ? new Date(jp.releaseDate) : null,
-            companyId,
-            alt,
+            jp.title, jp.location ?? null, jp.workingModel ?? null, jp.description ?? null,
+            jp.requirements ?? [], jp.technologies ?? [], jp.benefits ?? [], jp.sourceUrl,
+            jp.releaseDate ? new Date(jp.releaseDate) : null, companyId, alt,
           ],
         );
       }
     }
+
     if (result.karriere) {
-      await ensureStellenSchema(client);
       await client.query(
         `INSERT INTO "CompanyKarriere" ("companyId", benefits, "quelleUrl", auszug, "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, NOW(), NOW())
@@ -2036,82 +1774,33 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
       );
     }
 
-    // ---- contacts: replace-all by companyId, plus their employments
-    //      child rows (cascade-delete handles those). Only on a NON-EMPTY
-    //      list (data-loss guard).
-    if (Array.isArray(result.contacts) && result.contacts.length > 0) {
-      await client.query(
-        `DELETE FROM "Contact" WHERE "companyId" = $1`,
-        [companyId],
-      );
-      for (const ct of result.contacts) {
-        const ctRes = await client.query<{ id: string }>(
-          `INSERT INTO "Contact"
-             (id, "fullName", "linkedinUrl", "xingUrl", email, phone,
-              "companyId", "createdAt", "updatedAt")
-           VALUES (gen_random_uuid()::text,
-                   $1, $2, $3, $4, $5,
-                   $6, NOW(), NOW())
-           RETURNING id`,
-          [
-            ct.fullName ?? null,
-            ct.linkedinUrl ?? null,
-            ct.xingUrl ?? null,
-            ct.email ?? null,
-            ct.phone ?? null,
-            companyId,
-          ],
-        );
-        const contactId = ctRes.rows[0].id;
-        for (const emp of ct.employments ?? []) {
-          await client.query(
-            `INSERT INTO "Employment"
-               (id, title, department, seniority, confidence, "startDate",
-                "contactId", "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text,
-                     $1, $2, $3, $4, $5,
-                     $6, NOW(), NOW())`,
-            [
-              emp.title ?? null,
-              emp.department ?? null,
-              emp.seniority ?? null,
-              emp.confidence,
-              emp.startDate ? new Date(emp.startDate) : null,
-              contactId,
-            ],
-          );
-        }
-      }
-    }
-
     await client.query("COMMIT");
-    // 2026-09-24 — manueller Recherche-Lauf: Anzahl ins Protokoll, und der
-    // Website-Producer gilt damit als fertig (er schickt in diesem Modus
-    // kein eigenes Website-Persist, und sein Fortschrittsereignis kam in
-    // der Praxis nicht an — die Zelle blieb gelb).
-    if (researchFeaturesAusSource(event.source)) {
-      await laufAbschliessen(companyId, event.source, {
-        jobs: Array.isArray(result.jobPostings) ? result.jobPostings.length : undefined,
-        expansion: Array.isArray(result.deepResearches) ? result.deepResearches.length : undefined,
-      });
-      const tx = (event as unknown as { transaction?: string }).transaction ?? "";
-      await recordEntityProgress("website", tx, companyId, "completed", null, log);
-    }
-    log.info(
-      {
-        runId,
-        tenantId,
-        companyId,
-        sliceKeys: Object.keys(result).filter((k) => k !== "companyId"),
-      },
-      "company-evaluation persist ✓",
-    );
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();
   }
+
+  // Manueller Recherche-Lauf: Anzahl ins Protokoll; der Website-Producer gilt
+  // damit als fertig (er schickt in diesem Modus kein eigenes Website-Persist).
+  if (researchFeaturesAusSource(event.source)) {
+    await laufAbschliessen(companyId, event.source, {
+      jobs: Array.isArray(result.jobPostings) ? result.jobPostings.length : undefined,
+      expansion: Array.isArray(result.deepResearches) ? result.deepResearches.length : undefined,
+    });
+  }
+  log.info(
+    {
+      runId,
+      tenantId,
+      companyId,
+      jobs: Array.isArray(result.jobPostings) ? result.jobPostings.length : "-",
+      expansion: Array.isArray(result.deepResearches) ? result.deepResearches.length : "-",
+      karriere: Boolean(result.karriere),
+    },
+    "website-research persist ✓",
+  );
 };
 
 // =============================================================================
@@ -2269,15 +1958,18 @@ const BINDINGS: ProducerBinding[] = [
     apply: withTierGate("company-publication", applyPublicationBlocks),
   },
   {
-    producer: "company-evaluation",
+    producer: "website",
+    routingKey: "tenant.persist.website-research.v1",
+    queue: "db-gateway-persist-website-research",
+    apply: applyWebsiteResearch,
+  },
+  {
+    // Uebergang: aeltere Desktop-Versionen schicken Stellen/Expansionen noch
+    // unter dem alten Typ. Gleiche Verarbeitung, gleiche Website-DB.
+    producer: "website",
     routingKey: "tenant.persist.company-evaluation.v1",
     queue: "db-gateway-persist-company-evaluation",
-    // 2026-10-30: kein Tier-Gate. Unter diesem Typ kommen nur noch Stellen,
-    // Karriereseite und Recherche aus dem Website-Producer (Bewertung ist seit
-    // v0.1.829 abgeklemmt); die Laeufe sind ausdruecklich angestossen, und das
-    // Gate sperrte sie nach dem ersten Schreiben 30 Tage ("non-LLM stage, fresh")
-    // — Befund Joyce 2026-10-30, Muenstermann: 6 Stellen gefunden, nichts gespeichert.
-    apply: applyCompanyEvaluation,
+    apply: applyWebsiteResearch,
   },
   {
     producer: "company-contact",
@@ -2506,7 +2198,7 @@ class PersistBus {
             // transactions.ts / companies-matrix.ts).
             let progressState: "completed" | "failed" = "completed";
             let progressError: string | null = null;
-            if (binding.producer === "website") {
+            if (binding.routingKey === "tenant.persist.website.v1") {
               const r = event.data?.result as
                 | {
                     website?: { url?: string | null };
