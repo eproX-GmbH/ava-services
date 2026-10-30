@@ -41,6 +41,6 @@ echo "== In $WEB einspielen (eine Transaktion; je Firma alte Website-Zeilen erse
 } | psql -h $H -p $P -U $U -d $WEB -v ON_ERROR_STOP=1 -q
 
 echo "== Ergebnis in $WEB"
-psql -h $H -p $P -U $U -d $WEB -Atc 'SELECT ''JobPosting'', count(*), count(DISTINCT "companyId") FROM "JobPosting" UNION ALL SELECT ''DeepResearch'', count(*), count(DISTINCT "companyId") FROM "DeepResearch" UNION ALL SELECT ''CompanyKarriere'', count(*), count(DISTINCT "companyId") FROM "CompanyKarriere"'
+psql -h $H -p $P -U $U -d $WEB -Atc "SELECT 'JobPosting', count(*), count(DISTINCT \"companyId\") FROM \"JobPosting\" UNION ALL SELECT 'DeepResearch', count(*), count(DISTINCT \"companyId\") FROM \"DeepResearch\" UNION ALL SELECT 'CompanyKarriere', count(*), count(DISTINCT \"companyId\") FROM \"CompanyKarriere\""
 rm -rf "$T"
 echo "fertig — danach im Gateway den Rueckfall auf die Evaluation-DB entfernen (lib/website-research.ts)."
