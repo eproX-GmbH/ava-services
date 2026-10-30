@@ -5,17 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
 import { AnthropicTierBanner } from "../components/AnthropicTierBanner";
 import { SettingsSkills } from "./SettingsSkills";
-import { SettingsSearch } from "./settings/SettingsSearch";
 import { useFeature, usePolicyStore } from "../store/policy";
 import { KontoTab } from "./settings/KontoTab";
-import { ModelleTab } from "./settings/ModelleTab";
-import { DatenquellenTab } from "./settings/DatenquellenTab";
-import { AutomatisierungenTab } from "./settings/AutomatisierungenTab";
-import { SkillsTab } from "./settings/SkillsTab";
-import { SystemTab } from "./settings/SystemTab";
-import { VerlaufTab } from "./settings/VerlaufTab";
-import { VerbrauchTab } from "./settings/VerbrauchTab";
-import { WissensquellenTab } from "./settings/WissensquellenTab";
+import { KiTab } from "./settings/KiTab";
+import { RechercheTab } from "./settings/RechercheTab";
+import { VerbindungenTab } from "./settings/VerbindungenTab";
+import { MeldungenTab } from "./settings/MeldungenTab";
+import { ErweitertTab } from "./settings/ErweitertTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, isSeatPaid, type BillingTier, type UsageSnapshot } from "../api/usage";
@@ -157,133 +153,127 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
 // hash to the right tab, navigate-replace into it, then scroll the
 // anchor into view once the tab content has painted.
 
+// docs/PLAN_EINSTELLUNGEN_UI.md §3 (2026-10-30): sechs Tabs nach den Fragen des
+// Nutzers statt neun nach Technik. Alte Tab-Namen und Anker leiten weiter.
 export const SETTINGS_TABS = [
-  { id: "konto",            label: "Konto" },
-  { id: "modelle",          label: "Modelle" },
-  { id: "verbrauch",        label: "Verbrauch" },
-  { id: "datenquellen",     label: "Datenquellen" },
-  { id: "automatisierungen", label: "Automatisierungen" },
-  { id: "wissensquellen",   label: "Wissensquellen" },
-  { id: "skills",           label: "Skills" },
-  { id: "verlauf",          label: "Verlauf" },
-  { id: "system",           label: "System" },
+  { id: "konto",        label: "Konto",        frage: "Wer bin ich, was zahle ich?" },
+  { id: "ki",           label: "KI & Kosten",  frage: "Welches Modell arbeitet für mich, was kostet es?" },
+  { id: "recherche",    label: "Recherche",    frage: "Wonach sucht AVA bei meinen Firmen?" },
+  { id: "verbindungen", label: "Verbindungen", frage: "Welche Werkzeuge hängen an AVA?" },
+  { id: "meldungen",    label: "Meldungen",    frage: "Was meldet AVA mir, wann und wo?" },
+  { id: "erweitert",    label: "Erweitert",    frage: "Für Fortgeschrittene und den Support." },
 ] as const;
 export type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
 const SETTINGS_TAB_IDS: readonly SettingsTabId[] =
   SETTINGS_TABS.map((t) => t.id);
 
-// Map legacy `/settings#…` anchors to their new tab. The shim below
-// rewrites the URL once on mount so existing call sites (UsageChip,
-// QuotaExhaustedBanner, LinkedInActiveBanner, Chat mic button, …) keep
-// working without touching them.
-/** v0.1.280 — Sub-Section-Tree pro Settings-Tab. Wird in der Sidebar
- *  als Hover-Popover gerendert; Klick navigiert per Anchor-Hash direkt
- *  in die Section. */
+/** Alte Tab-Namen (bis v0.1.894) → neuer Tab. Anker haben Vorrang (SETTINGS_ANCHOR_TO_TAB). */
+const LEGACY_TABS: Record<string, SettingsTabId> = {
+  modelle: "ki",
+  verbrauch: "ki",
+  datenquellen: "verbindungen",
+  wissensquellen: "verbindungen",
+  automatisierungen: "meldungen",
+  skills: "erweitert",
+  verlauf: "erweitert",
+  system: "erweitert",
+};
+
 /** O3 — Sprungmarken, die eine Organisationsvorgabe ausblendet. */
 const ANCHOR_FEATURE: Record<string, import("../../../shared/types").OrgFeatureKey> = {
   "linkedin-section": "linkedin.beobachter",
-  "linkedin-image-analysis": "bildanalyse",
+  "signal-kalibrierung": "linkedin.beobachter",
   "mail-account-section": "mail",
   "scheduler-section": "mail",
   "telegram-section": "telegram",
   "mithelfen-section": "stammdaten.mithelfen",
+  "relevanz-section": "relevanz",
+  "sprachmodus-section": "sprachmodus",
 };
 /** v0.1.561 — Sprungmarken, die unter Anbieter-Sperre keinen Inhalt haben. */
 const ANCHOR_HIDDEN_UNDER_LOCK = new Set(["installed-models"]);
 
+/** Untermenue je Tab: genau die gerenderten Abschnitte, Name = Ueberschrift,
+ *  Sprungmarke = id der Karte (docs/PLAN_EINSTELLUNGEN_UI.md §3). */
 export const SETTINGS_TAB_SUB_ITEMS: Record<
   SettingsTabId,
   Array<{ anchor: string; label: string }>
 > = {
   konto: [
-    { anchor: "profile-bio", label: "Profil" },
-    { anchor: "profile-role", label: "Rolle" },
-    { anchor: "profile-industries", label: "Branchen" },
-    { anchor: "profile-geographies", label: "Regionen" },
-    { anchor: "profile-topics", label: "Themen" },
-    { anchor: "profile-tone", label: "Tonalität" },
+    { anchor: "profile-section", label: "Profil" },
+    { anchor: "plan-section", label: "Plan & Abrechnung" },
     { anchor: "general-memory", label: "Langzeitgedächtnis" },
-    { anchor: "plan-section", label: "Plan & Verbrauch" },
-    { anchor: "erscheinung", label: "Erscheinung" },
+    { anchor: "organisation", label: "Organisation" },
+    { anchor: "instanzen", label: "Deine AVAs" },
+    { anchor: "verbindungen", label: "Verbundene Apps" },
   ],
-  modelle: [
-    { anchor: "provider-section", label: "Agent-Anbieter & Schlüssel" },
-    { anchor: "publication-analysis", label: "Publikations-Analyse" },
-    { anchor: "research-features", label: "Research-Features" },
-    { anchor: "voice-settings", label: "Voice / Whisper" },
-    { anchor: "installed-models", label: "Installierte Modelle" },
-    { anchor: "ollama-version", label: "Ollama-Version" },
+  ki: [
+    { anchor: "provider-section", label: "Anbieter & Modell" },
+    { anchor: "installed-models", label: "Modelle auf diesem Rechner" },
+    { anchor: "ollama-version", label: "Lokale KI" },
+    { anchor: "verbrauch-section", label: "Verbrauch" },
+    { anchor: "sprachmodus-section", label: "Mit AVA sprechen" },
+    { anchor: "voice-settings", label: "Spracherkennung" },
   ],
-  verbrauch: [],
-  datenquellen: [
-    { anchor: "linkedin-section", label: "LinkedIn" },
-    { anchor: "linkedin-image-analysis", label: "LinkedIn-Bildanalyse" },
-    { anchor: "crm-connections", label: "CRM-Verbindungen" },
-    { anchor: "mail-account-section", label: "Mail-Konto" },
+  recherche: [
     { anchor: "themen-section", label: "Fokus-Themen" },
-  ],
-  automatisierungen: [
-    { anchor: "watches-section", label: "Watches" },
+    { anchor: "research-features", label: "Stellen & Expansion" },
+    { anchor: "watches-section", label: "Beobachtungen" },
     { anchor: "link-monitor-section", label: "Link-Überwachung" },
-    { anchor: "scheduler-section", label: "Wiederkehrende Aufgaben" },
-    { anchor: "freshness-section", label: "Datenrefresh" },
-    { anchor: "email-muster-section", label: "E-Mail-Ableitung" },
+    { anchor: "freshness-section", label: "Auffrischung" },
+    { anchor: "email-muster-section", label: "E-Mail-Adressen" },
     { anchor: "mithelfen-section", label: "Stammdaten mitpflegen" },
-    { anchor: "alerts-cadence", label: "Alerts / Heartbeat" },
-    { anchor: "relevanz-section", label: "Relevanz" },
-    { anchor: "telegram-section", label: "Telegram" },
   ],
-  wissensquellen: [],
-  skills: [],
-  verlauf: [{ anchor: "audit-trail", label: "Audit-Trail" }],
-  system: [
-    { anchor: "updates", label: "App-Updates" },
-    { anchor: "local-services", label: "Lokale Dienste" },
-    { anchor: "local-producers", label: "Lokale Producer" },
+  verbindungen: [
+    { anchor: "crm-connections", label: "CRM" },
+    { anchor: "linkedin-section", label: "LinkedIn" },
+    { anchor: "signal-kalibrierung", label: "LinkedIn-Kalibrierung" },
+    { anchor: "mail-account-section", label: "E-Mail-Konto" },
+    { anchor: "mail-entwurf-section", label: "E-Mail-Entwürfe" },
+    { anchor: "telegram-section", label: "Telegram" },
+    { anchor: "wissensquellen-section", label: "Notizen" },
+  ],
+  meldungen: [
+    { anchor: "alerts-section", label: "Meldungen & Ruhezeiten" },
+    { anchor: "relevanz-section", label: "Nähe & Vorrang" },
+    { anchor: "vorschlaege-section", label: "Vorschläge im Chat" },
+  ],
+  erweitert: [
+    { anchor: "skills-list", label: "Skills" },
+    { anchor: "scheduler-section", label: "Wiederkehrende Aufgaben" },
+    { anchor: "audit-trail", label: "Verlauf" },
+    { anchor: "updates", label: "Updates" },
+    { anchor: "storage", label: "Speicherplatz" },
+    { anchor: "diagnose", label: "Diagnose" },
+    { anchor: "local-services", label: "Dienste auf diesem Rechner" },
+    { anchor: "danger-zone", label: "Zurücksetzen" },
   ],
 };
 
-export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
-  "plan-section":            "konto",
-  "profile-bio":             "konto",
-  "profile-role":            "konto",
-  "profile-industries":      "konto",
-  "profile-geographies":     "konto",
-  "profile-topics":          "konto",
-  "profile-tone":            "konto",
-  "general-memory":          "konto",
-  "erscheinung":             "konto",
-  "provider-section":        "modelle",
-  "sprachmodus-section":     "modelle",
-  "voice-settings":          "modelle",
-  "installed-models":        "modelle",
-  "publication-analysis":    "modelle",
-  "linkedin-section":        "datenquellen",
-  "linkedin-image-analysis": "datenquellen",
-  "crm-connections":         "datenquellen",
-  "mail-account-section":    "datenquellen",
-  "verbrauch-limit":         "verbrauch",
-  "telegram-section":        "automatisierungen",
-  "danger-zone":             "system",
-  "audit-trail":             "verlauf",
-  "research-features":       "modelle",
-  "ollama-version":          "modelle",
-  // v0.1.273 — Watches/Freshness/Alerts in neuen "Automatisierungen"-Tab
-  // umgezogen. Bestehende Deep-Links (z. B. WatchChip → watches-section)
-  // funktionieren weiter dank dieses Mappings.
-  "alerts-cadence":          "automatisierungen",
-  "relevanz-section":        "automatisierungen",
-  "alerts-severity":         "automatisierungen",
-  "freshness-section":       "automatisierungen",
-  "email-muster-section":    "automatisierungen",
-  "mithelfen-section":       "automatisierungen",
-  "watches-section":         "automatisierungen",
-  "link-monitor-section":    "automatisierungen",
-  "scheduler-section":       "automatisierungen",
-  "updates":                 "system",
-  "local-services":          "system",
-  "local-producers":         "system",
-};
+/** Anker → Tab, aus dem Untermenue abgeleitet plus alte Anker, die es nicht mehr
+ *  als Untermenue-Punkt gibt. Bestehende Deep-Links (z. B. /settings#voice-settings)
+ *  funktionieren damit weiter. */
+export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = Object.assign(
+  Object.fromEntries(
+    (Object.keys(SETTINGS_TAB_SUB_ITEMS) as SettingsTabId[]).flatMap((tab) => SETTINGS_TAB_SUB_ITEMS[tab].map((it) => [it.anchor, tab] as const)),
+  ) as Record<string, SettingsTabId>,
+  {
+    "profile-bio": "konto",
+    "profile-role": "konto",
+    "profile-industries": "konto",
+    "profile-geographies": "konto",
+    "profile-topics": "konto",
+    "profile-tone": "konto",
+    "chatgpt-abo": "ki",
+    "verbrauch-limit": "ki",
+    "linkedin-image-analysis": "verbindungen",
+    "alerts-cadence": "meldungen",
+    "alerts-severity": "meldungen",
+    "browser-section": "erweitert",
+    "local-producers": "erweitert",
+    "self-corrections": "erweitert",
+  } satisfies Record<string, SettingsTabId>,
+);
 
 const SETTINGS_TAB_STORAGE_KEY = "ava.settings.tab";
 
@@ -326,7 +316,7 @@ export function Settings() {
 
   useEffect(() => {
     if (urlTab) return;
-    // (b) legacy anchor → tab.
+    // (b) Anker → Tab (auch fuer alte Tab-Namen: der Anker entscheidet).
     if (hash && hash.length > 1) {
       const anchor = hash.slice(1);
       const mapped = SETTINGS_ANCHOR_TO_TAB[anchor];
@@ -334,6 +324,11 @@ export function Settings() {
         navigate(`/settings/${mapped}${hash}`, { replace: true });
         return;
       }
+    }
+    // (b2) alter Tab-Name ohne bekannten Anker (bis v0.1.894).
+    if (params.tab && LEGACY_TABS[params.tab]) {
+      navigate(`/settings/${LEGACY_TABS[params.tab]}${hash || ""}`, { replace: true });
+      return;
     }
     // (c) restore last visited.
     const stored = readStoredTab();
@@ -343,7 +338,7 @@ export function Settings() {
     }
     // (d) default tab.
     navigate(`/settings/konto${hash || ""}`, { replace: true });
-  }, [urlTab, hash, navigate, pathname]);
+  }, [urlTab, hash, navigate, pathname, params.tab]);
 
   const activeTab: SettingsTabId = urlTab ?? "konto";
 
@@ -400,7 +395,6 @@ export function Settings() {
   return (
     <div className="settings-shell">
       <aside className="settings-shell__sidebar" aria-label="Einstellungen">
-        <SettingsSearch />
         <nav className="settings-shell__nav">
           {SETTINGS_TABS.map((t) => (
             <SettingsTabLink
@@ -414,16 +408,13 @@ export function Settings() {
         </nav>
       </aside>
       <section className="settings-shell__content">
-        <SettingsHeader />
-        {activeTab === "konto"          && <KontoTab />}
-        {activeTab === "modelle"        && <ModelleTab />}
-        {activeTab === "verbrauch"      && <VerbrauchTab />}
-        {activeTab === "datenquellen"   && <DatenquellenTab />}
-        {activeTab === "automatisierungen" && <AutomatisierungenTab />}
-        {activeTab === "wissensquellen" && <WissensquellenTab />}
-        {activeTab === "skills"         && <SkillsTab />}
-        {activeTab === "verlauf"        && <VerlaufTab />}
-        {activeTab === "system"         && <SystemTab />}
+        <SettingsHeader tab={activeTab} />
+        {activeTab === "konto"        && <KontoTab />}
+        {activeTab === "ki"           && <KiTab />}
+        {activeTab === "recherche"    && <RechercheTab />}
+        {activeTab === "verbindungen" && <VerbindungenTab />}
+        {activeTab === "meldungen"    && <MeldungenTab />}
+        {activeTab === "erweitert"    && <ErweitertTab />}
       </section>
     </div>
   );
@@ -451,78 +442,32 @@ function SettingsTabLink({
   active: boolean;
   subItems: Array<{ anchor: string; label: string }>;
 }) {
-  const [open, setOpen] = useState(false);
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelTimers = () => {
-    if (openTimer.current) {
-      clearTimeout(openTimer.current);
-      openTimer.current = null;
-    }
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  };
-  const scheduleOpen = () => {
-    cancelTimers();
-    if (subItems.length === 0) return; // kein Popover wenn keine Sub-Items
-    openTimer.current = setTimeout(() => setOpen(true), 100);
-  };
-  const scheduleClose = () => {
-    cancelTimers();
-    closeTimer.current = setTimeout(() => setOpen(false), 180);
-  };
-
-  useEffect(() => () => cancelTimers(), []);
-
+  const { hash } = useLocation();
+  // docs/PLAN_EINSTELLUNGEN_UI.md §3: Untermenue als aufgeklappte Liste unter dem
+  // aktiven Tab — per Klick, Tastatur und Touch erreichbar, kein Hover-Flyout.
   return (
-    <div
-      className="settings-shell__tab-wrap"
-      onMouseEnter={scheduleOpen}
-      onMouseLeave={scheduleClose}
-    >
+    <div className="settings-shell__tab-wrap">
       <NavLink
         to={`/settings/${tabId}`}
-        className={() =>
-          "settings-shell__tab" +
-          (active ? " settings-shell__tab--active" : "") +
-          (subItems.length > 0 ? " settings-shell__tab--has-sub" : "")
-        }
+        className={() => "settings-shell__tab" + (active ? " settings-shell__tab--active" : "")}
         end={false}
+        aria-current={active ? "page" : undefined}
       >
         <span>{label}</span>
-        {subItems.length > 0 && (
-          <span className="settings-shell__chev" aria-hidden>
-            ›
-          </span>
-        )}
       </NavLink>
-      {open && subItems.length > 0 && (
-        <div
-          className="settings-shell__sub-popover"
-          role="menu"
-          aria-label={`${label} Untermenü`}
-        >
+      {active && subItems.length > 0 && (
+        <ul className="settings-shell__sub" aria-label={`${label}: Abschnitte`}>
           {subItems.map((item) => (
-            // v0.1.290 — bewusst Link statt NavLink. NavLink ignoriert
-            // den #hash beim Active-Matching, also matchen ALLE Sub-Items
-            // (alle `/settings/konto#X`) auf der aktuellen Route
-            // `/settings/konto` → react-router setzt auf jedem Item die
-            // `active`-Klasse, und das Popover sah aus, als wären alle
-            // 9 Punkte gleichzeitig gehovert/aktiv. Sub-Items sind reine
-            // Anchor-Sprünge im selben Tab, kein eigener Route-Zustand.
-            <Link
-              key={item.anchor}
-              to={`/settings/${tabId}#${item.anchor}`}
-              role="menuitem"
-              className="settings-shell__sub-item"
-              onClick={() => setOpen(false)}
-            >
-              {item.label}
-            </Link>
+            <li key={item.anchor}>
+              <Link
+                to={`/settings/${tabId}#${item.anchor}`}
+                className={"settings-shell__sub-item" + (hash === `#${item.anchor}` ? " settings-shell__sub-item--aktiv" : "")}
+              >
+                {item.label}
+              </Link>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
@@ -533,26 +478,27 @@ function SettingsTabLink({
 // mount). When config isn't ready yet we render the title alone so
 // the layout doesn't jump on slow boots.
 
-export function SettingsHeader() {
+export function SettingsHeader({ tab }: { tab?: SettingsTabId }) {
   const ready = useConfigStore((s) => s.ready);
   const version = useConfigStore((s) => s.appVersion);
   const channel = useConfigStore((s) => s.updateChannel);
   const isDev = useConfigStore((s) => s.isDev);
+  const aktiv = SETTINGS_TABS.find((t) => t.id === tab);
   return (
     <header className="settings-header ct-page-header">
-      <p className="ct-page-header__eyebrow">Konfiguration</p>
+      <p className="ct-page-header__eyebrow">Einstellungen</p>
       <h2 className="ct-page-header__title">
-        <span className="ct-gradient-text">Einstellungen</span>
+        <span className="ct-gradient-text">{aktiv?.label ?? "Einstellungen"}</span>
       </h2>
       <p className="ct-page-header__lede">
-        Anbieter, Modelle, Integrationen und Datenpflege: alles, was die
-        Pipeline und der Agent zur Laufzeit erwarten.
+        {aktiv?.frage ?? "Hier stellst du ein, wie AVA für dich arbeitet: dein Konto, die KI dahinter, wonach sie sucht, was sie meldet und womit sie verbunden ist."}
       </p>
-      {ready && version && (
+      {/* Versionsnummer nur unter Erweitert (docs/PLAN_EINSTELLUNGEN_UI.md §2.7). */}
+      {tab === "erweitert" && ready && version && (
         <p className="muted small" style={{ marginTop: "0.5rem" }}>
-          AVA v{version}
+          AVA {version}
           {channel && channel !== "latest" ? ` · ${channel}` : ""}
-          {isDev ? " · dev" : ""}
+          {isDev ? " · Entwicklung" : ""}
         </p>
       )}
     </header>
@@ -684,11 +630,9 @@ export function PostgresSection() {
 
   return (
     <section className="provider-section" id="local-services">
-      <h3>Lokale Datenbank</h3>
-      <p className="muted small">
-        AVA bündelt eine eingebettete PostgreSQL-Instanz für die lokal
-        laufenden Producer-Dienste. Die Datenbank läuft nur auf{" "}
-        <code>127.0.0.1</code> und ist von außen nicht erreichbar.
+      <h3>Datenbank auf diesem Rechner</h3>
+      <p className="muted">
+        AVA speichert deine Firmendaten in einer eigenen Datenbank auf diesem Rechner. Von außen ist sie nicht erreichbar.
       </p>
       <ul className="kv">
         <li>
@@ -833,11 +777,9 @@ export function ProducersSection() {
 
   return (
     <section className="provider-section" id="local-producers">
-      <h3>Lokale Producer-Dienste</h3>
-      <p className="muted small">
-        Tenant-private Dienste laufen als Node-Subprozesse direkt auf
-        deinem Rechner. Sie nutzen die lokale Datenbank weiter oben
-        und sprechen über AMQP mit dem Cloud-Gateway.
+      <h3>Verarbeitung auf diesem Rechner</h3>
+      <p className="muted">
+        AVA verarbeitet deine Firmen auf diesem Rechner. Hier siehst du, ob alles läuft.
       </p>
       {list.length === 0 ? (
         <p className="muted small">Keine Producer konfiguriert.</p>
@@ -993,16 +935,12 @@ export function CrmSection() {
 
   return (
     <section className="provider-section" id="crm-connections">
-      <h3>CRM-Verbindungen</h3>
-      <p className="muted small">
-        Verknüpfe dein CRM mit AVA. Die OAuth-Tokens bleiben verschlüsselt
-        in deinem Betriebssystem-Schlüsselbund, niemals in der Cloud.
-        Du kannst Verbindungen auch direkt im Chat herstellen, z. B.
-        „Verbinde mein HubSpot-Konto“. Salesforce und Microsoft Dynamics
-        sind verdrahtet und folgen in den nächsten Wochen.
+      <h3>CRM</h3>
+      <p className="muted">
+        Verbinde dein CRM, zum Beispiel HubSpot. AVA liest Firmen und Kontakte und schreibt Ergebnisse zurück. Geht auch im Chat: „Verbinde mein HubSpot-Konto“.
       </p>
       {list.isLoading ? (
-        <p className="muted small">Lade…</p>
+        <p className="muted small">Lädt …</p>
       ) : (
         <ul className="crm-cards">
           {(list.data ?? []).map((s) => (
@@ -1279,7 +1217,7 @@ export function LinkedInSection() {
     return (
       <section className="provider-section" id="linkedin-section">
         <h3>LinkedIn-Beobachter</h3>
-        <p className="muted small">Lade…</p>
+        <p className="muted small">Lädt …</p>
       </section>
     );
   }
@@ -2048,15 +1986,15 @@ export function ProviderSection() {
   if (cfg.isLoading || models.isLoading) {
     return (
       <section className="provider-section" id="provider-section">
-        <h3>Agent-Anbieter</h3>
-        <p className="muted">Lädt…</p>
+        <h3>Anbieter & Modell</h3>
+        <p className="muted">Lädt …</p>
       </section>
     );
   }
   if (cfg.error || models.error) {
     return (
       <section className="provider-section" id="provider-section">
-        <h3>Agent-Anbieter</h3>
+        <h3>Anbieter & Modell</h3>
         <p className="error">
           {((cfg.error || models.error) as Error)?.message ?? "Konnte nicht geladen werden"}
         </p>
@@ -2139,7 +2077,7 @@ export function ProviderSection() {
 
   return (
     <section className="provider-section" id="provider-section">
-      <h3>Modelle</h3>
+      <h3>Anbieter & Modell</h3>
 
       {/* ChatGPT-Abo als empfohlener „kein-API-Key"-Weg. Das Claude-Abo
           (OAuth) wurde entfernt — Anthropic läuft nur noch per API-Key
@@ -3112,12 +3050,9 @@ export function LinkedInCalibrationNote() {
 
   return (
     <section className="provider-section" id="signal-kalibrierung">
-      <h3>Signal-Kalibrierung</h3>
+      <h3>LinkedIn-Kalibrierung</h3>
       <p className="muted">
-        Was AVA aus deinem 👍/👎-Feedback (auf der LinkedIn-Seite) über deine
-        Signalstärke-Vorlieben gelernt hat. Es fließt automatisch in die
-        Bewertung neuer Signale ein — und damit auch in die
-        Benachrichtigungen. Du kannst es ansehen, anpassen oder zurücksetzen.
+        Was AVA aus deinen Daumen hoch und runter auf der LinkedIn-Seite gelernt hat. Es fließt in die Bewertung neuer Signale und damit in deine Meldungen ein. Du kannst es ansehen, anpassen oder zurücksetzen.
       </p>
 
       <textarea
@@ -3221,7 +3156,9 @@ export function ProfileSection() {
     return (
       <section className="provider-section">
         <h3>Profil</h3>
-        <p className="muted">Lädt…</p>
+      <p className="muted">
+        Wer du bist und was dich interessiert. AVA richtet Antworten, Filter und Meldungen danach aus. Alle Felder sind freiwillig.
+      </p>
       </section>
     );
   }
@@ -3277,7 +3214,7 @@ export function ProfileSection() {
   };
 
   return (
-    <section className="provider-section alerts-prefs">
+    <section className="provider-section alerts-prefs" id="profile-section">
       <h3>Profil</h3>
       <p className="muted">
         Wird in jeden Agenten-Turn als Lese-Kontext eingewoben. Der
@@ -3468,15 +3405,17 @@ export function VoiceSection() {
   if (!ready) {
     return (
       <section className="provider-section">
-        <h3>Sprachmodell</h3>
-        <p className="muted">Lädt…</p>
+        <h3>Spracherkennung</h3>
+      <p className="muted">
+        Erkennt deine Sprache auf diesem Rechner. Das Modell liegt auf der Festplatte, Aufnahmen verlassen das Gerät nicht.
+      </p>
       </section>
     );
   }
 
   return (
     <section className="provider-section" id="voice-settings">
-      <h3>Sprachmodell</h3>
+      <h3>Spracherkennung</h3>
       <p className="muted">
         Lokale Spracherkennung über Whisper. Modell wird auf der Festplatte
         gespeichert; Audio verlässt das Gerät nicht.
@@ -3611,7 +3550,7 @@ function VoiceStatusChip({
   state: ReturnType<typeof useVoiceStore.getState>["status"]["state"];
 }) {
   const map: Record<typeof state, { label: string; cls: string }> = {
-    idle: { label: "lädt…", cls: "" },
+    idle: { label: "Lädt …", cls: "" },
     "binary-missing": { label: "Binary fehlt", cls: "bad" },
     "model-missing": { label: "Modell fehlt", cls: "warn" },
     downloading: { label: "Lädt herunter…", cls: "warn" },
@@ -3692,9 +3631,9 @@ const CADENCE_OPTIONS: Array<{ value: AlertCadenceMinutes; label: string }> = [
 ];
 
 const SEVERITY_OPTIONS: Array<{ value: AlertSeverity; label: string }> = [
-  { value: "info", label: "Alle (Info und höher)" },
-  { value: "warn", label: "Ab Achtung" },
-  { value: "urgent", label: "Nur Dringend" },
+  { value: "info", label: "Alle" },
+  { value: "warn", label: "Ab wichtig" },
+  { value: "urgent", label: "Nur dringend" },
 ];
 
 export function AlertsSection() {
@@ -3751,8 +3690,10 @@ export function AlertsSection() {
   if (!prefs) {
     return (
       <section className="provider-section">
-        <h3>Meldungen</h3>
-        <p className="muted">Lädt…</p>
+        <h3>Meldungen &amp; Ruhezeiten</h3>
+      <p className="muted">
+        AVA prüft im Hintergrund, ob bei deinen Firmen etwas passiert, und legt Meldungen ab. Die Liste findest du unter Meldungen in der Navigation; die Glocke oben zeigt Ungelesenes.
+      </p>
       </section>
     );
   }
@@ -3784,8 +3725,8 @@ export function AlertsSection() {
   const pushDisabled = permission ? !permission.available : false;
 
   return (
-    <section className="provider-section alerts-prefs">
-      <h3>Meldungen</h3>
+    <section className="provider-section alerts-prefs" id="alerts-section">
+      <h3>Meldungen &amp; Ruhezeiten</h3>
       <p className="muted">
         Der Heartbeat sucht im Hintergrund nach alarmwürdigen Vorgängen
         und legt Meldungen ab. Eine vollständige Liste findest du unter{" "}
@@ -4241,8 +4182,10 @@ export function FreshnessSection() {
   if (!prefs) {
     return (
       <section className="provider-section" id="freshness-section">
-        <h3>Aktualisierung</h3>
-        <p className="muted">Lädt…</p>
+        <h3>Auffrischung</h3>
+      <p className="muted">
+        AVA liest deine Firmen regelmäßig neu ein, damit Kontakte, Website und Abschlüsse aktuell bleiben. Was sich wirklich geändert hat, bekommst du als Meldung.
+      </p>
       </section>
     );
   }
@@ -4277,8 +4220,8 @@ export function FreshnessSection() {
   };
 
   return (
-    <section className="provider-section alerts-prefs">
-      <h3>Aktualisierung</h3>
+    <section className="provider-section alerts-prefs" id="freshness-section">
+      <h3>Auffrischung</h3>
       <p className="muted">
         Hintergrund-Loop, der Pipeline-Stages je Firma erneut anstößt,
         wenn sie ihre Cadence überschritten haben. Stille Disk-Arbeit;
@@ -4488,8 +4431,10 @@ export function WatchesSection() {
         id="watches-section"
         className="provider-section alerts-prefs"
       >
-        <h3>Watches</h3>
-        <p className="muted">Lädt…</p>
+        <h3>Beobachtungen</h3>
+      <p className="muted">
+        Sag AVA, worauf sie bei deinen Firmen achten soll, etwa auf einen Wechsel in der Geschäftsführung. Treffer landen in den Meldungen. Anlegen kannst du Beobachtungen hier oder im Chat („Beobachte wöchentlich Geschäftsführungswechsel bei meinen wichtigsten Firmen“).
+      </p>
       </section>
     );
   }
@@ -4498,7 +4443,7 @@ export function WatchesSection() {
   const atCap = active >= WATCH_CAP_DEFAULT;
   return (
     <section id="watches-section" className="provider-section alerts-prefs">
-      <h3>Watches</h3>
+      <h3>Beobachtungen</h3>
       <p className="muted">
         Wiederkehrende Beobachtungen, die der Heartbeat im Hintergrund
         gegen frische Kandidaten prüft. Treffer landen automatisch in{" "}
@@ -5024,14 +4969,10 @@ export function GeneralMemorySection() {
   return (
     <section className="provider-section" id="general-memory">
       <h3>Langzeitgedächtnis</h3>
-      <p className="muted small">
-        Fakten, die der Agent über Konversationen hinweg gespeichert hat
-        (Präferenzen, laufende Aufgaben, Dinge, an die er sich erinnern soll).
-        Er ruft sie über <code>recall_memory</code> ab, wenn eine Frage auf
-        früheren Kontext hindeutet. Einträge, die der Agent nicht mehr kennen
-        soll, kannst du entfernen.
+      <p className="muted">
+        Was sich AVA über Gespräche hinweg merkt: deine Vorlieben, laufende Aufgaben, Dinge, an die sie sich erinnern soll. Einträge, die sie nicht mehr kennen soll, löschst du hier.
       </p>
-      {memory.isLoading && <p className="muted">Lädt…</p>}
+      {memory.isLoading && <p className="muted">Lädt …</p>}
       {memory.error && (
         <p className="error">{(memory.error as Error).message}</p>
       )}
@@ -5433,7 +5374,7 @@ export function PlanSection() {
         <p className="muted">Aktueller Tarif und Verbrauch im Abrechnungszyklus.</p>
       </header>
 
-      {isLoading && <p className="muted">Lädt…</p>}
+      {isLoading && <p className="muted">Lädt …</p>}
       {error && (
         <div className="error">
           Verbrauch konnte nicht geladen werden.

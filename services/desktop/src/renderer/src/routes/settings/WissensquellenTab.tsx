@@ -43,16 +43,18 @@ export function WissensquellenTab() {
 
   if (!snapshot) {
     return (
-      <section className="provider-section">
-        <h3>Wissensquellen</h3>
-        <p className="muted">Lädt…</p>
+      <section className="provider-section" id="wissensquellen-section">
+        <h3>Notizen</h3>
+      <p className="muted">
+        Verbinde Notion oder Obsidian. AVA liest und schreibt dort: Notizen ergänzen, Einträge anlegen, Termine als Erinnerung übernehmen.
+      </p>
       </section>
     );
   }
 
   return (
-    <section className="provider-section">
-      <h3>Wissensquellen</h3>
+    <section className="provider-section" id="wissensquellen-section">
+      <h3>Notizen</h3>
       <p className="muted">
         Verbinde AVA mit deinem Notion-Workspace oder Obsidian-Vault.
         AVA kann darin lesen, suchen und schreiben — z. B. neue

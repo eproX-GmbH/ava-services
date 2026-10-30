@@ -82,13 +82,9 @@ export function RelevanzSection() {
 
   return (
     <section className="provider-section alerts-prefs" id="relevanz-section">
-      <h3>Relevanz</h3>
+      <h3>Nähe &amp; Vorrang</h3>
       <p className="muted">
-        AVA merkt sich, mit welchen Firmen und Personen du arbeitest — welche du
-        ansiehst, im Chat behandelst, übernimmst oder ins CRM holst. Daraus
-        entsteht je Eintrag eine Nähe von 1 bis 10. Sie steuert, was AVA im
-        Hintergrund genauer beobachtet und welche Meldungen dich sofort
-        erreichen statt in der Tageszusammenfassung zu landen.
+        AVA merkt sich, mit welchen Firmen und Personen du arbeitest, und leitet daraus eine Nähe von 1 bis 10 ab. Was dir nahesteht, beobachtet sie genauer und meldet es sofort statt in der Tageszusammenfassung.
       </p>
       <p className="muted small">
         Die Signale liegen in deinem AVA-Konto, getrennt von allen anderen.
@@ -129,7 +125,7 @@ export function RelevanzSection() {
 
       {offen && (
         <div className="relevanz-signale">
-          {signale === null && <p className="muted small">Wird geladen …</p>}
+          {signale === null && <p className="muted small">Lädt …</p>}
           {signale?.length === 0 && (
             <p className="muted small">Bisher wurde nichts erfasst.</p>
           )}

@@ -22,7 +22,7 @@ export function WorkerModusBanner() {
       <p className="worker-modus-banner__msg">
         <strong>Worker-Modus.</strong> AVA verarbeitet gerade nur Handelsregister-Jobs. Vorgänge, Recherchen, Abläufe, Mail und Radar ruhen.
       </p>
-      <Link to="/settings/automatisierungen#mithelfen-section" className="worker-modus-banner__cta">
+      <Link to="/settings/recherche#mithelfen-section" className="worker-modus-banner__cta">
         Einstellung öffnen
       </Link>
     </div>

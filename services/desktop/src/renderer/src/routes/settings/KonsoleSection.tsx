@@ -20,8 +20,8 @@ export function KonsoleSection() {
         {inOrg
           ? `Du bist ${ROLLEN[st.myRole] ?? st.myRole} in ${st.name ?? "einer Organisation"}. `
           : "Du arbeitest in deinem persönlichen Bereich. "}
-        Mitglieder, Vorgaben, Organisationsschlüssel, Limits und Abrechnung verwaltest du in der AVA Konsole im Browser;
-        dort legst du auch eine Organisation an oder trittst einer bei.
+        Mitglieder, Vorgaben, gemeinsame Schlüssel, Obergrenzen und Abrechnung verwaltest du in der AVA Konsole im Browser.
+        Dort legst du auch eine Organisation an oder trittst einer bei.
       </p>
       <ExternalLink href={KONSOLE_URL} className="btn">
         AVA Konsole öffnen

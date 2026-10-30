@@ -59,9 +59,7 @@ export function MithelfenSection() {
     <section className="provider-section alerts-prefs" id="mithelfen-section">
       <h3>Stammdaten mitpflegen</h3>
       <p className="muted">
-        Die Firmenstammdaten stammen aus dem Handelsregister. Neue Eintragungen, Löschungen und Änderungen holt AVA laufend nach. Wenn du mithilfst,
-        fragt dein Rechner im Hintergrund das Registerportal ab: höchstens 60 Abfragen je Stunde, mit einem unsichtbaren Chrome-Fenster, nur
-        handelsregister.de, keine Downloads. Die Ergebnisse landen im geteilten Bestand aller Nutzer.
+        Die Firmendaten kommen aus dem Handelsregister. Wenn du mithilfst, fragt dein Rechner das Register im Hintergrund ab, höchstens 60 Mal je Stunde, ohne Downloads. Davon haben alle Nutzer etwas.
       </p>
       {!s.orgErlaubt && <p className="muted small">Deine Organisation hat das Mithelfen abgeschaltet.</p>}
       {s.pausenGrund === "nicht_installiert" && <p className="muted small">{GRUND_TEXT.nicht_installiert}</p>}

@@ -125,10 +125,8 @@ export function StorageSection() {
   return (
     <section className="provider-section" id="storage">
       <h3>Speicherplatz</h3>
-      <p className="muted small">
-        Aufschlüsselung des Plattenverbrauchs. Der größte Posten sind meist
-        veraltete Sprachmodelle, die von früheren AVA-Versionen übrig sind —
-        die kannst du hier gefahrlos entfernen.
+      <p className="muted">
+        Was AVA auf der Festplatte belegt. Der größte Posten sind meist alte Sprachmodelle, die du hier gefahrlos entfernen kannst.
       </p>
 
       {overview && (
@@ -181,7 +179,7 @@ export function StorageSection() {
       </div>
 
       {loading && !overview ? (
-        <p className="muted small">Wird geladen…</p>
+        <p className="muted small">Lädt …</p>
       ) : (
         activeCats.map((cat) => (
           <div key={cat.key} style={{ marginBottom: "1rem" }}>

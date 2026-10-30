@@ -119,7 +119,7 @@ export function WatchChip() {
 
           <footer className="watch-chip__popover-footer">
             <Link
-              to="/settings/datenquellen#watches-section"
+              to="/settings/recherche#watches-section"
               onClick={() => setOpen(false)}
             >
               Verwalten in Einstellungen →

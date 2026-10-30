@@ -104,7 +104,7 @@ export function TriageInbox(): JSX.Element {
           <h2>Triage-Inbox</h2>
           <p>Du hast noch kein Mail-Konto konfiguriert.</p>
           <p>
-            <Link to="/settings/datenquellen#mail-account-section">
+            <Link to="/settings/verbindungen#mail-account-section">
               → Mail-Konto in Einstellungen hinzufügen
             </Link>
           </p>
@@ -472,7 +472,7 @@ function AutoTriagePill({
   }
   return (
     <Link
-      to="/settings/datenquellen#mail-account-section"
+      to="/settings/verbindungen#mail-account-section"
       className="pill pill--error"
       style={{ textDecoration: "none" }}
       title="Auto-Antwort ist abgeschaltet. Klicken um zu den Mail-Einstellungen zu gehen."

@@ -32,11 +32,8 @@ export function DiagnoseSection() {
   return (
     <section className="provider-section" id="diagnose">
       <h3>Diagnose</h3>
-      <p className="muted small">
-        AVA schreibt seit v0.1.338 ein dauerhaftes Protokoll mit. Wenn die
-        App nach dem Öffnen des MacBooks nicht mehr reagiert, lässt sich der
-        Hänger danach hier nachvollziehen — die Datei beim Melden eines
-        Problems bitte mitschicken.
+      <p className="muted">
+        AVA schreibt ein Protokoll mit. Wenn die App hängt, lässt es sich hier nachvollziehen. Beim Melden eines Problems schick die Datei bitte mit.
       </p>
       <ul className="kv">
         <li>

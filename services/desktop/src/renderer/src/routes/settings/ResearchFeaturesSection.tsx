@@ -91,19 +91,19 @@ export function ResearchFeaturesSection() {
   if (!bundle) {
     return (
       <section className="provider-section" id="research-features">
-        <h2>Erweiterte Recherche-Funktionen</h2>
-        <p className="muted small">Lädt…</p>
+        <h3>Stellen &amp; Expansion</h3>
+        <p className="muted small">Lädt …</p>
       </section>
     );
   }
 
   return (
     <section className="provider-section" id="research-features">
-      <h2>Erweiterte Recherche-Funktionen</h2>
+      <h3>Stellen &amp; Expansion</h3>
       <p className="muted small" style={{ marginTop: 4, marginBottom: 16 }}>
-        Aktiviert zusätzliche LLM-gestützte Anreicherung pro Firma. Standard
-        ist kostengünstig (~0,02–0,15 € je Firma), Deep Research dagegen
-        gründlicher, aber spürbar teurer.{" "}
+        AVA sucht im Web nach offenen Stellen und nach Expansions- und Ausschreibungsmeldungen
+        deiner Firmen. Standard kostet wenige Cent je Firma, Deep Research ist gründlicher und
+        kostet bis zu 5 Euro je Firma.{" "}
         {bundle.providerLock && bundle.orgOpenai
           ? "Deine Organisation erlaubt nur ihren eigenen OpenAI-Schlüssel; der Verbrauch wird der Organisation zugerechnet."
           : bundle.orgOpenai

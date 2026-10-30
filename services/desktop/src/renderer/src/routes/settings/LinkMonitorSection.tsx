@@ -40,14 +40,7 @@ export function LinkMonitorSection(): JSX.Element {
     <section id="link-monitor-section" className="provider-section alerts-prefs">
       <h3>Link-Überwachung</h3>
       <p className="muted">
-        AVA öffnet einen Link regelmäßig in einem Hintergrund-Browser und
-        meldet dir, wenn sich etwas ändert (neue Produkte, Preise, Stellen,
-        Profil-/Unternehmensseiten — LinkedIn-Links nutzen automatisch deine
-        Anmeldung). Frequenz min. alle 5 Minuten, max. wöchentlich.{" "}
-        <strong>
-          {s.activeCount} aktiv / max {s.cap}
-        </strong>
-        . Überzählige werden pausiert angelegt.
+        AVA schaut regelmäßig auf einen Link und meldet dir, wenn sich dort etwas ändert: neue Produkte, Preise, Stellen, Profil- oder Unternehmensseiten. Mindestens alle 5 Minuten, höchstens wöchentlich.
       </p>
       <p className="muted small">
         Tipp: Sehr kurze Intervalle lösen bei vielen Shops den Bot-Schutz aus
@@ -57,7 +50,7 @@ export function LinkMonitorSection(): JSX.Element {
       </p>
 
       {snap == null ? (
-        <p className="muted">Lädt…</p>
+        <p className="muted">Lädt …</p>
       ) : s.monitors.length === 0 ? (
         <p className="muted">Noch keine Links in Überwachung.</p>
       ) : (

@@ -84,7 +84,7 @@ export function ProducerModelBanner() {
         die einzeln analysiert werden; ein günstiges, schnelles Modell ist dafür
         meist die bessere Wahl.
       </p>
-      <Link to="/settings/modelle#provider-section" className="producer-model-banner__cta">
+      <Link to="/settings/ki#provider-section" className="producer-model-banner__cta">
         Modell wählen
       </Link>
       <button

@@ -182,11 +182,9 @@ export function MailAccountSection(): JSX.Element {
 
   return (
     <section id="mail-account-section" className="provider-section alerts-prefs">
-      <h3>Mail-Konto</h3>
+      <h3>E-Mail-Konto</h3>
       <p className="muted">
-        AVAs dediziertes IMAP/SMTP-Postfach. Eingehende Mails werden
-        klassifiziert (Triage-Inbox) und nur Absender in der Allowlist dürfen
-        autonome Aktionen auslösen.
+        Ein eigenes Postfach für AVA. Sie liest eingehende Mails, sortiert sie vor und antwortet nur Absendern, denen du vertraust.
       </p>
 
       {account && !editing && (

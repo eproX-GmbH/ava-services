@@ -943,7 +943,7 @@ function FokusTab({ companyId, befunde, themen }: { companyId: string; befunde: 
     <>
       <p className="muted" style={{ marginTop: 0 }}>
         Deine Fokus-Themen, geprüft auf der Website dieser Firma. Jeder Fund trägt ein wörtliches Zitat und die Seite als Quelle.{" "}
-        <Link to="/settings/datenquellen#themen-section">Fokus-Themen bearbeiten</Link>
+        <Link to="/settings/recherche#themen-section">Fokus-Themen bearbeiten</Link>
       </p>
       {befunde.length === 0 && aktive.length > 0 && (
         <p className="muted">Für diese Firma noch nicht geprüft. Die Prüfung läuft mit dem nächsten Website-Lauf oder jetzt:</p>

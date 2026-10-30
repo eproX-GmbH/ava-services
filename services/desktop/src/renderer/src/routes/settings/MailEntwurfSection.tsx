@@ -22,7 +22,7 @@ export function MailEntwurfSection() {
 
   return (
     <section id="mail-entwurf-section" className="provider-section">
-      <h3>Mail-Entwürfe</h3>
+      <h3>E-Mail-Entwürfe</h3>
       <p className="muted">
         Unter jeder Mail, die AVA für dich formuliert, steht ein Knopf, der den Entwurf fertig öffnet: mit Empfänger, Betreff, Text und Anhängen.
       </p>

@@ -92,11 +92,9 @@ export function InstanzenSection() {
     <section id="instanzen" className="provider-section" aria-label="Deine AVAs">
       <h3>Deine AVAs</h3>
       <p className="muted">
-        AVA kann auf diesem Rechner und auf einem Server laufen. Hier siehst du, welche Instanz gerade läuft, welcher
-        Telegram-Bot wo hängt (je Bot nur eine Instanz), wo das Firmen-Radar arbeitet und welche Instanz die Aufrufe
-        aus Claude oder ChatGPT beantwortet (Server vor Desktop).
+        AVA läuft auf diesem Rechner oder auf einem Server. Hier siehst du, welche AVA gerade aktiv ist und welche Telegram, den Firmen-Radar und die Anfragen aus Claude oder ChatGPT übernimmt (Server vor Rechner).
       </p>
-      {liste.isLoading && <p className="muted">Lädt…</p>}
+      {liste.isLoading && <p className="muted">Lädt …</p>}
       {liste.error && <p className="muted">Liste nicht abrufbar: {(liste.error as Error).message}</p>}
       {liste.data && items.length === 0 && <p className="muted">Gerade ist keine Instanz mit dem Gateway verbunden.</p>}
       {items.length > 0 && (

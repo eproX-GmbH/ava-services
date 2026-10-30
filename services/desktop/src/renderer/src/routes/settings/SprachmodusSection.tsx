@@ -18,10 +18,9 @@ export function SprachmodusSection() {
   const setzen = (teil: Partial<typeof e>) => void window.api.sprache.setzen(teil).then(setStand);
   return (
     <section className="provider-section alerts-prefs" id="sprachmodus-section">
-      <h3>Sprachmodus</h3>
+      <h3>Mit AVA sprechen</h3>
       <p className="muted">
-        Mit AVA sprechen: Speech-to-Speech über OpenAI Realtime. AVA hört zu, antwortet mit ihrer Stimme und hat dieselben Werkzeuge wie im Chat.
-        Gesprächsminuten kosten mehr als Chat (grob 0,20–0,40 € je Minute); nach {e.ruheSekunden} Sekunden Stille geht AVA in den Ruhezustand, dann läuft nichts weiter.
+        Sprich mit AVA statt zu tippen. Sie hört zu, antwortet mit ihrer Stimme und kann dabei alles, was sie im Chat kann. Gesprächsminuten kosten mehr als Chat, grob 0,20 bis 0,40 Euro je Minute; nach einer Weile Stille geht AVA in den Ruhezustand.
       </p>
       {!stand.verfuegbar ? (
         stand.hinweis ? (

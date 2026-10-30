@@ -80,11 +80,9 @@ export function OllamaVersionSection() {
 
   return (
     <section className="provider-section" id="ollama-version">
-      <h3>Ollama-Laufzeit</h3>
-      <p className="muted small">
-        AVA bündelt eine lokale Ollama-Instanz für die Modell-Ausführung.
-        Wir verfolgen die neueste stabile Version von GitHub und installieren
-        sie bei Bedarf nach — ohne dass du AVA neu installieren musst.
+      <h3>Lokale KI</h3>
+      <p className="muted">
+        AVA bringt eine lokale KI mit und hält sie aktuell, ohne dass du AVA neu installieren musst.
       </p>
       <ul className="kv">
         <li>

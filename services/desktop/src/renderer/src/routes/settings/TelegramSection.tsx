@@ -14,9 +14,9 @@ import type {
 // Oberfläche gespiegelt — der Snapshot kennt nur `hasToken`.
 
 const SEVERITY_OPTIONS: { value: AlertSeverity; label: string }[] = [
-  { value: "info", label: "Alle Meldungen" },
-  { value: "warn", label: "Ab „wichtig“" },
-  { value: "urgent", label: "Nur dringende" },
+  { value: "info", label: "Alle" },
+  { value: "warn", label: "Ab wichtig" },
+  { value: "urgent", label: "Nur dringend" },
 ];
 
 export function TelegramSection(): JSX.Element {
@@ -101,7 +101,7 @@ export function TelegramSection(): JSX.Element {
     return (
       <section id="telegram-section" className="provider-section alerts-prefs">
         <h3>Telegram</h3>
-        <p className="muted">Lädt…</p>
+        <p className="muted">Lädt …</p>
       </section>
     );
   }

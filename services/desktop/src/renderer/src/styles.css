@@ -2345,9 +2345,6 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
      Reihenfolge entscheidet und content-Cell nach sidebar-Cell kommt. */
   z-index: 100;
 }
-.settings-shell__search {
-  display: none; /* U3 enables this. */
-}
 .settings-shell__nav {
   display: flex;
   flex-direction: column;
@@ -2402,14 +2399,56 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   }
 }
 
-/* Provider section (Whoami, Phase 8.k4) */
+/* Einstellungen (docs/PLAN_EINSTELLUNGEN_UI.md §4): jeder Abschnitt ist eine
+   Karte. `.provider-section` ist die Altklasse aller Abschnitte und bekommt die
+   Kartenoptik direkt, damit auch nicht umgebaute Abschnitte einheitlich aussehen. */
 .provider-section {
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
+  margin: 0 0 1rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border, var(--border));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-soft);
 }
-.provider-section h3 { margin-top: 0; }
+.provider-section > h3:first-child, .provider-section > header:first-child h3 { margin-top: 0; }
+.provider-section h3 { margin-top: 0; font-size: 17px; }
 .provider-section h4 { margin-bottom: 0.5rem; }
+.provider-section > .muted:first-of-type, .ek__text { max-width: 720px; line-height: 1.5; }
+.provider-section.danger-zone { border-color: rgba(239, 68, 68, 0.45); }
+/* Verbrauch war bisher ohne Rahmen; als Karte braucht es keinen eigenen Abstand mehr. */
+.verbrauch-tab.provider-section { gap: 1rem; }
+
+/* EinstellungsKarte */
+.ek__kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
+.ek__titel h3 { margin: 0 0 0.25rem; }
+.ek__text { margin: 0; color: var(--color-fg-muted); font-size: 14px; }
+.ek__rechts { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.ek-chip {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  background: var(--color-bg-2); color: var(--color-fg-muted); border: 1px solid var(--color-border, var(--border));
+}
+.ek-chip--ok { background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.4); color: inherit; }
+.ek-chip--laeuft { background: rgba(0, 192, 167, 0.14); border-color: rgba(0, 192, 167, 0.45); color: inherit; }
+.ek-chip--fehlt, .ek-chip--warn { background: rgba(234, 179, 8, 0.16); border-color: rgba(234, 179, 8, 0.45); color: inherit; }
+.ek-chip--vorgabe { background: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.4); color: inherit; }
+.ek__platzhalter { display: grid; gap: 0.5rem; margin: 0.25rem 0 0.5rem; }
+.ek__platzhalter span { display: block; height: 14px; border-radius: 6px; background: var(--color-bg-2); animation: ek-puls 1.4s ease-in-out infinite; }
+.ek__platzhalter span:last-child { width: 60%; }
+@keyframes ek-puls { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.ek__technik { margin-top: 0.75rem; }
+.ek__technik > summary { cursor: pointer; font-size: 13px; color: var(--color-fg-muted); }
+.ek__technik-inhalt { margin-top: 0.5rem; font-size: 13px; color: var(--color-fg-muted); }
+.ek__technik-inhalt code { font-size: 12px; }
+
+/* Bestaetigung */
+.ek-dialog__hintergrund { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 1rem; }
+.ek-dialog { background: var(--color-bg-1); color: var(--color-fg); border: 1px solid var(--color-border, var(--border)); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-soft-lg); padding: 1.25rem 1.5rem; width: min(480px, 100%); }
+.ek-dialog h4 { margin: 0 0 0.5rem; font-size: 16px; }
+.ek-dialog__text { font-size: 14px; line-height: 1.5; color: var(--color-fg-muted); }
+.ek-dialog__aktionen { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.btn--gefahr { background: rgba(239, 68, 68, 0.9); color: #fff; border-color: transparent; }
+.btn--gefahr:hover { background: rgb(220, 38, 38); }
 
 /* v0.1.381 — Abo-Karten ganz oben in Einstellungen → Modelle. Der
    empfohlene Weg (ChatGPT-/Claude-Abo) bekommt visuelles Gewicht:
@@ -7203,51 +7242,18 @@ html.dark .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
   display: flex !important; justify-content: space-between; align-items: center;
 }
 .settings-shell__chev { opacity: 0.5; font-size: 1rem; }
-.settings-shell__sub-popover {
-  position: absolute; top: 0; left: 100%;
-  /* v0.1.286 — KEINE margin-left mehr. Vorher 4px Gap → Maus fiel beim
-     Übergang vom Tab zum Popover in eine Dead-Zone, das löste
-     mouseLeave aus und Popover ging zu. Stattdessen padding-left=10px
-     auf den Container — visueller Versatz bleibt erhalten, aber die
-     ganze Fläche ist hover-bar (Maus bleibt im Wrapper). */
-  padding: 4px 4px 4px 10px;
-  /* v0.1.286 — Hartes Opaque-Background statt --surface-Variable. Im
-     manuellen Dark-Mode (html.dark) ist --surface oft transparent/
-     rgba — Resultat war ein „Durchblick" auf den Tab-Bar-Header
-     hinter dem Popover. */
-  background: #ffffff;
-  border: 1px solid var(--border, #d0d4d9);
-  border-radius: 6px;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.14);
-  min-width: 220px;
-  /* v0.1.286 — z-index hochgezogen. v0.1.287 — Sidebar selbst hat
-     jetzt z-index 100, das Popover braucht hier nur lokal über den
-     anderen Sidebar-Kindern liegen. Trotzdem hoch lassen für künftige
-     Stacking-Context-Falten. */
-  z-index: 2000;
-  display: flex; flex-direction: column;
-}
+/* docs/PLAN_EINSTELLUNGEN_UI.md §3: Untermenue als Liste unter dem aktiven Tab. */
+.settings-shell__sub { list-style: none; margin: 0.1rem 0 0.35rem; padding: 0 0 0 0.8rem; display: flex; flex-direction: column; gap: 0.05rem; }
 .settings-shell__sub-item {
-  display: block; padding: 6px 12px; border-radius: 4px;
-  text-decoration: none; color: var(--fg, #1f2937);
-  font-size: 0.88rem; white-space: nowrap;
+  display: block; padding: 4px 10px; border-radius: 6px;
+  text-decoration: none; color: var(--color-fg-muted);
+  font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.settings-shell__sub-item:hover {
-  background: rgba(0,192,167,0.10);
+.settings-shell__sub-item:hover { background: var(--color-bg-2); color: var(--color-fg); }
+.settings-shell__sub-item--aktiv { color: var(--color-fg); font-weight: 600; }
+@media (max-width: 900px) {
+  .settings-shell__sub { display: none; }
 }
-.settings-shell__sub-item.active {
-  background: rgba(0,192,167,0.18); font-weight: 600;
-}
-
-/* v0.1.286 — Dark-Mode an html.dark statt prefers-color-scheme.
-   Der Tri-State-Toggle in lib/theme.ts setzt root.classList.add('dark'),
-   OS-Preference reflektiert nur der "system"-Mode des Toggles. */
-html.dark .settings-shell__sub-popover {
-  background: #1f2937;
-  border-color: rgba(255,255,255,0.12);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-}
-html.dark .settings-shell__sub-item { color: #e5e7eb; }
 html.dark .settings-shell__sub-item:hover { background: rgba(0,192,167,0.18); }
 
 /* Ditto für das Top-Nav-Submenü aus v0.1.276 — gleicher Bug,

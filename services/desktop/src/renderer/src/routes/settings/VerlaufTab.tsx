@@ -251,11 +251,8 @@ function AuditTrailSection(): JSX.Element {
     <section className="provider-section" id="audit-trail">
       <header style={{ marginBottom: "1rem" }}>
         <h3>Verlauf</h3>
-        <p className="muted small" style={{ margin: 0 }}>
-          Chronologische Aufzeichnung aller Vorgänge in AVA — Producer-Läufe,
-          LinkedIn-Signale, Hintergrund-Heartbeat, Authentifizierungs-Events,
-          CRM-Aktionen. Alles bleibt auf deinem Rechner; keine Daten gehen in
-          die Cloud.
+        <p className="muted" style={{ margin: 0 }}>
+          Was AVA wann getan hat: Verarbeitungen, Meldungen, Anmeldungen, CRM-Aktionen. Alles bleibt auf deinem Rechner.
         </p>
       </header>
 
@@ -613,13 +610,10 @@ function SelfCorrectionsSection(): JSX.Element | null {
       style={{ marginBottom: "1.25rem" }}
     >
       <header style={{ marginBottom: "0.75rem" }}>
-        <h3>Selbstkorrekturen (Tool-Workarounds)</h3>
-        <p className="muted small" style={{ margin: 0 }}>
-          AVA meldet hier, wenn sie nach einem Tool-Fehler einen Workaround
-          gefunden hat. Pattern, die hier oft auftauchen, gehören als
-          Code-Fix in den Tool/Skill — eine wiederkehrende Meldung ist
-          ein Hinweis für mich als Entwickler. Alles bleibt lokal.
-          Aktuell: <strong>{total}</strong> Meldung{total === 1 ? "" : "en"}.
+        <h3>Hinweise für den Support</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          Wenn AVA nach einem Fehler einen Umweg gefunden hat, steht es hier. Beim Melden eines Problems hilft diese
+          Liste dem Support. Alles bleibt auf deinem Rechner. Aktuell: <strong>{total}</strong> Hinweis{total === 1 ? "" : "e"}.
         </p>
       </header>
 

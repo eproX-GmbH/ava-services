@@ -355,12 +355,8 @@ export function SettingsSkills() {
   return (
     <section className="provider-section" id="skills-list">
       <h3>Skills</h3>
-      <p className="muted small">
-        Vom Nutzer hinterlegte Markdown-Skills, die der Chat-Agent
-        automatisch aktivieren kann. Auto-Aktivierung basiert auf der
-        Beschreibung; alternativ explizit per <code>/skill-name</code>.
-        Neue oder geänderte Skills müssen einmal freigegeben werden,
-        bevor der Agent sie aufruft.
+      <p className="muted">
+        Eigene Anleitungen, die AVA im Chat automatisch anwendet, wenn sie passen, oder die du mit /name aufrufst. Neue oder geänderte Skills gibst du einmal frei, bevor AVA sie benutzt.
       </p>
 
       <div className="actions" style={{ margin: "0.5rem 0 1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -516,7 +512,7 @@ export function SettingsSkills() {
       {info && !error && <p className="muted small">{info}</p>}
 
       {rows === null ? (
-        <p className="muted">Lädt…</p>
+        <p className="muted">Lädt …</p>
       ) : rows.length === 0 ? (
         <SkillsEmptyState
           onCreate={() => setEditorTarget({ mode: "new" })}
@@ -842,7 +838,7 @@ function SkillBodyModal({
           </button>
         </header>
         <div className="skill-modal__body">
-          {body === "loading" && <p className="muted">Lädt…</p>}
+          {body === "loading" && <p className="muted">Lädt …</p>}
           {body === null && (
             <p className="muted">
               Skill nicht gefunden. Wurde die Datei gerade gelöscht?

@@ -13,7 +13,7 @@ export function VorschlaegeSection() {
       <h3>Vorschläge im Chat</h3>
       <p className="muted">
         AVA schlägt dir passende nächste Schritte vor: auf der leeren Chat-Seite und unter der Willkommensnachricht, sowie nach einer Antwort, wenn sich
-        aus dem Gespräch ein Schritt anbietet. Die Vorschläge entstehen mit dem Hintergrund-Modell aus dem, was du bereits eingerichtet hast; Erledigtes wird
+        aus dem Gespräch ein Schritt anbietet. Die Vorschläge entstehen im Hintergrund aus dem, was du bereits eingerichtet hast; Erledigtes wird
         nicht vorgeschlagen.
       </p>
       {!s.orgErlaubt && <p className="muted small">Deine Organisation hat Vorschläge abgeschaltet. Es erscheint nur eine feste Liste ohne KI-Aufruf.</p>}

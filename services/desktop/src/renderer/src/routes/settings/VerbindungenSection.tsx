@@ -36,12 +36,9 @@ export function VerbindungenSection() {
 
   return (
     <section id="verbindungen" className="provider-section" aria-label="Verbundene Dienste">
-      <h3>Verbundene Dienste</h3>
+      <h3>Verbundene Apps</h3>
       <p className="muted">
-        Claude, ChatGPT oder Claude Code können AVA über MCP nutzen: Firmen lesen, Meldungen abrufen, Importe und
-        Recherchen anstoßen. Du verbindest sie dort mit der Adresse{" "}
-        <code>https://mcp.ava.bi</code> und meldest dich mit deinem AVA-Konto an. Jeder Dienst sieht nur
-        deine eigenen Daten; die Verarbeitung läuft weiter auf diesem Rechner.
+        Claude, ChatGPT oder Claude Code können AVA nutzen: Firmen lesen, Meldungen abrufen, Importe und Recherchen anstoßen. Verbinde sie dort mit der Adresse mcp.ava.bi und deinem AVA-Konto. Jede App sieht nur deine Daten; verarbeitet wird weiter auf diesem Rechner.
       </p>
       {!mcpErlaubt && (
         <p className="muted small">
@@ -49,7 +46,7 @@ export function VerbindungenSection() {
           Verbindungen erhalten dann keine Werkzeuge.
         </p>
       )}
-      {q.isLoading && <p className="muted">Lädt…</p>}
+      {q.isLoading && <p className="muted">Lädt …</p>}
       {fehler && <p className="muted">{fehler}</p>}
       {q.data && items.length === 0 && <p className="muted">Noch kein Dienst verbunden.</p>}
       {items.length > 0 && (

@@ -116,7 +116,7 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
         <dd><div className="rl rl--kompakt">{zeile("expansion")}</div></dd>
         <dt>Stellenanzeigen</dt>
         <dd><div className="rl rl--kompakt">{zeile("jobs")}</div></dd>
-        <dt>Fokus-Themen <Link to="/settings/datenquellen#themen-section" className="muted small">(festlegen)</Link></dt>
+        <dt>Fokus-Themen <Link to="/settings/recherche#themen-section" className="muted small">(festlegen)</Link></dt>
         <dd><div className="rl rl--kompakt">{zeile("themen")}</div></dd>
       </dl>
       {meldung && <p className="small rl__meldung">{meldung}</p>}

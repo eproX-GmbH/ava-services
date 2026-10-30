@@ -44,14 +44,12 @@ export function VerbrauchTab() {
   );
 
   return (
-    <section className="verbrauch-tab">
+    <section className="verbrauch-tab provider-section" id="verbrauch-section">
       <header className="verbrauch-tab__header">
-        <h3>Token-Verbrauch</h3>
-        <p className="muted">
-          Lokale Aufzeichnung jeder LLM-Anfrage. Daten verlassen deine
-          Maschine nicht. Aktuell werden nur Chat-Anfragen erfasst —
-          Hintergrund-Aufgaben der Producer folgen im nächsten Update.
-        </p>
+        <h3>Verbrauch</h3>
+      <p className="muted">
+        Wie viel KI du nutzt, aufgezeichnet auf deinem Rechner. Erfasst sind die Anfragen aus dem Chat.
+      </p>
       </header>
 
       <DailyLimitSetting />
@@ -74,7 +72,7 @@ export function VerbrauchTab() {
         </div>
       </div>
 
-      {daily.isLoading && <p className="muted">Lädt…</p>}
+      {daily.isLoading && <p className="muted">Lädt …</p>}
       {daily.error && (
         <p className="error">
           Konnte Verbrauchsdaten nicht laden:{" "}

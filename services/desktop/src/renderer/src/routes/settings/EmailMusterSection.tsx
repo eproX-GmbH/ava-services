@@ -23,14 +23,16 @@ export function EmailMusterSection() {
   if (!s) {
     return (
       <section className="provider-section" id="email-muster-section">
-        <h3>E-Mail-Ableitung</h3>
-        <p className="muted">Lädt…</p>
+        <h3>E-Mail-Adressen</h3>
+      <p className="muted">
+        Fehlt einem Kontakt die Mailadresse, leitet AVA sie aus dem Muster der Firma ab, etwa vorname.nachname@firma.de, und fragt beim Mail-Server nach, ob es sie gibt, ohne eine Mail zu senden. Bestätigte Adressen heißen „verifiziert“, unsichere „unbestätigt“.
+      </p>
       </section>
     );
   }
   return (
     <section className="provider-section alerts-prefs" id="email-muster-section">
-      <h3>E-Mail-Ableitung</h3>
+      <h3>E-Mail-Adressen</h3>
       <p className="muted">
         Direkt nach dem Kontaktlauf einer Firma leitet AVA aus bekannten persönlichen Adressen das Adressmuster ab und bildet Adressen für alle Kontakte ohne E-Mail.
         Firmenadressen mit Namen (etwa pdettlev@…) werden der passenden Person zugeordnet und zählen als Beleg. Jede gebildete Adresse wird einzeln per Mail-Server-Anfrage

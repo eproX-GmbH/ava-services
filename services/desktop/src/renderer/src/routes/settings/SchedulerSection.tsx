@@ -36,18 +36,11 @@ export function SchedulerSection(): JSX.Element {
     >
       <h3>Wiederkehrende Aufgaben</h3>
       <p className="muted">
-        AVA kann wiederkehrende Aktionen für dich ausführen (z. B. „alle
-        5 Minuten eine Test-Mail senden"). Aktuell unterstützt: Mail-Loops.
-        Empfänger müssen in der Mail-Allowlist stehen.{" "}
-        <strong>
-          {activeCount} aktive{activeCount === 1 ? "r" : ""} Job
-          {activeCount === 1 ? "" : "s"} / max 10
-        </strong>
-        .
+        AVA kann Aufgaben regelmäßig für dich ausführen, zurzeit wiederkehrende Mails. Empfänger müssen zu den vertrauenswürdigen Absendern deines E-Mail-Kontos gehören.
       </p>
 
       {jobs == null ? (
-        <p className="muted">Lädt…</p>
+        <p className="muted">Lädt …</p>
       ) : jobs.length === 0 ? (
         <p className="muted">Noch keine Jobs angelegt.</p>
       ) : (
