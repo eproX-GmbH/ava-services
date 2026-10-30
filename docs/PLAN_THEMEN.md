@@ -131,9 +131,9 @@ Thema von Hand: steht es auf der Website, und wo? Dann: Trefferquote von T-b
 je Firma, Modellaufrufe, Laufzeit. Ziel: 9 von 10 Funden mit richtigem Zitat, kein
 falscher `gefunden`, unter 25.000 Zeichen je Firma und Lauf.
 
-## 7. Offene Entscheidungen
+## 7. Entscheidungen (Joyce, 2026-10-30)
 
-1. Themen nur je Nutzer (Vorschlag für T1) oder zusätzlich je Organisation über die
-   Konsole? Die Website-DB ist ohnehin geteilt, der Befund kommt allen zugute.
-2. Obergrenze fünf aktive Themen: fest oder je Plan?
-3. Alarm standardmäßig an (wie andere Neuheiten) oder Opt-in?
+1. Themen gibt es nur je Nutzer, nicht je Organisation. Der Befund in der Website-DB ist
+   trotzdem geteilt, weil er am Themenschlüssel hängt.
+2. Obergrenze fest: fünf aktive Themen, unabhängig vom Plan.
+3. Der Alarm „Thema neu gefunden“ ist standardmäßig an, wie die anderen Neuheiten.
