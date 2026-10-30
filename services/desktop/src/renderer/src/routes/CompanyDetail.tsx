@@ -903,6 +903,12 @@ const EXPANSION_ART: Record<string, string> = {
   PROCUREMENT: "Beschaffung",
 };
 
+/** Gleiche Adresse trotz Schraegstrich, Gross-/Kleinschreibung oder http/https. */
+function urlGleich(a: string, b: string): boolean {
+  const n = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+  return n(a) === n(b);
+}
+
 /** Quelle lesbar: Hostname ohne www. */
 function hostVon(url: string): string {
   try {
@@ -925,7 +931,7 @@ function ExpansionTab({ items }: { items: DeepResearch[] }) {
       </p>
       <div className="grid-2">
         {shown.map((r, i) => {
-          const belege = (r.citations ?? []).filter((c) => c && c !== r.url);
+          const belege = (r.citations ?? []).filter((c, i, arr) => c && !(r.url && urlGleich(c, r.url)) && arr.findIndex((x) => urlGleich(x, c)) === i);
           return (
             <article key={i} className="panel">
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>

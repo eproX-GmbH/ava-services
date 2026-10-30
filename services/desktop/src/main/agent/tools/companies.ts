@@ -901,6 +901,9 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
     preview: (r) => `${r.anzahl} Stellen`,
   });
+  const urlNormal = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+  const belegeOhneQuelle = (citations: string[] | undefined, url: string | undefined) =>
+    (citations ?? []).filter((c, i, arr) => c && !(url && urlNormal(c) === urlNormal(url)) && arr.findIndex((x) => urlNormal(x) === urlNormal(c)) === i);
   const expansion = defineTool({
     name: "company_expansion",
     description: "Expansionsankuendigungen, Ausschreibungen und Beschaffungsmeldungen einer Firma laut Recherche.",
@@ -920,7 +923,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
           ...(d.date ? { datum: d.date } : {}),
           ...(d.value ? { wert: d.value } : {}),
           quelle: d.url ?? null,
-          ...((d.citations ?? []).filter((x) => x !== d.url).length ? { belege: (d.citations ?? []).filter((x) => x !== d.url).slice(0, 3) } : {}),
+          ...(belegeOhneQuelle(d.citations, d.url).length ? { belege: belegeOhneQuelle(d.citations, d.url).slice(0, 3) } : {}),
         })),
         ...(items.length === 0 ? { hinweis: "Keine Eintraege gespeichert. Ein Lauf laesst sich mit research_run (feature expansion) anstossen." } : {}),
       };
