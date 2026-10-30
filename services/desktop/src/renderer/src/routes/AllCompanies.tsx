@@ -152,6 +152,9 @@ export function AllCompanies() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [land, setLand] = useState("");
+  // Fokus-Thema gefunden (docs/PLAN_THEMEN.md T5): Schluessel aus den lokalen Themen des Nutzers.
+  const [thema, setThema] = useState("");
+  const themen = useQuery({ queryKey: ["themen", "liste"], queryFn: () => window.api.themen.list(), staleTime: 60_000 });
   // v0.1.337 — drill-down panel. Clicking a row opens a side panel with
   // the per-company processing log (pipeline timeline + per-stage errors +
   // live producer diagnostics), mirroring the Vorgänge detail view. The
@@ -171,13 +174,14 @@ export function AllCompanies() {
   }, [searchInput]);
 
   const matrix = useQuery<CompaniesMatrixResponse>({
-    queryKey: ["companies-matrix", page, search, land],
+    queryKey: ["companies-matrix", page, search, land, thema],
     queryFn: () => {
       const qs = new URLSearchParams({
         pageNumber: String(page),
         pageSize: String(PAGE_SIZE),
         ...(search ? { search } : {}),
         ...(land ? { country: land } : {}),
+        ...(thema ? { thema } : {}),
       });
       return gatewayFetch<CompaniesMatrixResponse>(
         `/v1/companies/matrix?${qs.toString()}`,
@@ -338,10 +342,30 @@ export function AllCompanies() {
             setPage(1);
           }}
         />
+        {(themen.data ?? []).length > 0 && (
+          <select
+            value={thema}
+            onChange={(e) => {
+              setThema(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Fokus-Thema"
+            className="land-filter"
+            title="Nur Firmen, bei denen dieses Fokus-Thema auf der Website gefunden wurde"
+          >
+            <option value="">Alle Fokus-Themen</option>
+            {(themen.data ?? []).map((t) => (
+              <option key={t.id} value={t.schluessel}>
+                {t.name} gefunden
+              </option>
+            ))}
+          </select>
+        )}
         {matrix.data && (
           <span className="ct-pill all-companies__count">
             {matrix.data.count.toLocaleString("de-DE")} Firmen
             {search ? ` · „${search}"` : ""}
+            {thema ? ` · ${(themen.data ?? []).find((t) => t.schluessel === thema)?.name ?? thema}` : ""}
           </span>
         )}
       </div>

@@ -1296,7 +1296,8 @@ export type AlertKind =
   | "status"           // Firmenstatus: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation
   | "contact-change"   // 2026-10-05: Stellen-/Arbeitgeberwechsel, neue Ansprechpartner, geaenderte Firmenkontakte
   | "customer-change"  // 2026-10-06: neue Kunden/Referenzen laut Website (docs/PLAN_KUNDEN.md K4)
-  | "job-posting";     // 2026-10-22: neue Stellenanzeigen (docs/PLAN_STELLEN_SIGNALE.md)
+  | "job-posting"      // 2026-10-22: neue Stellenanzeigen (docs/PLAN_STELLEN_SIGNALE.md)
+  | "fokus-thema";     // 2026-10-30: Fokus-Thema des Nutzers neu auf der Website gefunden (docs/PLAN_THEMEN.md T5)
 
 export interface Alert {
   id: string;

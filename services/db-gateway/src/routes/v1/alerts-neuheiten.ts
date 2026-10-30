@@ -121,6 +121,24 @@ const Item = z.discriminatedUnion("art", [
     occurredAt: z.string(),
   }),
   z.object({
+    /** Fokus-Thema des Nutzers neu auf der Website gefunden (docs/PLAN_THEMEN.md T5). */
+    art: z.literal("thema-gefunden"),
+    id: z.string(),
+    companyId: z.string(),
+    anzahl: z.number().int(),
+    themen: z.array(
+      z.object({
+        schluessel: z.string(),
+        name: z.string(),
+        zitat: z.string().nullable(),
+        quelleUrl: z.string().nullable(),
+        ueberschrift: z.string().nullable(),
+        erstgesehenAt: z.string(),
+      }),
+    ),
+    occurredAt: z.string(),
+  }),
+  z.object({
     art: z.literal("new-customers"),
     id: z.string(),
     companyId: z.string(),
@@ -215,6 +233,38 @@ async function neueStellen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
       anzahl: rows.length,
       stellen: rows.slice(0, 8).map((x) => ({ title: x.title, location: x.location, benefits: x.benefits ?? [], sourceUrl: x.sourceUrl })),
       leistungen,
+      occurredAt: juengste.toISOString(),
+    });
+  }
+  return out;
+}
+
+/** Fokus-Themen, die seit `seit` erstmals als gefunden gelten (docs/PLAN_THEMEN.md T5).
+ *  Erstsichtung bleibt beim Persist erhalten, deshalb meldet ein erneuter Lauf dasselbe
+ *  Thema nicht noch einmal. Anders als bei Stellen zaehlt der erste Fund als Neuheit. */
+async function neueThemen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
+  const pool = getProducerPool("website");
+  const r = await pool
+    .query<{ companyId: string; schluessel: string; name: string; zitat: string | null; quelleUrl: string | null; ueberschrift: string | null; erstgesehenAt: Date }>(
+      `SELECT "companyId", schluessel, name, zitat, "quelleUrl", ueberschrift, "erstgesehenAt"
+         FROM "CompanyThema"
+        WHERE "companyId" = ANY($1::text[]) AND status = 'gefunden' AND "erstgesehenAt" > $2
+        ORDER BY "companyId", "erstgesehenAt" DESC
+        LIMIT 2000`,
+      [ids, seit],
+    )
+    .catch(() => ({ rows: [] as Array<{ companyId: string; schluessel: string; name: string; zitat: string | null; quelleUrl: string | null; ueberschrift: string | null; erstgesehenAt: Date }> }));
+  const je = new Map<string, typeof r.rows>();
+  for (const row of r.rows) je.set(row.companyId, [...(je.get(row.companyId) ?? []), row]);
+  const out: NeuheitItem[] = [];
+  for (const [companyId, rows] of je) {
+    const juengste = rows[0]!.erstgesehenAt;
+    out.push({
+      art: "thema-gefunden",
+      id: `${companyId}:${rows.map((x) => x.schluessel).sort().join("+")}:${juengste.toISOString().slice(0, 10)}`,
+      companyId,
+      anzahl: rows.length,
+      themen: rows.map((x) => ({ schluessel: x.schluessel, name: x.name, zitat: x.zitat, quelleUrl: x.quelleUrl, ueberschrift: x.ueberschrift, erstgesehenAt: x.erstgesehenAt.toISOString() })),
       occurredAt: juengste.toISOString(),
     });
   }
@@ -600,9 +650,10 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
     kontaktAenderungen(ids, seit),
     neueKunden(ids, seit),
     neueStellen(ids, seit),
+    neueThemen(ids, seit),
   ]);
   const items: NeuheitItem[] = [];
-  const namen = ["profile-change", "publication", "contact", "customers", "job-postings"];
+  const namen = ["profile-change", "publication", "contact", "customers", "job-postings", "thema-gefunden"];
   quellen.forEach((q, i) => {
     if (q.status === "fulfilled") items.push(...q.value);
     else logger.warn({ err: q.reason, quelle: namen[i] }, "neuheiten: quelle ausgefallen");

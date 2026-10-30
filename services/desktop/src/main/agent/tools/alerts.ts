@@ -50,7 +50,7 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
           description: "When true, only return entries with seenAt=null.",
         },
         sinceMinutes: { type: "integer", minimum: 1, maximum: 43200, description: "Nur Meldungen, die in den letzten N Minuten entstanden sind." },
-        kinds: { type: "array", items: { type: "string" }, description: "Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change)." },
+        kinds: { type: "array", items: { type: "string" }, description: "Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change, job-posting, fokus-thema)." },
         limit: {
           type: "integer",
           minimum: 1,

@@ -44,6 +44,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "contact-change": "Kontakt-Wechsel",
   "customer-change": "Neue Kunden",
   "job-posting": "Stellenanzeigen",
+  "fokus-thema": "Mein Fokus",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

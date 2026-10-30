@@ -114,6 +114,14 @@ type Neuheit =
       stellen: Array<{ title: string; location: string | null; benefits: string[]; sourceUrl: string }>;
       leistungen: string[];
       occurredAt: string;
+    }
+  | {
+      art: "thema-gefunden";
+      id: string;
+      companyId: string;
+      anzahl: number;
+      themen: Array<{ schluessel: string; name: string; zitat: string | null; quelleUrl: string | null; ueberschrift: string | null; erstgesehenAt: string }>;
+      occurredAt: string;
     };
 
 /** Fundstellen ohne Doppelte und ohne Leereintraege; Reihenfolge bleibt. */
@@ -392,6 +400,19 @@ export function kandidatAus(
         occurredAt: n.occurredAt,
         summary: `${companyName} hat ${n.anzahl} neue Stellenanzeige${n.anzahl === 1 ? "" : "n"}: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.${leistungen}`,
         payload: { typ: "job-postings", anzahl: n.anzahl, stellen: n.stellen, leistungen: n.leistungen, source: "website", quellen: quellenListe(n.stellen.map((s) => ({ url: s.sourceUrl, titel: `Stellenanzeige: ${s.title}` }))) },
+      };
+    }
+    case "thema-gefunden": {
+      const namen = n.themen.map((t) => `„${t.name}“`).join(", ");
+      const zitate = n.themen.filter((t) => t.zitat).slice(0, 2).map((t) => `${t.name}: „${t.zitat}“`).join(" · ");
+      return {
+        kind: "fokus-thema",
+        companyId: n.companyId,
+        companyName,
+        sourceRef: `thema-gefunden:${n.id}`,
+        occurredAt: n.occurredAt,
+        summary: `${companyName}: Fokus-Thema ${namen} auf der Website gefunden.${zitate ? ` ${zitate}` : ""}`,
+        payload: { typ: "thema-gefunden", anzahl: n.anzahl, themen: n.themen, source: "website", quellen: quellenListe(n.themen.map((t) => ({ url: t.quelleUrl, titel: `Fokus-Thema ${t.name}${t.ueberschrift ? ` · ${t.ueberschrift}` : ""}` }))) },
       };
     }
     default:

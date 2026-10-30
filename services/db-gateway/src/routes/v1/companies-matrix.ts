@@ -27,7 +27,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { callUpstream } from "../../lib/upstream";
-import { getGatewayPool } from "../../lib/producer-pools";
+import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { heldSubset } from "../../lib/company-holds";
 import { tombstonedSubset } from "../../lib/company-tombstones";
 import { cacheCompanyNames } from "../../lib/company-names";
@@ -93,6 +93,8 @@ const CompaniesMatrixQuery = z.object({
   /** Nur diese eine Firma. Die Firmenansicht fragt damit "steht sie in
    *  Meine Firmen?", ohne die ganze Liste zu holen: count ist 0 oder 1. */
   companyId: z.string().min(1).max(200).optional(),
+  /** Nur Firmen, bei denen dieses Fokus-Thema (Schluessel) auf der Website gefunden wurde (docs/PLAN_THEMEN.md T5). */
+  thema: z.string().min(1).max(80).optional(),
 });
 
 interface UpstreamCompany {
@@ -138,7 +140,17 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { pageNumber, pageSize, search, country, companyId } = c.req.valid("query");
+  const { pageNumber, pageSize, search, country, companyId, thema } = c.req.valid("query");
+
+  // ---- 0. Vorfilter Fokus-Thema: fuehrende Menge aus der Website-DB (Weg B, docs/PLAN_FILTER_TOOL.md) ----
+  let themaIds: string[] | null = null;
+  if (thema) {
+    const r = await getProducerPool("website")
+      .query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "CompanyThema" WHERE schluessel = $1 AND status = 'gefunden' LIMIT 5000`, [thema])
+      .catch(() => ({ rows: [] as Array<{ companyId: string }> }));
+    themaIds = r.rows.map((x) => x.companyId);
+    if (themaIds.length === 0) return c.json({ pageNumber, pageSize, count: 0, companies: [] }, 200);
+  }
 
   // ---- 1. master-data: page of {companyId, name, location, lastSeenAt} ----
   const upstream = await callUpstream<UpstreamPage>(c, "masterData", "/api/v1/tenants/me/companies", {
@@ -148,6 +160,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       ...(search ? { search } : {}),
       ...(country ? { country } : {}),
       ...(companyId ? { companyId } : {}),
+      ...(themaIds ? { companyIds: themaIds.join(",") } : {}),
     },
   });
   const companyIds = upstream.companies.map((c) => c.companyId);

@@ -117,7 +117,7 @@ Themen-Weg gleich gut ist, wird er darauf umgestellt.
 | T2 | Producer: `walker/themen.ts` (T-a bis T-c), Einbau in Normal- und Manuell-Lauf, `themen[]` im Research-Persist; Gateway: `CompanyThema`, Persist, `/website` liefert `themen`; Recherche-Zeile „Themen prüfen“ und `research_run feature=themen` | v0.1.892 (2026-10-30), Gateway-Deploy offen |
 | T3 | Messung an zehn Firmen mit drei Themen (§6), Nachschärfen der Begriffssuche | |
 | T4 | Anzeige: Reiter Desktop „Mein Fokus“ (auch vor der ersten Prüfung, mit „Jetzt prüfen“), Bereich app.ava.bi, `company_get` Bereich `fokus`, Recherche-Zeile, manueller Lauf | v0.1.893 (2026-10-30) |
-| T5 | Filter in der Firmenliste, Alarm `thema.gefunden` | |
+| T5 | Alarm „Fokus-Thema gefunden“ (Gateway-Neuheit `thema-gefunden` aus `CompanyThema.erstgesehenAt`, Desktop-Meldung kind `fokus-thema` mit Zitat und Quelle, Judge-Regel: Anlass per Definition, standardmäßig an); Filter „Fokus-Thema gefunden“ in Meine Firmen (Desktop-Auswahl → `/v1/companies/matrix?thema=`, Gateway holt die führende Menge aus `CompanyThema`, master-data filtert per `companyIds`). Offen: Filter in app.ava.bi (die App kennt die lokalen Themen nicht; braucht einen Gateway-Endpunkt mit den gefundenen Themen je Nutzerbestand) und MCP `meine_firmen` | v0.1.894 (2026-10-30), Deploys Gateway + master-data |
 | T6 | Karriere-Durchgang auf den Themen-Weg umstellen, wenn T3 es trägt | |
 
 Reihenfolge: T1, T2 zusammen in einem Release (Producer und Desktop), T4, T3, T5, T6.
