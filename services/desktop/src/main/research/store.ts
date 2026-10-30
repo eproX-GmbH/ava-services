@@ -161,33 +161,16 @@ export class ResearchFeaturesStore extends EventEmitter {
     }
   }
 
-  /** Organisationsschluessel verfuegbar? Aktiviert Research automatisch, solange der Nutzer nie selbst konfiguriert hat. */
+  /** Organisationsschluessel verfuegbar? Nur Merker fuer die Auswahl — schaltet
+   *  NICHTS automatisch ein (bis 2026-10-30 stellte das beide Funktionen still
+   *  auf den Schluessel der Organisation; Recherche laeuft auf Rechnung des
+   *  Nutzers, docs/PLAN_RECHERCHE_PERSIST.md R3). */
   setOrgOpenaiAvailable(available: boolean): void {
-    const vorher = this.orgOpenai;
     this.orgOpenai = available;
-    if (available && !vorher && !this.hasUserTouched()) this.autoEnableFromOrg();
   }
 
   hasOrgOpenai(): boolean {
     return this.orgOpenai;
-  }
-
-  /** Alle Features mit tier != off auf den Organisationsschluessel umstellen (Anbieter-Sperre). */
-  private autoEnableFromOrg(): boolean {
-    const next = cloneConfig(this.cached);
-    let changed = false;
-    for (const f of VALID_FEATURES) {
-      if (next[f].tier === "off") {
-        next[f] = { tier: "standard", provider: "openai", keyId: ORG_OPENAI };
-        changed = true;
-      }
-    }
-    if (!changed) return false;
-    this.writeConfigAtomic(next);
-    this.cached = next;
-    this.emit("configChanged", cloneConfig(next));
-    console.info("[research-store] Research auf tier=standard ueber den Organisationsschluessel aktiviert (Deep bleibt aus).");
-    return true;
   }
 
   private anyFeatureEnabled(): boolean {

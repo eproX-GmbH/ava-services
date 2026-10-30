@@ -105,10 +105,10 @@ export function ResearchFeaturesSection() {
         ist kostengünstig (~0,02–0,15 € je Firma), Deep Research dagegen
         gründlicher, aber spürbar teurer.{" "}
         {bundle.providerLock && bundle.orgOpenai
-          ? "Beide laufen über den OpenAI-Schlüssel deiner Organisation (AVA-Gateway); der Verbrauch wird der Organisation zugerechnet."
+          ? "Deine Organisation erlaubt nur ihren eigenen OpenAI-Schlüssel; der Verbrauch wird der Organisation zugerechnet."
           : bundle.orgOpenai
-            ? "Du kannst den OpenAI-Schlüssel deiner Organisation oder eigene Schlüssel nutzen — AVA fakturiert nichts darüber."
-            : "Beide nutzen API-Keys, die du beim jeweiligen Anbieter selbst hinterlegst — AVA fakturiert nichts darüber."}
+            ? "Beide laufen auf deine Rechnung über deine eigenen Schlüssel (Standard auch über dein ChatGPT-Abo). Den OpenAI-Schlüssel deiner Organisation kannst du ausdrücklich wählen; dann trägt die Organisation die Kosten. AVA fakturiert nichts darüber."
+            : "Beide laufen auf deine Rechnung über Schlüssel, die du beim jeweiligen Anbieter selbst hinterlegst (Standard auch über dein ChatGPT-Abo) — AVA fakturiert nichts darüber."}
         {!bundle.encryptionAvailable && (
           <span style={{ display: "block", color: "#b48800", marginTop: 8 }}>
             ⚠ Verschlüsselter Schlüssel-Speicher ist auf diesem System nicht
@@ -344,7 +344,7 @@ function KeyPicker({
   const availableKeys = useMemo(() => {
     const out: Array<{ id: string; label: string; hint?: string }> = [];
     if (provider === "openai" && bundle.orgOpenai) {
-      out.push({ id: RESEARCH_ORG_OPENAI_KEY_ID, label: "Schlüssel der Organisation (AVA-Gateway)" });
+      out.push({ id: RESEARCH_ORG_OPENAI_KEY_ID, label: "Schlüssel der Organisation (Kosten trägt die Organisation)" });
     }
     if (provider === "openai" && bundle.globals.openai && !bundle.providerLock) {
       out.push({
