@@ -13,8 +13,8 @@ import type { Faehigkeit } from "../../shared/nutzerstand-types";
 export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "firmen", text: "Firmen suchen; Profil, Website, Register, Publikationen, Kennzahlen, Tech-Stack, Stellen und Arbeitgeberleistungen, Kunden/Referenzen laut Website, Datenqualitaet; eine Webseite als Text lesen", tools: ["company_*", "kunden_*", "seite_lesen"] },
   { id: "sprachmodus", text: "Sprachmodus (mit AVA sprechen) ein-/ausschalten, Stimme und Ruhezeit einstellen", tools: ["sprachmodus_*"], feature: "sprachmodus" },
-  { id: "themen", text: "Website-Themen festlegen: wonach AVA auf jeder Firmen-Website zusaetzlich sucht (mit Zitat und Quelle)", tools: ["themen_*"] },
-  { id: "recherche_lauf", text: "Stellenanzeigen, Ausschreibungen/Expansion oder Website-Themen fuer EINE Firma gezielt suchen (Standard/Deep), unabhaengig von der Einstellung", tools: ["research_run"] },
+  { id: "themen", text: "Fokus-Themen festlegen: wonach AVA auf jeder Firmen-Website zusaetzlich sucht (mit Zitat und Quelle)", tools: ["themen_*"] },
+  { id: "recherche_lauf", text: "Stellenanzeigen, Ausschreibungen/Expansion oder Fokus-Themen fuer EINE Firma gezielt suchen (Standard/Deep), unabhaengig von der Einstellung", tools: ["research_run"] },
   { id: "verflechtungen", text: "Verflechtungen (DE): Gesellschafter, Beteiligungen, Netz", tools: ["company_shareholders", "company_network", "company_network_deepen", "verflechtungen_*"], feature: "verflechtungen" },
   { id: "kontakte", text: "Kontaktpersonen einer Firma mit Beleg, Herkunftsnachweis, Art.-14-Hinweis, Person loeschen, Dubletten zusammenfuehren/zuruecknehmen", tools: ["contact_linkedin_lookup", "person_*"], feature: "kontakte" },
   { id: "email_ableitung", text: "E-Mail-Adressen nach dem Adressmuster der Firma ableiten und per Mail-Server pruefen (Stufe E-Mail, Einstellungen, Vorschau)", tools: ["email_muster_*", "email_adresse_pruefen"], feature: "kontakte" },

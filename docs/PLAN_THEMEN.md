@@ -28,6 +28,14 @@ die dem Nutzer überall begegnen, damit er weiß, dass er sie pflegen kann.
   keine Websuche), Kosten je Firma und Thema: ein kleiner Aufruf für die Seitenwahl,
   einer für das Urteil.
 
+## 1a. Benennung (Joyce, 2026-10-30)
+
+Nutzersichtbar heißen die Themen **„Fokus-Themen“** (Einstellungen, Chip, Werkzeuge,
+Recherche-Zeile) und der Reiter in den Firmendetails **„Mein Fokus“**: Der Nutzer soll
+sofort sehen, dass hier steht, was ihn persönlich interessiert. Im Code und in diesem
+Plan bleibt `themen`. Der Reiter „Kunden“ heißt jetzt „Referenzen & Partner“, weil er
+auch Partner, Technologiepartner, Zertifikate und genutzte Werkzeuge zeigt.
+
 ## 2. Datenmodell
 
 **Thema** (lokal, `userData/themen/themen.json`, Store `ThemenStore` nach dem Muster
@@ -108,7 +116,7 @@ Themen-Weg gleich gut ist, wird er darauf umgestellt.
 | T1 | Desktop: `ThemenStore`, IPC `themen:*`, Einstellungs-Abschnitt, Werkzeuge `themen_*`, Fähigkeitsgruppe, Nutzerstand + Chip, Vorschlag nach dem ICP, Datei an den Producer | v0.1.892 (2026-10-30) |
 | T2 | Producer: `walker/themen.ts` (T-a bis T-c), Einbau in Normal- und Manuell-Lauf, `themen[]` im Research-Persist; Gateway: `CompanyThema`, Persist, `/website` liefert `themen`; Recherche-Zeile „Themen prüfen“ und `research_run feature=themen` | v0.1.892 (2026-10-30), Gateway-Deploy offen |
 | T3 | Messung an zehn Firmen mit drei Themen (§6), Nachschärfen der Begriffssuche | |
-| T4 | Anzeige: Reiter Desktop, Bereich PWA, `company_get` Bereich `themen`, Recherche-Zeile, manueller Lauf | |
+| T4 | Anzeige: Reiter Desktop „Mein Fokus“ (auch vor der ersten Prüfung, mit „Jetzt prüfen“), Bereich app.ava.bi, `company_get` Bereich `fokus`, Recherche-Zeile, manueller Lauf | v0.1.893 (2026-10-30) |
 | T5 | Filter in der Firmenliste, Alarm `thema.gefunden` | |
 | T6 | Karriere-Durchgang auf den Themen-Weg umstellen, wenn T3 es trägt | |
 

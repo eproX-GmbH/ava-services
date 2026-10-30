@@ -870,6 +870,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     jobPostings?: Array<{ title?: string; location?: string | null; workingModel?: string | null; releaseDate?: string | null; sourceUrl?: string; benefits?: string[]; technologies?: string[] }>;
     deepResearches?: Array<{ type?: string; title?: string; company?: string | null; country?: string | null; date?: string | null; value?: string | null; url?: string; citations?: string[] }>;
     karriere?: { benefits: string[]; quelleUrl: string | null; updatedAt: string } | null;
+    themen?: Array<{ schluessel: string; name: string; status: string; zitat: string | null; quelleUrl: string | null; ueberschrift: string | null; begruendung: string | null; updatedAt: string }>;
   };
   const ladeWebsite = (companyId: string, signal: AbortSignal) =>
     gateway.request<WebsiteAntwort>(`/v1/companies/${encodeURIComponent(companyId)}/website`, { signal });
@@ -931,11 +932,38 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     preview: (r) => `${r.anzahl} Eintraege`,
   });
 
+  const fokus = defineTool({
+    name: "company_fokus",
+    description: "Befund der Fokus-Themen des Nutzers bei einer Firma (gefunden / nicht gefunden / unklar, je mit Zitat und Quelle).",
+    parameters: { type: "object", properties: { companyId: { type: "string" } }, required: ["companyId"] },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
+    run: async (args, c) => {
+      const w = await ladeWebsite(args.companyId, c.signal);
+      const items = w.themen ?? [];
+      return {
+        anzahl: items.length,
+        gefunden: items.filter((t) => t.status === "gefunden").length,
+        themen: items.map((t) => ({
+          thema: t.name,
+          status: t.status,
+          ...(t.zitat ? { zitat: t.zitat } : {}),
+          ...(t.begruendung ? { begruendung: t.begruendung } : {}),
+          quelle: t.quelleUrl,
+          ...(t.ueberschrift ? { abschnitt: t.ueberschrift } : {}),
+          geprueftAm: t.updatedAt.slice(0, 10),
+        })),
+        ...(items.length === 0 ? { hinweis: "Noch nicht geprueft. Fokus-Themen des Nutzers: themen_get; Pruefung anstossen: research_run (feature themen)." } : {}),
+      };
+    },
+    preview: (r) => `${r.gefunden} von ${r.anzahl} Fokus-Themen gefunden`,
+  });
+
   const BEREICHE = {
     profil: profile,
     website,
     stellen,
     expansion,
+    fokus,
     register: structuredContent,
     stichworte: keywords,
     publikationen: publications,
@@ -957,7 +985,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
       "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
-      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss), stellen (Stellenanzeigen + Leistungen laut Karriereseite, je mit Quelle), expansion (Expansionen, Ausschreibungen, Beschaffung laut Recherche, je mit Quelle). " +
+      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss), stellen (Stellenanzeigen + Leistungen laut Karriereseite, je mit Quelle), expansion (Expansionen, Ausschreibungen, Beschaffung laut Recherche, je mit Quelle), fokus (Befund der Fokus-Themen des Nutzers auf der Website: gefunden/unklar/nicht gefunden mit Zitat und Quelle). " +
       "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. " +
       "`verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.",
     parameters: {

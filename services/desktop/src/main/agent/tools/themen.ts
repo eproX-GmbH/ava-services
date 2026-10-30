@@ -1,4 +1,4 @@
-// Website-Themen (docs/PLAN_THEMEN.md, T1): Self-Service im Chat. Jede
+// Fokus-Themen (docs/PLAN_THEMEN.md, T1): Self-Service im Chat. Jede
 // Aenderung mit Bestaetigung; Begriffe schlaegt das Modell selbst vor und
 // speichert sie ueber themen_begriffe.
 
@@ -23,10 +23,10 @@ function kompakt(t: Thema) {
 export function buildThemenTools(deps: { get: () => ThemenStore | null }): Tool[] {
   const lesen = defineTool({
     name: "themen_get",
-    summary: "Website-Themen des Nutzers lesen: wonach der Website-Producer bei jeder Firma zusaetzlich sucht (z. B. betriebliche Altersvorsorge).",
+    summary: "Fokus-Themen des Nutzers lesen: wonach der Website-Producer bei jeder Firma zusaetzlich sucht (z. B. betriebliche Altersvorsorge).",
     category: "themen website-themen suche signale einstellung",
     description:
-      "Liest die Website-Themen: Name, Beschreibung, Wozu, Suchbegriffe, aktiv. Der Website-Producer prueft jedes aktive Thema bei jeder Firma " +
+      "Liest die Fokus-Themen: Name, Beschreibung, Wozu, Suchbegriffe, aktiv. Der Website-Producer prueft jedes aktive Thema bei jeder Firma " +
       "auf deren Website (Seitenwahl, Begriffssuche, Urteil mit Zitat); der Befund steht in company_get Bereich themen. " +
       "Hat der Nutzer noch keine Themen, schlage ihm aus seinem ICP (Angebot, Nutzen) zwei bis drei vor und lege sie nach Bestaetigung mit themen_set an.",
     parameters: { type: "object", properties: {} },
@@ -39,17 +39,17 @@ export function buildThemenTools(deps: { get: () => ThemenStore | null }): Tool[
       return {
         themen: themen.map(kompakt),
         maxAktiv: MAX_AKTIVE_THEMEN,
-        ...(themen.length === 0 ? { hinweis: "Noch keine Website-Themen. Vorschlag aus dem ICP machen und nach Bestaetigung mit themen_set anlegen." } : {}),
+        ...(themen.length === 0 ? { hinweis: "Noch keine Fokus-Themen. Vorschlag aus dem ICP machen und nach Bestaetigung mit themen_set anlegen." } : {}),
       };
     },
   });
 
   const setzen = defineTool({
     name: "themen_set",
-    summary: "Website-Thema anlegen, aendern, ein-/ausschalten oder loeschen (mit Bestaetigung).",
+    summary: "Fokus-Thema anlegen, aendern, ein-/ausschalten oder loeschen (mit Bestaetigung).",
     category: "themen website-themen anlegen aendern loeschen einstellung",
     description:
-      "Legt ein Website-Thema an oder aendert es: name (kurz, z. B. \"Betriebliche Altersvorsorge\"), beschreibung (ein Satz, was gemeint ist), " +
+      "Legt ein Fokus-Thema an oder aendert es: name (kurz, z. B. \"Betriebliche Altersvorsorge\"), beschreibung (ein Satz, was gemeint ist), " +
       "warum (wozu der Nutzer es braucht, fliesst in das Urteil ein), begriffe (Suchbegriffe des Nutzers), aktiv. Mit loeschen=true wird das Thema entfernt. " +
       `Hoechstens ${MAX_AKTIVE_THEMEN} Themen gleichzeitig aktiv. Nach dem Anlegen Synonyme ergaenzen: themen_begriffe. ` +
       "Immer erst mit dem Nutzer abstimmen; das Werkzeug fragt zusaetzlich nach Bestaetigung.",
@@ -86,7 +86,7 @@ export function buildThemenTools(deps: { get: () => ThemenStore | null }): Tool[
       if (args.loeschen) {
         if (!alt) return { error: "Thema nicht gefunden." };
         const v = await c.ui.confirmAction(
-          { kind: "destructive", prompt: `Website-Thema „${alt.name}“ löschen? Bestehende Befunde zu Firmen bleiben erhalten.`, confirmValue: "ja", options: [{ value: "ja", label: "Löschen" }, { value: "nein", label: "Abbrechen" }] },
+          { kind: "destructive", prompt: `Fokus-Thema „${alt.name}“ löschen? Bestehende Befunde zu Firmen bleiben erhalten.`, confirmValue: "ja", options: [{ value: "ja", label: "Löschen" }, { value: "nein", label: "Abbrechen" }] },
           c.signal,
         );
         if (v !== "ja") return { geloescht: false, abgebrochen: true };
@@ -102,7 +102,7 @@ export function buildThemenTools(deps: { get: () => ThemenStore | null }): Tool[
         args.aktiv !== undefined ? `aktiv: ${args.aktiv ? "ja" : "nein"}` : "",
       ].filter(Boolean);
       const v = await c.ui.confirmAction(
-        { kind: "additive", prompt: `${alt ? "Website-Thema ändern" : "Website-Thema anlegen"}: ${teile.join(" · ")}?`, confirmValue: "ja", options: [{ value: "ja", label: alt ? "Ändern" : "Anlegen" }, { value: "nein", label: "Abbrechen" }] },
+        { kind: "additive", prompt: `${alt ? "Fokus-Thema ändern" : "Fokus-Thema anlegen"}: ${teile.join(" · ")}?`, confirmValue: "ja", options: [{ value: "ja", label: alt ? "Ändern" : "Anlegen" }, { value: "nein", label: "Abbrechen" }] },
         c.signal,
       );
       if (v !== "ja") return { gespeichert: false, abgebrochen: true };
@@ -117,7 +117,7 @@ export function buildThemenTools(deps: { get: () => ThemenStore | null }): Tool[
 
   const begriffe = defineTool({
     name: "themen_begriffe",
-    summary: "Suchbegriffe/Synonyme zu einem Website-Thema ergaenzen (vom Modell vorgeschlagen, mit Bestaetigung gespeichert).",
+    summary: "Suchbegriffe/Synonyme zu einem Fokus-Thema ergaenzen (vom Modell vorgeschlagen, mit Bestaetigung gespeichert).",
     category: "themen website-themen begriffe synonyme",
     description:
       "Speichert von AVA vorgeschlagene Suchbegriffe zu einem Thema (ersetzt die bisherigen AVA-Begriffe, Nutzer-Begriffe bleiben). " +

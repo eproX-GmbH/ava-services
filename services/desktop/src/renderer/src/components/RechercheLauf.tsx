@@ -23,7 +23,7 @@ interface Lauf {
   gestartetAt: string; beendetAt: string | null; eigener: boolean;
 }
 
-const FEATURE_TEXT: Record<RechercheFeature, string> = { jobs: "Stellenanzeigen", expansion: "Ausschreibungen, Expansion & Beschaffung", themen: "Website-Themen" };
+const FEATURE_TEXT: Record<RechercheFeature, string> = { jobs: "Stellenanzeigen", expansion: "Ausschreibungen, Expansion & Beschaffung", themen: "Fokus-Themen" };
 const STUFE_TEXT: Record<Stufe, string> = { standard: "Standard", deep: "Deep Research" };
 const POLL_MS = 10_000;
 
@@ -62,7 +62,7 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
     const quelle = stand.data?.quelle === "organisation" ? "über den OpenAI-Schlüssel deiner Organisation (Verbrauch wird ihr zugerechnet)" : "über deinen eigenen OpenAI-Schlüssel";
     const kosten = stufe === "deep" ? "Deep Research: gründlicher, ca. 1–5 € je Firma, dauert mehrere Minuten." : "Standard: ca. 0,02–0,15 € je Firma, dauert etwa eine Minute.";
     const frage = feature === "themen"
-      ? "Website-Themen für diese Firma jetzt prüfen?\n\nLäuft auf deinem allgemeinen KI-Modell, etwa eine Minute."
+      ? "Fokus-Themen für diese Firma jetzt prüfen?\n\nLäuft auf deinem allgemeinen KI-Modell, etwa eine Minute."
       : `${FEATURE_TEXT[feature]} jetzt suchen?\n\n${kosten}\nLäuft ${quelle}.`;
     if (!window.confirm(frage)) return;
     setMeldung(null);
@@ -87,7 +87,7 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
     }
     if (feature === "themen") {
       return (
-        <button type="button" className="btn small" onClick={() => void starten("themen", "standard")} title="Deine Website-Themen (Einstellungen → Datenquellen) auf dieser Website prüfen">Themen prüfen</button>
+        <button type="button" className="btn small" onClick={() => void starten("themen", "standard")} title="Deine Fokus-Themen (Einstellungen → Datenquellen) auf dieser Website prüfen">Fokus prüfen</button>
       );
     }
     if (!stand.data?.verfuegbar) return <span className="muted small">Kein OpenAI-Schlüssel hinterlegt.</span>;
@@ -116,7 +116,7 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
         <dd><div className="rl rl--kompakt">{zeile("expansion")}</div></dd>
         <dt>Stellenanzeigen</dt>
         <dd><div className="rl rl--kompakt">{zeile("jobs")}</div></dd>
-        <dt>Website-Themen <Link to="/settings/datenquellen#themen-section" className="muted small">(festlegen)</Link></dt>
+        <dt>Fokus-Themen <Link to="/settings/datenquellen#themen-section" className="muted small">(festlegen)</Link></dt>
         <dd><div className="rl rl--kompakt">{zeile("themen")}</div></dd>
       </dl>
       {meldung && <p className="small rl__meldung">{meldung}</p>}

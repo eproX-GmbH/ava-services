@@ -74,7 +74,7 @@ function Aktion({ match, onFertig }: { match: NonNullable<Kunde["match"]>; onFer
 }
 
 export function KundenTab({ items, onFertig }: { items: Kunde[]; onFertig: () => void }) {
-  if (items.length === 0) return <p className="muted">Noch keine Kunden oder Referenzen erkannt.</p>;
+  if (items.length === 0) return <p className="muted">Noch keine Referenzen, Partner oder Kunden erkannt.</p>;
   const gruppen: Array<[Kunde["art"], Kunde[]]> = (["kunde", "referenzprojekt", "partner", "technologiepartner", "zertifikat"] as const)
     .map((art) => [art, items.filter((k) => k.art === art)] as [Kunde["art"], Kunde[]])
     .filter(([, l]) => l.length > 0);

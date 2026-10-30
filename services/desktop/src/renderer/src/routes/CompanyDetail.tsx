@@ -11,7 +11,7 @@ import { KundenTab, type Kunde } from "../components/KundenTab";
 import { useEffect, useMemo, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { getGatewayUrl } from "../store/config";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -87,7 +87,8 @@ type TabKey =
   | "expansion"
   | "verflechtungen"
   | "buyingcenter"
-  | "kunden";
+  | "kunden"
+  | "fokus";
 
 const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "overview", label: "Übersicht", workflow: "W8/W10" },
@@ -99,7 +100,8 @@ const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "expansion", label: "Expansion & Ausschreibungen", workflow: "W10" },
   { key: "verflechtungen", label: "Verflechtungen", workflow: "V6" },
   { key: "buyingcenter", label: "Buying Center", workflow: "BC2" },
-  { key: "kunden", label: "Kunden", workflow: "K3" },
+  { key: "kunden", label: "Referenzen & Partner", workflow: "K3" },
+  { key: "fokus", label: "Mein Fokus", workflow: "T4" },
 ];
 
 // ---- Shared hooks ----------------------------------------------------------
@@ -202,8 +204,21 @@ interface JobPosting {
   benefits?: string[];
   [k: string]: unknown;
 }
+interface FokusBefund {
+  schluessel: string;
+  name: string;
+  status: "gefunden" | "nicht_gefunden" | "unklar";
+  zitat: string | null;
+  quelleUrl: string | null;
+  ueberschrift: string | null;
+  begruendung: string | null;
+  erstgesehenAt: string | null;
+  updatedAt: string;
+}
 interface Website {
   website?: WebsiteCore | null;
+  /** Fokus-Themen (docs/PLAN_THEMEN.md): Befund je Thema. */
+  themen?: FokusBefund[];
   companySerp?: CompanySerp | null;
   deepResearches?: DeepResearch[];
   jobPostings?: JobPosting[];
@@ -520,6 +535,8 @@ export function CompanyDetail() {
     `/v1/companies/${id}/website`,
     !!id
   );
+  // Fokus-Themen des Nutzers (lokal), damit der Reiter auch vor der ersten Pruefung erscheint.
+  const fokusThemen = useQuery({ queryKey: ["themen", "liste"], queryFn: () => window.api.themen.list(), staleTime: 60_000 });
   // Standort-Fallback aus den Kontaktdaten (Adress-Fakt), wenn das Register nichts liefert.
   const contactFallback = useTabQuery<CompanyContact>(
     "contacts",
@@ -589,6 +606,8 @@ export function CompanyDetail() {
       (website.data?.jobPostings ?? []).length > 0 ||
       (website.data?.karriere?.benefits ?? []).length > 0,
     expansion: (website.data?.deepResearches ?? []).length > 0,
+    // Mein Fokus: sichtbar, sobald der Nutzer Fokus-Themen hat (auch vor der ersten Pruefung).
+    fokus: (website.data?.themen ?? []).length > 0 || (fokusThemen.data ?? []).some((t) => t.aktiv),
     // Ausnahme, und zwar eine bewusste: Verflechtungen ist kein reiner
     // Anzeige-Reiter, sondern der einzige Ort, an dem sich "Tiefer
     // verfolgen" anstossen laesst. Waere er bei leerem Stand verborgen,
@@ -854,6 +873,7 @@ export function CompanyDetail() {
         )}
         {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} karriere={website.data?.karriere ?? null} />}
         {tab === "expansion" && <ExpansionTab items={website.data?.deepResearches ?? []} />}
+        {tab === "fokus" && <FokusTab companyId={id!} befunde={website.data?.themen ?? []} themen={fokusThemen.data ?? []} />}
         {tab === "kunden" && (
           <KundenTab items={kunden.data?.items ?? []} onFertig={() => void kunden.refetch()} />
         )}
@@ -876,6 +896,7 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   insights: ["website"],
   jobs: ["website"],
   expansion: ["website"],
+  fokus: ["website"],
   verflechtungen: ["structured-content"],
   buyingcenter: [],
 };
@@ -892,6 +913,76 @@ function KpiTile({
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">{children}</div>
     </div>
+  );
+}
+
+// ---- Mein Fokus (docs/PLAN_THEMEN.md, T4) ------------------------------------
+
+const FOKUS_STATUS: Record<FokusBefund["status"], { text: string; klasse: string }> = {
+  gefunden: { text: "Gefunden", klasse: "badge ok" },
+  unklar: { text: "Unklar", klasse: "badge warn" },
+  nicht_gefunden: { text: "Nicht gefunden", klasse: "badge" },
+};
+
+function FokusTab({ companyId, befunde, themen }: { companyId: string; befunde: FokusBefund[]; themen: Array<{ id: string; name: string; aktiv: boolean }> }) {
+  const qc = useQueryClient();
+  const [meldung, setMeldung] = useState<string | null>(null);
+  const pruefen = async () => {
+    setMeldung(null);
+    try {
+      const r = await gatewayFetch<{ angestossen: boolean; grund?: string }>(`/v1/companies/${encodeURIComponent(companyId)}/research`, { method: "POST", body: { feature: "themen", stufe: "standard" } });
+      setMeldung(r.angestossen ? "Prüfung läuft, das Ergebnis erscheint hier in etwa einer Minute." : (r.grund ?? "Nicht gestartet."));
+      await qc.invalidateQueries({ queryKey: ["company", companyId, "research-verlauf"] });
+    } catch (e) {
+      setMeldung(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const aktive = themen.filter((t) => t.aktiv);
+  const ungeprueft = aktive.filter((t) => !befunde.some((b) => b.name.toLowerCase() === t.name.toLowerCase()));
+  return (
+    <>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Deine Fokus-Themen, geprüft auf der Website dieser Firma. Jeder Fund trägt ein wörtliches Zitat und die Seite als Quelle.{" "}
+        <Link to="/settings/datenquellen#themen-section">Fokus-Themen bearbeiten</Link>
+      </p>
+      {befunde.length === 0 && aktive.length > 0 && (
+        <p className="muted">Für diese Firma noch nicht geprüft. Die Prüfung läuft mit dem nächsten Website-Lauf oder jetzt:</p>
+      )}
+      {befunde.length === 0 && aktive.length === 0 && <p className="muted">Noch keine Fokus-Themen festgelegt.</p>}
+      <div className="grid-2">
+        {befunde.map((b) => (
+          <article key={b.schluessel} className="panel">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
+              <span className={FOKUS_STATUS[b.status].klasse}>{FOKUS_STATUS[b.status].text}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{b.updatedAt ? fmtDate(b.updatedAt) : ""}</span>
+            </div>
+            <h3 style={{ margin: "0.5rem 0 0.25rem" }}>{b.name}</h3>
+            {b.zitat && (
+              <blockquote style={{ margin: "0.5rem 0", paddingLeft: 12, borderLeft: "3px solid var(--border, #ccc)" }}>
+                „{b.zitat}“
+              </blockquote>
+            )}
+            {b.begruendung && <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>{b.begruendung}</p>}
+            {b.quelleUrl && (
+              <p style={{ marginBottom: 0 }}>
+                <a href={b.quelleUrl} target="_blank" rel="noreferrer">
+                  Quelle: {hostVon(b.quelleUrl)}{b.ueberschrift ? ` · ${b.ueberschrift}` : ""} ↗
+                </a>
+              </p>
+            )}
+          </article>
+        ))}
+      </div>
+      {ungeprueft.length > 0 && befunde.length > 0 && (
+        <p className="muted small" style={{ marginTop: "0.75rem" }}>Noch nicht geprüft: {ungeprueft.map((t) => t.name).join(", ")}.</p>
+      )}
+      {aktive.length > 0 && (
+        <div style={{ marginTop: "0.75rem", display: "flex", gap: 8, alignItems: "center" }}>
+          <button type="button" className="btn small" onClick={() => void pruefen()}>Jetzt prüfen</button>
+          {meldung && <span className="muted small">{meldung}</span>}
+        </div>
+      )}
+    </>
   );
 }
 

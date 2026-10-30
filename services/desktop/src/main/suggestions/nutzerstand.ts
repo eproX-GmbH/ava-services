@@ -148,7 +148,7 @@ export function nutzerstandText(s: Nutzerstand): string {
     `Radar: Automatik ${s.radar.automatik ? "an" : "aus"}, ${s.radar.bewertet} bewertet, ${s.radar.heisseTreffer} heisse Treffer${s.radar.topTreffer?.name ? `, Top: ${s.radar.topTreffer.name} (${s.radar.topTreffer.score})` : ""}`,
     `Firmen importiert: ${s.firmen.importiert ?? "unbekannt"}`,
     `Workflows: ${s.workflows.anzahl}${s.workflows.letzterLaufAt ? `, zuletzt ${s.workflows.letzterLaufAt.slice(0, 10)}` : ""}`,
-    `Skills eigene: ${s.skills.eigene}; Watchlist: ${s.watchlist.personen}; E-Mail-Ableitung: ${s.emailAbleitung.aktiv ? "an" : "aus"}; Website-Themen: ${s.themen.aktiv} aktiv (${s.themen.anzahl} angelegt)`,
+    `Skills eigene: ${s.skills.eigene}; Watchlist: ${s.watchlist.personen}; E-Mail-Ableitung: ${s.emailAbleitung.aktiv ? "an" : "aus"}; Fokus-Themen: ${s.themen.aktiv} aktiv (${s.themen.anzahl} angelegt)`,
     `Modell: ${s.modell.bereit ? `${s.modell.anbieter}/${s.modell.modell}${s.modell.sStufe ? " (S-Stufe)" : ""}` : "keins bereit"}; Plan: ${s.plan}; Organisation: ${s.organisation.mitglied ? "ja" : "nein"}`,
   ];
   if (s.gesperrteModule.length > 0) zeilen.push(`Gesperrt: ${s.gesperrteModule.join(", ")}`);

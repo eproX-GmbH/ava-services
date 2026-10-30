@@ -13,13 +13,13 @@ interface Ctx {
   getResearchStand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
 }
 
-const FEATURE_TEXT = { jobs: "Stellenanzeigen", expansion: "Ausschreibungen, Expansion und Beschaffung", themen: "Website-Themen" } as const;
+const FEATURE_TEXT = { jobs: "Stellenanzeigen", expansion: "Ausschreibungen, Expansion und Beschaffung", themen: "Fokus-Themen" } as const;
 
 export function buildResearchLaufTools(ctx: Ctx): Tool[] {
   const run = defineTool({
     name: "research_run",
     description:
-      "Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Website-Themen des Nutzers (feature=themen, nur stufe=standard, laeuft auf dem allgemeinen Modell ohne Recherche-Schluessel) — " +
+      "Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Fokus-Themen des Nutzers (feature=themen, nur stufe=standard, laeuft auf dem allgemeinen Modell ohne Recherche-Schluessel) — " +
       "stufe=standard (guenstig, ca. 0,02–0,15 € je Firma) oder stufe=deep (Deep Research, gruendlicher, ca. 1–5 € je Firma, dauert Minuten). " +
       "Laeuft unabhaengig von der globalen Einstellung, also auch wenn die Funktion dort auf 'Aus' steht. Braucht einen OpenAI-Schluessel (eigener oder der der Organisation). " +
       "Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.",
@@ -45,7 +45,7 @@ export function buildResearchLaufTools(ctx: Ctx): Tool[] {
       const stand = ctx.getResearchStand();
       if (args.feature === "themen") {
         const v = await c.ui.confirmAction(
-          { kind: "additive", prompt: `Website-Themen für ${args.name ?? args.companyId} prüfen? Läuft auf deinem allgemeinen Modell, etwa eine Minute.`, confirmValue: "start", options: [{ value: "start", label: "Starten" }, { value: "cancel", label: "Abbrechen" }] },
+          { kind: "additive", prompt: `Fokus-Themen für ${args.name ?? args.companyId} prüfen? Läuft auf deinem allgemeinen Modell, etwa eine Minute.`, confirmValue: "start", options: [{ value: "start", label: "Starten" }, { value: "cancel", label: "Abbrechen" }] },
           c.signal,
         );
         if (v !== "start") return { abgebrochen: true };

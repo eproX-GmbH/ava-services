@@ -1,4 +1,4 @@
-// Website-Themen (docs/PLAN_THEMEN.md, T1): Einstellungen → Datenquellen.
+// Fokus-Themen (docs/PLAN_THEMEN.md, T1): Einstellungen → Datenquellen.
 // Themen anlegen, Begriffe pflegen, ein-/ausschalten, Begriffe von AVA ergaenzen lassen.
 import { useEffect, useState } from "react";
 import type { Thema } from "../../../../shared/themen-types";
@@ -44,11 +44,11 @@ export function ThemenSection() {
 
   return (
     <section className="provider-section alerts-prefs" id="themen-section">
-      <h3>Website-Themen</h3>
+      <h3>Fokus-Themen</h3>
       <p className="muted">
-        Wonach AVA auf der Website jeder Firma zusätzlich sucht, zum Beispiel „Betriebliche Altersvorsorge“, „ISO 27001“ oder „Photovoltaik“. Je Thema wählt AVA
+        Was dich persönlich an einer Firma interessiert und wonach AVA auf der Website jeder Firma zusätzlich sucht, zum Beispiel „Betriebliche Altersvorsorge“, „ISO 27001“ oder „Photovoltaik“. Je Thema wählt AVA
         passende Seiten, sucht nach den Begriffen und prüft die Fundstellen. Ein Fund trägt immer ein wörtliches Zitat und die Seite als Quelle. Bis zu {MAX_AKTIV} Themen
-        gleichzeitig aktiv. Im Chat: „Leg ein Website-Thema an“.
+        gleichzeitig aktiv. Im Chat: „Leg ein Fokus-Thema an“.
       </p>
       {fehler && <p className="error small">{fehler}</p>}
       {themen.length === 0 && offen !== "neu" && <p className="muted small">Noch keine Themen. AVA prüft dann nur Stellenanzeigen und Arbeitgeberleistungen.</p>}
