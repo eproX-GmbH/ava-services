@@ -73,3 +73,16 @@ Vorschlag (umgesetzt wie oben):
    Mechanik mit dem Angebotstext als Kriterium.
 
 Entscheidung dazu steht aus.
+
+## Nachtrag 2026-10-30 (docs/PLAN_RECHERCHE_PERSIST.md)
+
+Der Persist-Konsument `tenant.persist.company-evaluation.v1` war nicht ruhend: Der
+Website-Producer schickte Stellen, Karriereseite und Expansionen unter diesem Typ, und
+sie landeten in der Evaluation-DB. Seit 2026-10-30 heißt das Ereignis
+`tenant.persist.website-research.v1`, Ziel ist die Website-DB; der alte Typ läuft
+übergangsweise auf denselben Handler. Entfernt: `/v1/evaluations/*`,
+`evaluation-writes`, `best-match-jobs`, Evaluation-Schemas, Producer-Pool und
+Upstream `company-evaluation`, Retry-Republish der Bewertungs-Slices, MCP-Stufe
+`companyEvaluation`, Keycloak-Scopes `evaluation:*`. Daten der Evaluation-DB
+(Stellen, Expansionen, Karriere) nach Sicherung in die Website-DB kopiert. Offen:
+Löschen der Datenbank und der Fortschritts-/Frische-Zeilen, `packages/events`.
