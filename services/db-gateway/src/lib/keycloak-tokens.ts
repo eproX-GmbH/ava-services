@@ -64,8 +64,6 @@ export async function passwordGrant(
     "company:read",
     "company:write",
     "transaction:read",
-    "evaluation:read",
-    "evaluation:write",
     "import:write",
     "valueserp:enabled",
   ].join(" ");

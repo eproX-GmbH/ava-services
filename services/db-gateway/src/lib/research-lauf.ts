@@ -1,7 +1,7 @@
 // Protokoll der manuellen Recherche-Laeufe je Firma (2026-09-24).
 //
 // Start: routes/v1/companies-research.ts legt eine Zeile "laufend" an.
-// Ende: persist-bus (company-evaluation-Ereignis mit #research:-Suffix im
+// Ende: persist-bus (website-research-Ereignis mit #research:-Suffix im
 // source) traegt die Anzahl der Ergebnisse ein; event-bus meldet ein
 // "failed" des Website-Producers als Fehler. Was nach 45 Minuten noch
 // "laufend" ist, zeigt die Abfrage als "unbekannt" — der Producer hat sich

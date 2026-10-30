@@ -7,8 +7,6 @@ import { rateLimitMiddleware } from "../middleware/rate-limit";
 import { auditMiddleware } from "../middleware/audit";
 import { companiesRouter } from "./v1/companies";
 import { companyWritesRouter } from "./v1/company-writes";
-import { evaluationsRouter } from "./v1/evaluations";
-import { evaluationWritesRouter } from "./v1/evaluation-writes";
 import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
@@ -100,14 +98,8 @@ v1.route("/", vorabanalyseRouter);
 v1.route("/", stammdatenRouter);
 v1.route("/", linkedinLeadsRouter);
 
-// §4.3 Evaluation reads (W15, W19, W22).
-v1.route("/", evaluationsRouter);
-
 // §5.1 Excel import (W1).
 v1.route("/", importsRouter);
-
-// §5.2 Evaluation writes (W14, W16, W17, W18, W20, W21).
-v1.route("/", evaluationWritesRouter);
 
 // §5.3 Manual corrections (W23, W24, W25).
 v1.route("/", companyWritesRouter);

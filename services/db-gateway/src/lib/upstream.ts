@@ -45,7 +45,6 @@ export type UpstreamName =
   | "companyProfile"
   | "companyContact"
   | "companyPublication"
-  | "companyEvaluation"
   | "website"
   | "structuredContent";
 
@@ -60,8 +59,6 @@ function baseUrlFor(name: UpstreamName): string {
       return env.UPSTREAM_COMPANY_CONTACT_URL;
     case "companyPublication":
       return env.UPSTREAM_COMPANY_PUBLICATION_URL;
-    case "companyEvaluation":
-      return env.UPSTREAM_COMPANY_EVALUATION_URL;
     case "website":
       return env.UPSTREAM_WEBSITE_URL;
     case "structuredContent":

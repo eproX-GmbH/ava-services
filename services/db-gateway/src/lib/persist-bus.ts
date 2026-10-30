@@ -298,8 +298,8 @@ export interface PersistEvent<TResult = unknown> {
   result: TResult;
   /**
    * v0.1.62 — tier of the LLM that produced this write. Set on
-   * LLM-driven stages (website, company-profile, company-contact,
-   * company-evaluation); omitted on Selenium-only stages.
+   * LLM-driven stages (website, company-profile, company-contact);
+   * omitted on Selenium-only stages.
    *
    * Optional during the F2-only rollout: producers without F3 wiring
    * still emit persist events without this field, and the persist-bus
@@ -348,8 +348,7 @@ interface ProducerBinding {
 // nothing to retry, the existing data is canonical.
 //
 // Stages classified as LLM-tiered (their persists carry an llmTier in
-// the payload): website, company-profile, company-contact,
-// company-evaluation. Non-LLM stages (structured-content,
+// the payload): website, company-profile, company-contact. Non-LLM stages (structured-content,
 // company-publication) pass null and the gate falls into pure
 // time-based mode (30-day refresh).
 
@@ -364,7 +363,6 @@ const STAGE_IS_LLM: Record<ProducerName, boolean> = {
   website: true,
   "company-profile": true,
   "company-contact": true,
-  "company-evaluation": true,
 };
 
 /** Read the existing ContentFreshness row for (companyId, stage).

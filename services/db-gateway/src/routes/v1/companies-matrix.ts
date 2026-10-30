@@ -338,8 +338,6 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       }
     }
 
-    // companyEvaluation: Spalte entfernt (Bewertungs-Producer abgeklemmt 2026-10-12).
-
     return {
       held: heldSet.has(co.companyId),
       companyId: co.companyId,

@@ -19,7 +19,6 @@ export const PRODUCER_DATABASE_NAMES: Record<string, string> = {
   "company-profile": "ava_company_profile",
   "structured-content": "ava_structured_content",
   "company-publication": "ava_company_publication",
-  "company-evaluation": "ava_company_evaluation",
   "company-contact": "ava_company_contact",
   "website": "ava_website",
 };
@@ -31,11 +30,10 @@ export type ProducerName = keyof typeof PRODUCER_DATABASE_NAMES;
  * meldet seinen Fortschritt selbst (transaction.progress) und persistiert ueber
  * REST. Fuer EntityProgress (Seed, Matrix, Fortschritt) zaehlt er wie die anderen.
  */
-// company-evaluation: abgeklemmt 2026-10-12 (docs/PLAN_BEWERTUNG_ABKLEMMEN.md) —
-// keine Fortschrittszeile mehr (Seed, Matrix, Vorgangsabschluss); die
-// Datenbank bleibt fuer die ruhenden /v1/evaluations-Routen erreichbar.
+// company-evaluation: abgeklemmt 2026-10-12, Reste entfernt 2026-10-30
+// (docs/PLAN_RECHERCHE_PERSIST.md R5).
 export const PROGRESS_PRODUCER_NAMES: readonly string[] = [
-  ...(Object.keys(PRODUCER_DATABASE_NAMES) as string[]).filter((n) => n !== "company-evaluation"),
+  ...(Object.keys(PRODUCER_DATABASE_NAMES) as string[]),
   "company-email",
 ];
 

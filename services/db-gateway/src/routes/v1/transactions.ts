@@ -7,10 +7,7 @@ import { callUpstream } from "../../lib/upstream";
 import { transactionProgressBus } from "../../lib/event-bus";
 import { getGatewayPool } from "../../lib/producer-pools";
 import {
-  publishCompanyContactRetry,
   publishCompanyEmailRetry,
-  publishCompanyProfileRetry,
-  publishCompanyPublicationRetry,
   publishStructuredContentRetry,
   publishWebsiteRetry,
 } from "../../lib/retry-publish";
@@ -576,8 +573,6 @@ transactionsRouter.openapi(fortschrittRoute, async (c) => {
   // Gleiche Ableitungen wie Firmenmatrix und Pipeline-Ansicht:
   //  - Profil/Kontakt laufen nur bei gefundener Website. Website failed/
   //    skipped und eigene Zeile pending → skipped (sonst ewig "offen").
-  //  - Bewertung wird aus den Vorstufen abgeleitet, nicht aus ihrer Zeile:
-  //    sind alle Vorstufen terminal, ist sie fuer den Fortschritt erledigt.
   const TERMINAL = new Set(["completed", "failed", "skipped"]);
   const jeFirma = new Map<string, Map<string, { state: string; errorMessage: string | null; updatedAt: Date }>>();
   let zuletzt: Date | null = null;
@@ -596,7 +591,6 @@ transactionsRouter.openapi(fortschrittRoute, async (c) => {
     const webOhneErgebnis = !!web && (web.state === "failed" || web.state === "skipped");
     const effektiv = new Map<string, string>();
     for (const [producer, z] of m) {
-      if (producer === "company-evaluation") continue;
       let st = z.state;
       if ((producer === "company-profile" || producer === "company-contact") && st === "pending" && webOhneErgebnis) st = "skipped";
       effektiv.set(producer, st);
@@ -607,11 +601,6 @@ transactionsRouter.openapi(fortschrittRoute, async (c) => {
     const kontaktRoh = m.get("company-contact")?.state;
     if (effektiv.get("company-email") === "pending" && (kontakt === "failed" || (kontakt === "skipped" && kontaktRoh === "pending"))) {
       effektiv.set("company-email", "skipped");
-    }
-    if (m.has("company-evaluation")) {
-      const vor = [...effektiv.values()];
-      const roh = m.get("company-evaluation")!.state;
-      effektiv.set("company-evaluation", TERMINAL.has(roh) || (vor.length > 0 && vor.every((v) => TERMINAL.has(v))) ? (TERMINAL.has(roh) ? roh : "skipped") : roh);
     }
     let offen = false;
     let fehler = false;
@@ -1510,13 +1499,7 @@ type RetryTarget =
   | { kind: "upstream"; upstream: UpstreamName; stage: string }
   | {
       kind: "gateway";
-      producer:
-        | "structured-content"
-        | "website"
-        | "company-profile"
-        | "company-publication"
-        | "company-contact"
-        | "company-email";
+      producer: "structured-content" | "website" | "company-email";
       stage: string;
     };
 
@@ -1548,9 +1531,6 @@ const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
   // E-Mail-Stufe: Trigger des Contact-Producers direkt neu senden (der
   // Kontaktlauf selbst muss dafuer nicht wiederholt werden).
   companyEmail: [{ kind: "gateway", producer: "company-email", stage: "companyEmail" }],
-  // Evaluation fan-out: each producer republishes the slice it owns.
-  // companyContact + companyEvaluation are still fly-side until Phase 2/3,
-  // so their slices keep hitting upstream.
 };
 
 const retryRoute = createRoute({
@@ -1733,7 +1713,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
         switch (target.producer) {
           case "structured-content":
             res = await publishStructuredContentRetry({
-              stage: producerStage as "website" | "companyProfile" | "companyEvaluation",
+              stage: producerStage as "website" | "companyProfile",
               transactionId,
               companyId,
               source: requestSource,
@@ -1750,35 +1730,11 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               userId,
             });
             break;
-          case "company-profile":
-            res = await publishCompanyProfileRetry({
-              transactionId,
-              companyId,
-              source: requestSource,
-              userId,
-            });
-            break;
-          case "company-publication":
-            res = await publishCompanyPublicationRetry({
-              transactionId,
-              companyId,
-              source: requestSource,
-              userId,
-            });
-            break;
           case "company-email":
             res = await publishCompanyEmailRetry({
               transactionId,
               companyId,
               companyName,
-              source: requestSource,
-              userId,
-            });
-            break;
-          case "company-contact":
-            res = await publishCompanyContactRetry({
-              transactionId,
-              companyId,
               source: requestSource,
               userId,
             });

@@ -56,15 +56,12 @@ const queueDepthsRoute = createRoute({
 });
 
 // Producer name → AMQP queue name. Mirrors the QUEUE constant each
-// producer's compute-worker uses on assertQueue. company-evaluation
-// uses ONE primary queue (`upsert-company-evaluation`) for all 8
-// inbound routing keys — that's what we report.
+// producer's compute-worker uses on assertQueue.
 const PRODUCER_QUEUE_MAP: Record<string, string> = {
   "company-profile": "upsert-company-profile",
   "structured-content": "upsert-structured-content",
   website: "upsert-website",
   "company-publication": "upsert-company-publication",
-  "company-evaluation": "upsert-company-evaluation",
   "company-contact": "upsert-company-contact",
   "company-email": "upsert-company-email",
 };

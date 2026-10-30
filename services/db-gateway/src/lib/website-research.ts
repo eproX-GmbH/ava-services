@@ -1,7 +1,6 @@
 // Stellen, Karriereseite und Expansionen/Ausschreibungen einer Firma aus der
-// Website-DB (docs/PLAN_RECHERCHE_PERSIST.md). Uebergang: liegt in der Website-DB
-// nichts, wird einmal in der Evaluation-DB nachgesehen (Altbestand bis zur
-// Migration R5b) — danach entfaellt der Rueckfall samt Evaluation-Pool.
+// Website-DB (docs/PLAN_RECHERCHE_PERSIST.md). Altbestand aus der Evaluation-DB
+// wurde am 2026-10-30 migriert (scripts/einmalig/recherche-nach-website-db.sh).
 import type pg from "pg";
 import { getProducerPool } from "./producer-pools";
 import { logger as basisLogger } from "./logger";
@@ -38,8 +37,7 @@ export type WebsiteRecherche = {
   jobPostings: RechercheStelle[];
   deepResearches: RechercheExpansion[];
   karriere: RechercheKarriere | null;
-  /** "website" oder "evaluation" (Altbestand) — nur fuer Logs. */
-  quelle: "website" | "evaluation" | "leer";
+  quelle: "website" | "leer";
 };
 
 const iso = (v: unknown): string | null => (v instanceof Date ? v.toISOString() : typeof v === "string" ? v : null);
@@ -99,15 +97,8 @@ async function lese(pool: pg.Pool, companyId: string): Promise<Omit<WebsiteReche
   };
 }
 
-export async function ladeWebsiteRecherche(companyId: string, logger: typeof basisLogger = basisLogger): Promise<WebsiteRecherche> {
+export async function ladeWebsiteRecherche(companyId: string, _logger: typeof basisLogger = basisLogger): Promise<WebsiteRecherche> {
   const aktuell = await lese(getProducerPool("website"), companyId);
-  if (aktuell.jobPostings.length || aktuell.deepResearches.length || aktuell.karriere) return { ...aktuell, quelle: "website" };
-  // Uebergang (bis R5b): Altbestand in der Evaluation-DB.
-  try {
-    const alt = await lese(getProducerPool("company-evaluation"), companyId);
-    if (alt.jobPostings.length || alt.deepResearches.length || alt.karriere) return { ...alt, quelle: "evaluation" };
-  } catch (err) {
-    logger.warn({ companyId, err: err instanceof Error ? err.message : String(err) }, "[website-research] Altbestand nicht lesbar");
-  }
-  return { ...aktuell, quelle: "leer" };
+  const quelle = aktuell.jobPostings.length || aktuell.deepResearches.length || aktuell.karriere ? "website" : "leer";
+  return { ...aktuell, quelle };
 }

@@ -179,12 +179,12 @@ const TOOLS: ToolDef[] = [
     name: "neu_verarbeiten",
     schalter: "auftraege",
     description:
-      "Eine Stufe der Verarbeitung fuer eine Firma erneut anstossen: structuredContent (Register), companyPublication (Jahres-/Konzernabschluesse), website, companyProfile, companyContact (Kontakte), companyEvaluation (Bewertung). Laeuft auf dem Rechner des Nutzers, sobald die AVA-App laeuft, und zaehlt wie in der App.",
+      "Eine Stufe der Verarbeitung fuer eine Firma erneut anstossen: structuredContent (Register), companyPublication (Jahres-/Konzernabschluesse), website, companyProfile, companyContact (Kontakte). Laeuft auf dem Rechner des Nutzers, sobald die AVA-App laeuft, und zaehlt wie in der App.",
     inputSchema: {
       type: "object",
       properties: {
         companyId: { type: "string" },
-        stufe: { type: "string", enum: ["structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEvaluation"] },
+        stufe: { type: "string", enum: ["structuredContent", "companyPublication", "website", "companyProfile", "companyContact"] },
       },
       required: ["companyId", "stufe"],
     },
@@ -384,7 +384,7 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
     case "neu_verarbeiten": {
       const id = String(args.companyId ?? "").trim();
       const stufe = String(args.stufe ?? "");
-      if (!id || !["structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEvaluation"].includes(stufe)) {
+      if (!id || !["structuredContent", "companyPublication", "website", "companyProfile", "companyContact"].includes(stufe)) {
         return { text: "companyId und stufe angeben.", isError: true };
       }
       // Die Verarbeitung haengt an der juengsten Transaktion der Firma.

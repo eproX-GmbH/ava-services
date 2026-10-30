@@ -21,7 +21,6 @@ const schema = z.object({
   UPSTREAM_COMPANY_PROFILE_URL: z.string().url(),
   UPSTREAM_COMPANY_CONTACT_URL: z.string().url(),
   UPSTREAM_COMPANY_PUBLICATION_URL: z.string().url(),
-  UPSTREAM_COMPANY_EVALUATION_URL: z.string().url(),
   UPSTREAM_WEBSITE_URL: z.string().url(),
   UPSTREAM_STRUCTURED_CONTENT_URL: z.string().url(),
 
