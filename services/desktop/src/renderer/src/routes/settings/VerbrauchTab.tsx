@@ -7,6 +7,7 @@ import type {
   UsageDailyBucket,
 } from "../../../../shared/types";
 import { ChartBlock } from "../../components/ChartBlock";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 // v0.1.210 — Settings → Verbrauch.
 //
@@ -85,17 +86,17 @@ export function VerbrauchTab() {
           <div className="verbrauch-tab__summary">
             <SummaryStat label="Anfragen" value={summary.calls.toLocaleString("de-DE")} />
             <SummaryStat
-              label="Input-Tokens"
+              label="Gelesener Text"
               value={summary.inputTokens.toLocaleString("de-DE")}
             />
             <SummaryStat
-              label="Output-Tokens"
+              label="Geschriebener Text"
               value={summary.outputTokens.toLocaleString("de-DE")}
             />
             <SummaryStat
-              label="Cache-Read"
+              label="Wiederverwendet"
               value={summary.cacheReadTokens.toLocaleString("de-DE")}
-              hint="Vom Anbieter gecachte Prompt-Tokens (verguenstigt)"
+              hint="Text, den der Anbieter schon kannte und günstiger abrechnet"
             />
           </div>
 
@@ -128,11 +129,14 @@ export function VerbrauchTab() {
             <button
               type="button"
               className="link"
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    "Alle Verbrauchsdaten lokal löschen? Die Producer/CRM/Audit-Daten bleiben unberührt.",
-                  )
+                  await bestaetigen({
+                    titel: "Alle Verbrauchsdaten auf diesem Rechner löschen?",
+                    text: "Firmen, CRM und Verlauf bleiben unberührt.",
+                    bestaetigen: "Löschen",
+                    zerstoerend: true,
+                  })
                 ) {
                   purge.mutate();
                 }
@@ -202,12 +206,12 @@ function DailyLimitSetting() {
 
   return (
     <section id="verbrauch-limit" className="verbrauch-tab__limit">
-      <h4>Tägliches Token-Limit</h4>
+      <h4>Tages-Obergrenze</h4>
       <p className="muted small">
-        Gemeinsame Obergrenze für Chat und Agent pro Tag (zählt Input +
-        Output + Cache, UTC-Tag). Standard: kein Limit. Die laufende Anfrage
-        wird immer fertig — ist das Tageskontingent danach erreicht, pausiert
-        AVA neue Anfragen, bis du das Limit erhöhst oder entfernst.
+        Gemeinsame Obergrenze für Chat und Hintergrund je Tag, gezählt in
+        Textbausteinen (Tokens). Standard: keine. Die laufende Anfrage wird
+        immer fertig. Ist die Grenze danach erreicht, pausiert AVA neue
+        Anfragen, bis du sie erhöhst oder entfernst.
       </p>
 
       <div className="verbrauch-tab__limit-row">
@@ -232,7 +236,7 @@ function DailyLimitSetting() {
             }
           }}
         />
-        <span className="muted small">Tokens / Tag</span>
+        <span className="muted small">Textbausteine je Tag</span>
         <button
           type="button"
           className="btn"
@@ -270,8 +274,8 @@ function DailyLimitSetting() {
           <>
             Heute verbraucht:{" "}
             <strong>{usedToday.toLocaleString("de-DE")}</strong> von{" "}
-            <strong>{current.toLocaleString("de-DE")}</strong> Tokens
-            {status.data?.exceeded ? " — Limit erreicht, Anfragen pausiert." : "."}
+            <strong>{current.toLocaleString("de-DE")}</strong> Textbausteinen
+            {status.data?.exceeded ? ". Grenze erreicht, Anfragen pausiert." : "."}
           </>
         )}
       </p>
@@ -367,9 +371,9 @@ function buildStackedChartSpec(
 
   return {
     kind: "bar",
-    title: "Tokens pro Tag (gestapelt nach Modell)",
+    title: "KI-Verbrauch je Tag, nach Modell",
     xLabel: "Tag",
-    yLabel: "Tokens",
+    yLabel: "Textbausteine",
     format: "int",
     stacked: true,
     series: series.slice(0, 5),
@@ -447,10 +451,10 @@ function TopModelsTable({ buckets }: { buckets: UsageDailyBucket[] }) {
           <tr>
             <th>Modell</th>
             <th>Anfragen</th>
-            <th>Input</th>
-            <th>Output</th>
-            <th>Cache-Read</th>
-            <th>Tokens gesamt</th>
+            <th>Gelesen</th>
+            <th>Geschrieben</th>
+            <th>Wiederverwendet</th>
+            <th>Gesamt</th>
           </tr>
         </thead>
         <tbody>

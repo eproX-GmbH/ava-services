@@ -7,7 +7,7 @@ const GRUND_TEXT: Record<string, string> = {
   organisation: "Deine Organisation hat das Mithelfen abgeschaltet.",
   abgemeldet: "Du bist nicht angemeldet.",
   akku: "Pausiert im Akkubetrieb.",
-  nicht_installiert: "Der Worker ist in dieser Installation nicht enthalten.",
+  nicht_installiert: "Mithelfen ist in dieser Installation nicht enthalten.",
   gesperrt: "Das Registerportal hat die Abfragen vorübergehend gesperrt, es geht automatisch weiter.",
 };
 
@@ -78,13 +78,13 @@ export function MithelfenSection() {
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__check">
           <input type="checkbox" checked={s.nurRegister} disabled={!s.orgErlaubt || !s.aktiv} onChange={(e) => setze({ nurRegister: e.target.checked })} />
-          <span>Worker-Modus: nur Handelsregister verarbeiten, alles andere ruhen lassen</span>
+          <span>Nur Handelsregister verarbeiten, alles andere ruhen lassen</span>
         </label>
       </div>
       {s.nurRegister && (
         <p className="muted small">
-          Im Worker-Modus arbeitet AVA ausschließlich Handelsregister-Jobs ab: Registerblätter, strukturierter Registerinhalt und später
-          Gesellschafterlisten. Herzschlag, Vorgänge, Producer, Abläufe, Mail und Radar ruhen so lange. Du kannst die App normal bedienen, und
+          In diesem Modus arbeitet AVA ausschließlich Handelsregister-Aufträge ab: Registerblätter, strukturierter Registerinhalt und später
+          Gesellschafterlisten. Prüfläufe, Verarbeitung, Abläufe, Mail und Radar ruhen so lange. Du kannst die App normal bedienen, und
           gespeicherte Daten bleiben sichtbar. Schalte den Modus aus, damit AVA wieder alles verarbeitet.
         </p>
       )}
@@ -109,7 +109,7 @@ export function MithelfenSection() {
       )}
       {verlauf && verlauf.summe.jobs > 0 && (
         <>
-          <h4 style={{ marginTop: "1rem", marginBottom: "0.25rem" }}>Was dieser Rechner beigetragen hat</h4>
+          <h4 className="u-mt-2 u-mb-1">Was dieser Rechner beigetragen hat</h4>
           <p className="muted small">
             Seit {verlauf.summe.seit ? new Date(verlauf.summe.seit).toLocaleDateString("de-DE") : "Start"}: {verlauf.summe.jobs} Jobs, {verlauf.summe.abfragen} Abfragen,{" "}
             {verlauf.summe.treffer} Registerblätter gelesen, {verlauf.summe.neu} Firmen neu, {verlauf.summe.geaendert} geändert.

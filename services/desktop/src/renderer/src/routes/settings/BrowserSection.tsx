@@ -10,12 +10,11 @@ export function BrowserSection() {
   }, []);
   if (!stand || stand.zustand === "aus") return null;
   return (
-    <section className="provider-section alerts-prefs" id="browser-section">
-      <h3>Browser der Hintergrundverarbeitung</h3>
+    <div className="ek__teil alerts-prefs" id="browser-section">
+      <h4>Browser im Hintergrund</h4>
       <p className="muted">
-        Für Handelsregister, Webseiten und Publikationen steuert AVA einen Browser im Hintergrund. Dafür bringt AVA eine eigene Fassung mit
-        (Chrome for Testing von Google, rund 160 MB, wird einmal geladen). Dein eigener Chrome bleibt davon vollständig unberührt: Er wird nie
-        gestartet, nie beendet und teilt weder Profil noch Anmeldungen mit AVA.
+        Für Handelsregister, Websites und Publikationen steuert AVA einen eigenen Browser (Chrome for Testing, rund 160 MB, wird einmal
+        geladen). Dein eigener Chrome bleibt unberührt: nie gestartet, nie beendet, keine gemeinsamen Anmeldungen.
       </p>
       <div className="alerts-prefs__row">
         <span className={`status-dot ${stand.zustand === "bereit" ? "ok" : "muted"}`} />
@@ -27,6 +26,6 @@ export function BrowserSection() {
             `Konnte nicht geladen werden: ${stand.meldung}. AVA nutzt so lange den Browser, der auf diesem Rechner installiert ist.`}
         </span>
       </div>
-    </section>
+    </div>
   );
 }

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../../api/gateway";
 import { ExternalLink } from "../../components/ExternalLink";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 interface Instanz {
   id: string;
@@ -72,11 +73,22 @@ export function InstanzenSection() {
   const laeuft = umzug?.phase === "wartet" || umzug?.phase === "sendet" || umzug?.phase === "empfaengt";
   const umziehen = async (richtung: "holen" | "senden", i: Instanz) => {
     setUmzugFehler(null);
-    const text =
+    const ok = await bestaetigen(
       richtung === "holen"
-        ? `Den kompletten Stand von „${i.name}“ hierher holen?\n\nDiese AVA wird dabei vollständig überschrieben (Gedächtnis, Chats, Profil, ICP, Radar, Workflows, Mail-Speicher, Schlüssel …) und startet neu. Dein bisheriger Stand bleibt als Sicherung erhalten. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben, wie sie sind.`
-        : `Den kompletten Stand dieser AVA an „${i.name}“ senden?\n\n„${i.name}“ wird dabei vollständig überschrieben und startet neu; der dortige Stand bleibt als Sicherung erhalten. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben dort, wie sie sind.`;
-    if (!window.confirm(text)) return;
+        ? {
+            titel: `Den kompletten Stand von „${i.name}“ hierher holen?`,
+            text: "Diese AVA wird dabei vollständig überschrieben (Gedächtnis, Chats, Profil, ICP, Radar, Workflows, Mail-Speicher, Schlüssel …) und startet neu. Dein bisheriger Stand bleibt als Sicherung erhalten.\n\nAnmeldung, Telegram-Bot und Abo-Anmeldungen bleiben, wie sie sind.",
+            bestaetigen: "Hierher holen",
+            zerstoerend: true,
+          }
+        : {
+            titel: `Den kompletten Stand dieser AVA an „${i.name}“ senden?`,
+            text: `„${i.name}“ wird dabei vollständig überschrieben und startet neu; der dortige Stand bleibt als Sicherung erhalten.\n\nAnmeldung, Telegram-Bot und Abo-Anmeldungen bleiben dort, wie sie sind.`,
+            bestaetigen: "Senden",
+            zerstoerend: true,
+          },
+    );
+    if (!ok) return;
     const r = richtung === "holen" ? await window.api.umzug.holen(i.id) : await window.api.umzug.senden(i.id);
     if (!r.ok) setUmzugFehler(r.grund ?? "Umzug nicht gestartet.");
   };
@@ -96,12 +108,12 @@ export function InstanzenSection() {
       </p>
       {liste.isLoading && <p className="muted">Lädt …</p>}
       {liste.error && <p className="muted">Liste nicht abrufbar: {(liste.error as Error).message}</p>}
-      {liste.data && items.length === 0 && <p className="muted">Gerade ist keine Instanz mit dem Gateway verbunden.</p>}
+      {liste.data && items.length === 0 && <p className="muted">Gerade ist kein Gerät mit dem AVA-Server verbunden.</p>}
       {items.length > 0 && (
         <table className="kunden-tabelle">
           <thead>
             <tr>
-              <th>Instanz</th>
+              <th>Gerät</th>
               <th>Telegram</th>
               <th>Radar</th>
               <th>Modell</th>
@@ -135,8 +147,8 @@ export function InstanzenSection() {
                 <td>{i.mcpZiel ? "beantwortet" : i.zustand.mcp === false ? "aus" : "bereit"}</td>
                 <td className="kunden-aktion">
                   {eigen.data?.id !== i.id && i.verbunden && (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button type="button" disabled={laeuft} onClick={() => void umziehen("holen", i)} title="Kompletten Stand dieser Instanz hierher übertragen">
+                    <div className="u-row">
+                      <button type="button" disabled={laeuft} onClick={() => void umziehen("holen", i)} title="Kompletten Stand dieses Geräts hierher übertragen">
                         Hierher holen
                       </button>
                       <button type="button" disabled={laeuft} onClick={() => void umziehen("senden", i)} title="Kompletten Stand von hier dorthin übertragen">
@@ -151,9 +163,9 @@ export function InstanzenSection() {
         </table>
       )}
       {eigen.data && (
-        <label className="toggle" style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
+        <label className="toggle u-row u-mt-2">
           <input type="checkbox" checked={eigen.data.mcp} disabled={setzen.isPending} onChange={(e) => setzen.mutate({ mcp: e.target.checked })} />
-          <span>Diese Instanz ({eigen.data.name}) darf MCP-Aufrufe aus Claude und ChatGPT beantworten</span>
+          <span>Dieses Gerät ({eigen.data.name}) darf Anfragen aus Claude und ChatGPT beantworten</span>
         </label>
       )}
       {setzen.error && <p className="error">{(setzen.error as Error).message}</p>}
@@ -165,8 +177,8 @@ export function InstanzenSection() {
       )}
       {umzugFehler && <p className="error">{umzugFehler}</p>}
       <p className="muted small">
-        Umzug: Überträgt alles, was AVA lokal hält, auf die andere Instanz und überschreibt dort den Stand. So wechselst du
-        jederzeit zwischen Desktop- und Serverbetrieb. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben je Instanz.
+        Umzug: Überträgt alles, was AVA auf diesem Gerät hält, auf das andere und überschreibt dort den Stand. So wechselst du
+        jederzeit zwischen Desktop- und Serverbetrieb. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben je Gerät.
       </p>
     </section>
   );

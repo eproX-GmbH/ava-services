@@ -52,8 +52,8 @@ export function classifyProducerError(
     return {
       category: "auth",
       friendly:
-        "Anmeldung oder LLM-Konfiguration fehlt — der Producer kann ohne gültige Credentials nicht starten.",
-      hint: "Einstellungen → Modelle prüfen (API-Key / Pro-Abo / Provider-Auswahl).",
+        "Die Anmeldung beim KI-Anbieter fehlt oder ist abgelaufen. Ohne sie kann dieser Dienst nicht starten.",
+      hint: "Unter Einstellungen → KI & Kosten den Anbieter und den Schlüssel prüfen.",
       transient: false,
     };
   }
@@ -67,8 +67,8 @@ export function classifyProducerError(
     return {
       category: "binary",
       friendly:
-        "Producer-Binary fehlt — vermutlich ist die App-Installation unvollständig.",
-      hint: "App neu installieren oder im System-Tab den Producer-Sweep anstoßen.",
+        "Ein Teil der Installation fehlt. Vermutlich wurde AVA nicht vollständig installiert.",
+      hint: "AVA neu installieren. Hilft das nicht, den Support mit den technischen Details anschreiben.",
       transient: false,
     };
   }
@@ -82,8 +82,8 @@ export function classifyProducerError(
     return {
       category: "spawn",
       friendly:
-        "Producer-Subprozess konnte nicht starten oder ist sofort abgestürzt.",
-      hint: "App-Neustart probieren. Wenn das nicht hilft: System → Logs prüfen und Bug melden.",
+        "Dieser Dienst konnte nicht starten oder ist sofort abgestürzt.",
+      hint: "AVA neu starten. Hilft das nicht, den Support mit den technischen Details anschreiben.",
       transient: true,
     };
   }
@@ -97,8 +97,8 @@ export function classifyProducerError(
     return {
       category: "amqp",
       friendly:
-        "Verbindung zum Cloud-Broker (AMQP) verloren — Producer wartet auf erneute Verbindung.",
-      hint: "Internetverbindung prüfen. Wenn dauerhaft: Status-Seite oder Support kontaktieren.",
+        "Die Verbindung zum AVA-Server ist weg. Der Dienst wartet, bis sie wieder steht.",
+      hint: "Internetverbindung prüfen. Bleibt es so, den Support anschreiben.",
       transient: true,
     };
   }
@@ -113,8 +113,8 @@ export function classifyProducerError(
     return {
       category: "database",
       friendly:
-        "Lokale Datenbank nicht erreichbar — Producer kann keine Daten persistieren.",
-      hint: "Einstellungen → System → Lokale Datenbank: Status prüfen, ggf. neu starten.",
+        "Die Datenbank auf diesem Rechner ist nicht erreichbar. Der Dienst kann nichts speichern.",
+      hint: "Unter Einstellungen → Erweitert den Zustand der Datenbank prüfen, notfalls AVA neu starten.",
       transient: true,
     };
   }
@@ -131,8 +131,8 @@ export function classifyProducerError(
     return {
       category: "quota",
       friendly:
-        "API-Quota oder Rate-Limit beim LLM-Anbieter erreicht — Producer pausiert vorübergehend.",
-      hint: "Bei Anthropic: Pro/Max-Abo prüfen oder Tier hochstufen. Bei OpenAI: Guthaben aufladen.",
+        "Der KI-Anbieter nimmt gerade keine weiteren Anfragen an. Der Dienst pausiert vorübergehend.",
+      hint: "Beim Anbieter das Guthaben oder die Grenzen des Kontos prüfen.",
       transient: true,
     };
   }
@@ -140,7 +140,7 @@ export function classifyProducerError(
   // Fallback.
   return {
     category: "unknown",
-    friendly: `Producer-Fehler: ${shorten(raw, 140)}`,
+    friendly: `Fehler im Dienst: ${shorten(raw, 140)}`,
     transient: false,
   };
 }

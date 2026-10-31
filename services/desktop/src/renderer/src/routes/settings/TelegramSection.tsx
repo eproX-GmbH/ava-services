@@ -3,6 +3,7 @@ import type {
   AlertSeverity,
   TelegramSnapshot,
 } from "../../../../shared/types";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 // v0.1.412 — Einstellungen → Automatisierungen → Telegram.
 //
@@ -83,9 +84,12 @@ export function TelegramSection(): JSX.Element {
   const onDisconnect = (): Promise<void> =>
     run(async () => {
       if (
-        !window.confirm(
-          "Telegram-Verbindung trennen? Der Bot-Token wird gelöscht.",
-        )
+        !(await bestaetigen({
+          titel: "Telegram-Verbindung trennen?",
+          text: "Der Zugangscode des Bots wird gelöscht.",
+          bestaetigen: "Trennen",
+          zerstoerend: true,
+        }))
       )
         return;
       setSnap(await window.api.telegram.disconnect());
@@ -121,8 +125,8 @@ export function TelegramSection(): JSX.Element {
 
       {!snap.encryptionAvailable && (
         <p className="error">
-          Der System-Schlüsselbund ist nicht verfügbar — der Bot-Token kann
-          nicht sicher gespeichert werden.
+          Der Schlüsselbund dieses Rechners ist nicht verfügbar. Der Zugangscode
+          des Bots lässt sich so nicht sicher speichern.
         </p>
       )}
 
@@ -133,8 +137,8 @@ export function TelegramSection(): JSX.Element {
               Öffne in Telegram <strong>@BotFather</strong> und schicke{" "}
               <code>/newbot</code>.
             </li>
-            <li>Namen vergeben — BotFather antwortet mit einem Token.</li>
-            <li>Token hier einfügen:</li>
+            <li>Namen vergeben. BotFather antwortet mit einem Zugangscode („Token“).</li>
+            <li>Zugangscode hier einfügen:</li>
           </ol>
           <div className="telegram-row">
             <input

@@ -52,6 +52,7 @@ import type {
   Watch,
 } from "../../../shared/types";
 import { WATCH_CAP_DEFAULT } from "../../../shared/types";
+import { bestaetigen } from "../components/Bestaetigung";
 
 // Settings route (Phase 8.g).
 //
@@ -89,33 +90,26 @@ export const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
  */
 const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
   openai:
-    "Schaltet im website-Producer Deep Research (o4-mini-deep-research) " +
-    "sowie Google-Maps-Entity-Resolution + Quellen-Discovery (gpt-6-luna) " +
-    "frei. Ohne Schlüssel bootet der Producer trotzdem, aber diese " +
-    "spezifischen Calls werden zur Laufzeit übersprungen.",
+    "Mit einem OpenAI-Schlüssel kann AVA Deep Research, den Sprachmodus und die " +
+    "Websuche nutzen. Ohne Schlüssel läuft alles andere weiter.",
   anthropic:
-    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "(Profile, Contact, Evaluation, Publications) verwendet. " +
-    "Anmeldung ausschließlich per API-Schlüssel — die Anmeldung über " +
-    "ein Claude-Pro/Max-Abo wird nicht mehr unterstützt.",
+    "Claude-Modelle für den Chat und die Verarbeitung deiner Firmen. " +
+    "Anmeldung nur mit einem Schlüssel, ein Claude-Abo reicht dafür nicht.",
   google:
-    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet (z. B. Gemini 3.8 Flash für anspruchsvolle Recherche).",
+    "Gemini-Modelle für den Chat und die Verarbeitung deiner Firmen, " +
+    "zum Beispiel für anspruchsvolle Recherche.",
   mistral:
-    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet (z. B. Mistral Large 4 für deutschsprachige Inhalte).",
+    "Mistral-Modelle für den Chat und die Verarbeitung deiner Firmen, " +
+    "stark bei deutschsprachigen Inhalten.",
   deepseek:
-    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet. Mit Abstand der günstigste Anbieter (V4 Flash), " +
-    "1 Mio. Kontext — interessant für die Hintergrund-Verarbeitung. " +
-    "Kein Bild-Verständnis.",
+    "Mit Abstand der günstigste Anbieter für den Chat und die Verarbeitung " +
+    "im Hintergrund. Versteht keine Bilder.",
   xai:
-    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet (Grok 4.6: 500k Kontext, Bild-Verständnis).",
+    "Grok-Modelle für den Chat und die Verarbeitung deiner Firmen, " +
+    "mit Bild-Verständnis.",
   qwen:
-    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet (Qwen3.8 Max, 1 Mio. Kontext). Läuft über Alibabas " +
-    "internationalen Model-Studio-Endpunkt. Kein Bild-Verständnis.",
+    "Qwen-Modelle für den Chat und die Verarbeitung deiner Firmen. " +
+    "Versteht keine Bilder.",
 };
 
 const HOSTED_KINDS: HostedProviderKind[] = [
@@ -228,8 +222,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "crm-connections", label: "CRM" },
     { anchor: "linkedin-section", label: "LinkedIn" },
     { anchor: "signal-kalibrierung", label: "LinkedIn-Kalibrierung" },
-    { anchor: "mail-account-section", label: "E-Mail-Konto" },
-    { anchor: "mail-entwurf-section", label: "E-Mail-Entwürfe" },
+    { anchor: "mail-section", label: "E-Mail" },
     { anchor: "telegram-section", label: "Telegram" },
     { anchor: "wissensquellen-section", label: "Notizen" },
   ],
@@ -245,7 +238,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "updates", label: "Updates" },
     { anchor: "storage", label: "Speicherplatz" },
     { anchor: "diagnose", label: "Diagnose" },
-    { anchor: "local-services", label: "Dienste auf diesem Rechner" },
+    { anchor: "dienste-section", label: "Dienste auf diesem Rechner" },
     { anchor: "danger-zone", label: "Zurücksetzen" },
   ],
 };
@@ -495,7 +488,7 @@ export function SettingsHeader({ tab }: { tab?: SettingsTabId }) {
       </p>
       {/* Versionsnummer nur unter Erweitert (docs/PLAN_EINSTELLUNGEN_UI.md §2.7). */}
       {tab === "erweitert" && ready && version && (
-        <p className="muted small" style={{ marginTop: "0.5rem" }}>
+        <p className="muted small u-mt-1">
           AVA {version}
           {channel && channel !== "latest" ? ` · ${channel}` : ""}
           {isDev ? " · Entwicklung" : ""}
@@ -629,10 +622,10 @@ export function PostgresSection() {
         : "muted";
 
   return (
-    <section className="provider-section" id="local-services">
-      <h3>Datenbank auf diesem Rechner</h3>
+    <div className="ek__teil" id="local-services">
+      <h4>Datenbank</h4>
       <p className="muted">
-        AVA speichert deine Firmendaten in einer eigenen Datenbank auf diesem Rechner. Von außen ist sie nicht erreichbar.
+        Hier liegen deine Firmendaten. Von außen ist die Datenbank nicht erreichbar.
       </p>
       <ul className="kv">
         <li>
@@ -646,25 +639,31 @@ export function PostgresSection() {
             <span className="muted">Version:</span> PostgreSQL {status.version}
           </li>
         )}
-        {status.host && (
-          <li>
-            <span className="muted">Endpoint:</span>{" "}
-            <code>{status.host}</code>
-          </li>
-        )}
-        {status.dataDir && (
-          <li>
-            <span className="muted">Datenverzeichnis:</span>{" "}
-            <code className="path">{status.dataDir}</code>
-          </li>
-        )}
         {status.errorMessage && (
           <li className="error">
             <span className="muted">Fehler:</span> {status.errorMessage}
           </li>
         )}
       </ul>
-    </section>
+      {(status.host || status.dataDir) && (
+        <details className="ek__technik">
+          <summary>Technische Details</summary>
+          <ul className="kv ek__technik-inhalt">
+            {status.host && (
+              <li>
+                <span className="muted">Adresse:</span> <code>{status.host}</code>
+              </li>
+            )}
+            {status.dataDir && (
+              <li>
+                <span className="muted">Datenverzeichnis:</span>{" "}
+                <code className="path">{status.dataDir}</code>
+              </li>
+            )}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -722,7 +721,7 @@ function MithelfenZeile() {
   };
   const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
   return (
-    <p className="small" style={{ marginTop: "0.5rem" }}>
+    <p className="small u-mt-1">
       <span className="muted">register-delta (Stammdaten mitpflegen):</span>{" "}
       <span className={`status-dot ${tone}`}>{s.pausenGrund ? grund[s.pausenGrund] : s.aktuellerJob ? "arbeitet" : "bereit, wartet auf Jobs"}</span>
       {s.aktuellerJob && (
@@ -743,6 +742,16 @@ function MithelfenZeile() {
     </p>
   );
 }
+
+/** Klartext je Dienst; unbekannte Namen bleiben wie sie sind. */
+const PRODUCER_LABEL: Record<string, string> = {
+  website: "Website",
+  "company-contact": "Kontakte",
+  "company-profile": "Profil",
+  "structured-content": "Strukturierte Inhalte",
+  "company-publication": "Publikationen",
+  "master-data": "Stammdaten",
+};
 
 export function ProducersSection() {
   const byName = useProducersStore((s) => s.byName);
@@ -776,13 +785,13 @@ export function ProducersSection() {
   });
 
   return (
-    <section className="provider-section" id="local-producers">
-      <h3>Verarbeitung auf diesem Rechner</h3>
+    <div className="ek__teil" id="local-producers">
+      <h4>Verarbeitung</h4>
       <p className="muted">
-        AVA verarbeitet deine Firmen auf diesem Rechner. Hier siehst du, ob alles läuft.
+        Je Bereich ein Dienst, der deine Firmen aufbereitet.
       </p>
       {list.length === 0 ? (
-        <p className="muted small">Keine Producer konfiguriert.</p>
+        <p className="muted small">Keine Dienste eingerichtet.</p>
       ) : (
         <ul className="kv">
           {list.map((p) => {
@@ -795,30 +804,15 @@ export function ProducersSection() {
             const depth = queueDepths.data?.producers?.[p.name];
             return (
               <li key={p.name}>
-                <span className="muted">{p.name}:</span>{" "}
+                <span className="muted">{PRODUCER_LABEL[p.name] ?? p.name}:</span>{" "}
                 <span className={`status-dot ${tone}`}>
                   {stateLabel[p.state] ?? p.state}
                 </span>
-                {p.port !== null && (
-                  <>
-                    {" · Port "}
-                    <code>{p.port}</code>
-                  </>
-                )}
-                {p.pid !== null && (
-                  <>
-                    {" · PID "}
-                    <code>{p.pid}</code>
-                  </>
-                )}
-                {depth && (
-                  <>
-                    {" · Queue: "}
-                    <code>
-                      {depth.ready}
-                      {depth.unacked > 0 ? ` (+${depth.unacked} in flight)` : ""}
-                    </code>
-                  </>
+                {depth && depth.ready > 0 && (
+                  <span className="muted small">
+                    {" · "}
+                    {depth.ready} wartend
+                  </span>
                 )}
                 {p.errorMessage && (() => {
                   // v0.1.218 — Producer-Fehler in eine handvoll
@@ -868,7 +862,7 @@ export function ProducersSection() {
         </ul>
       )}
       <MithelfenZeile />
-    </section>
+    </div>
   );
 }
 
@@ -898,14 +892,14 @@ const CRM_PROVIDER_LABELS: Record<
   salesforce: {
     label: "Salesforce",
     helper:
-      "OAuth-Integration ist verdrahtet, wird in den nächsten Wochen freigeschaltet. Wenn du Salesforce einsetzt, gib uns gerne kurz Bescheid, dann priorisieren wir dich für die Beta-Phase.",
+      "Die Anbindung kommt in den nächsten Wochen. Wenn du Salesforce einsetzt, gib uns kurz Bescheid, dann nehmen wir dich zuerst in die Testphase.",
     requiresOrgUrl: false,
     comingSoon: true,
   },
   hubspot: {
     label: "HubSpot",
     helper:
-      "Verbindung über OAuth. Es werden CRM-Lese- und Schreibrechte für Kontakte, Firmen und Deals angefragt.",
+      "Anmeldung bei HubSpot im Browser. AVA bekommt Lese- und Schreibrechte für Kontakte, Firmen und Deals.",
     requiresOrgUrl: false,
     comingSoon: false,
   },
@@ -1247,9 +1241,12 @@ export function LinkedInSection() {
   };
 
   const onKillSwitch = async () => {
-    const ok = window.confirm(
-      "Wirklich? Cookies, gespeicherte Beiträge und Signale werden gelöscht. Diese Aktion ist nicht rückgängig zu machen.",
-    );
+    const ok = await bestaetigen({
+      titel: "LinkedIn-Daten löschen?",
+      text: "Cookies, gespeicherte Beiträge und Signale werden gelöscht. Das lässt sich nicht rückgängig machen.",
+      bestaetigen: "Löschen",
+      zerstoerend: true,
+    });
     if (!ok) return;
     setBusy(true);
     setError(null);
@@ -1354,13 +1351,13 @@ export function LinkedInSection() {
           void onConnectLinkedIn();
         }
       } else if (result.outcome === "error") {
-        setScanError(result.errorMessage ?? "Scan fehlgeschlagen.");
+        setScanError(result.errorMessage ?? "Durchlauf fehlgeschlagen.");
       } else if (result.outcome === "network_error") {
         setScanError("Netzwerkfehler. Später erneut versuchen.");
       }
     } catch (err) {
       setScanError(
-        err instanceof Error ? err.message : "Scan fehlgeschlagen.",
+        err instanceof Error ? err.message : "Durchlauf fehlgeschlagen.",
       );
     }
   };
@@ -1528,9 +1525,8 @@ export function LinkedInSection() {
         {cloudConfirm && (
           <div className="linkedin-cloud-confirm">
             <p>
-              Cloud-Bildanalyse einschalten? Bilder werden an deinen
-              konfigurierten LLM-Provider gesendet — sie verlassen damit
-              dieses Gerät.
+              Cloud-Bildanalyse einschalten? Bilder gehen dann an deinen
+              KI-Anbieter und verlassen damit diesen Rechner.
             </p>
             <div className="linkedin-cloud-confirm__actions">
               <button
@@ -1584,7 +1580,7 @@ export function LinkedInSection() {
 
       {/* Scan schedule */}
       <fieldset className="linkedin-fieldset" disabled={!enabled || busy}>
-        <legend>Scan-Plan</legend>
+        <legend>Durchläufe</legend>
         <label className="linkedin-toggle">
           <input
             type="checkbox"
@@ -1593,7 +1589,7 @@ export function LinkedInSection() {
               void update({ automaticScans: e.target.checked })
             }
           />
-          <span>Automatische Hintergrund-Scans</span>
+          <span>Automatisch im Hintergrund durchlaufen</span>
         </label>
         <label className="linkedin-number">
           <span>Intervall (Stunden)</span>
@@ -1620,11 +1616,11 @@ export function LinkedInSection() {
               !connected
                 ? "Erst mit LinkedIn verbinden."
                 : scanStatus?.running
-                  ? "Aktuellen Scan abbrechen."
-                  : "Feed jetzt scannen."
+                  ? "Aktuellen Durchlauf abbrechen."
+                  : "Feed jetzt durchlaufen."
             }
           >
-            {scanStatus?.running ? "Scan läuft… (Abbrechen)" : "Jetzt scannen"}
+            {scanStatus?.running ? "Durchlauf läuft … (Abbrechen)" : "Jetzt durchlaufen"}
           </button>
           {scanStatus?.lastRun && !scanStatus.running && (
             <span className="muted small">
@@ -1632,14 +1628,11 @@ export function LinkedInSection() {
             </span>
           )}
           {!scanStatus?.lastRun && !scanStatus?.running && (
-            <span className="muted small">Noch kein Scan ausgeführt.</span>
+            <span className="muted small">Noch kein Durchlauf.</span>
           )}
         </div>
         {scanError && <p className="crm-card-error">{scanError}</p>}
-        <label
-          className="linkedin-toggle"
-          title="Längere Pausen zwischen Scrolls, mehrstufige Navigation über die Startseite, weniger Beiträge pro Lauf. Reduziert das Risiko, dass LinkedIn den Zugriff drosselt — verlangsamt aber jeden Hintergrund-Scan spürbar."
-        >
+        <label className="linkedin-toggle">
           <input
             type="checkbox"
             checked={settings.aggressiveMode === true}
@@ -1647,12 +1640,12 @@ export function LinkedInSection() {
               void update({ aggressiveMode: e.target.checked })
             }
           />
-          <span>Vorsichtsmodus für Hintergrund-Scans</span>
+          <span>Vorsichtsmodus</span>
         </label>
         <p className="muted small">
-          Längere Pausen, langsameres Scrollen, weniger Beiträge pro Lauf.
-          Wahrscheinlichkeit reduziert, dass LinkedIn den Zugriff drosselt.
-          Verlangsamt aber spürbar.
+          Längere Pausen, langsameres Scrollen, weniger Beiträge je Durchlauf.
+          So drosselt LinkedIn den Zugriff seltener. Jeder Durchlauf dauert
+          dafür spürbar länger.
         </p>
       </fieldset>
 
@@ -1660,7 +1653,7 @@ export function LinkedInSection() {
       <fieldset className="linkedin-fieldset" disabled={!enabled}>
         <legend>Letzte Läufe</legend>
         <p className="muted small">
-          Jeder Scan legt einen Ordner mit Screenshots und einer
+          Jeder Durchlauf legt einen Ordner mit Screenshots und einer
           run.json ab. Praktisch, wenn ein Lauf 0 Beiträge gesehen
           hat. Es werden die letzten 10 Läufe behalten, ältere werden
           automatisch gelöscht.
@@ -1737,7 +1730,7 @@ export function LinkedInSection() {
             {counts.signalsPending.toLocaleString("de-DE")} ausstehend ·{" "}
             {counts.signalsFailed.toLocaleString("de-DE")} fehlerhaft ·{" "}
             {counts.signalsSkipped.toLocaleString("de-DE")} übersprungen
-            {counts.signalsSkipped > 0 ? " (kein LLM)" : ""}
+            {counts.signalsSkipped > 0 ? " (ohne KI-Modell)" : ""}
           </p>
           {settings.imageAnalysis !== "off" && bildanalyseErlaubt && (
             <p className="muted small">
@@ -1768,10 +1761,9 @@ export function LinkedInSection() {
                       "unterstützt keine Bildanalyse",
                     ) ? (
                     <>
-                      Aktuelles Modell kennt keine Bildanalyse. Wechsle z. B.
-                      auf gpt-4o-mini, claude-haiku-4-5 oder lokal
-                      gemma4:e4b.{" "}
-                      <a href="#provider-section">Provider wählen</a>
+                      Das aktuelle Modell versteht keine Bilder. Wähle eines
+                      mit Bild-Verständnis.{" "}
+                      <a href="#provider-section">Modell wählen</a>
                     </>
                   ) : (
                     <>{imageStatus.lastError}</>
@@ -2197,7 +2189,7 @@ export function ProviderSection() {
               // weil die API-Key-Anmeldung eingestellt wurde.
               const missingSuffix =
                 k === "anthropic"
-                  ? " (kein Abo verknüpft)"
+                  ? " (kein Schlüssel)"
                   : k === "openai"
                     ? " (kein Schlüssel/Abo)"
                     : " (kein Schlüssel)";
@@ -2214,7 +2206,7 @@ export function ProviderSection() {
         {chatUeberAbo ? (
           <div className="field">
             <span>Chat-Modell</span>
-            <p className="muted small" style={{ margin: 0 }}>
+            <p className="muted small u-m0">
               Wählst du oben in der ChatGPT-Abo-Karte aus den für dein Konto freigegebenen Modellen.
             </p>
           </div>
@@ -2494,7 +2486,7 @@ function OpenAISubscriptionContent({
       title="Continue with ChatGPT"
     >
       <img src={chatgptLogo} alt="" width={18} height={18} aria-hidden="true" />
-      <span>{connect.isPending ? "Connecting…" : label}</span>
+      <span>{connect.isPending ? "Verbindet …" : label}</span>
     </button>
   );
 
@@ -2502,7 +2494,7 @@ function OpenAISubscriptionContent({
     <div className="provider-subscription" id="chatgpt-abo">
       <h4>ChatGPT-Abo</h4>
       <p className="muted small">
-        Melde dich mit deinem persönlichen ChatGPT-Konto an. <strong>Eligible AI requests in this app use your ChatGPT plan.</strong>{" "}
+        Melde dich mit deinem persönlichen ChatGPT-Konto an. OpenAI formuliert es so: <strong>„Eligible AI requests in this app use your ChatGPT plan.“</strong>{" "}
         Chat, Radar, Alarme, Recherche und Workflows laufen dann über dein Plus- oder Pro-Kontingent, mit einem Modell
         deiner Wahl. Die Firmenverarbeitung (Profile, Kontakte, Jahresabschlüsse) läuft über AVAs eigenes Modell und
         braucht keinen Zugang von dir. Nicht über das Abo laufen Sprachmodus und Deep Research; dafür braucht es einen
@@ -2528,8 +2520,8 @@ function OpenAISubscriptionContent({
               Team-, Business- und Free-Konten (nur Plus und Pro können ihr Abo teilen) oder wenn du die Freigabe im
               Anmeldefenster abgelehnt hast. Bis dahin nutzt AVA weiter deinen Schlüssel beziehungsweise den deiner
               Organisation. Freigabe prüfen unter{" "}
-              <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">ChatGPT → Settings → Usage</a>, dann
-              „Reconnect with ChatGPT“.
+              <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">ChatGPT → Einstellungen → Verbrauch</a>, dann
+              „Continue with ChatGPT“.
             </p>
           )}
           {istPlan && (
@@ -2553,8 +2545,8 @@ function OpenAISubscriptionContent({
             </label>
           )}
           <div className="row">
-            {siwcButton("Reconnect with ChatGPT", true)}
-            <a className="btn" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">Manage usage</a>
+            {siwcButton("Continue with ChatGPT", true)}
+            <a className="btn" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">Verbrauch bei ChatGPT ansehen</a>
             <button type="button" className="danger" onClick={() => clear.mutate()} disabled={clear.isPending}>
               Trennen
             </button>
@@ -2562,7 +2554,7 @@ function OpenAISubscriptionContent({
         </div>
       ) : hinweisOffen ? (
         <div className="siwc-hinweis" role="note">
-          <p style={{ marginTop: 0 }}>
+          <p className="u-mt-0">
             <strong>Bevor du dich anmeldest:</strong> AVA nutzt dein ChatGPT-Abo nicht nur im Chat, sondern auch für die
             Hintergrund-KI (Radar, Alarme, Vorschläge, Recherche, Workflows). Die Firmenverarbeitung läuft über AVAs Modell. Das verbraucht dein wöchentliches Kontingent, das du
             mit allen verbundenen Apps teilst. Setze deshalb in{" "}
@@ -2579,7 +2571,7 @@ function OpenAISubscriptionContent({
       )}
 
       {!hasOpenAIApiKey && !hasToken && (
-        <p className="muted small">Alternativ kannst du unten einen OpenAI-API-Schlüssel hinterlegen.</p>
+        <p className="muted small">Alternativ kannst du unten einen OpenAI-Schlüssel hinterlegen.</p>
       )}
 
       {hint && <p className={hintKind === "error" ? "error" : "muted"}>{hint}</p>}
@@ -2646,9 +2638,11 @@ function InstalledModelsSection() {
   // clean state is the only reliable fix.
   const onRepair = async (name: string) => {
     if (
-      !window.confirm(
-        `„${name}" reparieren? Das Modell wird von der Festplatte gelöscht und erneut heruntergeladen. Hilfreich, wenn das Modell die lokale Laufzeit immer wieder zum Absturz bringt.`,
-      )
+      !(await bestaetigen({
+        titel: `„${name}“ reparieren?`,
+        text: "Das Modell wird von der Festplatte gelöscht und erneut heruntergeladen. Hilfreich, wenn es die lokale KI immer wieder zum Absturz bringt.",
+        bestaetigen: "Reparieren",
+      }))
     ) {
       return;
     }
@@ -2701,7 +2695,7 @@ function InstalledModelsSection() {
               {isMandatoryEmbedder ? (
                 <span
                   className="muted small"
-                  title="Pflichtmodell — wird vom Bewertungs-Service für die globale Vektorsuche genutzt und kann nicht entfernt werden."
+                  title="Pflichtmodell: AVA braucht es für die Ähnlichkeitssuche. Es lässt sich nicht entfernen."
                 >
                   Pflichtmodell
                 </span>
@@ -2721,11 +2715,14 @@ function InstalledModelsSection() {
                   <button
                     type="button"
                     className="link bad"
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        window.confirm(
-                          `„${m.name}" von der Festplatte löschen? Du kannst es später von dieser Seite oder im Chat erneut herunterladen.`,
-                        )
+                        await bestaetigen({
+                          titel: `„${m.name}“ von der Festplatte löschen?`,
+                          text: "Du kannst es später von dieser Seite oder im Chat erneut herunterladen.",
+                          bestaetigen: "Löschen",
+                          zerstoerend: true,
+                        })
                       ) {
                         void onDelete(m.name);
                       }
@@ -2863,13 +2860,13 @@ function ApiKeyCard({
       </div>
 
       {orgHint && (
-        <div className="provider-key-card__input-row" style={{ gap: "1rem", flexWrap: "wrap" }}>
-          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+        <div className="provider-key-card__input-row u-row">
+          <label className="u-row">
             <input type="radio" name={`ks-${kind}`} checked={viaOrg} disabled={locked || setSource.isPending}
               onChange={() => setSource.mutate("organisation")} />
             Schlüssel der Organisation (…{orgHint})
           </label>
-          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+          <label className="u-row">
             <input type="radio" name={`ks-${kind}`} checked={!viaOrg} disabled={locked || setSource.isPending}
               onChange={() => setSource.mutate("eigen")} />
             Eigener Schlüssel / Abo
@@ -3019,7 +3016,7 @@ export function LinkedInCalibrationNote() {
     }
   };
   const onClear = async () => {
-    if (!window.confirm("Gelernte Kalibrierung wirklich zurücksetzen?")) return;
+    if (!(await bestaetigen({ titel: "Gelernte Kalibrierung zurücksetzen?", bestaetigen: "Zurücksetzen", zerstoerend: true }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -3070,7 +3067,7 @@ export function LinkedInCalibrationNote() {
           minHeight: "5rem",
         }}
       />
-      <p className="muted small" style={{ marginTop: "0.25rem" }}>
+      <p className="muted small u-mt-1">
         {hasNote ? `${draft.length} / 800 Zeichen · ` : ""}
         {status ? `${status.pending} offene Bewertung${status.pending === 1 ? "" : "en"}` : ""}
         {status?.updatedAt
@@ -3078,10 +3075,7 @@ export function LinkedInCalibrationNote() {
           : ""}
       </p>
 
-      <div
-        className="actions"
-        style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "center", marginTop: "0.5rem" }}
-      >
+      <div className="actions u-row u-mt-1">
         <button
           type="button"
           className="primary"
@@ -3197,9 +3191,12 @@ export function ProfileSection() {
 
   const onClear = async () => {
     if (
-      !window.confirm(
-        "Profil wirklich zurücksetzen? Bio + Rolle + alle Listen werden geleert.",
-      )
+      !(await bestaetigen({
+        titel: "Profil zurücksetzen?",
+        text: "Beschreibung, Rolle und alle Listen werden geleert.",
+        bestaetigen: "Zurücksetzen",
+        zerstoerend: true,
+      }))
     )
       return;
     setBusy(true);
@@ -3226,14 +3223,13 @@ export function ProfileSection() {
         <label className="alerts-prefs__label" htmlFor="profile-bio">
           Bio (max. {USER_PROFILE_BIO_CAP} Zeichen)
         </label>
-        <textarea
+        <textarea className="u-full"
           id="profile-bio"
           rows={3}
           maxLength={USER_PROFILE_BIO_CAP}
           value={bio}
           onChange={(e) => setBio(e.target.value)}
           placeholder="z. B. „Ich arbeite im B2B-Vertrieb für Maschinenbau-Mittelstand in Bayern; Schwerpunkt Geschäftsführer-Wechsel und neue Produktlinien."
-          style={{ width: "100%", resize: "vertical" }}
         />
         <p className="muted small">{bio.length} / {USER_PROFILE_BIO_CAP}</p>
       </div>
@@ -3242,13 +3238,12 @@ export function ProfileSection() {
         <label className="alerts-prefs__label" htmlFor="profile-role">
           Rolle
         </label>
-        <input
+        <input className="u-full"
           id="profile-role"
           type="text"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           placeholder="z. B. „Vertriebsleiter DACH"
-          style={{ width: "100%" }}
         />
       </div>
 
@@ -3256,13 +3251,12 @@ export function ProfileSection() {
         <label className="alerts-prefs__label" htmlFor="profile-industries">
           Branchen (Komma-getrennt)
         </label>
-        <input
+        <input className="u-full"
           id="profile-industries"
           type="text"
           value={industries}
           onChange={(e) => setIndustries(e.target.value)}
           placeholder="z. B. „Maschinenbau, Logistik"
-          style={{ width: "100%" }}
         />
       </div>
 
@@ -3270,13 +3264,12 @@ export function ProfileSection() {
         <label className="alerts-prefs__label" htmlFor="profile-geographies">
           Regionen
         </label>
-        <input
+        <input className="u-full"
           id="profile-geographies"
           type="text"
           value={geographies}
           onChange={(e) => setGeographies(e.target.value)}
           placeholder="z. B. „Bayern, DACH"
-          style={{ width: "100%" }}
         />
       </div>
 
@@ -3284,13 +3277,12 @@ export function ProfileSection() {
         <label className="alerts-prefs__label" htmlFor="profile-topics">
           Schwerpunktthemen
         </label>
-        <input
+        <input className="u-full"
           id="profile-topics"
           type="text"
           value={topics}
           onChange={(e) => setTopics(e.target.value)}
           placeholder="z. B. „Geschäftsführer-Wechsel, Expansion, Übernahmen"
-          style={{ width: "100%" }}
         />
       </div>
 
@@ -3319,14 +3311,13 @@ export function ProfileSection() {
         >
           Relevant auf LinkedIn (zusätzliche Signal-Kriterien)
         </label>
-        <textarea
+        <textarea className="u-full"
           id="profile-signal-interests"
           rows={3}
           maxLength={600}
           value={signalInterests}
           onChange={(e) => setSignalInterests(e.target.value)}
           placeholder="z. B. „Wettbewerbsaktivität von Firma X/Y; jemand aus meiner Branche berichtet von Werksbesuchen oder Investitionen; neue Förderprogramme im Maschinenbau."
-          style={{ width: "100%", resize: "vertical" }}
         />
         <p className="muted small">
           Erhöht die Signalstärke neuer LinkedIn-Beiträge, die dazu
@@ -3393,7 +3384,7 @@ export function VoiceSection() {
   };
 
   const onRemove = async () => {
-    if (!window.confirm("Sprachmodell wirklich entfernen?")) return;
+    if (!(await bestaetigen({ titel: "Spracherkennung entfernen?", bestaetigen: "Entfernen", zerstoerend: true }))) return;
     setError(null);
     try {
       await remove();
@@ -3513,14 +3504,20 @@ function VoiceBinaryInstaller({
   return (
     <div className="voice-installer">
       <p className="error small voice-installer__head">
-        Whisper-Binary fehlt. Erwarteter Pfad:{" "}
-        <code>{binaryPath ?? "unbekannt"}</code>.
+        Die Spracherkennung ist noch nicht installiert.
       </p>
       <p className="muted small">
-        Versucht erst eine vorhandene Installation auf dem System zu
-        finden, danach <code>brew install whisper-cpp</code> (nur
-        macOS). Du musst nichts manuell installieren.
+        AVA sucht erst eine vorhandene Installation auf diesem Rechner und
+        installiert sie sonst selbst (nur macOS). Du musst nichts von Hand tun.
       </p>
+      <details className="ek__technik">
+        <summary>Technische Details</summary>
+        <p className="muted small ek__technik-inhalt">
+          Programm: whisper-cpp. Erwarteter Pfad:{" "}
+          <code>{binaryPath ?? "unbekannt"}</code>. Installation per{" "}
+          <code>brew install whisper-cpp</code>.
+        </p>
+      </details>
       <div className="alerts-prefs__actions">
         <button
           type="button"
@@ -3627,7 +3624,7 @@ const CADENCE_OPTIONS: Array<{ value: AlertCadenceMinutes; label: string }> = [
   { value: 15, label: "Alle 15 Minuten" },
   { value: 30, label: "Alle 30 Minuten" },
   { value: 60, label: "Stündlich" },
-  { value: 0, label: "Aus (manuell auslösen)" },
+  { value: 0, label: "Aus (nur von Hand)" },
 ];
 
 const SEVERITY_OPTIONS: Array<{ value: AlertSeverity; label: string }> = [
@@ -3728,15 +3725,12 @@ export function AlertsSection() {
     <section className="provider-section alerts-prefs" id="alerts-section">
       <h3>Meldungen &amp; Ruhezeiten</h3>
       <p className="muted">
-        Der Heartbeat sucht im Hintergrund nach alarmwürdigen Vorgängen
-        und legt Meldungen ab. Eine vollständige Liste findest du unter{" "}
-        <em>Meldungen</em> in der Navigation; rechts oben in der Leiste
-        zeigt die Glocke ungelesene Einträge an.
+        AVA prüft im Hintergrund, ob bei deinen Firmen etwas passiert, und legt Meldungen ab. Die Liste findest du unter Meldungen in der Navigation; die Glocke oben zeigt Ungelesenes.
       </p>
 
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__label" htmlFor="alerts-cadence">
-          Heartbeat-Frequenz
+          Wie oft prüft AVA?
         </label>
         <select
           id="alerts-cadence"
@@ -3763,7 +3757,7 @@ export function AlertsSection() {
             disabled={pushDisabled}
             onChange={(e) => void patch({ pushEnabled: e.target.checked })}
           />
-          <span>System-Benachrichtigungen aktivieren</span>
+          <span>Benachrichtigungen auf diesem Rechner</span>
         </label>
         {pushDisabled && permission?.reason && (
           <p className="muted small">{permission.reason}</p>
@@ -3782,15 +3776,15 @@ export function AlertsSection() {
           <span>Fehlgeschlagene Schritte automatisch erneut versuchen</span>
         </label>
         <p className="muted small">
-          Wenn aktiv, prüft der Heartbeat alle 10 Minuten die Matrix
-          und startet rote Zellen neu. Nach fünf Versuchen über 24 Stunden
-          hinweg wird die Zelle aufgegeben (manueller Retry bleibt möglich).
+          Wenn aktiv, schaut AVA alle 10 Minuten nach fehlgeschlagenen
+          Verarbeitungsschritten und startet sie neu. Nach fünf Versuchen in
+          24 Stunden gibt sie auf; von Hand geht es weiter.
         </p>
       </div>
 
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__label" htmlFor="alerts-severity">
-          Schweregrad-Schwelle für Push
+          Benachrichtigen ab
         </label>
         <select
           id="alerts-severity"
@@ -3822,7 +3816,7 @@ export function AlertsSection() {
               })
             }
           />
-          <span>Während dieses Zeitfensters keine Push-Meldungen</span>
+          <span>In diesem Zeitfenster keine Benachrichtigungen</span>
         </label>
         <div className="alerts-prefs__quiet-row">
           <label>
@@ -3877,7 +3871,7 @@ export function AlertsSection() {
 
       <div className="alerts-prefs__actions">
         <button type="button" onClick={onTrigger} disabled={busy}>
-          {busy ? "Heartbeat läuft…" : "Jetzt Heartbeat auslösen"}
+          {busy ? "Prüflauf läuft …" : "Jetzt prüfen"}
         </button>
       </div>
 
@@ -3937,8 +3931,8 @@ function HeartbeatHistory({
         <p className="muted small">
           {scheduleLine}
           <br />
-          Noch kein Sweep in dieser Sitzung abgeschlossen. Die Liste
-          füllt sich, sobald der erste Sweep durchgelaufen ist.
+          Noch kein Prüflauf in dieser Sitzung. Die Liste füllt sich nach
+          dem ersten Lauf.
         </p>
       </div>
     );
@@ -3946,7 +3940,7 @@ function HeartbeatHistory({
 
   return (
     <div className="heartbeat-history">
-      <h4 className="heartbeat-history__title">Letzte Heartbeats</h4>
+      <h4 className="heartbeat-history__title">Letzte Prüfläufe</h4>
       <p className="muted small heartbeat-history__schedule">{scheduleLine}</p>
       <ul className="heartbeat-history__list">
         {recent.map((tick, idx) => {
@@ -3985,16 +3979,15 @@ function DecisionList({ tick }: { tick: AlertTickInfo }) {
   if (tick.skipped) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Tick übersprungen{tick.reason ? `: ${tick.reason}` : ""}.
+        Lauf übersprungen{tick.reason ? `: ${tick.reason}` : ""}.
       </p>
     );
   }
   if (tick.decisions.length === 0) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Keine neuen Kandidaten in diesem Sweep. Der Heartbeat fragt die
-        Quellen seit dem letzten Lauf ab. Wenn nichts hereingekommen
-        ist, gibt es nichts zu bewerten.
+        Keine neuen Fundstellen seit dem letzten Lauf, also nichts zu
+        bewerten.
       </p>
     );
   }
@@ -4034,7 +4027,7 @@ function summariseTick(t: AlertTickInfo): string {
   }
   const parts: string[] = [];
   parts.push(
-    `${t.candidatesSeen} ${t.candidatesSeen === 1 ? "Kandidat" : "Kandidaten"} geprüft`,
+    `${t.candidatesSeen} ${t.candidatesSeen === 1 ? "Fundstelle" : "Fundstellen"} geprüft`,
   );
   if (t.alertsCreated > 0) {
     parts.push(
@@ -4062,12 +4055,12 @@ function formatScheduleLine(
     inflight: boolean;
   } | null,
 ): string {
-  if (!status) return "Lade Heartbeat-Status…";
-  if (!status.running) return "Heartbeat ist pausiert (Cadence = 0).";
+  if (!status) return "Lädt …";
+  if (!status.running) return "Prüfläufe sind aus.";
   const cadenceMin = Math.round(status.intervalMs / 60_000);
-  const parts: string[] = [`Sweep läuft alle ${cadenceMin} min`];
+  const parts: string[] = [`AVA prüft alle ${cadenceMin} Minuten`];
   if (status.inflight) {
-    parts.push("Sweep läuft gerade…");
+    parts.push("läuft gerade …");
   } else if (status.nextScheduledAt) {
     const next = new Date(status.nextScheduledAt);
     const diffMs = next.getTime() - Date.now();
@@ -4087,7 +4080,7 @@ function formatScheduleLine(
       hour: "2-digit",
       minute: "2-digit",
     });
-    parts.push(`letzter Sweep ${lastHhmm}`);
+    parts.push(`zuletzt ${lastHhmm}`);
   }
   return parts.join(" · ");
 }
@@ -4145,24 +4138,24 @@ const FRESHNESS_STAGES: Array<{
   {
     stage: "companyProfile",
     label: "Profil",
-    hint: "Stammdaten-Drift, Adressen, Geschäftsführung.",
+    hint: "Adressen, Geschäftsführung, Stammdaten.",
   },
   {
     stage: "website",
-    label: "Website-Crawl",
-    hint: "Webseite-Änderungen; ~wöchentlich.",
+    label: "Website",
+    hint: "Änderungen auf der Website; etwa wöchentlich.",
   },
   // Bewertung hat keinen eigenen Takt (2026-10-05): sie wird aus den
   // Vorstufen abgeleitet und laeuft mit, sobald eine davon neu laeuft.
   {
     stage: "structuredContent",
     label: "Strukturierte Inhalte",
-    hint: "Aggregierte Sicht; monatlich genügt.",
+    hint: "Zusammenfassung; monatlich genügt.",
   },
   {
     stage: "companyPublication",
     label: "Publikationen",
-    hint: "Jahresabschlüsse; monatlich (Producer-Sperre 30 Tage).",
+    hint: "Jahresabschlüsse; monatlich, öfter geht nicht.",
   },
 ];
 
@@ -4223,9 +4216,7 @@ export function FreshnessSection() {
     <section className="provider-section alerts-prefs" id="freshness-section">
       <h3>Auffrischung</h3>
       <p className="muted">
-        Hintergrund-Loop, der Pipeline-Stages je Firma erneut anstößt,
-        wenn sie ihre Cadence überschritten haben. Stille Disk-Arbeit;
-        echte Änderungen erscheinen über den Heartbeat als Meldung.
+        AVA liest deine Firmen regelmäßig neu ein, damit Kontakte, Website und Abschlüsse aktuell bleiben. Was sich wirklich geändert hat, bekommst du als Meldung.
       </p>
 
       <div className="alerts-prefs__row">
@@ -4235,12 +4226,12 @@ export function FreshnessSection() {
             checked={prefs.enabled}
             onChange={(e) => void patch({ enabled: e.target.checked })}
           />
-          <span>Auto-Aktualisierung aktivieren</span>
+          <span>Im Hintergrund auffrischen</span>
         </label>
       </div>
 
       <fieldset className="alerts-prefs__quiet">
-        <legend>Cadence pro Schritt (Tage)</legend>
+        <legend>Rhythmus je Bereich, in Tagen</legend>
         <div className="freshness-cadences">
           {FRESHNESS_STAGES.map(({ stage, label, hint }) => (
             <label key={stage} className="freshness-cadence-row">
@@ -4271,11 +4262,13 @@ export function FreshnessSection() {
         </div>
       </fieldset>
 
-      <fieldset className="alerts-prefs__quiet">
+      <details className="ek__technik">
+        <summary>Technische Details</summary>
+      <fieldset className="alerts-prefs__quiet ek__technik-inhalt">
         <legend>Drosselung</legend>
         <div className="alerts-prefs__quiet-row">
           <label>
-            Max. Aufrufe pro Stunde (Schritt)
+            Höchstens je Bereich und Stunde
             <input
               type="number"
               min={0}
@@ -4297,7 +4290,7 @@ export function FreshnessSection() {
             />
           </label>
           <label>
-            Max. Aufrufe pro Stunde (gesamt)
+            Höchstens je Stunde insgesamt
             <input
               type="number"
               min={0}
@@ -4319,7 +4312,7 @@ export function FreshnessSection() {
             />
           </label>
           <label>
-            Pro Tick maximal
+            Höchstens je Prüflauf
             <input
               type="number"
               min={0}
@@ -4339,6 +4332,7 @@ export function FreshnessSection() {
           </label>
         </div>
       </fieldset>
+      </details>
 
       {prefs.pinned.length > 0 && (
         <div className="alerts-prefs__row">
@@ -4363,7 +4357,7 @@ export function FreshnessSection() {
 
       <div className="alerts-prefs__actions">
         <button type="button" onClick={onScan} disabled={busy}>
-          {busy ? "Scan läuft…" : "Jetzt scannen"}
+          {busy ? "Auffrischung läuft …" : "Jetzt auffrischen"}
         </button>
       </div>
 
@@ -4407,9 +4401,12 @@ export function WatchesSection() {
 
   const onRemove = async (id: string) => {
     if (
-      !window.confirm(
-        "Diesen Watch wirklich löschen? Treffer-Historie geht verloren.",
-      )
+      !(await bestaetigen({
+        titel: "Diese Beobachtung löschen?",
+        text: "Die bisherigen Treffer gehen verloren.",
+        bestaetigen: "Löschen",
+        zerstoerend: true,
+      }))
     ) {
       return;
     }
@@ -4445,11 +4442,11 @@ export function WatchesSection() {
     <section id="watches-section" className="provider-section alerts-prefs">
       <h3>Beobachtungen</h3>
       <p className="muted">
-        Wiederkehrende Beobachtungen, die der Heartbeat im Hintergrund
-        gegen frische Kandidaten prüft. Treffer landen automatisch in{" "}
-        <Link to="/alerts">Meldungen</Link>. Du kannst Watches hier
-        anlegen oder im Chat („Beobachte wöchentlich Geschäftsführungs-
-        wechsel bei meinen wichtigsten Firmen").
+        Sag AVA, worauf sie bei deinen Firmen achten soll, etwa auf einen
+        Wechsel in der Geschäftsführung. Treffer landen in{" "}
+        <Link to="/alerts">Meldungen</Link>. Beobachtungen legst du hier an
+        oder im Chat („Beobachte wöchentlich Geschäftsführungswechsel bei
+        meinen wichtigsten Firmen").
       </p>
       <p className="muted small">
         {active} von {watches.length} aktiv · maximal {WATCH_CAP_DEFAULT}.
@@ -4458,7 +4455,7 @@ export function WatchesSection() {
       {error && <p className="error small">{error}</p>}
 
       {watches.length === 0 ? (
-        <p className="muted">Noch keine Watches registriert.</p>
+        <p className="muted">Noch keine Beobachtungen.</p>
       ) : (
         <ul className="watches-list">
           {watches.map((w) => (
@@ -4521,7 +4518,7 @@ function WatchRow({
           {topics && (
             <>
               {" · "}
-              Topics: {topics}
+              Arten: {topics}
             </>
           )}
           {" · "}
@@ -4642,13 +4639,13 @@ function WatchesCreateForm({ atCap }: { atCap: boolean }) {
 
   return (
     <form className="scheduler-form" onSubmit={onSubmit}>
-      <h4>Neuen Watch anlegen</h4>
+      <h4>Neue Beobachtung</h4>
       <p className="muted">
-        Der Heartbeat-Loop prüft alle Kandidaten gegen deine Rubric. Bei
+        AVA prüft neue Fundstellen regelmäßig gegen dein Kriterium. Bei einem
         Treffer landet eine Meldung in <Link to="/alerts">Meldungen</Link>.
       </p>
       <label>
-        <span>Worüber willst du benachrichtigt werden? (frei formuliert)</span>
+        <span>Worauf soll AVA achten?</span>
         <input
           type="text"
           required
@@ -4659,19 +4656,19 @@ function WatchesCreateForm({ atCap }: { atCap: boolean }) {
         />
       </label>
       <label>
-        <span>Rubric (1-Satz-Kriterium für den LLM-Judge — konkret und beobachtbar)</span>
+        <span>Woran erkennt sie einen Treffer? Ein Satz, konkret und beobachtbar.</span>
         <input
           type="text"
           required
           maxLength={500}
           value={rubric}
           onChange={(e) => setRubric(e.target.value)}
-          placeholder="z. B. Wechsel auf C-Level (Geschäftsführung, Vorstand)"
+          placeholder="z. B. Wechsel in Geschäftsführung oder Vorstand"
         />
       </label>
       <div className="scheduler-form__row">
         <label>
-          <span>Cadence</span>
+          <span>Wie oft?</span>
           <select
             value={cadence}
             onChange={(e) =>
@@ -4683,13 +4680,13 @@ function WatchesCreateForm({ atCap }: { atCap: boolean }) {
             <option value="monthly">monatlich</option>
           </select>
         </label>
-        <label style={{ flex: 2 }}>
-          <span>Topics (optional — nur diese Kandidaten-Arten prüfen)</span>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+        <label>
+          <span>Nur diese Arten von Fundstellen (optional)</span>
+          <div className="u-row u-mt-1">
             {WATCH_TOPIC_VALUES.map((t) => (
               <label
                 key={t}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                className="field-inline"
               >
                 <input
                   type="checkbox"
@@ -4701,29 +4698,29 @@ function WatchesCreateForm({ atCap }: { atCap: boolean }) {
                     setSelectedTopics(next);
                   }}
                 />
-                <span style={{ fontSize: "0.85rem" }}>{WATCH_TOPIC_LABELS[t]}</span>
+                <span>{WATCH_TOPIC_LABELS[t]}</span>
               </label>
             ))}
           </div>
         </label>
       </div>
       <label>
-        <span>Company-IDs (optional, Komma-getrennt — nur diese Firmen beobachten)</span>
+        <span>Nur diese Firmen (optional)</span>
         <input
           type="text"
           value={companyIds}
           onChange={(e) => setCompanyIds(e.target.value)}
-          placeholder="<companyId-1>, <companyId-2>"
+          placeholder="Firmen-Kennungen, durch Komma getrennt"
         />
-        <span className="muted" style={{ fontSize: "0.75rem" }}>
-          IDs aus „Meine Firmen" kopieren (oder via Chat „Beobachte ACME …" anlegen,
-          dann erkennt AVA die Firma automatisch).
+        <span className="muted small">
+          Am einfachsten im Chat: „Beobachte bei ACME …“, dann erkennt AVA die
+          Firma selbst. Die Kennung findest du sonst in „Meine Firmen“.
         </span>
       </label>
       {error && <div className="scheduler-form__error">Fehler: {error}</div>}
       <div className="scheduler-form__actions">
         <button type="submit" disabled={submitting} className="primary">
-          Watch starten
+          Beobachtung starten
         </button>
         <button
           type="button"
@@ -4799,15 +4796,15 @@ function FreshnessHistory({ recent }: { recent: FreshnessTickInfo[] }) {
     return (
       <div className="heartbeat-history heartbeat-history--empty">
         <p className="muted small">
-          Noch kein Aktualisierungs-Lauf in dieser Sitzung. Klick „Jetzt
-          scannen“ um die Warteschlange zu sehen.
+          Noch keine Auffrischung in dieser Sitzung. Klick „Jetzt
+          auffrischen“, um die Warteschlange zu sehen.
         </p>
       </div>
     );
   }
   return (
     <div className="heartbeat-history">
-      <h4 className="heartbeat-history__title">Letzte Aktualisierungs-Läufe</h4>
+      <h4 className="heartbeat-history__title">Letzte Auffrischungen</h4>
       <ul className="heartbeat-history__list">
         {recent.map((tick, idx) => {
           const open = openIdx === idx;
@@ -4860,7 +4857,7 @@ function FreshnessTickDetail({
   if (tick.candidates.length === 0) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Keine veralteten Zellen. Alles innerhalb der konfigurierten Cadence.
+        Nichts veraltet. Alle Bereiche sind im Rhythmus.
       </p>
     );
   }
@@ -4895,9 +4892,10 @@ function FreshnessTickDetail({
               </span>
             </div>
             <div className="muted small heartbeat-decision__summary">
-              {c.stage} · {Math.round(c.daysSinceLastRun)}d /{" "}
-              {c.cadenceDays}d Cadence · Score {c.score.toFixed(2)}
-              {c.pinned ? " · pinned" : ""}
+              {FRESHNESS_STAGES.find((f) => f.stage === c.stage)?.label ?? c.stage}
+              {" · zuletzt vor "}
+              {Math.round(c.daysSinceLastRun)} Tagen · Rhythmus {c.cadenceDays} Tage
+              {c.pinned ? " · priorisiert" : ""}
             </div>
           </li>
         );
@@ -4948,9 +4946,12 @@ export function GeneralMemorySection() {
 
   const onRemove = async (id: string, content: string) => {
     if (
-      !window.confirm(
-        `Diesen Eintrag vergessen?\n\n„${content.length > 200 ? content.slice(0, 197) + "…" : content}"\n\nDer Agent ruft ihn in zukünftigen Sitzungen nicht mehr ab.`,
-      )
+      !(await bestaetigen({
+        titel: "Diesen Eintrag vergessen?",
+        text: `„${content.length > 200 ? content.slice(0, 197) + "…" : content}“\n\nAVA greift in künftigen Gesprächen nicht mehr darauf zu.`,
+        bestaetigen: "Vergessen",
+        zerstoerend: true,
+      }))
     ) {
       return;
     }
@@ -5195,7 +5196,7 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
     zugang.stufen.offen ? `${zugang.stufen.offen} noch ohne Stufe` : "",
   ].filter(Boolean).join(", ");
   return (
-    <div style={{ display: "grid", gap: "0.25rem" }}>
+    <div className="u-stack u-stack--sm">
       <span className="muted small">
         Firmen im Bestand in dieser Periode: {n}{stufen ? ` (${stufen})` : ""}
       </span>
@@ -5215,7 +5216,7 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
         </span>
       )}
       {tier !== "free" && zugang.guthabenCents !== -1 && zugang.limitQuelle !== "betreiber" && (
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div className="u-row">
           <label className="muted small" htmlFor="ausgabenlimit">Ausgabenlimit je Monat</label>
           <input
             id="ausgabenlimit"
@@ -5238,7 +5239,7 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
         </div>
       )}
       {tier !== "free" && zugang.limitQuelle !== "betreiber" && zugang.ausgabenLimitCents != null && (zugang.erwartetCents ?? zugang.verbrauchtCents) >= zugang.ausgabenLimitCents && (
-        <span className="small" style={{ color: "var(--color-warn)" }}>
+        <span className="small text-warn">
           Dein Ausgabenlimit ist erreicht. Neue Firmen warten, bis du es erhöhst oder der Monat wechselt.
         </span>
       )}
@@ -5299,13 +5300,13 @@ export function PlanSection() {
     const ent = data.entitlement;
     const pct = data.limit > 0 ? Math.min(100, (data.used / Math.max(1, data.limit)) * 100) : 0;
     return (
-      <section id="plan-section" className="ct-card" style={{ marginBottom: "1.25rem" }}>
+      <section id="plan-section" className="ct-card u-mb-2">
         <header className="ct-card__header">
           <h3>Plan &amp; Abrechnung</h3>
           <p className="muted">Dein Zugang wird über die Sammelabrechnung deiner Organisation bezahlt.</p>
         </header>
-        <div style={{ display: "grid", gap: "1rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div className="u-stack u-stack--lg">
+          <div className="u-row">
             <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}-Seat</span>
             <span className="muted small">bezahlt von {ent.paidBy ?? "deiner Organisation"}</span>
             {ent.seats?.tierNext && ent.seats.tierNextFrom && (
@@ -5316,26 +5317,28 @@ export function PlanSection() {
           <ZugangStand zugang={data.zugang} tier={data.tier} limitAenderbar={ent.role === "owner" || ent.role === "admin"} />
           {data.status === "suspended" && (
             <div className="error">
-              Die Sammelabrechnung deiner Organisation ist wegen einer offenen Zahlung pausiert. Importe und Radar-Scans laufen
+              Die Sammelabrechnung deiner Organisation ist wegen einer offenen Zahlung pausiert. Importe und Radar-Läufe laufen
               erst wieder, wenn der Owner die Zahlung klärt.
             </div>
           )}
           {data.status === "past_due" && (
-            <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
+            <div className="ct-card ct-card--kompakt ct-card--warn">
               Bei der Organisation ist eine Zahlung offen. Der Owner wurde informiert; bis zur Klärung läuft alles weiter.
             </div>
           )}
           {!isUnlimited(data) && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
+              <div className="fortschritt__kopf">
                 <strong>
                   {data.used.toLocaleString("de-DE")} von {data.limit.toLocaleString("de-DE")} verbraucht
                 </strong>
                 {data.periodEnd && <span className="muted">Erneuert sich am {fmtDateShort(data.periodEnd)}</span>}
               </div>
-              <div role="progressbar" aria-valuemin={0} aria-valuemax={data.limit} aria-valuenow={data.used}
-                style={{ height: 8, background: "var(--color-border)", borderRadius: 4, overflow: "hidden", marginTop: 4 }}>
-                <div style={{ width: `${pct}%`, height: "100%", background: data.used >= data.limit ? "var(--color-err)" : pct >= 80 ? "var(--color-warn)" : "var(--color-indigo-500)" }} />
+              <div role="progressbar" aria-valuemin={0} aria-valuemax={data.limit} aria-valuenow={data.used} className="fortschritt">
+                <div
+                  className={`fortschritt__balken${data.used >= data.limit ? " fortschritt__balken--err" : pct >= 80 ? " fortschritt__balken--warn" : ""}`}
+                  style={{ width: `${pct}%` }}
+                />
               </div>
               <small className="muted">
                 Notbremse der Organisation ({ent.seats?.count ?? 1} Seat{(ent.seats?.count ?? 1) === 1 ? "" : "s"}); das eigentliche
@@ -5344,13 +5347,13 @@ export function PlanSection() {
             </div>
           )}
           {ent.personalSubscription && (
-            <div className="ct-card" style={{ padding: "0.75rem 1rem" }}>
+            <div className="ct-card ct-card--kompakt">
               <strong>Dein eigenes {TIER_LABELS[(ent.personalSubscription.tier as BillingTier) ?? "starter"] ?? ent.personalSubscription.tier}-Abo läuft noch.</strong>{" "}
               {ent.personalSubscription.cancelAtPeriodEnd
                 ? `Es endet ${ent.personalSubscription.periodEnd ? `am ${fmtDateShort(ent.personalSubscription.periodEnd)}` : "zum Periodenende"} und wird nicht erneuert, weil dein Zugang jetzt über die Organisation läuft.`
                 : "Es läuft weiter, obwohl dein Zugang über die Organisation bezahlt wird."}{" "}
               Über{" "}
-              <button type="button" className="link" disabled={busy !== null} onClick={() => void openPortal()} style={{ display: "inline", padding: 0 }}>
+              <button type="button" className="link is-inline" disabled={busy !== null} onClick={() => void openPortal()}>
                 Abonnement verwalten
               </button>{" "}
               kannst du das ändern.
@@ -5368,7 +5371,7 @@ export function PlanSection() {
   const showManageButton = currentTier === "starter" || currentTier === "pro";
 
   return (
-    <section id="plan-section" className="ct-card" style={{ marginBottom: "1.25rem" }}>
+    <section id="plan-section" className="ct-card u-mb-2">
       <header className="ct-card__header">
         <h3>Plan &amp; Abrechnung</h3>
         <p className="muted">Aktueller Tarif und Verbrauch im Abrechnungszyklus.</p>
@@ -5385,11 +5388,11 @@ export function PlanSection() {
       )}
 
       {data && (
-        <div style={{ display: "grid", gap: "1.25rem" }}>
+        <div className="u-stack u-stack--lg">
           {data && <ZugangStand zugang={data.zugang} tier={data.tier} />}
           {/* Current tier pill + usage bar */}
-          <div style={{ display: "grid", gap: "0.5rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <div className="u-stack">
+            <div className="u-row">
               <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}</span>
               <span className="muted small">aktiver Tarif</span>
               {data.cancelAtPeriodEnd && (
@@ -5407,18 +5410,18 @@ export function PlanSection() {
             </div>
             {data.status === "suspended" && (
               <div className="error">
-                Dein Abo ist wegen einer offenen Zahlung pausiert: Importe und Radar-Scans laufen erst wieder, wenn die
+                Dein Abo ist wegen einer offenen Zahlung pausiert: Importe und Radar-Läufe laufen erst wieder, wenn die
                 Zahlung im Kunden-Portal geklärt ist.
               </div>
             )}
             {data.status === "past_due" && (
-              <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
+              <div className="ct-card ct-card--kompakt ct-card--warn">
                 <strong>Zahlung fehlgeschlagen.</strong> Stripe versucht es erneut; bitte Zahlungsmittel im Kunden-Portal prüfen,
                 sonst wird der Zugang nach 14 Tagen pausiert.
               </div>
             )}
             {data.cancelAtPeriodEnd && data.periodEnd && (
-              <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
+              <div className="ct-card ct-card--kompakt ct-card--warn">
                 <strong>
                   Kündigung zum {fmtDateShort(data.periodEnd)} vorgemerkt.
                 </strong>{" "}
@@ -5439,13 +5442,7 @@ export function PlanSection() {
 
             {!isUnlimited(data) && (
               <div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: "0.9rem",
-                  }}
-                >
+                <div className="fortschritt__kopf">
                   <strong>
                     {data.used.toLocaleString("de-DE")} von {data.limit.toLocaleString("de-DE")} verbraucht
                   </strong>
@@ -5460,31 +5457,16 @@ export function PlanSection() {
                   aria-valuemin={0}
                   aria-valuemax={data.limit}
                   aria-valuenow={data.used}
-                  style={{
-                    height: 8,
-                    background: "var(--color-border)",
-                    borderRadius: 4,
-                    overflow: "hidden",
-                    marginTop: 4,
-                  }}
+                  className="fortschritt"
                 >
                   <div
-                    style={{
-                      width: `${Math.min(100, (data.used / Math.max(1, data.limit)) * 100)}%`,
-                      height: "100%",
-                      background:
-                        data.used >= data.limit
-                          ? "var(--color-err)"
-                          : data.used / data.limit >= 0.8
-                            ? "var(--color-warn)"
-                            : "var(--color-indigo-500)",
-                      transition: "width 200ms ease",
-                    }}
+                    className={`fortschritt__balken${data.used >= data.limit ? " fortschritt__balken--err" : data.used / data.limit >= 0.8 ? " fortschritt__balken--warn" : ""}`}
+                    style={{ width: `${Math.min(100, (data.used / Math.max(1, data.limit)) * 100)}%` }}
                   />
                 </div>
                 <small className="muted">
                   {data.periodKey === "lifetime"
-                    ? "Lebenszeit-Kontingent (Free-Tier)"
+                    ? "Kontingent im Free-Tarif (einmalig)"
                     : "Verbrauch im aktuellen Zyklus"}
                 </small>
               </div>

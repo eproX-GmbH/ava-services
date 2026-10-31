@@ -24,6 +24,7 @@ import type {
   AuditSeverity,
   SelfCorrectionEvent,
 } from "../../../../shared/types";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 const ALL_CATEGORIES: AuditCategory[] = [
   "producer",
@@ -206,9 +207,12 @@ function AuditTrailSection(): JSX.Element {
   };
 
   const purgeAll = async (): Promise<void> => {
-    const ok = window.confirm(
-      "Den gesamten Audit-Trail unwiderruflich löschen? Diese Aktion betrifft nur deine lokale Datenbank — keine Cloud-Daten.",
-    );
+    const ok = await bestaetigen({
+      titel: "Den gesamten Verlauf löschen?",
+      text: "Das lässt sich nicht rückgängig machen und betrifft nur diesen Rechner, nicht den AVA-Server.",
+      bestaetigen: "Löschen",
+      zerstoerend: true,
+    });
     if (!ok) return;
     await window.api.audit.purgeAll();
     setEvents([]);
@@ -249,9 +253,9 @@ function AuditTrailSection(): JSX.Element {
 
   return (
     <section className="provider-section" id="audit-trail">
-      <header style={{ marginBottom: "1rem" }}>
+      <header className="u-mb-2">
         <h3>Verlauf</h3>
-        <p className="muted" style={{ margin: 0 }}>
+        <p className="muted u-m0">
           Was AVA wann getan hat: Verarbeitungen, Meldungen, Anmeldungen, CRM-Aktionen. Alles bleibt auf deinem Rechner.
         </p>
       </header>
@@ -393,13 +397,13 @@ function AuditTrailSection(): JSX.Element {
           {error && <p className="error small">{error}</p>}
           {!error && events.length === 0 && !loading && (
             <p className="muted">
-              Noch keine Events im gewählten Zeitraum. Sobald AVA Producer
-              startet, Heartbeats laufen oder du Aktionen ausführst, taucht
-              hier ein chronologischer Eintrag auf.
+              Noch keine Einträge im gewählten Zeitraum. Sobald AVA Firmen
+              verarbeitet, Prüfläufe laufen oder du etwas tust, erscheint hier
+              ein Eintrag.
             </p>
           )}
           {events.length > 0 && (
-            <p className="muted small" style={{ marginBottom: "0.5rem" }}>
+            <p className="muted small u-mb-1">
               {events.length} sichtbar
               {totalEstimate >= 0 ? ` · ${totalEstimate} gesamt im Filter` : ""}
             </p>
@@ -419,10 +423,9 @@ function AuditTrailSection(): JSX.Element {
           {nextPageToken && (
             <button
               type="button"
-              className="link"
+              className="link u-mt-2"
               onClick={() => void loadMore()}
               disabled={loading}
-              style={{ marginTop: "1rem" }}
             >
               {loading ? "Lädt …" : "Ältere laden"}
             </button>
@@ -565,11 +568,7 @@ function SelfCorrectionsSection(): JSX.Element | null {
     await refresh();
   };
   const onDeleteAll = async (): Promise<void> => {
-    if (
-      !window.confirm(
-        `Alle ${total} Selbstkorrektur-Meldungen löschen? Damit gehen die Hinweise auf Tool-Probleme verloren — sicher?`,
-      )
-    )
+    if (!(await bestaetigen({ titel: `Alle ${total} Hinweise für den Support löschen?`, bestaetigen: "Löschen", zerstoerend: true })))
       return;
     await window.api.selfCorrections.deleteAll();
     await refresh();
@@ -605,13 +604,12 @@ function SelfCorrectionsSection(): JSX.Element | null {
 
   return (
     <section
-      className="provider-section"
+      className="provider-section u-mb-2"
       id="self-corrections"
-      style={{ marginBottom: "1.25rem" }}
     >
-      <header style={{ marginBottom: "0.75rem" }}>
+      <header className="u-mb-1">
         <h3>Hinweise für den Support</h3>
-        <p className="muted" style={{ margin: 0 }}>
+        <p className="muted u-m0">
           Wenn AVA nach einem Fehler einen Umweg gefunden hat, steht es hier. Beim Melden eines Problems hilft diese
           Liste dem Support. Alles bleibt auf deinem Rechner. Aktuell: <strong>{total}</strong> Hinweis{total === 1 ? "" : "e"}.
         </p>
@@ -628,7 +626,7 @@ function SelfCorrectionsSection(): JSX.Element | null {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, margin: "8px 0 12px" }}>
+      <div className="u-row u-mt-1 u-mb-1">
         <button type="button" onClick={onExport}>
           Als JSON kopieren
         </button>
@@ -660,12 +658,12 @@ function SelfCorrectionsSection(): JSX.Element | null {
                   <strong>Workaround:</strong> {e.workaround}
                 </div>
                 {e.suggestedCodeFix && (
-                  <div style={{ marginTop: 4 }}>
+                  <div className="u-mt-1">
                     <strong>Fix-Vorschlag:</strong> {e.suggestedCodeFix}
                   </div>
                 )}
                 {e.rawErrorPreview && (
-                  <details style={{ marginTop: 6 }}>
+                  <details className="u-mt-1">
                     <summary>Original-Fehler</summary>
                     <pre className="self-corrections__raw">
                       {e.rawErrorPreview}
@@ -673,14 +671,13 @@ function SelfCorrectionsSection(): JSX.Element | null {
                   </details>
                 )}
                 {e.conversationId && (
-                  <div className="muted small" style={{ marginTop: 4 }}>
+                  <div className="muted small u-mt-1">
                     Conversation: <code>{e.conversationId}</code>
                   </div>
                 )}
-                <button
+                <button className="u-mt-1"
                   type="button"
                   onClick={() => void onDelete(e.id)}
-                  style={{ marginTop: 8 }}
                 >
                   Eintrag löschen
                 </button>

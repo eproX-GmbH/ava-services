@@ -56,7 +56,7 @@ export function EmailMusterSection() {
         </label>
       </div>
       <div className="alerts-prefs__row">
-        <label className="alerts-prefs__check" title="Mail-Server-Anfragen (RCPT TO) je Stunde von diesem Rechner, gleichmäßig über die Stunde verteilt (bei 300 alle 12 Sekunden eine Anfrage). Höher = schneller, aber mehr Last auf fremden Mailservern.">
+        <label className="alerts-prefs__check" title="Wie oft AVA je Stunde beim Mail-Server einer Firma nachfragt, gleichmäßig verteilt (bei 300 alle 12 Sekunden einmal). Höher ist schneller, belastet aber fremde Mail-Server stärker.">
           <span>Verifizierungsrate</span>
           <input
             type="number"

@@ -21,8 +21,8 @@ export function MailEntwurfSection() {
   const ziele = MAIL_ENTWURF_ZIELE.filter((z) => z !== "postfach" || d.postfach.eingerichtet);
 
   return (
-    <section id="mail-entwurf-section" className="provider-section">
-      <h3>E-Mail-Entwürfe</h3>
+    <div id="mail-entwurf-section" className="ek__teil">
+      <h4>Entwürfe</h4>
       <p className="muted">
         Unter jeder Mail, die AVA für dich formuliert, steht ein Knopf, der den Entwurf fertig öffnet: mit Empfänger, Betreff, Text und Anhängen.
       </p>
@@ -53,7 +53,7 @@ export function MailEntwurfSection() {
 
       <Postfach d={d} onGeaendert={neuLaden} />
       <FesteAnhaenge liste={d.festeAnhaenge} onGeaendert={neuLaden} />
-    </section>
+    </div>
   );
 }
 
@@ -168,7 +168,7 @@ function Postfach({ d, onGeaendert }: { d: Einstellungen; onGeaendert: () => voi
               {f.anbieter === "andere" && (
                 <div className="mail-form__row">
                   <label>
-                    <span>IMAP-Server</span>
+                    <span>Server (IMAP)</span>
                     <input type="text" required value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} placeholder="imap.firma.de" />
                   </label>
                   <label>

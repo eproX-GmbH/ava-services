@@ -36,6 +36,7 @@ import {
   type ThemeMode,
 } from "../lib/theme";
 import { XIcon } from "./icons";
+import { BestaetigungHost } from "./Bestaetigung";
 
 // Top-level chrome for the routed app (Phase 8.l2).
 //
@@ -149,6 +150,7 @@ export function AppShell({ children }: PropsWithChildren) {
       {beobachterErlaubt && <LinkedInActiveBanner />}
       <WorkerModusBanner />
       <main className="app-shell__main">{children}</main>
+      <BestaetigungHost />
       <ChatSearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}

@@ -13,6 +13,7 @@ import type {
 import { SkillTrustDialog } from "../components/skills/SkillTrustDialog";
 import { SkillEditor } from "../components/skills/SkillEditor";
 import { SkillImportDialog } from "../components/skills/SkillImportDialog";
+import { bestaetigen } from "../components/Bestaetigung";
 
 // Settings → Skills (PLAN §2, S3 + S4).
 //
@@ -126,9 +127,12 @@ export function SettingsSkills() {
       );
       return;
     }
-    const confirmed = window.confirm(
-      `Skill '${row.name}' wirklich endgültig löschen?\n\nDie Datei ${row.sourcePath} wird entfernt.`,
-    );
+    const confirmed = await bestaetigen({
+      titel: `Fähigkeit „${row.name}“ endgültig löschen?`,
+      text: `Die Datei ${row.sourcePath} wird entfernt.`,
+      bestaetigen: "Löschen",
+      zerstoerend: true,
+    });
     if (!confirmed) return;
     setError(null);
     try {
@@ -359,7 +363,7 @@ export function SettingsSkills() {
         Eigene Anleitungen, die AVA im Chat automatisch anwendet, wenn sie passen, oder die du mit /name aufrufst. Neue oder geänderte Skills gibst du einmal frei, bevor AVA sie benutzt.
       </p>
 
-      <div className="actions" style={{ margin: "0.5rem 0 1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+      <div className="actions u-row u-mt-1 u-mb-2">
         <button
           type="button"
           className="link"
@@ -408,20 +412,7 @@ export function SettingsSkills() {
       </div>
 
       {modifiedRows.length > 0 && (
-        <div
-          style={{
-            margin: "0 0 0.75rem",
-            padding: "0.6rem 0.85rem",
-            background: "#fff5f5",
-            border: "1px solid #e0a0a0",
-            borderRadius: 4,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "0.5rem",
-          }}
-        >
+        <div className="hinweis hinweis--err hinweis--between">
           <span className="small">
             <strong>Vertrauensänderungen:</strong>{" "}
             {modifiedRows.length} Skill
@@ -440,16 +431,8 @@ export function SettingsSkills() {
       )}
 
       {markdownOpen && (
-        <div
-          style={{
-            margin: "0 0 1rem",
-            padding: "0.6rem 0.85rem",
-            background: "#fafafa",
-            border: "1px solid #ddd",
-            borderRadius: 4,
-          }}
-        >
-          <p className="small" style={{ margin: 0 }}>
+        <div className="hinweis u-mb-2">
+          <p className="small u-m0">
             SKILL.md-Inhalt einfügen:
           </p>
           <textarea
@@ -457,14 +440,9 @@ export function SettingsSkills() {
             onChange={(e) => setMarkdownDraft(e.target.value)}
             rows={8}
             placeholder={"---\nname: mein-skill\n..."}
-            style={{
-              width: "100%",
-              marginTop: "0.4rem",
-              fontFamily: "monospace",
-              fontSize: "0.85rem",
-            }}
+            className="textarea-code"
           />
-          <div className="actions" style={{ marginTop: "0.4rem" }}>
+          <div className="actions u-mt-1">
             <button
               type="button"
               className="link"
@@ -492,14 +470,7 @@ export function SettingsSkills() {
         onDrop={(e) => void onDrop(e)}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
-        style={{
-          border: `2px dashed ${dragActive ? "#3070d0" : "#cccccc"}`,
-          background: dragActive ? "#eef4ff" : "transparent",
-          borderRadius: 6,
-          padding: "0.6rem 0.85rem",
-          marginBottom: "1rem",
-          textAlign: "center",
-        }}
+        className={`dropzone${dragActive ? " dropzone--aktiv" : ""}`}
       >
         <span className="muted small">
           {dragActive
@@ -595,9 +566,12 @@ export function SettingsSkills() {
             setEditorTarget(null);
             await refresh();
             if (oldName && oldName !== payload.frontmatter.name) {
-              const wantsDelete = window.confirm(
-                `Du hast das Skill umbenannt. Die alte Datei '${oldName}' bleibt auf der Platte. Jetzt löschen?`,
-              );
+              const wantsDelete = await bestaetigen({
+                titel: "Alte Datei löschen?",
+                text: `Du hast die Fähigkeit umbenannt. Die alte Datei „${oldName}“ bleibt sonst auf der Festplatte.`,
+                bestaetigen: "Löschen",
+                zerstoerend: true,
+              });
               if (wantsDelete) {
                 const res = await window.api.skills.delete(oldName);
                 if (!res.ok) setError(res.error);
@@ -676,18 +650,12 @@ function SkillCard({
             {SOURCE_LABEL[row.scope]}
           </span>
           {row.trust === "untrusted" && (
-            <span
-              className="skill-pill skill-pill--warn"
-              style={{ background: "#fff3d6", color: "#7a4b00" }}
-            >
+            <span className="skill-pill skill-pill--warn">
               Vertrauen erforderlich
             </span>
           )}
           {row.trust === "modified" && (
-            <span
-              className="skill-pill skill-pill--warn"
-              style={{ background: "#fdd6d6", color: "#7a0000" }}
-            >
+            <span className="skill-pill skill-pill--modified">
               Geändert seit letzter Freigabe
             </span>
           )}
@@ -705,22 +673,13 @@ function SkillCard({
       <p className="skill-card__desc">{truncate(row.description, 140)}</p>
       <SkillStatusPill row={row} />
       {row.trust !== "trusted" && (
-        <div
-          className="skill-card__trust-banner"
-          style={{
-            margin: "0.5rem 0",
-            padding: "0.5rem 0.75rem",
-            background: row.trust === "modified" ? "#fff5f5" : "#fffaf0",
-            border: `1px solid ${row.trust === "modified" ? "#e0a0a0" : "#d9b066"}`,
-            borderRadius: 4,
-          }}
-        >
-          <p className="small" style={{ margin: 0 }}>
+        <div className={`skill-card__trust-banner hinweis ${row.trust === "modified" ? "hinweis--err" : "hinweis--warn"}`}>
+          <p className="small u-m0">
             {row.trust === "modified"
               ? "Dieses Skill wurde seit der letzten Freigabe geändert. Bitte erneut prüfen, bevor der Agent es benutzt."
               : "Dieses Skill ist noch nicht freigegeben. Der Agent benutzt es erst nach deiner Bestätigung."}
           </p>
-          <div className="actions" style={{ marginTop: "0.4rem" }}>
+          <div className="actions u-mt-1">
             <button type="button" className="link" onClick={onTrust}>
               {row.trust === "modified" ? "Erneut prüfen" : "Vertrauen prüfen"}
             </button>
@@ -752,7 +711,7 @@ function SkillCard({
         </button>
         <button
           type="button"
-          className="link"
+          className={isWorkspace ? "link" : "link text-err"}
           onClick={onDelete}
           disabled={isWorkspace}
           title={
@@ -760,7 +719,6 @@ function SkillCard({
               ? "Workspace-Skills werden im Projekt-Repo verwaltet."
               : undefined
           }
-          style={{ color: isWorkspace ? undefined : "#b00020" }}
         >
           Löschen
         </button>

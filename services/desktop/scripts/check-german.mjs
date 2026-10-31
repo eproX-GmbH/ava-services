@@ -76,6 +76,8 @@ const ALLOW_SUBSTRINGS = [
   "company-contact", "company-evaluation", "master-data",
   // Anthropic-Policy-Begriff, der in der UI zitiert wird.
   "Extra Usage",
+  // OpenAI-Vorgaben fuer "Sign in with ChatGPT": Knopf und Hinweissatz bleiben englisch.
+  "Continue with ChatGPT", "Eligible AI requests",
 ];
 
 // Regexes that strip out things we never want to scan: comments, import

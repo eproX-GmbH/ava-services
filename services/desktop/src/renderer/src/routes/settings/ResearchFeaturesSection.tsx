@@ -100,7 +100,7 @@ export function ResearchFeaturesSection() {
   return (
     <section className="provider-section" id="research-features">
       <h3>Stellen &amp; Expansion</h3>
-      <p className="muted small" style={{ marginTop: 4, marginBottom: 16 }}>
+      <p className="muted small u-mt-0 u-mb-2">
         AVA sucht im Web nach offenen Stellen und nach Expansions- und Ausschreibungsmeldungen
         deiner Firmen. Standard kostet wenige Cent je Firma, Deep Research ist gründlicher und
         kostet bis zu 5 Euro je Firma.{" "}
@@ -110,7 +110,7 @@ export function ResearchFeaturesSection() {
             ? "Beide laufen auf deine Rechnung über deine eigenen Schlüssel (Standard auch über dein ChatGPT-Abo). Den OpenAI-Schlüssel deiner Organisation kannst du ausdrücklich wählen; dann trägt die Organisation die Kosten. AVA fakturiert nichts darüber."
             : "Beide laufen auf deine Rechnung über Schlüssel, die du beim jeweiligen Anbieter selbst hinterlegst (Standard auch über dein ChatGPT-Abo) — AVA fakturiert nichts darüber."}
         {!bundle.encryptionAvailable && (
-          <span style={{ display: "block", color: "#b48800", marginTop: 8 }}>
+          <span className="text-warn u-mt-1" style={{ display: "block" }}>
             ⚠ Verschlüsselter Schlüssel-Speicher ist auf diesem System nicht
             verfügbar. Schlüssel werden mit Basic-Cipher gesichert (auf
             macOS / Windows entspricht das normalerweise dem Default; nur
@@ -294,9 +294,10 @@ function FeatureCard({
                 <option value="anthropic">Anthropic</option>
               </select>
             )}
-            <span className="research-feature-card__model-hint">
-              Modell: {modellText}
-            </span>
+            <details className="ek__technik research-feature-card__model-hint">
+              <summary>Technische Details</summary>
+              <span className="ek__technik-inhalt">Modell: {modellText}</span>
+            </details>
           </div>
 
           {!(bundle.providerLock && bundle.orgOpenai) && (
@@ -313,7 +314,7 @@ function FeatureCard({
             Geschätzte Kosten:{" "}
             <strong>{COST_PER_FIRMA[provider][cfg.tier]} je Firma</strong>{" "}
             {ueberOrg
-              ? "(wird über das AVA-Gateway deiner Organisation zugerechnet)."
+              ? "(wird deiner Organisation zugerechnet)."
               : `(wird direkt deinem ${provider === "openai" ? "OpenAI" : "Anthropic"}-Konto belastet).`}
           </p>
         </>
@@ -459,34 +460,13 @@ function CostConfirmModal({
 }) {
   const costRange = COST_PER_FIRMA[provider].deep;
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-      onClick={onCancel}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--bg-color, #fff)",
-          padding: 24,
-          borderRadius: 8,
-          maxWidth: 480,
-          boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Achtung: hohe API-Kosten</h3>
+    <div className="ek-dialog__hintergrund" role="presentation" onClick={onCancel}>
+      <div className="ek-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h4>Achtung, das kann teuer werden</h4>
         <p>
           Deep Research ist ein aufwendiger, mehrstufiger Recherche-Prozess.
-          Bei {provider === "openai" ? "OpenAI" : "Anthropic"} können pro
-          analysierter Firma <strong>{costRange}</strong> an API-Gebühren
-          anfallen.
+          Bei {provider === "openai" ? "OpenAI" : "Anthropic"} können je
+          Firma <strong>{costRange}</strong> an Gebühren anfallen.
         </p>
         <p className="muted small">
           Diese Kosten werden direkt deinem{" "}
@@ -494,11 +474,11 @@ function CostConfirmModal({
           nicht von AVA übernommen. Für {FEATURE_META[feature].title}: einmal
           ausgelöst pro Firma, im Hintergrund.
         </p>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-          <button type="button" onClick={onCancel}>
+        <div className="ek-dialog__aktionen">
+          <button type="button" className="btn" onClick={onCancel}>
             Abbrechen
           </button>
-          <button type="button" onClick={onConfirm} style={{ fontWeight: 600 }}>
+          <button type="button" className="btn btn--primaer" data-primaer onClick={onConfirm}>
             Ich verstehe, aktivieren
           </button>
         </div>
@@ -531,73 +511,49 @@ function CreateKeyModal({
   const expectedPrefix = provider === "openai" ? "sk-" : "sk-ant-api03-";
   const formatHint = provider === "openai"
     ? "OpenAI-Keys beginnen mit „sk-"
-    : "Nur API-Keys (sk-ant-api03-…). OAuth-Subscription-Tokens sind aus rechtlichen Gründen nicht erlaubt — siehe Anthropic ToS.";
+    : "Nur Schlüssel aus der Anthropic-Konsole (beginnen mit „sk-ant-api03-“). Zugänge aus einem Claude-Abo erlaubt Anthropic hier nicht.";
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--bg-color, #fff)",
-          padding: 24,
-          borderRadius: 8,
-          maxWidth: 520,
-          minWidth: 400,
-          boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>
+    <div className="ek-dialog__hintergrund" role="presentation" onClick={onClose}>
+      <div className="ek-dialog ek-dialog--breit" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h4>
           Neuen {provider === "openai" ? "OpenAI" : "Anthropic"}-Schlüssel
           hinterlegen
-        </h3>
+        </h4>
         <p className="muted small">{formatHint}</p>
-        <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+        <div className="u-stack u-mt-2">
           <label>
             <span className="api-key-label">Bezeichnung</span>
-            <input
+            <input className="u-full"
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="z.B. Mein Production-Key"
-              style={{ width: "100%" }}
             />
           </label>
           <label>
             <span className="api-key-label">Schlüssel</span>
-            <input
+            <input className="u-full"
               type="password"
               value={plaintext}
               onChange={(e) => setPlaintext(e.target.value)}
               placeholder={`${expectedPrefix}…`}
               autoComplete="off"
               spellCheck={false}
-              style={{ width: "100%" }}
             />
           </label>
         </div>
         {create.error && (
           <p className="error small">{(create.error as Error).message}</p>
         )}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+        <div className="ek-dialog__aktionen">
           <button type="button" onClick={onClose}>
             Abbrechen
           </button>
-          <button
+          <button className="btn--fett"
             type="button"
             onClick={() => create.mutate()}
             disabled={!plaintext.trim() || create.isPending}
-            style={{ fontWeight: 600 }}
           >
             {create.isPending ? "Speichert…" : "Speichern"}
           </button>

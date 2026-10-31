@@ -2436,6 +2436,54 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .ek__platzhalter span { display: block; height: 14px; border-radius: 6px; background: var(--color-bg-2); animation: ek-puls 1.4s ease-in-out infinite; }
 .ek__platzhalter span:last-child { width: 60%; }
 @keyframes ek-puls { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+/* Mehrere Teile in einer Karte (E-Mail, Dienste auf diesem Rechner). */
+.ek__teil { margin-top: 0.75rem; }
+.ek__teil + .ek__teil { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--color-border, var(--border)); }
+.ek__teil > h4 { margin: 0 0 0.25rem; font-size: 15px; }
+.ek__teil > p.muted { margin-top: 0; }
+
+/* E5: Hilfsklassen statt Inline-Styles in den Einstellungen. */
+.u-stack { display: grid; gap: 0.5rem; }
+.u-stack--sm { gap: 0.25rem; }
+.u-stack--lg { gap: 1rem; }
+.u-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.u-row--end { justify-content: flex-end; }
+.u-row--between { justify-content: space-between; }
+.u-full { width: 100%; }
+.u-m0 { margin: 0; }
+.u-mt-0 { margin-top: 0; }
+.u-mt-1 { margin-top: 0.5rem; }
+.u-mt-2 { margin-top: 1rem; }
+.u-mb-1 { margin-bottom: 0.5rem; }
+.u-mb-2 { margin-bottom: 1rem; }
+.text-warn { color: var(--color-warn); }
+.text-err { color: var(--color-err); }
+.btn--fett { font-weight: 600; }
+.ct-card--warn { border-color: var(--color-warn); }
+.ct-card--kompakt { padding: 0.75rem 1rem; }
+/* Hinweiskasten in Karten (Skills, Vertrauen). */
+.hinweis { padding: 0.6rem 0.85rem; border-radius: var(--radius-md, 6px); border: 1px solid var(--color-border, var(--border)); background: var(--color-bg-2, transparent); margin: 0 0 0.75rem; }
+.hinweis--warn { border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.1); }
+.hinweis--err { border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.08); }
+.hinweis--between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.skill-pill.skill-pill--modified { background: rgba(239, 68, 68, 0.14); color: inherit; }
+.dropzone { border: 2px dashed var(--color-border, var(--border)); border-radius: 6px; padding: 0.6rem 0.85rem; margin-bottom: 1rem; text-align: center; }
+.dropzone--aktiv { border-color: var(--color-indigo-500); background: rgba(0, 192, 167, 0.08); }
+.textarea-code { width: 100%; margin-top: 0.4rem; font-family: var(--font-mono, monospace); font-size: 0.85rem; }
+/* Fortschrittsbalken im Plan. */
+.fortschritt { height: 8px; background: var(--color-border, var(--border)); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.fortschritt__balken { height: 100%; background: var(--color-indigo-500); transition: width 200ms ease; }
+.fortschritt__balken--warn { background: var(--color-warn); }
+.fortschritt__balken--err { background: var(--color-err); }
+.fortschritt__kopf { display: flex; justify-content: space-between; font-size: 0.9rem; flex-wrap: wrap; gap: 0.25rem; }
+.ek-dialog--breit { width: min(560px, 100%); }
+.btn.btn--primaer { background: var(--color-indigo-500); color: #0a1f2a; border-color: transparent; }
+.btn.btn--primaer:hover:not(:disabled) { background: var(--color-indigo-600, #00a891); }
+.link.is-inline { display: inline; padding: 0; }
+.themen-liste { list-style: none; padding: 0; margin: 0; }
+.themen-liste__eintrag { margin-bottom: 10px; padding: 12px; }
+.storage-list { list-style: none; padding: 0; margin: 0; }
+
 .ek__technik { margin-top: 0.75rem; }
 .ek__technik > summary { cursor: pointer; font-size: 13px; color: var(--color-fg-muted); }
 .ek__technik-inhalt { margin-top: 0.5rem; font-size: 13px; color: var(--color-fg-muted); }
@@ -2447,8 +2495,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .ek-dialog h4 { margin: 0 0 0.5rem; font-size: 16px; }
 .ek-dialog__text { font-size: 14px; line-height: 1.5; color: var(--color-fg-muted); }
 .ek-dialog__aktionen { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
-.btn--gefahr { background: rgba(239, 68, 68, 0.9); color: #fff; border-color: transparent; }
-.btn--gefahr:hover { background: rgb(220, 38, 38); }
+/* Doppelte Klasse, damit die Regel die spaetere .btn-Basis schlaegt. */
+.btn.btn--gefahr { background: rgba(239, 68, 68, 0.9); color: #fff; border-color: transparent; }
+.btn.btn--gefahr:hover:not(:disabled) { background: rgb(220, 38, 38); }
 
 /* v0.1.381 — Abo-Karten ganz oben in Einstellungen → Modelle. Der
    empfohlene Weg (ChatGPT-/Claude-Abo) bekommt visuelles Gewicht:

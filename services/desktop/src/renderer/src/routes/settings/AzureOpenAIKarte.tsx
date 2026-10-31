@@ -61,8 +61,8 @@ export function AzureOpenAIKarte() {
   const setZeile = (i: number, teil: Partial<Zeile>) => setZeilen(zeilen.map((z, j) => (j === i ? { ...z, ...teil } : z)));
 
   return (
-    <div className="provider-key-card__azure" style={{ marginTop: "0.75rem", display: "grid", gap: "0.5rem" }}>
-      <label style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+    <div className="provider-key-card__azure u-stack u-mt-1">
+      <label className="u-row">
         <input
           type="checkbox"
           checked={an}
@@ -78,8 +78,8 @@ export function AzureOpenAIKarte() {
       {an && (
         <>
           <p className="provider-key-card__description">
-            Der Schlüssel oben ist dann der Schlüssel deiner Azure-OpenAI-Ressource. Trage die Deployments ein, unter denen
-            die Modelle dort laufen; ohne Eintrag nutzt AVA ein gleichnamiges Deployment. Der Sprachmodus braucht weiterhin
+            Der Schlüssel oben ist dann der Schlüssel deiner Azure-OpenAI-Ressource. Trage ein, unter welchem Namen die
+            Modelle dort bereitgestellt sind; ohne Eintrag nimmt AVA den gleichen Namen wie das Modell. Der Sprachmodus braucht weiterhin
             einen Schlüssel direkt bei OpenAI.
           </p>
           <label className="field">
@@ -93,16 +93,16 @@ export function AzureOpenAIKarte() {
               autoComplete="off"
             />
           </label>
-          <div style={{ display: "grid", gap: "0.35rem" }}>
-            <span className="muted small">Modell → Deployment</span>
+          <div className="u-stack u-stack--sm">
+            <span className="muted small">Modell → Name bei Azure</span>
             {zeilen.map((z, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 5.5rem", gap: "0.4rem", alignItems: "center" }}>
                 {z.modell === ALLE ? (
                   <span className="muted small">Alle übrigen Modelle</span>
                 ) : (
-                  <input type="text" value={z.modell} placeholder="Modell, z. B. gpt-5-mini" onChange={(e) => setZeile(i, { modell: e.target.value })} spellCheck={false} />
+                  <input type="text" value={z.modell} placeholder="Modell" onChange={(e) => setZeile(i, { modell: e.target.value })} spellCheck={false} />
                 )}
-                <input type="text" value={z.deployment} placeholder={z.modell === ALLE ? "Deployment (optional)" : "Deployment-Name"} onChange={(e) => setZeile(i, { deployment: e.target.value })} spellCheck={false} />
+                <input type="text" value={z.deployment} placeholder={z.modell === ALLE ? "Name bei Azure (optional)" : "Name bei Azure"} onChange={(e) => setZeile(i, { deployment: e.target.value })} spellCheck={false} />
                 {z.modell === ALLE ? (
                   <span />
                 ) : (
@@ -118,7 +118,7 @@ export function AzureOpenAIKarte() {
               </button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <div className="u-row">
             <button type="button" onClick={() => speichern.mutate()} disabled={!endpunkt.trim() || speichern.isPending}>
               {speichern.isPending ? "Speichert…" : "Azure speichern"}
             </button>

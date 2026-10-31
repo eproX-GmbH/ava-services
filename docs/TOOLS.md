@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-30
+Stand: 2026-10-31
 Anzahl Tools: 299
 
 ## Firmen (28)
@@ -437,7 +437,7 @@ List current heartbeat alerts (newest first). Use when the user asks 'welche Mel
 _Parameter:_
 - `unreadOnly: boolean` — When true, only return entries with seenAt=null.
 - `sinceMinutes: integer` — Nur Meldungen, die in den letzten N Minuten entstanden sind.
-- `kinds: array` — Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change).
+- `kinds: array` — Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change, job-posting, fokus-thema).
 - `limit: integer` — Max entries to return. Default 20.
 
 ### `alerts_mark_all_seen`

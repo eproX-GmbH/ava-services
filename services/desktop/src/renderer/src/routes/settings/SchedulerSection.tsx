@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { ScheduledJob } from "../../../../shared/types";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 export function SchedulerSection(): JSX.Element {
   const [jobs, setJobs] = useState<ScheduledJob[] | null>(null);
@@ -54,7 +55,7 @@ export function SchedulerSection(): JSX.Element {
       <div className="scheduler-create">
         {!createOpen ? (
           <button type="button" onClick={() => setCreateOpen(true)}>
-            + Neuen Mail-Loop anlegen
+            + Neue Mail-Aufgabe anlegen
           </button>
         ) : (
           <CreateMailLoopForm
@@ -87,9 +88,12 @@ function JobRow({ job }: { job: ScheduledJob }): JSX.Element {
   };
   const onCancel = async (): Promise<void> => {
     if (
-      !window.confirm(
-        `Job "${job.label}" wirklich stoppen? Kann nicht rückgängig gemacht werden — du müsstest ihn neu anlegen.`,
-      )
+      !(await bestaetigen({
+        titel: `Aufgabe „${job.label}“ stoppen?`,
+        text: "Danach müsstest du sie neu anlegen.",
+        bestaetigen: "Stoppen",
+        zerstoerend: true,
+      }))
     )
       return;
     setBusy(true);
@@ -237,13 +241,13 @@ function CreateMailLoopForm({
 
   return (
     <form className="scheduler-form" onSubmit={onSubmit}>
-      <h4>Neuen Mail-Loop anlegen</h4>
+      <h4>Neue Mail-Aufgabe</h4>
       <p className="muted">
-        Min Intervall 1 min · Max 7 Tage Laufzeit · Empfänger müssen in
-        der Mail-Allowlist stehen.
+        Frühestens jede Minute, höchstens sieben Tage lang. Empfänger müssen
+        zu den vertrauenswürdigen Absendern gehören.
       </p>
       <label>
-        <span>Label (kurz, was der Job tut)</span>
+        <span>Name (kurz, was die Aufgabe tut)</span>
         <input
           type="text"
           required
@@ -254,13 +258,13 @@ function CreateMailLoopForm({
         />
       </label>
       <label>
-        <span>An (Komma-getrennt, müssen in der Mail-Allowlist stehen)</span>
+        <span>An (durch Komma getrennt, nur vertrauenswürdige Absender)</span>
         <input
           type="text"
           required
           value={form.to}
           onChange={(e) => setForm({ ...form, to: e.target.value })}
-          placeholder="joyce@quikk.de"
+          placeholder="vorname.nachname@firma.de"
         />
       </label>
       <label>

@@ -16,6 +16,7 @@ import {
   LINK_MONITOR_MIN_INTERVAL_MINUTES,
   LINK_MONITOR_PRESET_MINUTES,
 } from "../../../../shared/types";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 const EMPTY_SNAPSHOT: LinkMonitorSnapshot = {
   monitors: [],
@@ -130,9 +131,12 @@ function MonitorRow({
 
   const onDelete = async (): Promise<void> => {
     if (
-      !window.confirm(
-        `Überwachung für „${monitor.label}" wirklich löschen? Verlauf geht verloren.`,
-      )
+      !(await bestaetigen({
+        titel: `Überwachung für „${monitor.label}“ löschen?`,
+        text: "Der Verlauf geht verloren.",
+        bestaetigen: "Löschen",
+        zerstoerend: true,
+      }))
     )
       return;
     await guard(() => window.api.linkMonitor.remove(monitor.id));

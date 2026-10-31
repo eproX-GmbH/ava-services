@@ -52,23 +52,23 @@ export function ThemenSection() {
       </p>
       {fehler && <p className="error small">{fehler}</p>}
       {themen.length === 0 && offen !== "neu" && <p className="muted small">Noch keine Themen. AVA prüft dann nur Stellenanzeigen und Arbeitgeberleistungen.</p>}
-      <ul className="themen-liste" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+      <ul className="themen-liste">
         {themen.map((t) => (
-          <li key={t.id} className="panel" style={{ marginBottom: 10, padding: 12 }}>
+          <li key={t.id} className="panel themen-liste__eintrag">
             {offen === t.id ? (
               <ThemaFormular thema={t} onAbbruch={() => setOffen(null)} onSpeichern={(e) => speichern({ ...e, id: t.id })} />
             ) : (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div className="u-row u-row--between">
                   <strong>{t.name}</strong>
                   <label className="alerts-prefs__check" title={!t.aktiv && aktive >= MAX_AKTIV ? `Höchstens ${MAX_AKTIV} aktive Themen` : undefined}>
                     <input type="checkbox" checked={t.aktiv} disabled={!t.aktiv && aktive >= MAX_AKTIV} onChange={(e) => void speichern({ id: t.id, name: t.name, beschreibung: t.beschreibung, warum: t.warum, begriffe: t.begriffe.filter((b) => b.quelle === "nutzer").map((b) => b.text), aktiv: e.target.checked })} />
                     <span>aktiv</span>
                   </label>
                 </div>
-                {t.beschreibung && <p className="muted small" style={{ margin: "4px 0" }}>{t.beschreibung}</p>}
-                {t.warum && <p className="muted small" style={{ margin: "4px 0" }}>Wozu: {t.warum}</p>}
-                <ul className="chips" style={{ marginTop: 6 }}>
+                {t.beschreibung && <p className="muted small u-m0">{t.beschreibung}</p>}
+                {t.warum && <p className="muted small u-m0">Wozu: {t.warum}</p>}
+                <ul className="chips u-mt-1">
                   {t.begriffe.map((b) => (
                     <li key={b.text} className="chip" title={b.quelle === "ava" ? "von AVA ergänzt" : "von dir"} style={b.quelle === "ava" ? { opacity: 0.8 } : undefined}>
                       {b.text}
@@ -76,7 +76,7 @@ export function ThemenSection() {
                   ))}
                   {t.begriffe.length === 0 && <li className="muted small">noch keine Begriffe</li>}
                 </ul>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <div className="u-row u-mt-1">
                   <button type="button" onClick={() => setOffen(t.id)}>Bearbeiten</button>
                   <button type="button" onClick={() => void ergaenzen(t.id)} disabled={laeuft === t.id} title="Synonyme, Schreibweisen und englische Entsprechungen mit dem Hintergrund-Modell ergänzen">
                     {laeuft === t.id ? "Ergänzt…" : "Begriffe ergänzen lassen"}
@@ -88,7 +88,7 @@ export function ThemenSection() {
           </li>
         ))}
         {offen === "neu" && (
-          <li className="panel" style={{ marginBottom: 10, padding: 12 }}>
+          <li className="panel themen-liste__eintrag">
             <ThemaFormular onAbbruch={() => setOffen(null)} onSpeichern={(e) => speichern(e)} />
           </li>
         )}
@@ -108,24 +108,24 @@ function ThemaFormular({ thema, onAbbruch, onSpeichern }: { thema?: Thema; onAbb
   const [warum, setWarum] = useState(thema?.warum ?? "");
   const [begriffe, setBegriffe] = useState((thema?.begriffe ?? []).filter((b) => b.quelle === "nutzer").map((b) => b.text).join(", "));
   return (
-    <div style={{ display: "grid", gap: 8 }}>
+    <div className="u-stack">
       <label>
         <span className="small">Name</span>
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Betriebliche Altersvorsorge" maxLength={80} style={{ width: "100%" }} />
+        <input className="u-full" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Betriebliche Altersvorsorge" maxLength={80} />
       </label>
       <label>
         <span className="small">Was ist gemeint?</span>
-        <input type="text" value={beschreibung} onChange={(e) => setBeschreibung(e.target.value)} placeholder="Die Firma bietet ihren Beschäftigten eine betriebliche Altersvorsorge an" maxLength={300} style={{ width: "100%" }} />
+        <input className="u-full" type="text" value={beschreibung} onChange={(e) => setBeschreibung(e.target.value)} placeholder="Die Firma bietet ihren Beschäftigten eine betriebliche Altersvorsorge an" maxLength={300} />
       </label>
       <label>
         <span className="small">Wozu brauchst du das?</span>
-        <input type="text" value={warum} onChange={(e) => setWarum(e.target.value)} placeholder="Wir beraten zu bAV; Firmen mit bestehendem Angebot sind Wechselkandidaten" maxLength={300} style={{ width: "100%" }} />
+        <input className="u-full" type="text" value={warum} onChange={(e) => setWarum(e.target.value)} placeholder="Wir beraten zu bAV; Firmen mit bestehendem Angebot sind Wechselkandidaten" maxLength={300} />
       </label>
       <label>
         <span className="small">Eigene Suchbegriffe (durch Komma getrennt)</span>
-        <input type="text" value={begriffe} onChange={(e) => setBegriffe(e.target.value)} placeholder="Altersvorsorge, bAV, Pensionskasse" style={{ width: "100%" }} />
+        <input className="u-full" type="text" value={begriffe} onChange={(e) => setBegriffe(e.target.value)} placeholder="Altersvorsorge, bAV, Pensionskasse" />
       </label>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="u-row">
         <button type="button" disabled={!name.trim()} onClick={() => onSpeichern({ name: name.trim(), beschreibung: beschreibung.trim(), warum: warum.trim(), begriffe: begriffe.split(",").map((s) => s.trim()).filter(Boolean) })}>
           Speichern
         </button>

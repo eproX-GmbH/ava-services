@@ -32,7 +32,7 @@ export function VerbindungenSection() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["auth", "verbindungen"] }),
   });
   const items = (q.data?.items ?? []).filter((v) => v.mcp || v.clientId !== "ava-desktop");
-  const fehler = q.error instanceof GatewayError && q.error.status === 503 ? "Die Verwaltung der Verbindungen ist auf diesem Gateway nicht eingerichtet." : q.error instanceof Error ? q.error.message : null;
+  const fehler = q.error instanceof GatewayError && q.error.status === 503 ? "Die Verwaltung der Verbindungen ist auf dem AVA-Server nicht eingerichtet." : q.error instanceof Error ? q.error.message : null;
 
   return (
     <section id="verbindungen" className="provider-section" aria-label="Verbundene Dienste">

@@ -39,7 +39,7 @@ export function humanizeUpdaterError(raw: string | null): HumanizedUpdaterError 
   ) {
     return {
       friendly:
-        "Ein neues Update wird gerade vorbereitet. Versuch es in ein paar Minuten erneut — der Build-Server ist noch nicht fertig.",
+        "Ein neues Update wird gerade vorbereitet. Versuch es in ein paar Minuten noch einmal.",
       technical: condense(raw),
       transient: true,
     };
@@ -49,7 +49,7 @@ export function humanizeUpdaterError(raw: string | null): HumanizedUpdaterError 
   if (lower.includes("404") && lower.includes("releases/download")) {
     return {
       friendly:
-        "Der erwartete Release-Artefakt ist noch nicht verfügbar. Vermutlich läuft der Build noch — bitte in ein paar Minuten erneut versuchen.",
+        "Das Update ist noch nicht vollständig bereitgestellt. Bitte in ein paar Minuten noch einmal versuchen.",
       technical: condense(raw),
       transient: true,
     };
@@ -63,7 +63,7 @@ export function humanizeUpdaterError(raw: string | null): HumanizedUpdaterError 
   ) {
     return {
       friendly:
-        "Konnte den Update-Server nicht erreichen (DNS-Auflösung fehlgeschlagen). Prüfe deine Internetverbindung.",
+        "Der Update-Server ist nicht erreichbar. Prüfe deine Internetverbindung.",
       technical: condense(raw),
       transient: true,
     };
@@ -98,7 +98,7 @@ export function humanizeUpdaterError(raw: string | null): HumanizedUpdaterError 
   ) {
     return {
       friendly:
-        "Update wurde heruntergeladen, aber die Signatur stimmt nicht. Lade die App bitte manuell neu von GitHub Releases.",
+        "Das Update wurde heruntergeladen, aber die Signatur stimmt nicht. Bitte lade AVA von Hand neu herunter.",
       technical: condense(raw),
       transient: false,
     };

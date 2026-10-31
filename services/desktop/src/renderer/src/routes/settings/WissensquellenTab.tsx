@@ -59,14 +59,14 @@ export function WissensquellenTab() {
         Verbinde AVA mit deinem Notion-Workspace oder Obsidian-Vault.
         AVA kann darin lesen, suchen und schreiben — z. B. neue
         CRM-Einträge anlegen, Notizen erweitern oder Termine als
-        Erinnerung übernehmen. Tokens bleiben verschlüsselt im
-        OS-Schlüsselbund.
+        Erinnerung übernehmen. Zugangscodes bleiben verschlüsselt im
+        Schlüsselbund dieses Rechners.
       </p>
       {!snapshot.encryptionAvailable && (
         <p className="warn">
-          ⚠ OS-Schlüsselbund nicht verfügbar — Wissensquellen-Tokens
-          können nicht sicher gespeichert werden. Bitte
-          libsecret/Schlüsselbund-Dienst aktivieren und neu starten.
+          Der Schlüsselbund dieses Rechners ist nicht verfügbar. Zugangscodes
+          lassen sich so nicht sicher speichern. Bitte den Schlüsselbund-Dienst
+          einschalten und AVA neu starten.
         </p>
       )}
       <div className="wissensquellen-cards">
@@ -191,7 +191,7 @@ function NotionConnectForm({
 
   const onSubmit = async (): Promise<void> => {
     if (token.trim().length === 0) {
-      setError("Bitte Token eingeben.");
+      setError("Bitte den Zugangscode eingeben.");
       return;
     }
     setBusy(true);
@@ -237,7 +237,7 @@ function NotionConnectForm({
           Datenbank, mit der AVA arbeiten soll, klick rechts oben auf{" "}
           <code>...</code> → <code>Connections</code> → AVA hinzufügen.
         </li>
-        <li>Token unten einfügen und „Verbinden" klicken.</li>
+        <li>Den Zugangscode unten einfügen und „Verbinden“ klicken.</li>
       </ol>
       <input
         type="password"
@@ -274,7 +274,7 @@ const PROVIDER_META: Record<KnowledgeProviderKind, { name: string; descr: string
   notion: {
     name: "Notion",
     descr:
-      "Lese und schreibe in deinen Notion-Workspace — Datenbanken, Seiten, CRM-Einträge. Anmeldung via Integration-Token.",
+      "Liest und schreibt in deinem Notion-Workspace: Datenbanken, Seiten, CRM-Einträge. Anmeldung mit dem Zugangscode einer Integration.",
   },
   obsidian: {
     name: "Obsidian",
@@ -306,7 +306,7 @@ function ObsidianConnectForm({
 
   const onSubmit = async (): Promise<void> => {
     if (apiKey.trim().length === 0) {
-      setError("API-Key fehlt.");
+      setError("Der Schlüssel fehlt.");
       return;
     }
     if (!/^https?:\/\//i.test(baseUrl.trim())) {
@@ -344,7 +344,7 @@ function ObsidianConnectForm({
           (Autor: coddingtonbear), installiere + aktiviere.
         </li>
         <li>
-          Im Plugin-Setting findest du den <em>API-Key</em> und zwei
+          In den Einstellungen des Plugins findest du den Schlüssel („API Key“) und zwei
           Ports: <code>HTTP (27123)</code> und <code>HTTPS (27124)</code>.
         </li>
         <li>
@@ -352,7 +352,7 @@ function ObsidianConnectForm({
           hat ein selbst-signiertes Zertifikat und braucht zusätzlichen
           Aufwand. Für lokalen Verkehr auf 127.0.0.1 reicht HTTP.
         </li>
-        <li>API-Key kopieren und unten einfügen.</li>
+        <li>Diesen Schlüssel kopieren und unten einfügen.</li>
       </ol>
       <label className="field">
         <span>Base-URL</span>
@@ -366,7 +366,7 @@ function ObsidianConnectForm({
         />
       </label>
       <label className="field">
-        <span>API-Key</span>
+        <span>Schlüssel</span>
         <input
           type="password"
           value={apiKey}

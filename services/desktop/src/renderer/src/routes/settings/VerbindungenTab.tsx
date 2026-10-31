@@ -18,9 +18,15 @@ export function VerbindungenTab() {
       <CrmSection />
       {linkedin && <LinkedInSection />}
       {linkedin && <LinkedInCalibrationNote />}
-      {mail && <MailAccountSection />}
-      {/* Mail-Entwuerfe gelten auch ohne AVAs eigenes Postfach. */}
-      <MailEntwurfSection />
+      <section id="mail-section" className="provider-section">
+        <h3>E-Mail</h3>
+        <p className="muted">
+          Ein Postfach, das AVA selbst liest und beantwortet, und Entwürfe, die du mit einem Klick in deinem Mailprogramm öffnest.
+        </p>
+        {mail && <MailAccountSection />}
+        {/* Mail-Entwuerfe gelten auch ohne AVAs eigenes Postfach. */}
+        <MailEntwurfSection />
+      </section>
       {telegram && <TelegramSection />}
       <WissensquellenTab />
     </>

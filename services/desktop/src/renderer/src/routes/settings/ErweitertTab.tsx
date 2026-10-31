@@ -21,9 +21,15 @@ export function ErweitertTab() {
       <UpdaterSection />
       <StorageSection />
       <DiagnoseSection />
-      <PostgresSection />
-      <ProducersSection />
-      <BrowserSection />
+      <section id="dienste-section" className="provider-section">
+        <h3>Dienste auf diesem Rechner</h3>
+        <p className="muted">
+          AVA verarbeitet deine Firmen auf diesem Rechner. Hier siehst du, ob alles läuft.
+        </p>
+        <PostgresSection />
+        <ProducersSection />
+        <BrowserSection />
+      </section>
       <DangerZoneSection />
     </>
   );

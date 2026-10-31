@@ -5,6 +5,7 @@ import type {
   StorageItem,
   StorageOverview,
 } from "../../../shared/types";
+import { bestaetigen } from "./Bestaetigung";
 
 // v0.1.365 — Settings → System: Speicher-Aufschlüsselung + Bereinigung.
 //
@@ -68,11 +69,14 @@ export function StorageSection() {
 
   const handleDelete = useCallback(
     async (cat: StorageCategory, item: StorageItem) => {
-      const confirmMsg =
-        cat.key === "avaCache"
-          ? `„${item.label}" leeren (${formatBytes(item.sizeBytes)} freigeben)?`
-          : `„${item.label}" endgültig löschen (${formatBytes(item.sizeBytes)} freigeben)?`;
-      if (!window.confirm(confirmMsg)) return;
+      const leeren = cat.key === "avaCache";
+      const ok = await bestaetigen({
+        titel: leeren ? `„${item.label}“ leeren?` : `„${item.label}“ endgültig löschen?`,
+        text: `Das gibt ${formatBytes(item.sizeBytes)} frei.`,
+        bestaetigen: leeren ? "Leeren" : "Löschen",
+        zerstoerend: true,
+      });
+      if (!ok) return;
       setBusy(item.id);
       setError(null);
       try {
@@ -93,11 +97,12 @@ export function StorageSection() {
   const handleCleanup = useCallback(async () => {
     if (!overview || overview.orphanCount === 0) return;
     if (
-      !window.confirm(
-        `${overview.orphanCount} nicht benötigte Modell(e) entfernen und ` +
-          `${formatBytes(overview.orphanBytes)} freigeben? Das aktive und die ` +
-          `erforderlichen Modelle bleiben erhalten.`,
-      )
+      !(await bestaetigen({
+        titel: `${overview.orphanCount} nicht benötigte Modell(e) entfernen?`,
+        text: `Das gibt ${formatBytes(overview.orphanBytes)} frei. Das aktive und die erforderlichen Modelle bleiben erhalten.`,
+        bestaetigen: "Entfernen",
+        zerstoerend: true,
+      }))
     )
       return;
     setBusy("__cleanup__");
@@ -147,7 +152,7 @@ export function StorageSection() {
       )}
 
       {overview && overview.orphanCount > 0 && (
-        <div className="actions" style={{ marginBottom: "0.75rem" }}>
+        <div className="actions u-mb-1">
           <button
             type="button"
             onClick={() => void handleCleanup()}
@@ -182,7 +187,7 @@ export function StorageSection() {
         <p className="muted small">Lädt …</p>
       ) : (
         activeCats.map((cat) => (
-          <div key={cat.key} style={{ marginBottom: "1rem" }}>
+          <div key={cat.key} className="u-mb-2">
             <div
               style={{
                 display: "flex",
@@ -209,7 +214,7 @@ export function StorageSection() {
             {cat.items.length === 0 ? (
               <p className="muted small">Nichts vorhanden.</p>
             ) : (
-              <ul className="storage-list" style={{ listStyle: "none", padding: 0, margin: "0.4rem 0 0" }}>
+              <ul className="storage-list u-mt-1">
                 {cat.items.map((item) => (
                   <li
                     key={item.id}

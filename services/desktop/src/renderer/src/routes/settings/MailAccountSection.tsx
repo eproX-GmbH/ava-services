@@ -20,6 +20,7 @@ import type {
   MailCredentialsPayload,
   MailSnapshot,
 } from "../../../../shared/types";
+import { bestaetigen } from "../../components/Bestaetigung";
 
 interface FormState {
   address: string;
@@ -162,9 +163,12 @@ export function MailAccountSection(): JSX.Element {
 
   const onDelete = async (): Promise<void> => {
     if (
-      !window.confirm(
-        "Mail-Konto wirklich löschen? Verbindungen werden getrennt, gespeicherte Mails bleiben für den Verlauf erhalten.",
-      )
+      !(await bestaetigen({
+        titel: "E-Mail-Konto löschen?",
+        text: "Die Verbindung wird getrennt, gespeicherte Mails bleiben im Verlauf.",
+        bestaetigen: "Löschen",
+        zerstoerend: true,
+      }))
     )
       return;
     setBusy(true);
@@ -181,10 +185,10 @@ export function MailAccountSection(): JSX.Element {
   const showForm = editing || !account;
 
   return (
-    <section id="mail-account-section" className="provider-section alerts-prefs">
-      <h3>E-Mail-Konto</h3>
+    <div id="mail-account-section" className="ek__teil alerts-prefs">
+      <h4>Postfach für AVA</h4>
       <p className="muted">
-        Ein eigenes Postfach für AVA. Sie liest eingehende Mails, sortiert sie vor und antwortet nur Absendern, denen du vertraust.
+        Ein eigenes Postfach. AVA liest eingehende Mails, sortiert sie vor und antwortet nur Absendern, denen du vertraust.
       </p>
 
       {account && !editing && (
@@ -222,10 +226,10 @@ export function MailAccountSection(): JSX.Element {
           </div>
 
           <fieldset>
-            <legend>IMAP (Eingang)</legend>
+            <legend>Posteingang</legend>
             <div className="mail-form__row">
               <label>
-                <span>Host</span>
+                <span>Server (IMAP)</span>
                 <input
                   type="text"
                   required
@@ -251,12 +255,12 @@ export function MailAccountSection(): JSX.Element {
                   checked={form.imapSecure}
                   onChange={(e) => setForm({ ...form, imapSecure: e.target.checked })}
                 />
-                <span>TLS</span>
+                <span>Verschlüsselt</span>
               </label>
             </div>
             <div className="mail-form__row">
               <label>
-                <span>Benutzer (Default: Mail-Adresse)</span>
+                <span>Benutzer (leer = Mail-Adresse)</span>
                 <input
                   type="text"
                   value={form.imapUser}
@@ -280,10 +284,10 @@ export function MailAccountSection(): JSX.Element {
           </fieldset>
 
           <fieldset>
-            <legend>SMTP (Ausgang)</legend>
+            <legend>Postausgang</legend>
             <div className="mail-form__row">
               <label>
-                <span>Host</span>
+                <span>Server (SMTP)</span>
                 <input
                   type="text"
                   required
@@ -309,12 +313,12 @@ export function MailAccountSection(): JSX.Element {
                   checked={form.smtpSecure}
                   onChange={(e) => setForm({ ...form, smtpSecure: e.target.checked })}
                 />
-                <span>TLS</span>
+                <span>Verschlüsselt</span>
               </label>
             </div>
             <div className="mail-form__row">
               <label>
-                <span>Benutzer (Default: Mail-Adresse)</span>
+                <span>Benutzer (leer = Mail-Adresse)</span>
                 <input
                   type="text"
                   value={form.smtpUser}
@@ -323,7 +327,7 @@ export function MailAccountSection(): JSX.Element {
                 />
               </label>
               <label>
-                <span>App-Passwort (leer = wie IMAP)</span>
+                <span>App-Passwort (leer = wie Posteingang)</span>
                 <input
                   type="password"
                   value={form.smtpPassword}
@@ -346,8 +350,8 @@ export function MailAccountSection(): JSX.Element {
                 }
               />
               <span>
-                <strong>AVA darf Mails verschicken</strong> (Kill-Switch).
-                Wenn deaktiviert, lehnt AVA jeden Versand ab — auch an Allowlist-Adressen.
+                <strong>AVA darf Mails verschicken.</strong>{" "}
+                Wenn aus, verschickt AVA nichts, auch nicht an vertrauenswürdige Absender.
               </span>
             </label>
           </div>
@@ -365,12 +369,9 @@ export function MailAccountSection(): JSX.Element {
                 }
               />
               <span>
-                <strong>Auto-Triage für trusted Mails</strong> (vollautonom).
-                Bei eingehenden Mails von Allowlist-Sendern startet AVA
-                automatisch eine Chat-Session und antwortet OHNE Rückfrage.
-                Limits: max 5 Auto-Replies pro Thread, Cooldown 5min.
-                Nicht-Allowlist-Mails bleiben unverändert manuell.
-                Setzt aktivierten Versand voraus.
+                <strong>Vertrauenswürdigen Absendern automatisch antworten.</strong>{" "}
+                Höchstens fünf Antworten je Gesprächsfaden, mit Pause dazwischen.
+                Alle anderen Mails bleiben bei dir.
               </span>
             </label>
           </div>
@@ -402,7 +403,7 @@ export function MailAccountSection(): JSX.Element {
           void e;
         }}
       />
-    </section>
+    </div>
   );
 }
 
@@ -424,9 +425,8 @@ function ConnectedAccountView({
       <div className="mail-account-summary__main">
         <strong>{account.address}</strong>{" "}
         <span className="muted">({account.displayName})</span>
-        <div className="muted">
-          IMAP {account.imap.host}:{account.imap.port} · SMTP{" "}
-          {account.smtp.host}:{account.smtp.port}
+        <div className="muted small">
+          Posteingang {account.imap.host} · Postausgang {account.smtp.host}
         </div>
         <div className="muted">
           Status:{" "}
@@ -514,16 +514,16 @@ function AllowlistEditor({
   };
 
   const onRemove = async (id: string): Promise<void> => {
-    if (!window.confirm("Diesen Allowlist-Eintrag entfernen?")) return;
+    if (!(await bestaetigen({ titel: "Diesen Absender entfernen?", bestaetigen: "Entfernen", zerstoerend: true }))) return;
     await window.api.mail.removeAllowlistEntry(id);
   };
 
   return (
     <div className="mail-allowlist">
-      <h4>Allowlist — vertrauenswürdige Absender</h4>
+      <h4>Vertrauenswürdige Absender</h4>
       <p className="muted">
-        Nur Mails von Absendern in dieser Liste darf AVA autonom beantworten.
-        Pattern: <code>max@kunde.de</code> oder Domain-Wildcard <code>*@kunde.de</code>.
+        Nur Mails von Absendern in dieser Liste darf AVA selbstständig beantworten.
+        Eine Adresse wie <code>max@kunde.de</code> oder eine ganze Firma mit <code>*@kunde.de</code>.
       </p>
 
       <form className="mail-allowlist__form" onSubmit={onAdd}>
