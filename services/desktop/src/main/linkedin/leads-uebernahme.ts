@@ -123,6 +123,24 @@ export async function kontaktNachholen(gw: Gw, id: string): Promise<{ ok: boolea
   }
 }
 
+// 2026-10-31 (Feedback Patrick): Uebernahmen bis Gateway-Fix hinterliessen Leads ohne
+// Person (Kontaktanlage 500). Beim naechsten Listen eigene uebernommene Leads ohne
+// Person einmal je Sitzung still nachholen, statt neun Klicks auf „Kontakt nachholen“.
+const nachgeholt = new Set<string>();
+
+export async function fehlendeKontakteNachholen(gw: Gw, items: LinkedInLead[]): Promise<LinkedInLead[]> {
+  const offen = items.filter((l) => l.status === "uebernommen" && !l.personId && l.companyId && !nachgeholt.has(l.id));
+  if (offen.length === 0) return items;
+  const ergebnis = new Map<string, string>();
+  for (const l of offen.slice(0, 20)) {
+    nachgeholt.add(l.id);
+    const r = await kontaktNachholen(gw, l.id);
+    if (r.ok && r.personId) ergebnis.set(l.id, r.personId);
+    else console.warn(`[leads] Kontakt zu Lead ${l.id} (${l.personName ?? "?"}) nicht nachgeholt: ${r.error ?? "unbekannt"}`);
+  }
+  return items.map((l) => (ergebnis.has(l.id) ? { ...l, personId: ergebnis.get(l.id)! } : l));
+}
+
 export async function leadIgnorieren(gw: Gw, id: string, grund: string | null): Promise<LinkedInLead> {
   return gw<LinkedInLead>(`/v1/linkedin-leads/${encodeURIComponent(id)}`, { method: "PATCH", body: { status: "ignoriert", ignoriertGrund: grund } });
 }
@@ -139,5 +157,7 @@ export async function leadsListe(gw: Gw, q: { status?: string; postUrl?: string;
   if (q.nurKommentare) p.set("nurKommentare", "true");
   p.set("seite", String(q.seite ?? 1));
   p.set("groesse", String(q.groesse ?? 50));
-  return gw<{ gesamt: number; items: LinkedInLead[] }>(`/v1/linkedin-leads?${p.toString()}`);
+  const r = await gw<{ gesamt: number; items: LinkedInLead[] }>(`/v1/linkedin-leads?${p.toString()}`);
+  // Nur eigene Leads (ohne alle=true): Nachholen schreibt am Lead, das bleibt beim Besitzer.
+  return q.alle ? r : { ...r, items: await fehlendeKontakteNachholen(gw, r.items ?? []) };
 }

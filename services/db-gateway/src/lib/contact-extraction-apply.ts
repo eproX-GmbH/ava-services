@@ -473,6 +473,15 @@ export async function applySingleEmployeeCandidate(args: {
     sourceUrl: args.candidate.sourceUrl ?? args.evidenceUrl ?? undefined,
   };
   if (!candidate.fullName) throw new Error("leerer Personenname");
+  // 2026-10-31 (Feedback Patrick): Die Lead-Uebernahme legt die Person an, BEVOR der
+  // Kontakt-Producer die Firma je gesehen hat. Ohne Firmenzeile scheitert die
+  // Employment-Projektion am Fremdschluessel (500 "Kontakt nicht angelegt"; in Prod
+  // 9 von 10 uebernommenen Leads ohne Person). Gleiche Vorkehrung wie im Producer-Pfad.
+  await prisma.company.upsert({
+    where: { id: args.companyId },
+    update: {},
+    create: { id: args.companyId },
+  });
   const up = await upsertPersonByIdentity(prisma, {
     companyId: args.companyId,
     candidate,

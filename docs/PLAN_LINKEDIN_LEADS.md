@@ -224,3 +224,13 @@ L5 → L6 → L7.
 - Ungeklärte Leads lassen sich ignorieren; Grund ohne doppelten Text; Lede ohne ICP-Score-Verweis.
 - Übernahme ohne bekannten Sitz (Sellmore GmbH: KI fand keinen Ort, Impressum nur unter `/impressum/`): Rückfall liest das Impressum deterministisch (`discovery/ort-impressum.ts`, PLZ+Ort, 4-stellig nur bei AT/CH-Hinweis), der Mini-Profiler nutzt denselben Rückfall; bleibt der Ort unbekannt, antwortet die Übernahme mit `ortFehlt` und Desktop-Panel, PWA und Chat-Werkzeug (`ort`) nehmen den Ort vom Nutzer entgegen.
 
+### Stand 2026-10-31 (Feedback Patrick, Hennings AVA)
+- Ursache des 500ers bei `contacts/linkedin-url` gefunden: `applySingleEmployeeCandidate` legte
+  keine Firmenzeile in der Kontakt-DB an; bei frisch importierten Firmen scheiterte die
+  Employment-Projektion am Fremdschlüssel. In Produktion hatten 9 von 10 übernommenen Leads
+  keine Person. Fix: Firmen-Upsert wie im Producer-Pfad (Gateway). Desktop (v0.1.897): eigene
+  übernommene Leads ohne Person werden beim nächsten Listen einmal je Sitzung still nachgeholt.
+- Offen aus demselben Feedback (eigene Schritte): Werkzeug „Entwurf ins Postfach legen“ für Chat
+  und Workflows; Ereignis `linkedin.lead` ohne `leadId`/`konfidenz` (Werkzeug-Doku verspricht
+  `leadId`); Knopf „Ansprache vorbereiten“ als Hintergrundaufgabe mit Mehrfachauswahl;
+  Nebenbefund `ensureLeadsSchema` (CREATE TABLE IF NOT EXISTS je Anfrage) deadlockt unter Last.
