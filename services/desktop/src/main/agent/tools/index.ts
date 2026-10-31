@@ -46,6 +46,7 @@ import { buildNotionTools } from "./notion";
 import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
+import { buildMailEntwurfTools } from "./mail-entwurf";
 import { buildDateiTools } from "./dateien";
 import { buildAufgabenTools } from "./aufgaben";
 import { buildSchedulerTools } from "./scheduler";
@@ -369,6 +370,8 @@ export function buildReadOnlyRegistry(deps: {
   // wir die Tools immer und prüfen Verfügbarkeit beim run().
   for (const t of buildMailTools({ getSupervisor: deps.getMailSupervisor, attachments: deps.attachments }))
     registry.register(t);
+  // 2026-10-31 — Entwurf direkt ins Entwürfe-Postfach (Chat, Workflows).
+  for (const t of buildMailEntwurfTools({ attachments: deps.attachments, festeAnhaenge: deps.festeAnhaenge })) registry.register(t);
   // D2 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Uploads gezielt lesen.
   for (const t of buildDateiTools({ attachments: deps.attachments })) registry.register(t);
   // Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md).

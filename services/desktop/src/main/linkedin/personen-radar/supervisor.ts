@@ -261,11 +261,19 @@ export class PersonenRadarSupervisor {
       let leadsNeu = 0;
       if (leads.length > 0) {
         try {
-          const r = await this.deps.gateway.request<{ neu: number; aktualisiert: number; vorhanden: number }>("/v1/linkedin-leads/batch", { method: "POST", body: { leads: leads.slice(0, 500) } });
+          const r = await this.deps.gateway.request<{ neu: number; aktualisiert: number; vorhanden: number; ids?: Array<{ profileUrl: string; postUrl: string; id: string; neu: boolean }> }>("/v1/linkedin-leads/batch", { method: "POST", body: { leads: leads.slice(0, 500) } });
           leadsNeu = r.neu + r.aktualisiert;
           if (leadsNeu > 0 && this.deps.onLeads) {
             try {
-              this.deps.onLeads(leads.filter((l) => typeof l.firmaDomain === "string" && l.firmaDomain));
+              // 2026-10-31: leadId aus der Gateway-Antwort mitgeben (Workflow-Ereignis linkedin.lead);
+              // nur neue Leads loesen aus — bereits bekannte waren schon einmal Ereignis.
+              const idJeLead = new Map((r.ids ?? []).map((x) => [`${x.profileUrl}|${x.postUrl}`, x] as const));
+              this.deps.onLeads(
+                leads
+                  .filter((l) => typeof l.firmaDomain === "string" && l.firmaDomain)
+                  .map((l) => ({ ...l, leadId: idJeLead.get(`${l.profileUrl}|${l.postUrl}`)?.id ?? null, neu: idJeLead.get(`${l.profileUrl}|${l.postUrl}`)?.neu ?? true }))
+                  .filter((l) => l.neu),
+              );
             } catch {
               /* best-effort */
             }

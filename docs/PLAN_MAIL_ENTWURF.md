@@ -87,3 +87,13 @@ Anhänge. Der Nutzer drückt nur noch auf Senden. Ohne Mail-Programm öffnet sic
 
 - IMAP-Ablage gegen echte Postfächer testen (IONOS, Gmail mit App-Passwort, GMX).
 - Microsoft/Google per Anmeldung (siehe „Später“).
+
+## 8. Stand 2026-10-31: Entwurf per Werkzeug (Feedback Patrick)
+
+- Neues Werkzeug `mail_entwurf_ablegen` (services/desktop/src/main/agent/tools/mail-entwurf.ts): legt eine
+  Mail über denselben Weg wie der Knopf (Stufe 3, IMAP APPEND) in den Entwürfe-Ordner des Entwurfs-Postfachs;
+  Bestätigung der Klasse „additiv“ (im Chat Rückfrage, in Workflows über die Vollmacht oder Node-Freigabe);
+  Anhänge wie beim Block (Chat-Uploads und feste Anhänge). Ohne eingerichtetes Postfach ein Fehler mit
+  Hinweis auf die Einstellung.
+- Systemprompt: „leg mir das in die Entwürfe“ und mehrere Entwürfe auf einmal → Werkzeug je Mail statt Block.
+- Erste Verwendung in einem Workflow: Vorlage „Neuer Lead: Entwurf in mein Postfach“ (PLAN_LINKEDIN_LEADS.md).

@@ -119,11 +119,14 @@ function leadId(tenantId: string, actorId: string | null, profileUrl: string, po
 
 /** Leads eines Laufs ablegen; je (Nutzer, Person, Post) genau einer. Vorhandene bleiben unveraendert,
  *  ausser ein bisher ungeklaerter Lead bekommt jetzt eine Firma. */
-export async function leadsAblegen(pool: Pool, tenantId: string, actorId: string | null, leads: LeadEingabe[]): Promise<{ neu: number; aktualisiert: number; vorhanden: number }> {
+export async function leadsAblegen(pool: Pool, tenantId: string, actorId: string | null, leads: LeadEingabe[]): Promise<{ neu: number; aktualisiert: number; vorhanden: number; ids: Array<{ profileUrl: string; postUrl: string; id: string; neu: boolean }> }> {
   await ensureLeadsSchema(pool);
   let neu = 0;
   let aktualisiert = 0;
   let vorhanden = 0;
+  // 2026-10-31: IDs zurueckgeben, damit der Desktop das Workflow-Ereignis linkedin.lead
+  // mit leadId ausloesen kann (linkedin_lead_uebernehmen braucht sie).
+  const ids: Array<{ profileUrl: string; postUrl: string; id: string; neu: boolean }> = [];
   for (const l of leads) {
     const id = leadId(tenantId, actorId, l.profileUrl, l.postUrl);
     const status = l.status ?? (l.firmaDomain ? "offen" : "ungeklaert");
@@ -147,8 +150,9 @@ export async function leadsAblegen(pool: Pool, tenantId: string, actorId: string
     if (r.rows[0]?.eingefuegt) neu++;
     else if (r.rows[0]?.aktualisiert) aktualisiert++;
     else vorhanden++;
+    ids.push({ profileUrl: l.profileUrl, postUrl: l.postUrl, id, neu: !!r.rows[0]?.eingefuegt });
   }
-  return { neu, aktualisiert, vorhanden };
+  return { neu, aktualisiert, vorhanden, ids };
 }
 
 /** Abgelaufene offene/ungeklaerte Leads entfernen (bei jedem Listenaufruf, billig). */

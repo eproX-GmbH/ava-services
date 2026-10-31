@@ -2904,6 +2904,12 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         void workflowService?.emitEvent("linkedin.lead", {
           discoveryId: String(l.firmaDomain),
           name: l.firmaName ?? null,
+          // 2026-10-31 (Feedback Patrick): leadId fuer linkedin_lead_uebernehmen, konfidenz
+          // fuer den Filter „Zuordnung sicher“ (0.9 = hart, 0.6 = mittel).
+          leadId: typeof l.leadId === "string" ? l.leadId : null,
+          konfidenz: typeof l.konfidenz === "number" ? l.konfidenz : null,
+          firma: l.firmaName ?? null,
+          firmaDomain: String(l.firmaDomain),
           person: l.personName ?? null,
           profileUrl: l.profileUrl ?? null,
           rolle: l.rolle ?? null,

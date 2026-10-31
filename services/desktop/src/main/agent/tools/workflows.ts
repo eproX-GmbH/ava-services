@@ -200,7 +200,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
             "{ kind: 'manual' | 'schedule' | 'event' | 'chat', intervalMinutes?, at?: 'HH:MM', weekdays?, event?, companyIds?: string[], companySource?: " +
             "{ kind: 'list' } | { kind: 'radarHot', minScore?: number, nurNeue?: boolean } | { kind: 'transaction', transactionId } | { kind: 'allCompanies', limit? } } — Zeitplan: je Firma ein Lauf. " +
             "Ereignis: event 'alert.created' (jede neue Meldung, Payload alertId/kind/severity/headline/rationale/url/companyId/companyName), 'radar.newHot', 'mail.inbound', 'import.finished', " +
-            "'linkedin.lead' (neuer Lead aus einem beobachteten Post, Payload leadId/person/rolle/aktivitaet/kommentar/postUrl/firma/discoveryId; kein Score-Tor, filter z. B. { aktivitaet: 'comment' }); optional filter: { kind: ['publication','status'] } " +
+            "'linkedin.lead' (neuer Lead aus einem beobachteten Post, Payload leadId/konfidenz (0.9 sicher, 0.6 mittel)/person/profileUrl/rolle/aktivitaet/reactionType/kommentar/postUrl/firma/firmaDomain/discoveryId; kein Score-Tor, filter z. B. { aktivitaet: 'comment' }, fuer „nur sichere Zuordnung“ einen Filter-Node mit {{ ($json.konfidenz ?? 0) >= 0.8 }}; Vorlage „Neuer Lead: Entwurf in mein Postfach“); optional filter: { kind: ['publication','status'] } " +
             "(nur passende Meldungen). Ein Ereignis = ein Lauf, also keine Duplikate; Meldungen der Workflows selbst (kind 'workflow') loesen nie aus.",
         },
         settings: {

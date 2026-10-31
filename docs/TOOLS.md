@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-10-31
-Anzahl Tools: 299
+Anzahl Tools: 300
 
 ## Firmen (28)
 
@@ -1717,6 +1717,21 @@ _Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
 Liefert das Ergebnis des letzten Personen-Radar-Laufs im Detail: Zusammenfassung plus die Liste der UNGEKLAERTEN Personen (Name, Headline, Profil-URL, Grund, seit wann). Nutze es, wenn der Nutzer fragt, welche Personen gefunden wurden oder warum keine Firma zugeordnet werden konnte. Aufgeloeste Firmen stehen als Kandidaten im Firmen-Radar (dort mit Ausloeser-Person). Read-only.
 
 _Parameter:_ keine.
+
+## mail-entwurf (1)
+
+### `mail_entwurf_ablegen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail-entwurf.ts`
+
+Legt eine Mail als Entwurf in den Entwürfe-Ordner des eingerichteten Entwurfs-Postfachs (IMAP). Der Nutzer sieht sie in seinem Mail-Programm, auf dem Handy und im Webmail, prüft sie und verschickt sie selbst. Nutzen, wenn der Nutzer Entwürfe direkt im Postfach will („leg mir das in die Entwürfe“), bei mehreren Entwürfen auf einmal und in Workflows; sonst reicht der Block ```mail-entwurf im Chat. `an` nur mit bekannten Adressen (Kontakte, company_get), nie erfinden; ohne Adresse nicht aufrufen, sondern sagen, dass sie fehlt. `text` ist Klartext mit Anrede und Grußformel. Ist kein Entwurfs-Postfach eingerichtet, kommt ein Fehler mit Hinweis auf die Einstellung.
+
+_Parameter:_
+- `an: array` — Empfänger (E-Mail-Adressen). Leer erlaubt, dann trägt der Nutzer sie im Mail-Programm ein.
+- `cc: array`
+- `betreff: string` (required)
+- `text: string` (required) — Klartext ohne Markdown, mit Anrede und Grußformel.
+- `anhaenge: array` — Im Chat hochgeladene Dateien (Handle att-…) oder feste Anhänge (fix-…).
 
 ## mail (10)
 

@@ -28,7 +28,7 @@ const NOT_ALLOWED_RE = new RegExp(
 
 const DESTRUCTIVE_RE = /(_delete|_remove|_clear|_reset|_disconnect)/;
 const MUTATING_RE = /(_update|_sync|_enrich|_associate|_disassociate|_complete|_link|_archive|_mark|_decide|_set|_pause|_resume|_cancel|_approve|_reject|_pin|_unpin|_rename|_move)/;
-const ADDITIVE_RE = /(_create|_send|_reply|_forward|_log|_append|_register|_add|_start|_run|_import|_share|_write|_schedule)/;
+const ADDITIVE_RE = /(_create|_send|_reply|_forward|_log|_append|_register|_add|_start|_run|_import|_share|_write|_schedule|_ablegen)/;
 
 const KONTINGENT_RE = /^(discovery_scan|discovery_decide|import_|radar_run|company_(profile|publications|contacts))/;
 const EXTERN_RE = /^(crm_|mail_|notion_|obsidian_|linkedin_|watchlist_|personen_radar|apify)/;
@@ -56,7 +56,7 @@ export function isToolAllowedInWorkflows(name: string): boolean {
 export const OUTPUT_LIST_KEYS = ["items", "rows", "candidates", "companies", "contacts", "results", "records", "entries", "matches", "ergebnisse", "kandidaten", "firmen", "personen", "messages", "alerts", "deals", "owners", "associations", "jeTag", "hits"];
 
 export const LOGIC_NODES: WorkflowCatalogEntry[] = [
-  { type: "trigger", label: "Start", category: "Ablauf", summary: "Ausloeser des Workflows (manuell, Zeitplan, Ereignis, Chat). Ereignisse: alert.created (neue Meldung; filter { kind: [...] }), radar.newHot, mail.inbound, import.finished, linkedin.lead (neuer Lead aus einem beobachteten Post) — ein Ereignis = ein Lauf.", parameters: { type: "object", properties: {} }, write: false, actionKind: "read", costClass: "frei" },
+  { type: "trigger", label: "Start", category: "Ablauf", summary: "Ausloeser des Workflows (manuell, Zeitplan, Ereignis, Chat). Ereignisse: alert.created (neue Meldung; filter { kind: [...] }), radar.newHot, mail.inbound, import.finished, linkedin.lead (neuer Lead aus einem beobachteten Post; Payload leadId, konfidenz, person, firma, discoveryId) — ein Ereignis = ein Lauf.", parameters: { type: "object", properties: {} }, write: false, actionKind: "read", costClass: "frei" },
   { type: "filter", label: "Filter", category: "Ablauf", summary: "Behaelt nur Items, fuer die die Bedingung gilt.", parameters: { type: "object", required: ["condition"], properties: { condition: { type: "string", description: "Expression, z. B. {{ $json.matchScore >= 80 }}" } } }, write: false, actionKind: "read", costClass: "frei" },
   { type: "if", label: "Wenn / sonst", category: "Ablauf", summary: "Verzweigt je Item: Ausgang 0 = wahr, Ausgang 1 = falsch.", parameters: { type: "object", required: ["condition"], properties: { condition: { type: "string" } } }, write: false, actionKind: "read", costClass: "frei" },
   { type: "switch", label: "Verzweigung", category: "Ablauf", summary: "Verzweigt nach Wert: cases[i].match → Ausgang i; sonst letzter Ausgang.", parameters: { type: "object", required: ["value", "cases"], properties: { value: { type: "string", description: "Expression" }, cases: { type: "array", items: { type: "object", properties: { label: { type: "string" }, match: { type: "string" } } } } } }, write: false, actionKind: "read", costClass: "frei" },

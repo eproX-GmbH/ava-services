@@ -230,7 +230,14 @@ L5 → L6 → L7.
   Employment-Projektion am Fremdschlüssel. In Produktion hatten 9 von 10 übernommenen Leads
   keine Person. Fix: Firmen-Upsert wie im Producer-Pfad (Gateway). Desktop (v0.1.897): eigene
   übernommene Leads ohne Person werden beim nächsten Listen einmal je Sitzung still nachgeholt.
-- Offen aus demselben Feedback (eigene Schritte): Werkzeug „Entwurf ins Postfach legen“ für Chat
-  und Workflows; Ereignis `linkedin.lead` ohne `leadId`/`konfidenz` (Werkzeug-Doku verspricht
-  `leadId`); Knopf „Ansprache vorbereiten“ als Hintergrundaufgabe mit Mehrfachauswahl;
-  Nebenbefund `ensureLeadsSchema` (CREATE TABLE IF NOT EXISTS je Anfrage) deadlockt unter Last.
+- Umgesetzt am selben Tag (v0.1.898): Werkzeug `mail_entwurf_ablegen` (Chat und Workflows, legt
+  den Entwurf per IMAP in den Entwürfe-Ordner des Entwurfs-Postfachs); Ereignis `linkedin.lead`
+  trägt jetzt `leadId`, `konfidenz`, `firma`, `firmaDomain`, `profileUrl`, `reactionType` (Gateway
+  gibt die IDs aus `/linkedin-leads/batch` zurück; nur neue Leads lösen aus); Vorlage „Neuer Lead:
+  Entwurf in mein Postfach“ (Filter konfidenz ≥ 0,8 → Lead übernehmen → Warten auf Profil, Kontakte,
+  E-Mail → KI-Ansprache mit Adresse aus dem Firmen-Kontext → Entwurf ablegen, sonst Abbruch mit
+  Meldung). Die Schreib-Schritte sind in der Vorlage nicht freigegeben: der Nutzer gibt sie im
+  Editor frei (Node-Freigabe) oder bestätigt jeden Lauf unter „Offene Freigaben“.
+- Offen aus demselben Feedback: Knopf „Ansprache vorbereiten“ als Hintergrundaufgabe mit
+  Mehrfachauswahl (übernehmen + Verarbeitung + Entwurf je Lead); Nebenbefund `ensureLeadsSchema`
+  (CREATE TABLE IF NOT EXISTS je Anfrage) deadlockt unter Last.

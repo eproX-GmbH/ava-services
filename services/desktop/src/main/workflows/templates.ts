@@ -76,6 +76,48 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     settings: { maxItemsPerRun: 1000 },
   },
   {
+    id: "lead-entwurf-postfach",
+    name: "Neuer Lead: Entwurf in mein Postfach",
+    description:
+      "Ereignis-Workflow (Feedback Patrick 2026-10-31): Reagiert jemand auf einen beobachteten LinkedIn-Post und ist die Firma sicher zugeordnet, übernimmt AVA den Lead (Firma in den Bestand, Person als Kontakt), wartet auf Profil, Kontakte und E-Mail-Adressen, schreibt eine kurze persönliche Ansprache mit Bezug auf den Post und legt sie als Entwurf in den Entwürfe-Ordner deines Postfachs. Du prüfst und verschickst selbst. Ohne bekannte Adresse endet der Lauf mit einer Meldung.",
+    tools: ["linkedin_lead_uebernehmen", "mail_entwurf_ablegen"],
+    scope: "company",
+    trigger: { kind: "event", event: "linkedin.lead" },
+    nodes: [
+      { name: "Start", type: "trigger", parameters: {} },
+      { name: "Nur sichere Zuordnung", type: "filter", parameters: { condition: "{{ ($json.konfidenz ?? 0) >= 0.8 && !!$json.leadId }}" } },
+      { name: "Lead übernehmen", type: "tool", mode: "perItem", parameters: { tool: "linkedin_lead_uebernehmen", args: { leadId: "{{ $json.leadId }}" } } },
+      { name: "Auf Verarbeitung warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}", bis: ["companyProfile", "companyContact", "companyEmail"] } },
+      { name: "Nur fertige", type: "filter", parameters: { condition: "{{ $json.state === 'completed' }}" } },
+      {
+        name: "Ansprache schreiben",
+        type: "ai",
+        mode: "perItem",
+        parameters: {
+          prompt:
+            "Schreib eine kurze, persönliche E-Mail an {{ $('Start').first().json.person }} ({{ $('Start').first().json.rolle ?? 'Rolle unbekannt' }}) bei {{ $company.name }}. " +
+            "Anlass: die Person hat {{ $('Start').first().json.aktivitaet === 'comment' ? 'diesen Post kommentiert' : 'auf diesen Post reagiert' }}: {{ $('Start').first().json.postUrl }}. " +
+            "Kommentar: {{ $('Start').first().json.kommentar ?? '(keiner)' }}. " +
+            "Geh auf das Thema des Posts bzw. den Kommentar ein, nenne einen konkreten Bezug zur Firma aus dem Kontext, kein Verkaufsdruck, höchstens 120 Wörter, Sie-Form (Du nur, wenn der Kommentar es nahelegt), mit Anrede und Grußformel ohne Signatur. " +
+            "Suche im Firmen-Kontext die E-Mail-Adresse GENAU dieser Person (Kontakte, auch abgeleitete Adressen). Gib sie als `an` zurück; gibt es keine, `an` = null und `grund` nennt, warum. Nie eine Adresse erfinden.",
+          outputSchema: {
+            type: "object",
+            required: ["betreff", "text"],
+            properties: { an: { type: ["string", "null"] }, betreff: { type: "string" }, text: { type: "string" }, grund: { type: ["string", "null"] } },
+          },
+        },
+      },
+      { name: "Adresse bekannt", type: "if", parameters: { condition: "{{ !!$json.an }}" } },
+      { name: "Entwurf ablegen", type: "tool", mode: "perItem", parameters: { tool: "mail_entwurf_ablegen", args: { an: ["{{ $json.an }}"], betreff: "{{ $json.betreff }}", text: "{{ $json.text }}" } } },
+      { name: "Keine Adresse", type: "stop", parameters: { message: "Für {{ $('Start').first().json.person }} ({{ $company.name }}) ist keine E-Mail-Adresse bekannt ({{ $json.grund ?? 'kein Grund genannt' }}); kein Entwurf angelegt." } },
+    ],
+    connections: {
+      ...kette(["Start", "Nur sichere Zuordnung", "Lead übernehmen", "Auf Verarbeitung warten", "Nur fertige", "Ansprache schreiben", "Adresse bekannt"]),
+      "Adresse bekannt": { main: [[{ node: "Entwurf ablegen", index: 0 }], [{ node: "Keine Adresse", index: 0 }]] },
+    },
+    settings: { notifyOnFinish: true },
+  },
+  {
     id: "radar-heiss-kurzprofil",
     name: "Neuer heißer Radar-Treffer: Kurzprofil per Telegram",
     description: "Ereignis-Workflow: Sobald der Radar einen neuen heißen Kandidaten meldet, kommt sofort ein Kurzprofil aus dem Mini-Profil per Telegram.",
