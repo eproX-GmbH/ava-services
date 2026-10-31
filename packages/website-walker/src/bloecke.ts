@@ -63,7 +63,16 @@ export function zerlege(html: string, url: string, opts: { maxBlockZeichen?: num
   const pfad: string[] = [];
   const out: Block[] = [];
   let pos = 0;
+  const kurz: string[] = [];
+  let kurzPfad: string[] = [];
+  const kurzeAbschliessen = () => {
+    if (kurz.length === 0) return;
+    const text = kurz.map((k) => (k.startsWith("•") ? k : `• ${k}`)).join("\n");
+    if (kurz.length >= 2 || text.length >= 40) out.push({ url, pos: pos++, pfad: kurzPfad, text });
+    kurz.length = 0;
+  };
   for (const t of teile) {
+    const pfadVorher = pfad.filter(Boolean).slice(0, 4);
     const ueb = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/i.exec(t);
     if (ueb) {
       const ebene = Number(ueb[1]);
@@ -72,7 +81,19 @@ export function zerlege(html: string, url: string, opts: { maxBlockZeichen?: num
       pfad[Math.max(0, ebene - 1)] = titel;
     }
     const text = textAus(t);
-    if (text.length < 40) continue;
+    if (text.length < 40) {
+      // 2026-10-31 (T3-Messung): Kachel-Listen aus lauter kurzen Ueberschriften
+      // ("Betriebliche Altersvorsorge", "Jobrad" als Icon-Boxen) fielen weg, weil
+      // jedes Stueck fuer sich unter 40 Zeichen liegt. Kurze Stuecke werden
+      // gesammelt und als EIN Listenblock ausgegeben, sobald wieder Text folgt.
+      if (text.length >= 3) {
+        // Pfad VOR der eigenen Ueberschrift: die Kachel-Titel sind der Inhalt, nicht der Kontext.
+        if (kurz.length === 0) kurzPfad = pfadVorher;
+        kurz.push(text.replace(/\n/g, " "));
+      }
+      continue;
+    }
+    kurzeAbschliessen();
     const stuecke: string[] = [];
     if (text.length <= maxBlock) stuecke.push(text);
     else {
@@ -87,6 +108,7 @@ export function zerlege(html: string, url: string, opts: { maxBlockZeichen?: num
     }
     for (const s of stuecke) out.push({ url, pos: pos++, pfad: pfad.filter(Boolean).slice(0, 4), text: s.trim() });
   }
+  kurzeAbschliessen();
   return out;
 }
 

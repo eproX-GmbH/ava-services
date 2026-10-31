@@ -115,10 +115,10 @@ Themen-Weg gleich gut ist, wird er darauf umgestellt.
 | T0 | Plan, Messgrößen | 2026-10-30 |
 | T1 | Desktop: `ThemenStore`, IPC `themen:*`, Einstellungs-Abschnitt, Werkzeuge `themen_*`, Fähigkeitsgruppe, Nutzerstand + Chip, Vorschlag nach dem ICP, Datei an den Producer | v0.1.892 (2026-10-30) |
 | T2 | Producer: `walker/themen.ts` (T-a bis T-c), Einbau in Normal- und Manuell-Lauf, `themen[]` im Research-Persist; Gateway: `CompanyThema`, Persist, `/website` liefert `themen`; Recherche-Zeile „Themen prüfen“ und `research_run feature=themen` | v0.1.892 (2026-10-30), Gateway-Deploy offen |
-| T3 | Messung an zehn Firmen mit drei Themen (§6), Nachschärfen der Begriffssuche | |
+| T3 | Messung an zehn Firmen mit drei Themen (§6), Nachschärfen der Begriffssuche | 2026-10-31, drei Läufe (`website/scripts/messung-themen.ts`): Kachel-Listen aus kurzen Überschriften werden ein Block (`bloecke.ts`, vorher fiel „Betriebliche Altersvorsorge“ als Icon-Box weg), Hub-Seiten je Gruppe ohne Modell (Zertifizierung, Nachhaltigkeit, Über uns, Karriere, Werte), Seitendeckel reihum statt je Thema, Urteil je Thema statt Sammelaufruf (verlor ISO 27001 bei Münstermann), Verwandtes wird „unklar“ mit Zitat, deterministisches Netz: Begriff wörtlich da → mindestens „unklar“ mit dem Satz |
 | T4 | Anzeige: Reiter Desktop „Mein Fokus“ (auch vor der ersten Prüfung, mit „Jetzt prüfen“), Bereich app.ava.bi, `company_get` Bereich `fokus`, Recherche-Zeile, manueller Lauf | v0.1.893 (2026-10-30) |
 | T5 | Alarm „Fokus-Thema gefunden“ (Gateway-Neuheit `thema-gefunden` aus `CompanyThema.erstgesehenAt`, Desktop-Meldung kind `fokus-thema` mit Zitat und Quelle, Judge-Regel: Anlass per Definition, standardmäßig an); Filter „Fokus-Thema gefunden“ in Meine Firmen (Desktop-Auswahl → `/v1/companies/matrix?thema=`, Gateway holt die führende Menge aus `CompanyThema`, master-data filtert per `companyIds`). Offen: Filter in app.ava.bi (die App kennt die lokalen Themen nicht; braucht einen Gateway-Endpunkt mit den gefundenen Themen je Nutzerbestand) und MCP `meine_firmen` | v0.1.894 (2026-10-30), Deploys Gateway + master-data |
-| T6 | Karriere-Durchgang auf den Themen-Weg umstellen, wenn T3 es trägt | |
+| T6 | Karriere-Durchgang auf den Themen-Weg umstellen, wenn T3 es trägt | 2026-10-31: `walker/karriere.ts` (Graph mit Browser-Rückfall, deutsche Übersicht zuerst, Blöcke mit Leistungs-Begriffen, sonst ganze Seite, Fundstelle am Auszug); `compute-worker.ts` nimmt zuerst den Walker, der alte Rohtext-Weg bleibt Rückfall ohne Karriereseite im Graph. Messung: bei 5 von 6 Firmen mit Leistungen gleich oder besser (MB nach Sprach-/Anzeigen-Regel gleich, Strategic IT 5 statt 4 belegte Posten), Scheuchl 2 statt 5 — dafür Zitate belegbar und keine erfundenen Posten mehr (der alte Weg nannte bei Strategic IT eine bAV, die auf keiner Seite steht) |
 
 Reihenfolge: T1, T2 zusammen in einem Release (Producer und Desktop), T4, T3, T5, T6.
 
@@ -130,6 +130,32 @@ Thema von Hand: steht es auf der Website, und wo? Dann: Trefferquote von T-b
 (Fundstellen gefunden), Richtigkeit von T-c (Status und Zitat), Seiten und Zeichen
 je Firma, Modellaufrufe, Laufzeit. Ziel: 9 von 10 Funden mit richtigem Zitat, kein
 falscher `gefunden`, unter 25.000 Zeichen je Firma und Lauf.
+
+### Ergebnis 2026-10-31 (Lauf 3, gpt-4o-mini als Producer-Modell, ohne Browser-Rückfall auf dem Messrechner)
+
+| Firma | Seiten | Fundstellen | Zeichen | Laufzeit | bAV | ISO 27001 | Nachhaltigkeit/PV |
+|---|---|---|---|---|---|---|---|
+| Münstermann | 14 | 15 | 2.850 | 37 s | gefunden „Betriebliche Altersvorsorge“ (/karriere/) | gefunden „Eine ISO 27001-Zertifizierung auf Basis des IT-Grundschutzes …“ (/ueber-uns/zertifizierungen/) | nicht gefunden (nur Branchenartikel zur Druckindustrie) |
+| Strategic IT | 14 | 6 | 1.831 | 9 s | nicht gefunden (steht auf keiner per HTTP ladbaren Seite) | nicht gefunden | nicht gefunden |
+| MB Maschinenbau | 3 | 4 | 1.660 | 12 s | gefunden „Betriebliche Altersvorsorge“ (Karriereseite) | nicht gefunden | nicht gefunden |
+| Scheuchl | 14 | 8 | 3.135 | 9 s | nicht gefunden | unklar „TISAX® – Trusted Information Security Assessment Exchange“ (/unternehmen/informationssicherheit) | unklar (Wärmerückgewinnung als Produkt, „Energieeffizienz“) |
+| Robotics DI | 3 | 0 | 0 | 7 s | nicht gefunden | nicht gefunden | nicht gefunden |
+| Wekal | 4 | 0 | 0 | 3 s | nicht gefunden | nicht gefunden | nicht gefunden |
+| KMB Maschinenbau | 8 | 0 | 0 | 13 s | nicht gefunden | nicht gefunden | nicht gefunden |
+| Rhewa | 9 | 4 | 4.230 | 7 s | nicht gefunden | nicht gefunden | nicht gefunden |
+| HAHN Automation | 13 | 13 | 15.625 | 15 s | nicht gefunden | nicht gefunden (Zertifikat nur als Download) | gefunden „Erneuerbare Energien: Wir sind bestrebt, den Anteil … durch die Erzeugung von Strom …“ (/de/group/qualitaet-esg/) |
+| Betzemeier | 22 | 8 | 6.143 | 24 s | nicht gefunden | nicht gefunden | nicht gefunden |
+
+Handprüfung über eine unabhängige Begriffssuche über bis zu 40 Seiten je Firma
+(`referenz` im Skript): alle vier echten Vorkommen (Münstermann bAV und ISO, MB bAV,
+HAHN PV) sind gefunden, die Zitate stehen wörtlich auf den genannten Seiten, kein
+falsches „gefunden“. Zwei Vorkommen nur verwandter Begriffe (Scheuchl TISAX,
+Energieeffizienz) sind „unklar“ mit Zitat. Zeichen je Firma 0 bis 15.625 (Ziel unter
+25.000). Modellaufrufe je Firma: eine Seitenwahl plus ein Urteil je Thema mit
+Fundstellen, also zwei bis fünf. Robotics DI, Wekal und KMB liefern per HTTP kaum Text
+(JavaScript-Seiten); im Producer greift dort der Browser-Rückfall, auf dem Messrechner
+war kein passender Chromedriver vorhanden. Offen: Begriffe wie „Energieeffizienz“ in
+Produkttexten erzeugen „unklar“-Hinweise; ob das stört, zeigt der Live-Betrieb.
 
 ## 7. Entscheidungen (Joyce, 2026-10-30)
 
