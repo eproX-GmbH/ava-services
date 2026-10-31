@@ -29,6 +29,8 @@ export interface FreshnessToolDeps {
   onPrefsChanged: () => void;
 }
 
+// Seit 2026-10-31 ohne freshness_get_prefs/freshness_set_prefs: Rhythmus und
+// Drosselung steuert der Betreiber (er bezahlt die Verarbeitung), nicht der Nutzer.
 export function buildFreshnessTools(deps: FreshnessToolDeps): Tool[] {
   const scan = defineTool({
     name: "freshness_scan",
@@ -90,134 +92,6 @@ export function buildFreshnessTools(deps: FreshnessToolDeps): Tool[] {
           daysSinceLastRun: Math.round(c.daysSinceLastRun),
           score: Number(c.score.toFixed(2)),
         })),
-      };
-    },
-  });
-
-  const getPrefs = defineTool({
-    name: "freshness_get_prefs",
-    description:
-      "Read the current freshness scheduler preferences (master toggle, per-stage cadences in days, throttle ceilings, pinned companies). Call before `freshness_set_prefs` if you're unsure of the current state.",
-    parameters: { type: "object", properties: {} },
-    schema: yup.object({}).noUnknown(true),
-    preview: (r: { enabled: boolean; pinned: number }) =>
-      `freshness ${r.enabled ? "on" : "off"} · ${r.pinned} pinned`,
-    run: async () => {
-      const p = deps.prefs.get();
-      return {
-        enabled: p.enabled,
-        cadenceDays: p.cadenceDays,
-        throttle: p.throttle,
-        topKPerTick: p.topKPerTick,
-        pinned: p.pinned.length,
-        pinnedCompanies: p.pinned,
-      };
-    },
-  });
-
-  const setPrefs = defineTool({
-    name: "freshness_set_prefs",
-    description:
-      "Patch freshness scheduler preferences. Only fields you set are changed. Use for things like 'auto-Aktualisierung aus' (`enabled: false`), 'profil alle 3 Tage' (`cadenceDays: { companyProfile: 3 }`), 'maximal 5 Retries pro Stunde' (`throttle: { globalPerHour: 5 }`). Cadence days are integers; 0 = stage opt-out (manual retries still work). To manage pinned companies use `freshness_pin_company` / `freshness_unpin_company` instead — those are atomic add/remove and don't require resending the whole list.",
-    parameters: {
-      type: "object",
-      properties: {
-        enabled: {
-          type: "boolean",
-          description: "Master toggle. False pauses the scheduler entirely.",
-        },
-        cadenceDays: {
-          type: "object",
-          description:
-            "Per-stage cadence in days. Each key is optional; only set the stages you want to change.",
-          properties: {
-            structuredContent: { type: "integer", minimum: 0 },
-            companyPublication: { type: "integer", minimum: 0 },
-            website: { type: "integer", minimum: 0 },
-            companyProfile: { type: "integer", minimum: 0 },
-            companyContact: { type: "integer", minimum: 0 },
-          },
-        },
-        throttle: {
-          type: "object",
-          properties: {
-            perStagePerHour: { type: "integer", minimum: 0 },
-            globalPerHour: { type: "integer", minimum: 0 },
-          },
-        },
-        topKPerTick: {
-          type: "integer",
-          minimum: 0,
-          description:
-            "Max retries dispatched per scheduler tick. Soft cap on top of the hourly throttle.",
-        },
-      },
-    },
-    schema: yup
-      .object({
-        enabled: yup.boolean().optional(),
-        cadenceDays: yup
-          .object({
-            structuredContent: yup.number().integer().min(0).optional(),
-            companyPublication: yup.number().integer().min(0).optional(),
-            website: yup.number().integer().min(0).optional(),
-            companyProfile: yup.number().integer().min(0).optional(),
-            companyContact: yup.number().integer().min(0).optional(),
-          })
-          .optional()
-          .noUnknown(true),
-        throttle: yup
-          .object({
-            perStagePerHour: yup.number().integer().min(0).optional(),
-            globalPerHour: yup.number().integer().min(0).optional(),
-          })
-          .optional()
-          .noUnknown(true),
-        topKPerTick: yup.number().integer().min(0).optional(),
-      })
-      .noUnknown(true),
-    preview: (r: { enabled: boolean }) =>
-      `freshness prefs updated · ${r.enabled ? "on" : "off"}`,
-    run: async (args) => {
-      // yup widens types past the strict shapes on `FreshnessPrefs`;
-      // narrow at the boundary the same way `alerts_set_prefs` does.
-      // Filter out `cadenceDays` keys with `undefined` values so we
-      // don't overwrite stages with NaN when the user only mentioned
-      // one.
-      type CadenceMap = import("../../../shared/types").FreshnessPrefs["cadenceDays"];
-      const cadenceClean: Partial<CadenceMap> = {};
-      if (args.cadenceDays) {
-        for (const stage of ALL_STAGES) {
-          const v = (args.cadenceDays as Record<string, unknown>)[stage];
-          if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
-            cadenceClean[stage] = Math.round(v);
-          }
-        }
-      }
-      const next = deps.prefs.set({
-        ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
-        ...(Object.keys(cadenceClean).length > 0
-          ? { cadenceDays: cadenceClean as CadenceMap }
-          : {}),
-        ...(args.throttle
-          ? {
-              throttle: args.throttle as {
-                perStagePerHour: number;
-                globalPerHour: number;
-              },
-            }
-          : {}),
-        ...(args.topKPerTick !== undefined
-          ? { topKPerTick: args.topKPerTick }
-          : {}),
-      });
-      deps.onPrefsChanged();
-      return {
-        enabled: next.enabled,
-        cadenceDays: next.cadenceDays,
-        throttle: next.throttle,
-        topKPerTick: next.topKPerTick,
-        pinned: next.pinned.length,
       };
     },
   });
@@ -284,5 +158,5 @@ export function buildFreshnessTools(deps: FreshnessToolDeps): Tool[] {
     },
   });
 
-  return [scan, runNow, getPrefs, setPrefs, pin, unpin];
+  return [scan, runNow, pin, unpin];
 }

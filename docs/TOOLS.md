@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-10-31
-Anzahl Tools: 300
+Anzahl Tools: 298
 
 ## Firmen (28)
 
@@ -477,15 +477,7 @@ Force a heartbeat tick NOW, regardless of cadence. Returns the per-candidate dec
 
 _Parameter:_ keine.
 
-## Aktualisierung (Freshness) (6)
-
-### `freshness_get_prefs`
-
-_Datei:_ `services/desktop/src/main/agent/tools/freshness.ts`
-
-Read the current freshness scheduler preferences (master toggle, per-stage cadences in days, throttle ceilings, pinned companies). Call before `freshness_set_prefs` if you're unsure of the current state.
-
-_Parameter:_ keine.
+## Aktualisierung (Freshness) (4)
 
 ### `freshness_pin_company`
 
@@ -511,18 +503,6 @@ _Datei:_ `services/desktop/src/main/agent/tools/freshness.ts`
 Read-only: trigger a freshness scan now and return the top stale (companyId, stage) rows the scheduler would consider. Use when the user asks 'welche Firmen sind veraltet', 'was steht zur Aktualisierung an', 'wann lief contact für ACME zuletzt'. Does NOT dispatch retries; pair with `freshness_run_now` for the action.
 
 _Parameter:_ keine.
-
-### `freshness_set_prefs`
-
-_Datei:_ `services/desktop/src/main/agent/tools/freshness.ts`
-
-Patch freshness scheduler preferences. Only fields you set are changed. Use for things like 'auto-Aktualisierung aus' (`enabled: false`), 'profil alle 3 Tage' (`cadenceDays: { companyProfile: 3 }`), 'maximal 5 Retries pro Stunde' (`throttle: { globalPerHour: 5 }`). Cadence days are integers; 0 = stage opt-out (manual retries still work). To manage pinned companies use `freshness_pin_company` / `freshness_unpin_company` instead — those are atomic add/remove and don't require resending the whole list.
-
-_Parameter:_
-- `enabled: boolean` — Master toggle. False pauses the scheduler entirely.
-- `cadenceDays: object` — Per-stage cadence in days. Each key is optional; only set the stages you want to change.
-- `throttle: object`
-- `topKPerTick: integer` — Max retries dispatched per scheduler tick. Soft cap on top of the hourly throttle.
 
 ### `freshness_unpin_company`
 

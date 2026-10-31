@@ -47,7 +47,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "zeitplan", text: "Erinnerungen und wiederkehrende Mail-Schleifen planen", tools: ["schedule_*"] },
   { id: "gedaechtnis", text: "Sich Dinge merken und spaeter abrufen (Gedaechtnis ueber Gespraeche hinweg)", tools: ["recall_memory", "remember", "forget_memory"] },
   { id: "profil", text: "Eigenes Nutzerprofil (Rolle, Branchen, Regionen) pflegen", tools: ["profile_*"] },
-  { id: "aktualitaet", text: "Aktualitaet der Firmendaten: Auffrischen, Frequenzen je Datenquelle, Firmen anpinnen", tools: ["freshness_*"] },
+  { id: "aktualitaet", text: "Aktualitaet der Firmendaten: Auffrischen, Firmen priorisieren", tools: ["freshness_*"] },
   { id: "chatverlauf", text: "Fruehere Gespraeche auflisten, laden, loeschen", tools: ["chat_history_*"] },
   { id: "navigation", text: "Seiten der App oeffnen, Rueckfragen stellen, Hinweise anzeigen", tools: ["navigate", "notify", "ask_user_choice", "ask_user_text"] },
   { id: "lokales_modell", text: "Lokales KI-Modell (Ollama) laden, Status, neu starten", tools: ["ollama_*"] },

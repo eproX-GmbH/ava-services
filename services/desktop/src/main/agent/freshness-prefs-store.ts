@@ -94,7 +94,10 @@ export class FreshnessPrefsStore extends EventEmitter {
     try {
       const raw = readFileSync(this.path, "utf8");
       const parsed = JSON.parse(raw) as Partial<FreshnessPrefs>;
-      this.cache = this.normalise(parsed);
+      // Seit 2026-10-31: Rhythmus, Drosselung und Schalter sind Betreiber-Sache
+      // (er bezahlt die Verarbeitung); von der Platte zaehlt nur noch die Pin-Liste.
+      // Alte Dateien mit enabled=false oder eigenen Takten greifen damit nicht mehr.
+      this.cache = this.normalise({ pinned: parsed.pinned });
     } catch (err) {
       console.warn(
         "[freshness-prefs] read failed; falling back to defaults:",
@@ -107,13 +110,8 @@ export class FreshnessPrefsStore extends EventEmitter {
 
   set(patch: Partial<FreshnessPrefs>): FreshnessPrefs {
     const current = this.get();
-    const merged = this.normalise({
-      enabled: patch.enabled ?? current.enabled,
-      cadenceDays: { ...current.cadenceDays, ...(patch.cadenceDays ?? {}) },
-      throttle: { ...current.throttle, ...(patch.throttle ?? {}) },
-      topKPerTick: patch.topKPerTick ?? current.topKPerTick,
-      pinned: patch.pinned ?? current.pinned,
-    });
+    // Nur die Pin-Liste ist nutzerseitig veraenderbar; alles andere bleibt Standard.
+    const merged = this.normalise({ pinned: patch.pinned ?? current.pinned });
     this.cache = merged;
     try {
       if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true });

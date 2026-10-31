@@ -269,3 +269,12 @@ sagen schon „Fähigkeit“.
    `/skill` sagt?
 4. Englische ChatGPT-Knöpfe: nur das behalten, was OpenAI vorschreibt (Vorschlag).
 5. Einstellungs-Suche: löschen (Vorschlag) oder bauen?
+
+## 9. Nachtrag 2026-10-31: Auffrischung ist keine Nutzer-Einstellung mehr
+
+Vorgabe Joyce: Rhythmus, Drosselung und Schalter der Auffrischung steuert und bezahlt
+der Betreiber. Der Abschnitt „Auffrischung“ unter Recherche ist entfernt, ebenso die
+Chat-Werkzeuge `freshness_get_prefs`/`freshness_set_prefs`. Der Hintergrund-Takt läuft
+mit den Standardwerten weiter (7/7/7/30/30 Tage, 3 je Bereich und Stunde, 10 je Stunde,
+5 je Prüflauf); gespeicherte Nutzerwerte, auch „aus“, greifen nicht mehr. Priorisieren
+einzelner Firmen und „jetzt auffrischen“ bleiben (Pins, `freshness_run_now`).

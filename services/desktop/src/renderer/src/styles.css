@@ -3869,46 +3869,6 @@ input.kontakt-suche__feld:focus { border-color: var(--accent); }
   display: flex; justify-content: flex-end; gap: 8px;
 }
 
-/* ---- Freshness scheduler section (Phase 8.r3) ------------------------- */
-.freshness-cadences {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  margin: 4px 0 4px;
-}
-.freshness-cadence-row {
-  display: grid;
-  grid-template-columns: 180px 80px 1fr;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-}
-.freshness-cadence-row__label { font-weight: 500; }
-.freshness-cadence-row__hint {
-  white-space: normal;
-  line-height: 1.4;
-}
-.freshness-cadence-row input[type="number"] {
-  font-size: 13px; padding: 4px 8px;
-  width: 80px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.freshness-pins {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  margin-top: 4px;
-}
-.freshness-pin {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 8px;
-  border: 1px solid var(--ctrl-border);
-  border-radius: 999px;
-  background: var(--ctrl-bg);
-  font-size: 12px;
-}
-.freshness-pin code { font-size: 11px; }
-.freshness-pin button { padding: 0 4px; font-size: 14px; line-height: 1; }
-
 /* ---- Sprachmodell Settings panel (Phase 8.n1) ------------------------- */
 .voice-status {
   display: flex; align-items: center; gap: 8px;
