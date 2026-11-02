@@ -11,6 +11,16 @@ interface Usage {
   kannSelbstWechseln?: boolean;
 }
 interface Linkedin { limitCents: number | null; verbrauchtCents: number; enterprise: boolean }
+// P10 — Uebersicht aktiv/ruhend fuer die Monatsende-Meldung „Tauschen?“.
+interface ZustandUebersicht {
+  aktivModell: boolean;
+  aktiv: number;
+  ruhend: number;
+  geplantAktiv: Array<{ companyId: string }>;
+  tauschvorschlaege: Array<{ companyId: string; name: string | null; aktivSeit: string | null }>;
+  free: { genutzt: number; limit: number } | null;
+}
+const TAGE_90 = 90 * 86_400_000;
 
 const eur = (c: number) => (c / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
 
@@ -43,6 +53,30 @@ export function startKontingentWaechter(deps: { gateway: Gateway; alerts: Alerts
         else if (ratio >= 0.8) melden({ sourceRef: `linkedin-limit:80:${monat}`, severity: "info", headline: "LinkedIn-Beobachtung: Monatslimit zu 80 % genutzt", rationale: `${eur(l.verbrauchtCents)} von ${eur(l.limitCents)} in diesem Monat.` });
       }
     } catch { /* 404 ohne Schalter */ }
+    // P10 — in den letzten drei Tagen des Monats einmal: lange nicht angefasste aktive Firmen
+    // gegen ruhende tauschen? Nur mit vollem Kontingent und wenn ruhende Firmen warten.
+    try {
+      const jetzt = new Date();
+      const tageImMonat = new Date(Date.UTC(jetzt.getUTCFullYear(), jetzt.getUTCMonth() + 1, 0)).getUTCDate();
+      if (tageImMonat - jetzt.getUTCDate() <= 2) {
+        const u = await deps.gateway.request<Usage>("/v1/usage");
+        const k = u.kontingent;
+        const voll = !!k && k.kontingentCents != null && k.kontingentCents > 0 && k.plan !== "free" && k.plan !== "enterprise" && k.verbrauchtCents >= k.kontingentCents * 0.95;
+        if (voll) {
+          const z = await deps.gateway.request<ZustandUebersicht>("/v1/firmen/zustand/uebersicht");
+          const alt = z.tauschvorschlaege.filter((v) => v.aktivSeit && jetzt.getTime() - new Date(v.aktivSeit).getTime() > TAGE_90);
+          if (z.aktivModell && z.ruhend > 0 && alt.length > 0) {
+            const namen = alt.slice(0, 3).map((v) => v.name ?? v.companyId).join(", ");
+            melden({
+              sourceRef: `zustand-tausch:${monat}`,
+              severity: "info",
+              headline: `${alt.length} aktive ${alt.length === 1 ? "Firma" : "Firmen"} seit 90 Tagen nicht angefasst, ${z.ruhend} ruhende ${z.ruhend === 1 ? "wartet" : "warten"}`,
+              rationale: `Zum Beispiel ${namen}. Lässt du sie ruhen, wird ab dem 1. Platz für ruhende Firmen frei. In Meine Firmen: Mond-Knopf an der Firma, oder sag es mir im Chat.`,
+            });
+          }
+        }
+      }
+    } catch { /* ohne Schalter 404 */ }
   };
   const erst = setTimeout(() => void pruefen(), 3 * 60_000);
   const timer = setInterval(() => void pruefen(), 6 * 60 * 60_000);

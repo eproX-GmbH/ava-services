@@ -303,8 +303,8 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
   Steckbrief, company_get liefert fuer ruhend/nicht in Liste nur den Steckbrief + aktivierung, Werkzeuge
   firma_aktivieren/firma_ruhen_lassen, Scheduler/Alarme/Workflows/Personen-Radar nur aktive Firmen,
   Systemprompt-Regel. PWA 43ea28c (Pille, Firmenansicht ruhend, Allowlist). MCP firma_lesen Steckbrief,
-  meine_firmen zustand=ruhend. Offen: Monatsende-Meldung „Tauschen?“ (Desktop), Texte Preisseite/AGB
-  (Satz aus P10 in docs/WEBSITE_PROMPT_PRICING_2026-11-02.md nachziehen).
+  meine_firmen zustand=ruhend. Monatsende-Meldung „Tauschen?“ (Desktop v0.1.905, Kontingent-Waechter, letzte drei Tage
+  des Monats) und Texte Preisseite/AGB (docs/WEBSITE_PROMPT_PRICING_2026-11-02.md) ergaenzt 2026-11-02.
 - **P9 (2026-11-02):** keine Migration nötig, da es keine zahlenden Kunden im alten Modell gibt (Joyce). Website- und AGB-Texte: docs/WEBSITE_PROMPT_PRICING_2026-11-02.md (Prompt für den Website-Agenten). Offen bleibt nur Monitoring/Betrieb. Stripe-Dashboard (2026-11-02, Joyce
   per Browser): Produkte „AVA Pro“ 49 € (`price_1TWLJF0r0BPxCh2slgfeLNb7`, vorher „AVA Starter“), „AVA Max“
   149 € (`price_1TWLJH0r0BPxCh2sUvtHrQX6`, vorher „AVA Pro“), „AVA Ultra“ 299 € neu

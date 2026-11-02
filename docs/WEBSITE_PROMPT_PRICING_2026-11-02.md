@@ -56,6 +56,9 @@ Plan.“
 Drei Stichpunkte darunter:
 - „Pläne gelten je Nutzer. Deine Organisation bucht Plätze und verteilt sie; ein Wechsel nach
   oben wirkt sofort, nach unten zum Ende des Abrechnungszeitraums.“
+- „Aktiv ist, was AVA für dich aufbereitet und beobachtet. Deine Liste darf größer sein als
+  dein Kontingent: Firmen, die nicht mehr hineinpassen, bleiben als ruhende Firmen mit ihren
+  Grunddaten in der Liste und lassen sich jederzeit aktivieren, sobald Platz ist.“
 - „Nichts wird gelöscht. Passt dein Bestand nach einem Wechsel nicht mehr ins Kontingent,
   kommen nur keine neuen Firmen dazu.“
 - „Beobachtung von LinkedIn-Aktivitäten (Reaktionen, Kommentare, Beiträge, Leads) rechnet
@@ -103,6 +106,16 @@ AGB das bisher tun; sonst wie gehabt), nummeriert, ohne Marketing. Inhalte:
   erneuert.
 
 ### 2.2 Kontingent und Bestand
+
+- Jede Firma in der Liste des Nutzers ist entweder aktiv oder ruhend. Nur aktive Firmen werden
+  aufbereitet, aktualisiert und beobachtet und zählen zum Bestand. Ruhende Firmen bleiben mit
+  den öffentlich verfügbaren Registergrunddaten in der Liste; weitergehende Inhalte sind für sie
+  nicht abrufbar. Firmen, die bei der Aufnahme nicht mehr in das Kontingent passen, werden als
+  ruhend geführt; eine Aktivierung ist möglich, sobald das Kontingent reicht oder der Plan
+  gewechselt wurde. Im Plan Free gilt die Zahl der Aktivierungen insgesamt als Grenze.
+- Wird eine aktive Firma ruhend gestellt, zählt sie bis zum Ende des laufenden Kalendermonats
+  zum Bestand; ab dem Folgemonat wird der Platz frei. Eine Aktivierung kann zum Monatswechsel
+  vorgemerkt werden.
 
 - Jeder bezahlte Plan enthält ein monatliches Kontingent in Höhe des Planpreises (Pro 49 €,
   Max 149 €, Ultra 299 €). Das Kontingent ist ein Rechenwert für den Umfang der Nutzung,
