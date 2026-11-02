@@ -162,7 +162,7 @@ export function AllCompanies() {
   const [thema, setThema] = useState("");
   const themen = useQuery({ queryKey: ["themen", "liste"], queryFn: () => window.api.themen.list(), staleTime: 60_000 });
   // P10 — aktiv/ruhend: Filter, Kopfzeile, Dialog bei vollem Kontingent.
-  const [nurRuhend, setNurRuhend] = useState(false);
+  const [zustandFilter, setZustandFilter] = useState<"" | "aktiv" | "ruhend">("");
   const uebersicht = useZustandUebersicht();
   const aktivModell = uebersicht.data?.aktivModell === true;
   const [aktivierenAnfrage, setAktivierenAnfrage] = useState<AktivierenAnfrage | null>(null);
@@ -216,7 +216,7 @@ export function AllCompanies() {
   }, [searchInput]);
 
   const matrix = useQuery<CompaniesMatrixResponse>({
-    queryKey: ["companies-matrix", page, search, land, thema, nurRuhend],
+    queryKey: ["companies-matrix", page, search, land, thema, zustandFilter],
     queryFn: () => {
       const qs = new URLSearchParams({
         pageNumber: String(page),
@@ -224,7 +224,7 @@ export function AllCompanies() {
         ...(search ? { search } : {}),
         ...(land ? { country: land } : {}),
         ...(thema ? { thema } : {}),
-        ...(nurRuhend ? { zustand: "ruhend" } : {}),
+        ...(zustandFilter ? { zustand: zustandFilter } : {}),
       });
       return gatewayFetch<CompaniesMatrixResponse>(
         `/v1/companies/matrix?${qs.toString()}`,
@@ -404,19 +404,29 @@ export function AllCompanies() {
             ))}
           </select>
         )}
-        {aktivModell && (
-          <button
-            type="button"
-            className={`ct-pill all-companies__zustand-filter${nurRuhend ? " ct-pill--aktiv" : ""}`}
-            aria-pressed={nurRuhend}
-            onClick={() => {
-              setNurRuhend((v) => !v);
-              setPage(1);
-            }}
-            title="Nur ruhende Firmen zeigen"
-          >
-            <Moon className="ct-icon-sm" aria-hidden="true" /> Ruhend{uebersicht.data ? ` (${uebersicht.data.ruhend.toLocaleString("de-DE")})` : ""}
-          </button>
+        {aktivModell && uebersicht.data && (
+          <div className="segment" role="tablist" aria-label="Zustand">
+            {([
+              ["", "Alle", uebersicht.data.gesamt],
+              ["aktiv", "Aktiv", uebersicht.data.aktiv],
+              ["ruhend", "Ruhend", uebersicht.data.ruhend],
+            ] as const).map(([wert, label, n]) => (
+              <button
+                key={wert || "alle"}
+                type="button"
+                role="tab"
+                aria-selected={zustandFilter === wert}
+                className={`segment__item${zustandFilter === wert ? " segment__item--aktiv" : ""}`}
+                onClick={() => {
+                  setZustandFilter(wert);
+                  setPage(1);
+                }}
+              >
+                {label}
+                <span className="segment__zahl">{n.toLocaleString("de-DE")}</span>
+              </button>
+            ))}
+          </div>
         )}
         {matrix.data && (
           <span className="ct-pill all-companies__count">
@@ -427,24 +437,12 @@ export function AllCompanies() {
         )}
       </div>
 
-      {aktivModell && uebersicht.data && (
-        <div className="ct-card all-companies__zustand" style={{ padding: "0.6rem 1rem" }}>
-          <span>
-            <strong>{uebersicht.data.aktiv.toLocaleString("de-DE")}</strong> aktiv
-            {uebersicht.data.ruhend > 0 ? <> · <strong>{uebersicht.data.ruhend.toLocaleString("de-DE")}</strong> ruhend</> : null}
-            {uebersicht.data.free ? <> · Free: {uebersicht.data.free.genutzt} von {uebersicht.data.free.limit} Aktivierungen genutzt</> : null}
-            {uebersicht.data.geplantRuhend.length > 0 ? <> · ab {monatsersterText(uebersicht.data.naechsterMonat)} {uebersicht.data.geplantRuhend.length} {uebersicht.data.geplantRuhend.length === 1 ? "Platz" : "Plätze"} frei</> : null}
-          </span>
-          {uebersicht.data.geplantAktiv.length > 0 && (
-            <span className="muted small">
-              {" "}· {uebersicht.data.geplantAktiv.length} {uebersicht.data.geplantAktiv.length === 1 ? "Firma wird" : "Firmen werden"} ab {monatsersterText(uebersicht.data.naechsterMonat)} aktiv
-              {uebersicht.data.geplantAktiv.some((g) => g.wartet) ? " (wartet auf einen freien Platz)" : ""}
-            </span>
-          )}
-          <span className="muted small" style={{ marginLeft: "auto" }}>
-            Aktiv heißt: AVA bereitet auf, beobachtet, meldet. Ruhende Firmen zeigen nur Grunddaten.
-          </span>
-        </div>
+      {aktivModell && uebersicht.data && (uebersicht.data.geplantAktiv.length > 0 || uebersicht.data.geplantRuhend.length > 0 || uebersicht.data.free) && (
+        <p className="muted small all-companies__zustand-hinweis">
+          {uebersicht.data.free ? `Free: ${uebersicht.data.free.genutzt} von ${uebersicht.data.free.limit} Aktivierungen genutzt. ` : ""}
+          {uebersicht.data.geplantRuhend.length > 0 ? `Ab ${monatsersterText(uebersicht.data.naechsterMonat)} ${uebersicht.data.geplantRuhend.length === 1 ? "wird 1 Platz" : `werden ${uebersicht.data.geplantRuhend.length} Plätze`} frei. ` : ""}
+          {uebersicht.data.geplantAktiv.length > 0 ? `${uebersicht.data.geplantAktiv.length} ${uebersicht.data.geplantAktiv.length === 1 ? "Firma wird" : "Firmen werden"} ab ${monatsersterText(uebersicht.data.naechsterMonat)} aktiv${uebersicht.data.geplantAktiv.some((g) => g.wartet) ? " (wartet auf einen freien Platz)" : ""}.` : ""}
+        </p>
       )}
       {zustandMeldung && (
         <p className="muted small" role="status">

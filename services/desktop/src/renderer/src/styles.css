@@ -9265,8 +9265,13 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 
 
 /* docs/PLAN_PRICING_TIERS.md P10 — aktiv/ruhend */
-.all-companies__zustand { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
-.all-companies__zustand-filter { cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem; }
+.all-companies__zustand-hinweis { margin: -0.25rem 0 0.75rem 0.25rem; }
+/* Segment-Schalter (Alle | Aktiv | Ruhend): ruhig, gleiche Hoehe wie die Filter daneben */
+.segment { display: inline-flex; align-items: stretch; box-sizing: border-box; height: 41px; padding: 3px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg-1); }
+.segment__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: none; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--fg); opacity: 0.75; cursor: pointer; white-space: nowrap; }
+.segment__item:hover { opacity: 1; text-decoration: none; background: var(--color-bg-2); }
+.segment__item--aktiv, .segment__item--aktiv:hover { opacity: 1; font-weight: 600; background: var(--color-bg-3, var(--color-bg-2)); }
+.segment__zahl { font-size: 12px; font-weight: 400; opacity: 0.65; font-variant-numeric: tabular-nums; }
 .all-companies__matrix tr.ruhend-row .matrix-company > a,
 .all-companies__matrix tr.ruhend-row .matrix-cell { opacity: 0.55; }
 .company-ruhend { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0.75rem 0 1rem; padding: 0.9rem 1.1rem; }

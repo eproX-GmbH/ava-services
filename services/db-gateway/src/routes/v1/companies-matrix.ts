@@ -98,8 +98,8 @@ const CompaniesMatrixQuery = z.object({
   companyId: z.string().min(1).max(200).optional(),
   /** Nur Firmen, bei denen dieses Fokus-Thema (Schluessel) auf der Website gefunden wurde (docs/PLAN_THEMEN.md T5). */
   thema: z.string().min(1).max(80).optional(),
-  /** P10: nur ruhende Firmen des Nutzers (Vorfilter ueber die Firmen-IDs). */
-  zustand: z.enum(["ruhend"]).optional(),
+  /** P10: nur ruhende bzw. nur aktive Firmen des Nutzers (Vorfilter ueber die Firmen-IDs). */
+  zustand: z.enum(["ruhend", "aktiv"]).optional(),
 });
 
 interface UpstreamCompany {
@@ -158,10 +158,18 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     if (themaIds.length === 0) return c.json({ pageNumber, pageSize, count: 0, companies: [] }, 200);
   }
   // ---- 0b. Vorfilter ruhend (P10): fuehrende Menge aus FirmenZustand ----
-  if (zustand === "ruhend") {
+  if (zustand === "ruhend" || zustand === "aktiv") {
     const { ruhendeIds } = await import("../../lib/firmen-zustand");
-    const r = [...(await ruhendeIds(getGatewayPool(), actorIdFuerZustand))];
-    themaIds = themaIds ? themaIds.filter((id) => r.includes(id)) : r;
+    const ruhend = await ruhendeIds(getGatewayPool(), actorIdFuerZustand);
+    let menge: string[];
+    if (zustand === "ruhend") menge = [...ruhend];
+    else {
+      // Aktiv = alle Firmen des Nutzers ohne die ruhenden (master-data kennt keinen Ausschluss).
+      const { masterData } = await import("../../lib/register-jobs");
+      const alle = await masterData<{ rows: Array<{ companyId: string }> }>("POST", "/internal/transactions/companies-by-users", { userIds: [actorIdFuerZustand] }).catch(() => ({ rows: [] as Array<{ companyId: string }> }));
+      menge = [...new Set(alle.rows.map((x) => x.companyId))].filter((id) => !ruhend.has(id)).slice(0, 5000);
+    }
+    themaIds = themaIds ? themaIds.filter((id) => menge.includes(id)) : menge;
     if (themaIds.length === 0) return c.json({ pageNumber, pageSize, count: 0, companies: [] }, 200);
   }
 
