@@ -30,6 +30,8 @@ interface GatewayOptions {
   query?: Record<string, string | number | boolean | string[] | undefined>;
   body?: unknown;
   signal?: AbortSignal;
+  /** P10: 402 selbst behandeln (Aktivieren-Dialog) statt den globalen Kontingent-Dialog zu oeffnen. */
+  ohneKontingentDialog?: boolean;
 }
 
 export async function gatewayFetch<T>(path: string, opts: GatewayOptions = {}): Promise<T> {
@@ -57,7 +59,7 @@ export async function gatewayFetch<T>(path: string, opts: GatewayOptions = {}): 
   const text = await res.text();
   const parsed = text ? safeParse(text) : undefined;
   if (!res.ok) {
-    maybeDispatchQuotaExceeded(res.status, parsed);
+    if (!opts.ohneKontingentDialog) maybeDispatchQuotaExceeded(res.status, parsed);
     throw new GatewayError(
       typeof parsed === "object" && parsed && "message" in parsed
         ? String((parsed as { message: unknown }).message)

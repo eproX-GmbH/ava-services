@@ -90,7 +90,7 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
     try {
       const titel = `${(name ?? companyId ?? "").trim()} (aus der Firmenansicht)`;
       const r = companyId
-        ? await gatewayFetch<{ transactionId: string; companyCount: number }>("/v1/imports/by-ids", {
+        ? await gatewayFetch<{ transactionId: string; companyCount: number; ruhend?: number | null }>("/v1/imports/by-ids", {
             method: "POST",
             body: { companyIds: [companyId], transactionName: titel, ...(uebernommen ? { erzwingen: true } : {}) },
           })
@@ -117,10 +117,13 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
           companyId,
         );
       }
+      const ruhend = (r as { ruhend?: number | null }).ruhend ?? 0;
       setMeldung(
-        uebernommen
-          ? "Verarbeitung erneut angestoßen."
-          : "Übernommen — die Verarbeitung läuft.",
+        ruhend > 0
+          ? "Übernommen, aber ruhend: dein Kontingent ist voll. In Meine Firmen kannst du sie aktivieren oder den Plan wechseln."
+          : uebernommen
+            ? "Verarbeitung erneut angestoßen."
+            : "Übernommen — die Verarbeitung läuft.",
       );
       onFertig?.();
     } catch (e) {

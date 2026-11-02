@@ -52,6 +52,8 @@ interface MatrixZeile {
   companyId: string;
   name?: string | null;
   held?: boolean;
+  /** P10: ruhende Firmen werden nicht aufgefrischt. */
+  zustand?: "aktiv" | "ruhend";
   registerStatus?: string;
   stages?: Record<string, { state?: string; updatedAt?: string | null; transactionId?: string | null } | undefined>;
 }
@@ -411,7 +413,7 @@ export class FreshnessScheduler extends EventEmitter {
     const jetzt = startMs;
     const out: StalenessRow[] = [];
     for (const z of zeilen) {
-      if (!z.companyId || z.held) continue;
+      if (!z.companyId || z.held || z.zustand === "ruhend") continue;
       // Geschlossene Firmen (Register) nicht mehr auffrischen.
       if (z.registerStatus === "CLOSED") continue;
       if (inFlight[z.companyId]) continue;

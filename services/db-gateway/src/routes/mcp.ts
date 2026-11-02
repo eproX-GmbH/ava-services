@@ -125,6 +125,7 @@ const TOOLS: ToolDef[] = [
         land: { type: "string", enum: ["DE", "AT", "CH", "UK", "NO", "FI"] },
         seite: { type: "integer", minimum: 1 },
         proSeite: { type: "integer", minimum: 1, maximum: 200, description: "Standard 50" },
+        zustand: { type: "string", enum: ["ruhend"], description: "Nur ruhende Firmen (stehen in der Liste, werden aber nicht aufbereitet und zaehlen nicht im Kontingent)" },
       },
     },
   },
@@ -286,6 +287,29 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
       ]);
       if (!basis.ok) return { text: fehlerText(basis), isError: true };
       const zeile = matrixZeile(matrix.json, id);
+      // P10 (docs/PLAN_PRICING_TIERS.md): ruhende Firmen und Firmen ausserhalb von Meine Firmen
+      // liefern nur den Steckbrief (Grunddaten) plus den Weg zur Aktivierung.
+      {
+        const z = await api(app, token, "GET", `/v1/firmen/zustand${qs({ companyIds: id, pruefen: "1" })}`);
+        const zj = z.ok ? (z.json as { aktivModell?: boolean; zustaende?: Array<{ zustand?: string; geplant?: string | null }>; aktivierung?: { moeglich: boolean; ablehnung: unknown } | null } | null) : null;
+        const ruhend = zj?.zustaende?.[0]?.zustand === "ruhend";
+        if (zj?.aktivModell && (ruhend || zeile === null)) {
+          const st = (basis.json ?? {}) as Record<string, unknown>;
+          const felder = ["id", "name", "legalName", "legalForm", "registerType", "registerNumber", "districtCourt", "location", "city", "country", "registerStatus", "closedAt", "insolvencyStatus", "insolvencyAt"];
+          const steckbrief: Record<string, unknown> = {};
+          for (const k of felder) if (st[k] !== undefined) steckbrief[k] = st[k];
+          return {
+            text: kompakt({
+              zustand: ruhend ? "ruhend" : "nicht_in_liste",
+              steckbrief,
+              aktivierung: zj.aktivierung ?? null,
+              hinweis: ruhend
+                ? "Die Firma ruht beim Nutzer: nur Grunddaten, keine Aufbereitung, keine Meldungen. Aktivieren in der AVA-App (Meine Firmen) oder mit import_anlegen (companyIds); reicht das Kontingent nicht, steht der Weg in aktivierung.ablehnung (Plan wechseln, ab Monatswechsel)."
+                : "Die Firma steht nicht in Meine Firmen des Nutzers. Mit import_anlegen (companyIds) aufnehmen; die Antwort sagt, ob sie aktiv oder ruhend wurde.",
+            }),
+          };
+        }
+      }
       const out: Record<string, unknown> = { stammdaten: basis.json, verarbeitung: verarbeitungsstand(id, zeile) };
       const bereiche = Array.isArray(args.bereiche) ? [...new Set(args.bereiche.filter((b): b is string => typeof b === "string"))] : [];
       for (const b of bereiche) {
@@ -307,7 +331,7 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
       return { text: kompakt(r.json) };
     }
     case "meine_firmen": {
-      const r = await api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: Number(args.seite) || 1, pageSize: Number(args.proSeite) || 50, search: typeof args.suche === "string" ? args.suche : undefined, country: typeof args.land === "string" ? args.land : undefined })}`);
+      const r = await api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: Number(args.seite) || 1, pageSize: Number(args.proSeite) || 50, search: typeof args.suche === "string" ? args.suche : undefined, country: typeof args.land === "string" ? args.land : undefined, zustand: args.zustand === "ruhend" ? "ruhend" : undefined })}`);
       if (!r.ok) return { text: fehlerText(r), isError: true };
       return { text: kompakt(r.json) };
     }

@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-02
-Anzahl Tools: 302
+Anzahl Tools: 304
 
 ## Firmen (28)
 
@@ -277,7 +277,19 @@ Person aus Gesellschafterlisten und Geschaeftsfuehrung (Id aus company_network o
 _Parameter:_
 - `personId: string` (required)
 
-## Importe (7)
+## Importe (9)
+
+### `firma_aktivieren`
+
+_Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
+
+Setzt eine ruhende Firma aus Meine Firmen auf aktiv: AVA bereitet sie auf, beobachtet und meldet. ab=sofort (Standard) prueft das Kontingent; reicht es nicht, kommt `ablehnung` mit den Wegen zurueck (Plan wechseln, ab Monatswechsel, Admin bitten). ab=monatswechsel merkt die Aktivierung fuer den 1. vor; mit `tausch` (companyIds aktiver Firmen) ruhen diese dann dafuer. Fragt bei Tausch vorher nach. Free: 25 Aktivierungen auf Lebenszeit, kein Tausch.
+
+_Parameter:_
+- `companyId: string` (required)
+- `name: string` — Firmenname fuer Rueckfrage und Antwort
+- `ab: string (enum: sofort, monatswechsel)`
+- `tausch: array` — Aktive Firmen (companyIds), die ab Monatswechsel ruhen sollen
 
 ### `firma_neu_verarbeiten`
 
@@ -288,6 +300,17 @@ Startet fuer EINE Firma alle Verarbeitungsschritte erneut, auch wenn die Daten n
 _Parameter:_
 - `companyId: string` (required)
 - `name: string` — Firmenname fuer die Rueckfrage
+
+### `firma_ruhen_lassen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
+
+Setzt eine Firma aus Meine Firmen auf ruhend: sie bleibt in der Liste mit Grunddaten, AVA bereitet sie nicht mehr auf, frischt nicht auf und meldet nichts. Fuer das Kontingent zaehlt sie bis Monatsende weiter, ab dem Folgemonat ist der Platz frei. Fragt vorher nach. ab=monatswechsel merkt es fuer den 1. vor.
+
+_Parameter:_
+- `companyId: string` (required)
+- `name: string`
+- `ab: string (enum: sofort, monatswechsel)`
 
 ### `import_companies`
 

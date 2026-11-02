@@ -17,7 +17,7 @@ const TICK_MS = 6 * 60 * 60_000;
 const FIRST_TICK_MS = 2 * 60_000;
 const SEITEN_MAX = 10; // 10 × 200 Firmen
 
-type MatrixRow = { companyId: string; name: string; registerStatus?: string; insolvencyStatus?: string; country?: string; registerType?: string; registerNumber?: string; gesellschafterStand?: string | null };
+type MatrixRow = { companyId: string; name: string; zustand?: "aktiv" | "ruhend"; registerStatus?: string; insolvencyStatus?: string; country?: string; registerType?: string; registerNumber?: string; gesellschafterStand?: string | null };
 
 type Beteiligung = { typ: "PERSON" | "FIRMA"; personName: string | null; gesellschafterFirmaText: string | null; gesellschafterCompanyId: string | null; prozent: number | null };
 type Veraenderungen = { vorherigeListeDatum: string; neu: Beteiligung[]; weg: Beteiligung[]; geaendert: Array<{ vorher: Beteiligung; nachher: Beteiligung }> };
@@ -95,7 +95,8 @@ export class StatusWatcher {
       const neu: Snapshot = {};
       let gemeldet = 0;
       for (const row of rows) {
-        if (!row.companyId) continue;
+        // P10: ruhende Firmen melden nichts.
+        if (!row.companyId || row.zustand === "ruhend") continue;
         const warnungen = firmenStatusWarnungen({ name: row.name, registerStatus: row.registerStatus, insolvencyStatus: row.insolvencyStatus, country: row.country });
         const key = warnungen.map((w) => w.schluessel).join(",") || "ok";
         neu[row.companyId] = key;

@@ -100,9 +100,10 @@ export class PersonenAbgleich {
   private async firmen(): Promise<string[]> {
     const out: string[] = [];
     for (let page = 1; page <= 5; page++) {
-      const r = await this.deps.gatewayRequest<{ companies?: Array<{ companyId: string }> }>(`/v1/companies/matrix?pageNumber=${page}&pageSize=100`);
+      const r = await this.deps.gatewayRequest<{ companies?: Array<{ companyId: string; zustand?: string }> }>(`/v1/companies/matrix?pageNumber=${page}&pageSize=100`);
       const rows = r.companies ?? [];
-      out.push(...rows.map((x) => x.companyId));
+      // P10: nur aktive Firmen.
+      out.push(...rows.filter((x) => x.zustand !== "ruhend").map((x) => x.companyId));
       if (rows.length < 100) break;
     }
     return out;

@@ -12,6 +12,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { useFirmenZustand, firmaAktivieren } from "../api/firmen-zustand";
+import { AktivierenDialog, type AktivierenAnfrage } from "../components/AktivierenDialog";
 import { getGatewayUrl } from "../store/config";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -484,6 +486,29 @@ export function CompanyDetail() {
     if (!id) return;
     void window.api.interest.record(id);
   }, [id]);
+  // P10 — ruhende Firma: nur der Steckbrief (Grunddaten), kein Reiter mit Ergebnissen.
+  const zustandAbfrage = useFirmenZustand(id, true);
+  const zustand = zustandAbfrage.data?.zustaende[0];
+  const ruhend = zustandAbfrage.data?.aktivModell === true && zustand?.zustand === "ruhend";
+  // Ergebnisse (Profil, Website, Kontakte, Abschluesse) erst laden, wenn klar ist, dass die Firma aktiv ist.
+  const datenErlaubt = zustandAbfrage.isError || (zustandAbfrage.isSuccess && !ruhend);
+  const [aktivierenAnfrage, setAktivierenAnfrage] = useState<AktivierenAnfrage | null>(null);
+  const [aktivierenLaeuft, setAktivierenLaeuft] = useState(false);
+  const [aktivierenMeldung, setAktivierenMeldung] = useState<string | null>(null);
+  const qcZustand = useQueryClient();
+  const jetztAktivieren = async () => {
+    if (!id) return;
+    setAktivierenLaeuft(true);
+    try {
+      const r = await firmaAktivieren(id, { quelle: "firmenansicht" });
+      if (!r.ok) setAktivierenAnfrage({ companyId: id, name: summary.data?.name ?? id, ablehnung: r.ablehnung });
+      else setAktivierenMeldung(r.ruhend.includes(id) ? "Passt gerade nicht ins Kontingent, bleibt ruhend." : "Aktiviert, die Verarbeitung läuft.");
+      void qcZustand.invalidateQueries({ queryKey: ["firmen-zustand"] });
+      void qcZustand.invalidateQueries({ queryKey: ["companies-matrix"] });
+    } finally {
+      setAktivierenLaeuft(false);
+    }
+  };
 
   // Hero data — always fetch profile + structured-content + website so the
   // hero (name/keywords/KPI tiles) has something even before the user clicks
@@ -521,19 +546,19 @@ export function CompanyDetail() {
     "profile",
     id!,
     `/v1/companies/${id}/profile`,
-    !!id
+    !!id && datenErlaubt
   );
   const structured = useTabQuery<StructuredContent>(
     "structured",
     id!,
     `/v1/companies/${id}/structured-content`,
-    !!id
+    !!id && datenErlaubt
   );
   const website = useTabQuery<Website>(
     "website",
     id!,
     `/v1/companies/${id}/website`,
-    !!id
+    !!id && datenErlaubt
   );
   // Fokus-Themen des Nutzers (lokal), damit der Reiter auch vor der ersten Pruefung erscheint.
   const fokusThemen = useQuery({ queryKey: ["themen", "liste"], queryFn: () => window.api.themen.list(), staleTime: 60_000 });
@@ -542,7 +567,7 @@ export function CompanyDetail() {
     "contacts",
     id!,
     `/v1/companies/${id}/contacts`,
-    !!id && kontakteErlaubt
+    !!id && datenErlaubt && kontakteErlaubt
   );
   // Kunden/Referenzen (docs/PLAN_KUNDEN.md): eigene Route, Abgleich gegen
   // die Stammdaten passiert beim Lesen im Gateway.
@@ -556,7 +581,7 @@ export function CompanyDetail() {
     "publications",
     id!,
     `/v1/companies/${id}/publications`,
-    !!id
+    !!id && datenErlaubt
   );
   // v0.1.65 — per-stage LLM provenance for the "Datenqualität" banner
   // and per-cell tooltips. One row per stage in ContentFreshness;
@@ -565,7 +590,7 @@ export function CompanyDetail() {
     "state",
     id!,
     `/v1/companies/${id}/state`,
-    !!id
+    !!id && datenErlaubt
   );
 
   // Buying Center (docs/PLAN_BUYING_CENTER.md): Der Reiter erscheint NUR,
@@ -816,7 +841,27 @@ export function CompanyDetail() {
         </div>
       </header>
 
+      {/* ---- P10: ruhend = Steckbrief ------------------------------------- */}
+      {ruhend && (
+        <div className="ct-card company-ruhend" role="status">
+          <p>
+            <strong>Diese Firma ruht bei dir.</strong> AVA zeigt nur die Grunddaten aus dem Register, bereitet nichts auf und meldet nichts.
+            {zustand?.geplant === "aktiv" && zustand.geplantAb ? ` Sie wird zum Monatswechsel aktiv.` : ""}
+          </p>
+          <div className="company-ruhend__aktionen">
+            <button type="button" className="btn btn--primaer" disabled={aktivierenLaeuft || zustand?.geplant === "aktiv"} onClick={() => void jetztAktivieren()}>
+              Aktivieren
+            </button>
+            {aktivierenMeldung && <span className="muted small">{aktivierenMeldung}</span>}
+          </div>
+        </div>
+      )}
+      {aktivierenAnfrage && (
+        <AktivierenDialog anfrage={aktivierenAnfrage} onSchliessen={() => setAktivierenAnfrage(null)} onFertig={(m) => setAktivierenMeldung(m)} />
+      )}
+
       {/* ---- Tabs --------------------------------------------------------- */}
+      {!ruhend && (
       <nav className="tabs">
         {/* Bis die Daten da sind, bleibt die Leiste leer, behaelt aber ihre
             Hoehe — sonst springt der Inhalt darunter. */}
@@ -833,7 +878,9 @@ export function CompanyDetail() {
           </button>
           ))}
       </nav>
+      )}
 
+      {!ruhend && (
       <div className="tab-body">
         {/* 2026-10-14: keine Modell-Tier-Pillen mehr in der Oberflaeche — die
          *  Verarbeitung laeuft ueber AVAs Modell; das Tier bleibt in den Daten
@@ -880,6 +927,7 @@ export function CompanyDetail() {
         {tab === "verflechtungen" && verflechtungenSichtbar && <VerflechtungenTab id={id!} name={summary.data?.name ?? null} />}
         {tab === "buyingcenter" && eigenesBcId && <BuyingCenterKarte id={eigenesBcId} />}
       </div>
+      )}
     </section>
   );
 }

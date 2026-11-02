@@ -1284,3 +1284,21 @@ model NeuverarbeitungEntry {
 
   @@index([billingAccountId, periodKey])
 }
+
+/// docs/PLAN_PRICING_TIERS.md P10 — Zustand je Nutzer und Firma (aktiv | ruhend);
+/// ohne Zeile gilt aktiv. geplant/geplantAb: Vormerkung zum Monatswechsel.
+model FirmenZustand {
+  actorId       String
+  companyId     String
+  zustand       String
+  seit          DateTime @default(now())
+  quelle        String?
+  geplant       String?
+  geplantAb     String?
+  geplantTausch String[] @default([])
+  updatedAt     DateTime @default(now())
+
+  @@id([actorId, companyId])
+  @@index([actorId, zustand])
+  @@index([geplantAb])
+}

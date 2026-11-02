@@ -13,6 +13,7 @@ import { localAmqpRouter } from "./v1/local-amqp";
 import { proxyRouter } from "./v1/proxy";
 import { tenantsRouter } from "./v1/tenants";
 import { sitzeRouter } from "./v1/sitze";
+import { firmenZustandRouter } from "./v1/firmen-zustand";
 import { notizenRouter } from "./v1/notizen";
 import { llmProxyRouter } from "./v1/llm-proxy";
 import { personsRouter } from "./v1/persons";
@@ -68,6 +69,8 @@ v1.use("*", auditMiddleware);
 // chance. Mounting matrix-router FIRST ensures the literal path
 // resolves correctly.
 v1.route("/", companiesMatrixRouter);
+// P10 — aktiv/ruhend je Nutzer (vor companiesRouter wegen /firmen/... Praefix).
+v1.route("/", firmenZustandRouter);
 
 // Workstream C — /companies/:id/crm reads. Must mount BEFORE the
 // generic companiesRouter so its `/companies/{companyId}` glob

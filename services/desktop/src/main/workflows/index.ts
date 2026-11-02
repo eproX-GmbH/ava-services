@@ -564,9 +564,10 @@ export class WorkflowService {
       const limit = Math.min(src.limit ?? 200, 500);
       let page = 1;
       while (out.length < limit) {
-        const r = await this.deps.gatewayRequest<{ companies?: Array<{ companyId: string; name?: string }> }>(`/v1/companies/matrix?pageNumber=${page}&pageSize=100`);
+        const r = await this.deps.gatewayRequest<{ companies?: Array<{ companyId: string; name?: string; zustand?: string }> }>(`/v1/companies/matrix?pageNumber=${page}&pageSize=100`);
         const rows = r.companies ?? [];
-        for (const c of rows) if (out.length < limit) out.push({ companyId: c.companyId, companyName: c.name });
+        // P10: ruhende Firmen laufen nicht durch Workflows.
+        for (const c of rows) if (out.length < limit && c.zustand !== "ruhend") out.push({ companyId: c.companyId, companyName: c.name });
         if (rows.length < 100) break;
         page++;
       }

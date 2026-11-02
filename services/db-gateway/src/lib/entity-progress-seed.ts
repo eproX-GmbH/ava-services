@@ -72,9 +72,12 @@ export async function seedEntityProgressForTransaction(
   }
 
   // Z11 — bezahlte Konten: die Firmen zaehlen ab Aufnahme im laufenden Monat.
+  // P10: im Sitz-Modell entscheidet try-reserve je Firma (aktiv → Aufnahme dort,
+  // ruhend → nichts), nicht mehr der Import als Ganzes.
   {
     const auth = c.get("auth") as { tenantId?: string; actorId?: string | null } | undefined;
-    if (auth?.tenantId) {
+    const { pricingAktiv } = await import("./kontingent");
+    if (auth?.tenantId && !pricingAktiv()) {
       const { bestandAufnahme } = await import("./bestand");
       void bestandAufnahme(getGatewayPool(), { tenantId: auth.tenantId, actorId: auth.actorId ?? null, companyIds });
     }
@@ -118,6 +121,12 @@ export async function seedEntityProgressForTransaction(
     return;
   }
 
+  await seedEntityProgressRows(transactionId, companyIds);
+}
+
+/** Pending-Zeilen fuer (Firmen × Producer) einfuegen; ohne Request-Kontext nutzbar (P10 Aktivierung). */
+export async function seedEntityProgressRows(transactionId: string, companyIds: string[]): Promise<void> {
+  if (companyIds.length === 0) return;
   // Build a single multi-row INSERT. Unnest pattern keeps the param
   // count to two arrays regardless of (companies × producers) — well
   // within Postgres' 65535 parameter ceiling even at thousand-company

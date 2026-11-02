@@ -70,6 +70,9 @@ const CompanyMatrixRowShape = z
     gesellschafterStand: z.string().nullable().optional(),
     /** Z5 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Stufe der juengsten Aufnahme dieser Firma. */
     zugang: z.object({ stufe: z.string(), preisCents: z.number().int() }).nullable().optional(),
+    /** P10 (docs/PLAN_PRICING_TIERS.md): aktiv | ruhend je Nutzer; geplant = Vormerkung zum Monatswechsel. */
+    zustand: z.enum(["aktiv", "ruhend"]).optional(),
+    geplant: z.object({ zustand: z.enum(["aktiv", "ruhend"]), ab: z.string() }).nullable().optional(),
     /** Per-producer latest state. Keys match PRODUCER_NAMES. */
     stages: z.record(z.string(), StageStateShape),
   })
@@ -95,6 +98,8 @@ const CompaniesMatrixQuery = z.object({
   companyId: z.string().min(1).max(200).optional(),
   /** Nur Firmen, bei denen dieses Fokus-Thema (Schluessel) auf der Website gefunden wurde (docs/PLAN_THEMEN.md T5). */
   thema: z.string().min(1).max(80).optional(),
+  /** P10: nur ruhende Firmen des Nutzers (Vorfilter ueber die Firmen-IDs). */
+  zustand: z.enum(["ruhend"]).optional(),
 });
 
 interface UpstreamCompany {
@@ -140,7 +145,8 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { pageNumber, pageSize, search, country, companyId, thema } = c.req.valid("query");
+  const { pageNumber, pageSize, search, country, companyId, thema, zustand } = c.req.valid("query");
+  const actorIdFuerZustand = (auth as { actorId?: string | null }).actorId ?? "";
 
   // ---- 0. Vorfilter Fokus-Thema: fuehrende Menge aus der Website-DB (Weg B, docs/PLAN_FILTER_TOOL.md) ----
   let themaIds: string[] | null = null;
@@ -149,6 +155,13 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       .query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "CompanyThema" WHERE schluessel = $1 AND status = 'gefunden' LIMIT 5000`, [thema])
       .catch(() => ({ rows: [] as Array<{ companyId: string }> }));
     themaIds = r.rows.map((x) => x.companyId);
+    if (themaIds.length === 0) return c.json({ pageNumber, pageSize, count: 0, companies: [] }, 200);
+  }
+  // ---- 0b. Vorfilter ruhend (P10): fuehrende Menge aus FirmenZustand ----
+  if (zustand === "ruhend") {
+    const { ruhendeIds } = await import("../../lib/firmen-zustand");
+    const r = [...(await ruhendeIds(getGatewayPool(), actorIdFuerZustand))];
+    themaIds = themaIds ? themaIds.filter((id) => r.includes(id)) : r;
     if (themaIds.length === 0) return c.json({ pageNumber, pageSize, count: 0, companies: [] }, 200);
   }
 
@@ -283,6 +296,9 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     );
     for (const r of st.rows) stufen.set(r.companyId, { stufe: r.stufe, preisCents: r.preisCents ?? 0 });
   }
+  // P10 — Zustand je Firma (ohne Zeile: aktiv).
+  const { zustaende } = await import("../../lib/firmen-zustand");
+  const zust = await zustaende(getGatewayPool(), actorIdFuerZustand, upstream.companies.map((co) => co.companyId));
   const companies = upstream.companies.map((co) => {
     type StageCell = {
       state: "pending" | "in_progress" | "completed" | "failed" | "skipped";
@@ -364,6 +380,11 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       registerNumber: co.registerNumber,
       gesellschafterStand: co.gesellschafterStand ?? null,
       zugang: stufen.get(co.companyId) ?? null,
+      zustand: zust.get(co.companyId)?.zustand ?? "aktiv",
+      geplant: (() => {
+        const z = zust.get(co.companyId);
+        return z?.geplant && z.geplantAb ? { zustand: z.geplant, ab: z.geplantAb } : null;
+      })(),
       stages,
     };
   });

@@ -1517,6 +1517,105 @@ export function buildImportTools(deps: {
     },
   });
 
+  // docs/PLAN_PRICING_TIERS.md P10 — aktiv/ruhend je Firma.
+  const firmaAktivieren = defineTool({
+    name: "firma_aktivieren",
+    summary: "Eine ruhende Firma aktivieren (sofort, wenn das Kontingent reicht, sonst ab Monatswechsel mit Tausch).",
+    category: "firma aktivieren ruhend kontingent tausch",
+    description:
+      "Setzt eine ruhende Firma aus Meine Firmen auf aktiv: AVA bereitet sie auf, beobachtet und meldet. " +
+      "ab=sofort (Standard) prueft das Kontingent; reicht es nicht, kommt `ablehnung` mit den Wegen zurueck (Plan wechseln, ab Monatswechsel, Admin bitten). " +
+      "ab=monatswechsel merkt die Aktivierung fuer den 1. vor; mit `tausch` (companyIds aktiver Firmen) ruhen diese dann dafuer. Fragt bei Tausch vorher nach. " +
+      "Free: 25 Aktivierungen auf Lebenszeit, kein Tausch.",
+    parameters: {
+      type: "object",
+      required: ["companyId"],
+      properties: {
+        companyId: { type: "string" },
+        name: { type: "string", description: "Firmenname fuer Rueckfrage und Antwort" },
+        ab: { type: "string", enum: ["sofort", "monatswechsel"] },
+        tausch: { type: "array", items: { type: "string" }, description: "Aktive Firmen (companyIds), die ab Monatswechsel ruhen sollen" },
+      },
+    },
+    schema: yup.object({
+      companyId: yup.string().trim().min(1).required(),
+      name: yup.string().trim().max(200).optional(),
+      ab: yup.string().oneOf(["sofort", "monatswechsel"]).optional(),
+      tausch: yup.array().of(yup.string().trim().min(1).required()).max(50).optional(),
+    }).noUnknown(true),
+    preview: (r) => {
+      const x = r as { abgebrochen?: boolean; ok?: boolean; error?: string; ablehnung?: { meldung?: string }; vorgemerkt?: boolean };
+      return x.error ? `Fehler: ${x.error.slice(0, 60)}` : x.abgebrochen ? "abgebrochen" : x.ablehnung ? "Kontingent voll" : x.vorgemerkt ? "ab Monatswechsel vorgemerkt" : "aktiviert";
+    },
+    run: async (args, ctx) => {
+      const ab = args.ab ?? "sofort";
+      const tausch = args.tausch ?? [];
+      if (ab === "monatswechsel" && tausch.length > 0) {
+        const value = await ctx.ui.confirmAction(
+          {
+            kind: "additive",
+            prompt: `${args.name ?? args.companyId} ab dem Monatswechsel aktivieren und dafuer ${tausch.length} ${tausch.length === 1 ? "Firma" : "Firmen"} ruhen lassen?\n\nRuhende Firmen zeigen nur noch Grunddaten; AVA bereitet sie nicht mehr auf und meldet nichts zu ihnen.`,
+            confirmValue: "ok",
+            options: [{ value: "ok", label: "Vormerken" }, { value: "cancel", label: "Abbrechen" }],
+          },
+          ctx.signal,
+        );
+        if (value !== "ok") return { abgebrochen: true };
+      }
+      try {
+        const r = await deps.gateway.request<{ ok: true; transactionId: string | null; aktiv: string[]; ruhend: string[] }>(`/v1/firmen/${encodeURIComponent(args.companyId)}/zustand`, {
+          method: "PUT",
+          body: { zustand: "aktiv", ab, ...(tausch.length > 0 ? { tausch } : {}), quelle: "chat" },
+          signal: ctx.signal,
+        });
+        if (ab === "monatswechsel") return { ok: true, vorgemerkt: true, hinweis: "Die Firma wird am Monatsersten aktiv, sofern dann Platz ist." };
+        if (r.ruhend.includes(args.companyId)) return { ok: false, hinweis: "Die Firma passt gerade nicht ins Kontingent und bleibt ruhend; biete Plan wechseln oder ab Monatswechsel an." };
+        return { ok: true, transactionId: r.transactionId, hinweis: "Aktiviert; die Aufbereitung laeuft im Hintergrund (company_get spaeter)." };
+      } catch (err) {
+        const e = err as { status?: number; body?: unknown; message?: string };
+        if (e.status === 402 && e.body && typeof e.body === "object") return { ok: false, ablehnung: e.body, hinweis: "Kontingent voll: Wege aus `ablehnung` anbieten (Plan wechseln / Admin bitten / ab Monatswechsel mit firma_aktivieren ab=monatswechsel)." };
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  const firmaRuhenLassen = defineTool({
+    name: "firma_ruhen_lassen",
+    summary: "Eine aktive Firma ruhen lassen (nur Grunddaten, keine Aufbereitung, keine Meldungen).",
+    category: "firma ruhen lassen deaktivieren kontingent",
+    description:
+      "Setzt eine Firma aus Meine Firmen auf ruhend: sie bleibt in der Liste mit Grunddaten, AVA bereitet sie nicht mehr auf, frischt nicht auf und meldet nichts. " +
+      "Fuer das Kontingent zaehlt sie bis Monatsende weiter, ab dem Folgemonat ist der Platz frei. Fragt vorher nach. ab=monatswechsel merkt es fuer den 1. vor.",
+    parameters: {
+      type: "object",
+      required: ["companyId"],
+      properties: { companyId: { type: "string" }, name: { type: "string" }, ab: { type: "string", enum: ["sofort", "monatswechsel"] } },
+    },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), name: yup.string().trim().max(200).optional(), ab: yup.string().oneOf(["sofort", "monatswechsel"]).optional() }).noUnknown(true),
+    preview: (r) => {
+      const x = r as { abgebrochen?: boolean; error?: string };
+      return x.error ? `Fehler: ${x.error.slice(0, 60)}` : x.abgebrochen ? "abgebrochen" : "ruht";
+    },
+    run: async (args, ctx) => {
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "destructive",
+          prompt: `${args.name ?? args.companyId} ruhen lassen?\n\nAVA bereitet die Firma dann nicht mehr auf und meldet nichts zu ihr; sie bleibt in deiner Liste mit Grunddaten. Fuer dein Kontingent zaehlt sie noch bis Monatsende.`,
+          confirmValue: "ok",
+          options: [{ value: "ok", label: "Ruhen lassen" }, { value: "cancel", label: "Abbrechen" }],
+        },
+        ctx.signal,
+      );
+      if (value !== "ok") return { abgebrochen: true };
+      try {
+        await deps.gateway.request(`/v1/firmen/${encodeURIComponent(args.companyId)}/zustand`, { method: "PUT", body: { zustand: "ruhend", ab: args.ab ?? "sofort", quelle: "chat" }, signal: ctx.signal });
+        return { ok: true, hinweis: args.ab === "monatswechsel" ? "Ruht ab dem Monatsersten." : "Ruht ab jetzt; zaehlt im Kontingent noch bis Monatsende." };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
   return [
     importExcel,
     importStatus,
@@ -1525,5 +1624,7 @@ export function buildImportTools(deps: {
     importFromCrm,
     retryStage,
     firmaNeuVerarbeiten,
+    firmaAktivieren,
+    firmaRuhenLassen,
   ];
 }

@@ -9,6 +9,46 @@ import { kompakteKontakte } from "./kontakte-kompakt";
 import { ladeFirmenliste } from "../real-candidate-source";
 import { verarbeitungsstand, type MatrixZeile } from "../verarbeitungsstand";
 
+/** P10 — Felder des Steckbriefs (Register-Grunddaten), die auch fuer ruhende Firmen sichtbar sind. */
+const STECKBRIEF_FELDER = ["id", "name", "legalName", "legalForm", "registerType", "registerNumber", "districtCourt", "location", "city", "street", "zipCode", "country", "registerStatus", "closedAt", "insolvencyStatus", "insolvencyAt", "uid"] as const;
+
+type ZustandAntwort = {
+  aktivModell: boolean;
+  zustaende: Array<{ companyId: string; zustand: "aktiv" | "ruhend"; geplant: "aktiv" | "ruhend" | null; geplantAb: string | null }>;
+  aktivierung: { moeglich: boolean; ablehnung: Record<string, unknown> | null } | null;
+};
+let zustandClient: { request: <T>(path: string, init?: Record<string, unknown>) => Promise<T> } | null = null;
+
+/**
+ * Liefert null, wenn die Firma fuer den Nutzer aktiv ist (oder das Modell aus ist);
+ * sonst Zustand, ob eine Aktivierung jetzt passt, und einen Hinweis fuers Modell.
+ */
+async function firmenZustand(companyId: string, zeile: MatrixZeile | null, signal: AbortSignal): Promise<{ zustand: "ruhend" | "nicht_in_liste"; aktivierung: unknown; hinweis: string } | null> {
+  if (!zustandClient) return null;
+  let z: ZustandAntwort;
+  try {
+    z = await zustandClient.request<ZustandAntwort>("/v1/firmen/zustand", { query: { companyIds: companyId, pruefen: "1" }, signal });
+  } catch {
+    return null;
+  }
+  if (!z.aktivModell) return null;
+  const eintrag = z.zustaende[0];
+  const inListe = zeile !== null;
+  const ruhend = eintrag?.zustand === "ruhend";
+  if (inListe && !ruhend) return null;
+  const abl = z.aktivierung?.ablehnung ?? null;
+  const passt = z.aktivierung ? z.aktivierung.moeglich : true;
+  const vorgemerkt = eintrag?.geplant === "aktiv" ? ` Sie ist bereits zum Monatswechsel (${eintrag.geplantAb ?? ""}) zur Aktivierung vorgemerkt.` : "";
+  const hinweis = !inListe
+    ? passt
+      ? "Die Firma steht noch nicht in Meine Firmen. Nimm sie SOFORT mit import_companies auf (kein Rueckfragen); danach company_get erneut."
+      : "Die Firma steht noch nicht in Meine Firmen und das Kontingent ist voll: Biete die Wege aus `aktivierung.ablehnung` an (Plan wechseln bzw. Admin bitten, ab Monatswechsel aktivieren mit firma_aktivieren ab=monatswechsel). Nicht als 'liegt nicht vor' ausgeben."
+    : passt
+      ? `Die Firma ruht beim Nutzer: nur Grunddaten, keine Aufbereitung, keine Meldungen.${vorgemerkt} Frage kurz, ob du sie aktivieren sollst (firma_aktivieren), oder tu es, wenn der Nutzer das offensichtlich will.`
+      : `Die Firma ruht beim Nutzer und das Kontingent ist voll.${vorgemerkt} Biete die Wege aus \`aktivierung.ablehnung\` an: Plan wechseln (plan_wechseln, nur Owner/Admin; Mitglieder bitten den Admin), ab Monatswechsel aktivieren (firma_aktivieren ab=monatswechsel, optional mit tausch), bei Free: Pro. Nicht als 'liegt nicht vor' ausgeben.`;
+  return { zustand: inListe ? "ruhend" : "nicht_in_liste", aktivierung: z.aktivierung ? { moeglich: z.aktivierung.moeglich, ablehnung: abl } : null, hinweis };
+}
+
 // Read-only company tools (Phase 8.b).
 //
 // Each tool wraps one gateway endpoint from /v1/companies. Args are kept
@@ -32,6 +72,7 @@ function pickFirst<T>(...vals: T[]): T | undefined {
 
 export function buildCompanyTools(ctx: Ctx): Tool[] {
   const { gateway } = ctx;
+  zustandClient = gateway;
 
   const search = defineTool({
     name: "company_search",
@@ -1024,6 +1065,21 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         zeile = null;
       }
       const verarbeitung = verarbeitungsstand(args.companyId, zeile);
+      // P10 (docs/PLAN_PRICING_TIERS.md): ruhende Firmen und Firmen ausserhalb der Liste
+      // liefern nur den Steckbrief (Grunddaten), kein Ergebnis — in jedem Plan.
+      const zust = await firmenZustand(args.companyId, zeile, c.signal);
+      if (zust) {
+        const steckbrief: Record<string, unknown> = {};
+        for (const k of STECKBRIEF_FELDER) if (r[k] !== undefined) steckbrief[k] = r[k];
+        return {
+          ...(warnung ? { statusWarnung: warnung } : {}),
+          ...(l ? { land: l } : {}),
+          zustand: zust.zustand,
+          steckbrief,
+          aktivierung: zust.aktivierung,
+          hinweis: zust.hinweis,
+        };
+      }
       const stamm = { ...(warnung ? { statusWarnung: warnung } : {}), ...(l ? { land: l } : {}), verarbeitung, ...r };
       const gewuenscht = [...new Set(args.bereiche ?? [])] as Bereich[];
       if (gewuenscht.length === 0) return stamm;

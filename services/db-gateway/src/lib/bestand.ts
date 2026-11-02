@@ -33,8 +33,14 @@ async function bestandJeKonto(pool: Pool, billingAccountId: string, kind: string
     [userIds],
   );
   const weg = new Set(tomb.rows.map((t) => `${t.userId}|${t.companyId}`));
+  // P10 — ruhende Firmen zaehlen nicht (ab dem Folgemonat der Ruhestellung).
+  const { ruhendePaare } = await import("./firmen-zustand");
+  const ruhend = await ruhendePaare(pool, userIds);
   const ids = new Set<string>();
-  for (const row of r.rows ?? []) if (!weg.has(`${row.userId}|${row.companyId}`)) ids.add(row.companyId);
+  for (const row of r.rows ?? []) {
+    const k = `${row.userId}|${row.companyId}`;
+    if (!weg.has(k) && !ruhend.has(k)) ids.add(row.companyId);
+  }
   return { userIds, companyIds: await nurMitProfil([...ids]) };
 }
 

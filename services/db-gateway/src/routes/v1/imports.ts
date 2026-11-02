@@ -502,8 +502,9 @@ const fromListIngestRoute = createRoute({
 
 importsRouter.openapi(fromListIngestRoute, async (c) => {
   const { companies, transactionName, isFuzzy, dryRun, country } = c.req.valid("json");
-  // P2 — Vorabpruefung gegen das Kontingent (Firmen noch unbekannt → vorsichtige Schaetzung je Zeile).
-  if (!dryRun) await kontingentVorabpruefung(c, { anzahl: companies.length });
+  // P2/P10 — keine Vorabpruefung des ganzen Imports mehr: master-data entscheidet je Firma
+  // (try-reserve), was nicht passt, wird ruhend (docs/PLAN_PRICING_TIERS.md P10).
+  void dryRun;
 
   // Q-track v0.1.137 — From-list ingest accepts unconditionally too.
   // Over-quota rows park in master-data's per-company publish step.
@@ -663,6 +664,8 @@ const byIdsRoute = createRoute({
             /** Z10 — ganze Firma erneut verarbeiten: Frische-Markierungen aller
              *  Pool-Stufen loeschen (kostenpflichtig zum Stufensatz). Nur Admins. */
             erzwingen: z.boolean().optional(),
+            /** P10: ausdrueckliche Aktivierung — bei vollem Kontingent 402 statt ruhend. */
+            aktivieren: z.boolean().optional(),
           }),
         },
       },
@@ -678,6 +681,10 @@ const byIdsRoute = createRoute({
               transactionId: z.string(),
               companyCount: z.number().int().nonnegative(),
               nichtGefunden: z.array(z.string()),
+              /** P10: sofort aktive bzw. ruhend gelegte Firmen (null bei aelterem master-data). */
+              aktiv: z.number().int().nullable(),
+              ruhend: z.number().int().nullable(),
+              ruhendIds: z.array(z.string()),
             })
             .openapi("ByIdsIngestResponse"),
         },
@@ -689,11 +696,14 @@ const byIdsRoute = createRoute({
 });
 
 importsRouter.openapi(byIdsRoute, async (c) => {
-  const { companyIds, transactionName, erzwingen } = c.req.valid("json");
+  const { companyIds, transactionName, erzwingen, aktivieren } = c.req.valid("json");
   const name = transactionName ?? `Liste: ${companyIds.length} ${companyIds.length === 1 ? "Firma" : "Firmen"}`;
-  // docs/PLAN_PRICING_TIERS.md P2 — Vorabpruefung gegen das Kontingent (Sitz-Modell);
-  // Neuverarbeitung zaehlt wie eine weitere Aufnahme zum Stufenpreis.
-  const kontingentKonto = await kontingentVorabpruefung(c, { companyIds, neuverarbeitung: Boolean(erzwingen) });
+  // docs/PLAN_PRICING_TIERS.md P2/P10 — Vorabpruefung nur bei Neuverarbeitung (zaehlt wie eine
+  // weitere Aufnahme) und ausdruecklicher Aktivierung; ein normaler Import teilt je Firma auf
+  // (try-reserve: aktiv oder ruhend).
+  const kontingentKonto = erzwingen || aktivieren
+    ? await kontingentVorabpruefung(c, { companyIds, neuverarbeitung: Boolean(erzwingen) })
+    : null;
   if (erzwingen) {
     const auth = c.get("auth");
     const { darfFirmaErzwingen, frischeLoeschen } = await import("../../lib/rollen");
@@ -705,7 +715,15 @@ importsRouter.openapi(byIdsRoute, async (c) => {
     for (const id of companyIds) await gesellschafterErzwingen(getGatewayPool(), id).catch(() => undefined);
     logger.info({ companyIds: companyIds.length, geloescht: n, actorId: auth.actorId }, "[imports] by-ids erzwungen: Frische geloescht");
   }
-  let r: { transactionId?: string; companyCount?: number; nichtGefunden?: string[] };
+  {
+    // P10 — ein Import per ID ist der Wunsch, die Firma aktiv zu haben: vorher aktiv setzen,
+    // damit try-reserve entscheidet (passt nicht → wieder ruhend) statt sie als ruhend abzuweisen.
+    const auth = c.get("auth");
+    if (auth.actorId) {
+      await getGatewayPool().query(`UPDATE "FirmenZustand" SET zustand = 'aktiv', seit = NOW(), geplant = NULL, "geplantAb" = NULL, "geplantTausch" = '{}', "updatedAt" = NOW() WHERE "actorId" = $1 AND "companyId" = ANY($2::text[]) AND zustand = 'ruhend'`, [auth.actorId, companyIds]).catch(() => undefined);
+    }
+  }
+  let r: { transactionId?: string; companyCount?: number; nichtGefunden?: string[]; publishedCount?: number; parkedCount?: number; geparkt?: string[] };
   try {
     r = await callUpstream(c, "masterData", "/api/v1/data-care/companies", { method: "POST", body: { companyIds, name } });
   } catch (err) {
@@ -721,7 +739,22 @@ importsRouter.openapi(byIdsRoute, async (c) => {
     const auth = c.get("auth");
     void neuverarbeitungVerbuchen(kontingentKonto, auth.actorId ?? null, companyIds).catch((err: unknown) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[imports] Neuverarbeitung nicht verbucht"));
   }
-  return c.json({ transactionId: r.transactionId, companyCount: r.companyCount ?? 0, nichtGefunden: r.nichtGefunden ?? [] }, 202);
+  {
+    // P10 — aktivierte Firmen wieder aktiv setzen (falls sie ruhend waren) und Tombstones loesen.
+    const auth = c.get("auth");
+    if (auth.actorId) {
+      const pool = getGatewayPool();
+      const ruhend = new Set(r.geparkt ?? []);
+      const aktiv = companyIds.filter((id) => !ruhend.has(id) && !(r.nichtGefunden ?? []).includes(id));
+      if (aktiv.length > 0) {
+        await pool.query(`DELETE FROM "CompanyTombstone" WHERE "userId" = $1 AND "companyId" = ANY($2::text[])`, [auth.actorId, aktiv]).catch(() => undefined);
+      }
+    }
+  }
+  return c.json({
+    transactionId: r.transactionId, companyCount: r.companyCount ?? 0, nichtGefunden: r.nichtGefunden ?? [],
+    aktiv: r.publishedCount ?? null, ruhend: r.parkedCount ?? null, ruhendIds: r.geparkt ?? [],
+  }, 202);
 });
 
 /** P2 — wirft 402 kontingent_erschoepft (oder firmen_limit) mit Nutzlast fuer den Aufnahme-Dialog;

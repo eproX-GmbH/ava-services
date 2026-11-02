@@ -72,6 +72,16 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
     // alle anderen laufen unten den bisherigen Weg.
     {
       const { pricingAktiv, kontingentPruefen } = await import("../lib/kontingent");
+      // P10 — eine vom Nutzer ruhend gelegte Firma wird durch Auffrischung oder
+      // Listenimport nicht still aktiv; nur die Aktivierung (setzt vorher aktiv) darf das.
+      if (pricingAktiv() && body.userId && body.companyId) {
+        const { ruhendeIds } = await import("../lib/firmen-zustand");
+        const r = await ruhendeIds(client, body.userId, [body.companyId]);
+        if (r.has(body.companyId)) {
+          await client.query("COMMIT");
+          return c.json({ granted: false, used: 0, limit: UNLIMITED, parkedCount: 0, reason: "ruhend" });
+        }
+      }
       const konto = await readBillingAccount(client, billingAccountId);
       if (pricingAktiv() && konto && (konto.mode === "sitz" || konto.mode === "enterprise")) {
         const p = await kontingentPruefen(client, {
@@ -80,7 +90,14 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
           ...(body.companyId ? { companyIds: [body.companyId] } : { anzahl: count }),
         });
         await client.query("COMMIT");
-        if (p.ok) return c.json({ granted: true, used: 0, limit: UNLIMITED, parkedCount: 0 });
+        if (p.ok) {
+          // P10 — die Firma zaehlt ab jetzt im Monatsbestand (vorher im Seed fuer den ganzen Import).
+          if (body.companyId && konto.mode === "sitz") {
+            const { bestandAufnahme } = await import("../lib/bestand");
+            await bestandAufnahme(pool, { tenantId, actorId: body.userId ?? null, companyIds: [body.companyId] });
+          }
+          return c.json({ granted: true, used: 0, limit: UNLIMITED, parkedCount: 0 });
+        }
         return c.json({ granted: false, used: 0, limit: UNLIMITED, parkedCount: 0, reason: p.code, fehltCents: p.fehltCents, naechsterPlan: p.naechsterPlan });
       }
     }
@@ -152,17 +169,31 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
 // Idempotent park insert. ON CONFLICT DO NOTHING so a retry-in-flight
 // double-park collapses to a single row.
 //
-// Body: { tenantId, germanCompanyId, transactionId? }
-// Returns: { parked: true }
+// Body: { tenantId, germanCompanyId, transactionId?, userId? }
+// Returns: { parked: true, ruhend?: true }
+//
+// docs/PLAN_PRICING_TIERS.md P10 — im Sitz-Modell (PRICING_TIERS=1) wird aus
+// "parken" "ruhend": die Firma bleibt im Vorgang des Nutzers (steht in Meine
+// Firmen), wird aber nicht verarbeitet und nicht gezaehlt, bis der Nutzer sie
+// aktiviert. Kein Resume-Worker fuer diese Zeilen.
 internalQuotaRouter.post("/quota/park", async (c) => {
   const raw = c.get("internalRawBody");
   const body = parseBody<{
     tenantId?: string;
     germanCompanyId?: string;
     transactionId?: string | null;
+    userId?: string | null;
   }>(raw);
   if (!body?.tenantId || !body.germanCompanyId) {
     return c.json({ error: "bad_request" }, 400);
+  }
+  {
+    const { pricingAktiv } = await import("../lib/kontingent");
+    if (pricingAktiv() && body.userId) {
+      const { ruhendDurchKontingent } = await import("../lib/firmen-zustand");
+      await ruhendDurchKontingent(body.userId, body.germanCompanyId);
+      return c.json({ parked: true, ruhend: true });
+    }
   }
   await getGatewayPool().query(
     `INSERT INTO "ParkedCompany"

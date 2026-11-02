@@ -292,6 +292,19 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
 - **P8 umgesetzt** (2026-11-02, ava-app): Karte „Dein Plan“ unter Mehr (Plan, Kontingentbalken, Bestand nach
   Stufen, LinkedIn-Verbrauch; Admins zur Konsole, Mitglieder Hinweis auf Anfrage), Allowlist `usage`,
   `usage/linkedin`, `plaene`.
+- **P10 (2026-11-02, gebaut, Gateway/master-data NICHT deployt):** Tabelle `FirmenZustand` (Migration
+  20261102_firmen_zustand), lib/firmen-zustand.ts, Route /v1/firmen/zustand (lesen, uebersicht, PUT
+  aktiv/ruhend sofort oder monatswechsel mit Tausch, DELETE geplant), try-reserve verbucht die Aufnahme je
+  Firma erst bei Freigabe und weist ruhende Firmen ab, park → ruhend (master-data gibt userId mit, interner
+  Endpunkt /internal/transactions/by-ids fuer Aktivierung und Vormerkungen), Bestand ohne ruhende,
+  Matrix mit zustand/geplant + Filter zustand=ruhend, Importe ohne 402 (nur erzwingen/aktivieren),
+  Cron fuehrt Vormerkungen aus. Desktop v0.1.904: Kopfzeile/Pillen/Filter/Knoepfe in Meine Firmen,
+  AktivierenDialog (Plan wechseln, ab 1. mit Tauschvorschlag, Admin bitten), Firmenansicht ruhend =
+  Steckbrief, company_get liefert fuer ruhend/nicht in Liste nur den Steckbrief + aktivierung, Werkzeuge
+  firma_aktivieren/firma_ruhen_lassen, Scheduler/Alarme/Workflows/Personen-Radar nur aktive Firmen,
+  Systemprompt-Regel. PWA 43ea28c (Pille, Firmenansicht ruhend, Allowlist). MCP firma_lesen Steckbrief,
+  meine_firmen zustand=ruhend. Offen: Monatsende-Meldung „Tauschen?“ (Desktop), Texte Preisseite/AGB
+  (Satz aus P10 in docs/WEBSITE_PROMPT_PRICING_2026-11-02.md nachziehen).
 - **P9 (2026-11-02):** keine Migration nötig, da es keine zahlenden Kunden im alten Modell gibt (Joyce). Website- und AGB-Texte: docs/WEBSITE_PROMPT_PRICING_2026-11-02.md (Prompt für den Website-Agenten). Offen bleibt nur Monitoring/Betrieb. Stripe-Dashboard (2026-11-02, Joyce
   per Browser): Produkte „AVA Pro“ 49 € (`price_1TWLJF0r0BPxCh2slgfeLNb7`, vorher „AVA Starter“), „AVA Max“
   149 € (`price_1TWLJH0r0BPxCh2sUvtHrQX6`, vorher „AVA Pro“), „AVA Ultra“ 299 € neu
@@ -505,6 +518,92 @@ Mitglieder bleibt in der Konsole; die App verlinkt dorthin.
 - Doku: PLAN_ABRECHNUNG_ZUGANG.md und PLAN_ABRECHNUNG_SEATS.md mit Verweis „abgelöst durch
   PLAN_PRICING_TIERS.md“ für Nicht-Enterprise; DECISIONS.md.
 
+### P10 Aktiv und ruhend: „Meine Firmen“ vom Kontingent entkoppeln (Joyce 2026-11-02)
+
+**Problem.** Liste und Kontingent sind heute dasselbe: Wer am Limit ist, kann weder sein CRM
+komplett importieren noch Radar-Vorschläge annehmen, und niemand sieht, welche Firmen „gedeckt“
+sind. **Entscheidung (Joyce, 2026-11-02):** je Nutzer trägt jede Firma einen Zustand **aktiv**
+oder **ruhend**. Die Liste ist unbegrenzt, gezählt und aufbereitet wird nur, was aktiv ist.
+
+**Regeln**
+
+- **Aktiv** = AVA bereitet auf, frischt auf, beobachtet, alarmiert, liefert im Chat alles.
+  Zählt im Bestand des Monats (Z11). **Ruhend** = steht in der Liste mit **Steckbrief**
+  (eigene CRM-Daten plus Register-Grunddaten: Name, Rechtsform, Sitz, Registernummer,
+  Status aktiv/insolvent, Größenstufe), sonst nichts: kein Website-Profil, keine
+  Ansprechpartner, keine Jahresabschlüsse, keine Neuigkeiten, keine Alarme, keine
+  Auffrischung. **Gilt in jedem Plan gleich** (Steckbrief-Regel), weil Lesen das Ergebnis
+  ist, für das wir Geld nehmen, und weil Pool-Daten ruhender Firmen sonst mal da, mal nicht da
+  wären.
+- **Chat**: Fragt jemand nach einer ruhenden Firma (oder einer, die nicht in der Liste steht),
+  antwortet AVA mit dem Steckbrief und einer Karte: „Die Firma ist bei dir ruhend. Aktivieren?“
+  Mit Luft im Kontingent ein Knopf, fertig. Bei vollem Kontingent drei Wege, alle vorhanden:
+  **Plan wechseln** (Owner/Admin, sofort, Kontingent wächst tagesanteilig; Ultra: Freigabe
+  über das Kontingent hinaus), **ab 1. aktivieren** mit Tauschvorschlag, Mitglieder **Admin
+  bitten** (Plan-Anfrage). Free: „Pro ansehen“. **Kein Pay-as-you-go unterhalb von Ultra**
+  (Joyce: lieber in den nächsten Plan zwingen als Einzelposten abrechnen).
+- **Import über das Kontingent hinaus**: kein 402 mehr für den Import als Ganzes. Es werden so
+  viele Firmen aktiv, wie passen (Reihenfolge der Liste), der Rest wird ruhend. Meldung:
+  „812 aufgenommen, 199 aktiv, 613 ruhend. Mehr aktiv mit Max.“ Radar-/Leads-Übernahme am
+  Limit → ruhend plus Meldung statt Fehler. Ein 402 bleibt nur für die ausdrückliche
+  Aktivierung und die Neuverarbeitung.
+- **Ruhend setzen** wirkt sofort auf Aufbereitung/Alarme, zählt aber bis Monatsende im Bestand
+  (die Firma hat diesen Monat schon gekostet). Damit ist Tauschen mit Luft im Kontingent sofort
+  möglich, am Limit erst zum 1. Das verhindert Durchrotieren ohne Sonderregel. Vormerkungen
+  („ab 1. aktiv“, „ab 1. ruhend“) führt der Billing-Cron am Monatsersten aus; passt eine
+  Aktivierung nicht, bleibt sie vorgemerkt und der Nutzer bekommt eine Meldung.
+- **Free**: 25 **Aktivierungen auf Lebenszeit** je Nutzer, Ruhendsetzen gibt nichts frei, kein
+  Tausch. Der ganze CRM-Import darf trotzdem rein (ruhend).
+- **Neuverarbeitung** verbraucht einen Stufenpreis, deaktiviert nie etwas, blockiert nur neue
+  Aktivierungen (unverändert aus P2).
+- **Nichts wird gelöscht.** „Entfernen“ aus der Liste bleibt als zweiter Weg (Tombstone wie
+  heute); der Standardknopf heißt „Ruhen lassen“.
+
+**Datenmodell (Gateway)**: Tabelle `FirmenZustand (actorId, companyId, zustand aktiv|ruhend,
+seit, quelle import|radar|leads|chat|tausch|kontingent, geplant aktiv|ruhend|null, geplantAb
+periodKey, geplantTausch companyId[] )`, Primärschlüssel (actorId, companyId). Ohne Zeile gilt
+**aktiv** (Bestandsschutz: alles, was heute in der Liste steht, bleibt aktiv). Ruhende Firmen
+bleiben in ihren master-data-Vorgängen (damit sie in der Liste stehen), werden aber überall
+ausgeschlossen: `bestandJeKonto`/`kostenSchaetzung` (Bestand), Matrix (Feld `zustand`,
+Filter), Auffrischung/Heartbeat/Alarme (Desktop filtert auf aktiv), Chat-Werkzeuge
+(Steckbrief).
+
+**Verarbeitung anhalten**: master-data gated heute jede Firma über `try-reserve` und parkt
+Verweigerungen (`ParkedCompany`, Resume-Worker spielt automatisch nach). Im Sitz-Modell
+(`pricingAktiv`, Modus sitz/free) wird aus „parken“ „ruhend“: `/internal/quota/park`
+schreibt `FirmenZustand ruhend (quelle kontingent)` für den Nutzer des Vorgangs (master-data
+gibt `userId` mit) statt `ParkedCompany`; der Resume-Worker fasst diese Firmen nicht an.
+Aktivierung = `POST /v1/imports/by-ids` für die Firma (Vorabprüfung wie heute, Tombstone der
+Firma wird entfernt, Zustand aktiv), also der normale Verarbeitungsweg.
+
+**Endpunkte**: `GET /v1/firmen/zustand?companyIds=` (Zustand je Firma für Werkzeuge und
+Firmenansicht), `PUT /v1/firmen/{id}/zustand {zustand, ab: sofort|monatswechsel, tausch?:
+companyId[]}` (aktiv → Vorabprüfung + by-ids; ruhend → sofort oder vorgemerkt), `DELETE
+/v1/firmen/{id}/zustand/geplant`, `GET /v1/firmen/zustand/uebersicht` (aktiv/ruhend/vorgemerkt,
+Kontingent, Tauschvorschläge: lange nicht geöffnet, keine Notizen, kein Buying Center, keine
+gelesenen Meldungen). Steckbrief: bestehende Firmensuche/`companies/{id}` liefert die
+Grunddaten; die Werkzeuge liefern für ruhende Firmen nur diese Felder plus `zustand` und
+`karte` (Nutzlast wie der 402-Dialog: `passenNoch`, `naechsterPlan`, `kannSelbstWechseln`).
+
+**Desktop**: Meine Firmen mit Kopfzeile „199 von 199 aktiv, 613 ruhend, ab 1. Dezember 12
+frei“, Pille aktiv/ruhend/vorgemerkt je Zeile, Filter, Mehrfachauswahl „Ruhen lassen“ /
+„Aktivieren“; Aktivieren an der Grenze öffnet das Blatt mit den drei Wegen und dem
+Tauschvorschlag; Firmenansicht ruhend = Steckbrief + Knopf; Chat-Karte (Werkzeug
+`firma_aktivieren` mit confirmAction, `firma_ruhen_lassen`); `company_get`/`firma_lesen`
+liefern bei ruhend nur den Steckbrief; Scheduler (Auffrischung, Heartbeat, Watchlist,
+Personen-Radar, Themen) nur aktive Firmen; Monatsende-Meldung „12 aktive Firmen 90 Tage nicht
+angefasst, 8 ruhende warten. Tauschen?“. Systemprompt-Regel: ruhend nie als „liegt nicht vor“
+ausgeben, sondern die Karte anbieten.
+
+**PWA/MCP**: Firmenansicht ruhend = Steckbrief + „Aktivieren“ (Admins) bzw. Hinweis;
+`firma_lesen`/`meine_firmen` tragen `zustand`, `import_anlegen` liefert aktiv/ruhend-Zahlen.
+
+**Konsole**: keine Änderung (Betreiber-Sicht zeigt Bestand = aktive Firmen wie bisher).
+
+**Texte** (Preisseite/AGB, Ergänzung zu docs/WEBSITE_PROMPT_PRICING_2026-11-02.md): „Aktiv
+ist, was AVA für dich aufbereitet und beobachtet. Ruhende Firmen bleiben in deiner Liste mit
+ihren Grunddaten. Ruhen lassen wirkt für das Kontingent ab dem Folgemonat.“
+
 ## 4. Reihenfolge und Aufwand (grob)
 
 | Schritt | Inhalt | Aufwand | Abhängigkeit |
@@ -519,6 +618,7 @@ Mitglieder bleibt in der Konsole; die App verlinkt dorthin.
 | P7 | Konsole: Mitglieder/Pläne, Abrechnung, Rechner/Angebot, Betreiber | 3 Tage | P2–P4 |
 | P8 | PWA-Karte | 0,5 Tag | P2 |
 | P9 | Migration, Texte, Monitoring | 1,5 Tage + Freigaben | P3 |
+| P10 | Aktiv/ruhend je Nutzer, Steckbrief-Regel, Monatstausch, Chat-Karte, Import teilt auf | 2,5 Tage | P2, P6 |
 
 Gesamt etwa 17 Arbeitstage. Gateway zuerst hinter Feature-Schalter `PRICING_TIERS=1`
 (Altlogik bleibt bis zum Umschalten), dann Konsole (Zuweisung muss vor der App da sein), dann

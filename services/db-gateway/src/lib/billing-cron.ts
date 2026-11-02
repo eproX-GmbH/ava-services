@@ -39,6 +39,13 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Sitz-Reduktionen failed");
   }
+  // docs/PLAN_PRICING_TIERS.md P10 — faellige Vormerkungen (ab Monatswechsel aktiv/ruhend).
+  try {
+    const { vormerkungenAusfuehren } = await import("./firmen-zustand");
+    await vormerkungenAusfuehren(pool, now);
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] vormerkungenAusfuehren failed");
+  }
   try {
     const r = await closeCompletedPeriods(pool, now);
     if (r.created > 0) logger.info(r, "[billing-cron] Monatsabschluss verbucht");

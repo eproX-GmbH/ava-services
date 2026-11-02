@@ -2,7 +2,10 @@ import { InsolvenzBadge, LandBadge, LandFilter, RegisterStatusBadge, registerKen
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, ChevronLeft, ChevronRight, Building2, Trash2, Pause, Play } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Building2, Trash2, Pause, Play, Moon, Zap } from "lucide-react";
+import { useZustandUebersicht, firmaAktivieren, firmaRuhenLassen, vormerkungWiderrufen, monatsersterText } from "../api/firmen-zustand";
+import { AktivierenDialog, type AktivierenAnfrage } from "../components/AktivierenDialog";
+import { bestaetigen } from "../components/Bestaetigung";
 import { gatewayFetch } from "../api/gateway";
 import { CrmBadgeRow } from "../components/CrmBadge";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
@@ -85,6 +88,9 @@ interface CompanyMatrixRow {
   held?: boolean;
   /** Z5 — Stufe der juengsten Aufnahme (klein | mittel | gross) und Preis in Cent. */
   zugang?: { stufe: string; preisCents: number } | null;
+  /** P10 — aktiv | ruhend je Nutzer; geplant = Vormerkung zum Monatswechsel. */
+  zustand?: "aktiv" | "ruhend";
+  geplant?: { zustand: "aktiv" | "ruhend"; ab: string } | null;
   companyId: string;
   name: string;
   location: string;
@@ -155,6 +161,42 @@ export function AllCompanies() {
   // Fokus-Thema gefunden (docs/PLAN_THEMEN.md T5): Schluessel aus den lokalen Themen des Nutzers.
   const [thema, setThema] = useState("");
   const themen = useQuery({ queryKey: ["themen", "liste"], queryFn: () => window.api.themen.list(), staleTime: 60_000 });
+  // P10 — aktiv/ruhend: Filter, Kopfzeile, Dialog bei vollem Kontingent.
+  const [nurRuhend, setNurRuhend] = useState(false);
+  const uebersicht = useZustandUebersicht();
+  const aktivModell = uebersicht.data?.aktivModell === true;
+  const [aktivierenAnfrage, setAktivierenAnfrage] = useState<AktivierenAnfrage | null>(null);
+  const [zustandMeldung, setZustandMeldung] = useState<string | null>(null);
+  const zustandNeuLaden = () => {
+    void qc.invalidateQueries({ queryKey: ["companies-matrix"] });
+    void qc.invalidateQueries({ queryKey: ["firmen-zustand"] });
+  };
+  const aktivieren = useMutation({
+    mutationFn: async (args: { companyId: string; name: string }) => {
+      const r = await firmaAktivieren(args.companyId, { quelle: "liste" });
+      if (!r.ok) setAktivierenAnfrage({ companyId: args.companyId, name: args.name, ablehnung: r.ablehnung });
+      else if (r.ruhend.includes(args.companyId)) setZustandMeldung(`${args.name} passt gerade nicht ins Kontingent und bleibt ruhend.`);
+      else setZustandMeldung(`${args.name} ist aktiv, die Verarbeitung läuft.`);
+    },
+    onSettled: zustandNeuLaden,
+  });
+  const ruhenLassen = useMutation({
+    mutationFn: async (args: { companyId: string; name: string }) => {
+      const ok = await bestaetigen({
+        titel: `${args.name} ruhen lassen?`,
+        text: "AVA bereitet die Firma dann nicht mehr auf, frischt sie nicht auf und meldet nichts zu ihr. Sie bleibt in deiner Liste mit ihren Grunddaten. Für dein Kontingent zählt sie noch bis Monatsende.",
+        bestaetigen: "Ruhen lassen",
+      });
+      if (!ok) return;
+      await firmaRuhenLassen(args.companyId, "sofort", "liste");
+      setZustandMeldung(`${args.name} ruht ab jetzt.`);
+    },
+    onSettled: zustandNeuLaden,
+  });
+  const widerrufen = useMutation({
+    mutationFn: (companyId: string) => vormerkungWiderrufen(companyId),
+    onSettled: zustandNeuLaden,
+  });
   // v0.1.337 — drill-down panel. Clicking a row opens a side panel with
   // the per-company processing log (pipeline timeline + per-stage errors +
   // live producer diagnostics), mirroring the Vorgänge detail view. The
@@ -174,7 +216,7 @@ export function AllCompanies() {
   }, [searchInput]);
 
   const matrix = useQuery<CompaniesMatrixResponse>({
-    queryKey: ["companies-matrix", page, search, land, thema],
+    queryKey: ["companies-matrix", page, search, land, thema, nurRuhend],
     queryFn: () => {
       const qs = new URLSearchParams({
         pageNumber: String(page),
@@ -182,6 +224,7 @@ export function AllCompanies() {
         ...(search ? { search } : {}),
         ...(land ? { country: land } : {}),
         ...(thema ? { thema } : {}),
+        ...(nurRuhend ? { zustand: "ruhend" } : {}),
       });
       return gatewayFetch<CompaniesMatrixResponse>(
         `/v1/companies/matrix?${qs.toString()}`,
@@ -361,6 +404,20 @@ export function AllCompanies() {
             ))}
           </select>
         )}
+        {aktivModell && (
+          <button
+            type="button"
+            className={`ct-pill all-companies__zustand-filter${nurRuhend ? " ct-pill--aktiv" : ""}`}
+            aria-pressed={nurRuhend}
+            onClick={() => {
+              setNurRuhend((v) => !v);
+              setPage(1);
+            }}
+            title="Nur ruhende Firmen zeigen"
+          >
+            <Moon className="ct-icon-sm" aria-hidden="true" /> Ruhend{uebersicht.data ? ` (${uebersicht.data.ruhend.toLocaleString("de-DE")})` : ""}
+          </button>
+        )}
         {matrix.data && (
           <span className="ct-pill all-companies__count">
             {matrix.data.count.toLocaleString("de-DE")} Firmen
@@ -369,6 +426,35 @@ export function AllCompanies() {
           </span>
         )}
       </div>
+
+      {aktivModell && uebersicht.data && (
+        <div className="ct-card all-companies__zustand" style={{ padding: "0.6rem 1rem" }}>
+          <span>
+            <strong>{uebersicht.data.aktiv.toLocaleString("de-DE")}</strong> aktiv
+            {uebersicht.data.ruhend > 0 ? <> · <strong>{uebersicht.data.ruhend.toLocaleString("de-DE")}</strong> ruhend</> : null}
+            {uebersicht.data.free ? <> · Free: {uebersicht.data.free.genutzt} von {uebersicht.data.free.limit} Aktivierungen genutzt</> : null}
+            {uebersicht.data.geplantRuhend.length > 0 ? <> · ab {monatsersterText(uebersicht.data.naechsterMonat)} {uebersicht.data.geplantRuhend.length} {uebersicht.data.geplantRuhend.length === 1 ? "Platz" : "Plätze"} frei</> : null}
+          </span>
+          {uebersicht.data.geplantAktiv.length > 0 && (
+            <span className="muted small">
+              {" "}· {uebersicht.data.geplantAktiv.length} {uebersicht.data.geplantAktiv.length === 1 ? "Firma wird" : "Firmen werden"} ab {monatsersterText(uebersicht.data.naechsterMonat)} aktiv
+              {uebersicht.data.geplantAktiv.some((g) => g.wartet) ? " (wartet auf einen freien Platz)" : ""}
+            </span>
+          )}
+          <span className="muted small" style={{ marginLeft: "auto" }}>
+            Aktiv heißt: AVA bereitet auf, beobachtet, meldet. Ruhende Firmen zeigen nur Grunddaten.
+          </span>
+        </div>
+      )}
+      {zustandMeldung && (
+        <p className="muted small" role="status">
+          {zustandMeldung}{" "}
+          <button type="button" className="btn btn--leise" onClick={() => setZustandMeldung(null)}>OK</button>
+        </p>
+      )}
+      {aktivierenAnfrage && (
+        <AktivierenDialog anfrage={aktivierenAnfrage} onSchliessen={() => setAktivierenAnfrage(null)} onFertig={(m) => setZustandMeldung(m)} />
+      )}
 
       {matrix.isLoading && <p>Wird geladen…</p>}
       {matrix.error && (
@@ -402,7 +488,7 @@ export function AllCompanies() {
               {visibleCompanies.map((row) => (
                 <tr
                   key={row.companyId}
-                  className={`${openCompanyId === row.companyId ? "active" : ""}${row.held ? " held-row" : ""}`}
+                  className={`${openCompanyId === row.companyId ? "active" : ""}${row.held ? " held-row" : ""}${row.zustand === "ruhend" ? " ruhend-row" : ""}`}
                   onClick={() => setOpenCompanyId(row.companyId)}
                   role="button"
                   tabIndex={0}
@@ -424,7 +510,29 @@ export function AllCompanies() {
                     <LandBadge country={row.country} />
                     <RegisterStatusBadge status={row.registerStatus} />
                     <InsolvenzBadge status={row.insolvencyStatus} />
-                    {row.zugang && (
+                    {aktivModell && row.zustand === "ruhend" && (
+                      <span className="ct-pill ct-pill--muted" title="Ruhend: AVA bereitet diese Firma nicht auf und meldet nichts; sie zählt nicht in deinem Kontingent.">
+                        ruhend
+                      </span>
+                    )}
+                    {aktivModell && row.geplant && (
+                      <span className="ct-pill ct-pill--muted" title={row.geplant.zustand === "aktiv" ? "Wird zum Monatswechsel aktiv" : "Ruht ab dem Monatswechsel"}>
+                        ab {monatsersterText(row.geplant.ab)} {row.geplant.zustand}
+                        <button
+                          type="button"
+                          className="btn btn--leise"
+                          title="Vormerkung zurücknehmen"
+                          aria-label={`Vormerkung für ${row.name} zurücknehmen`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            widerrufen.mutate(row.companyId);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+                    {row.zugang && row.zustand !== "ruhend" && (
                       <span
                         className="ct-pill ct-pill--muted"
                         title={`Stufe ${row.zugang.stufe === "gross" ? "groß" : row.zugang.stufe}: ${(row.zugang.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })} je Monat aus deinem Kontingent`}
@@ -458,6 +566,23 @@ export function AllCompanies() {
                   })}
                   <td className="muted">{formatTime(row.lastSeenAt)}</td>
                   <td className="all-companies__actions">
+                    {aktivModell && (
+                      <button
+                        type="button"
+                        className="all-companies__delete"
+                        title={row.zustand === "ruhend" ? "Aktivieren (AVA bereitet auf und beobachtet)" : "Ruhen lassen (nur Grunddaten, zählt ab Folgemonat nicht mehr)"}
+                        aria-label={row.zustand === "ruhend" ? `${row.name} aktivieren` : `${row.name} ruhen lassen`}
+                        disabled={aktivieren.isPending || ruhenLassen.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (row.zustand === "ruhend") aktivieren.mutate({ companyId: row.companyId, name: row.name });
+                          else ruhenLassen.mutate({ companyId: row.companyId, name: row.name });
+                        }}
+                      >
+                        {row.zustand === "ruhend" ? <Zap className="ct-icon-sm" aria-hidden="true" /> : <Moon className="ct-icon-sm" aria-hidden="true" />}
+                      </button>
+                    )}
+                    {row.zustand !== "ruhend" && (
                     <button
                       type="button"
                       className="all-companies__delete"
@@ -486,6 +611,7 @@ export function AllCompanies() {
                         <Pause className="ct-icon-sm" aria-hidden="true" />
                       )}
                     </button>
+                    )}
                     <button
                       type="button"
                       className="all-companies__delete"

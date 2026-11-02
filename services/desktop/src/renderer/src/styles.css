@@ -9260,3 +9260,20 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .plan-kopf__aktionen { grid-column: 1 / -1; flex-wrap: wrap; gap: 0.5rem; }
 @media (max-width: 760px) { .plan-kopf { grid-template-columns: 1fr; } }
 .kontingent-dialog__optionen { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+
+
+/* docs/PLAN_PRICING_TIERS.md P10 — aktiv/ruhend */
+.all-companies__zustand { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+.all-companies__zustand-filter { cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem; }
+.all-companies__matrix tr.ruhend-row .matrix-company > a,
+.all-companies__matrix tr.ruhend-row .matrix-cell { opacity: 0.55; }
+.company-ruhend { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0.75rem 0 1rem; padding: 0.9rem 1.1rem; }
+.company-ruhend p { margin: 0; }
+.company-ruhend__aktionen { display: flex; align-items: center; gap: 0.75rem; }
+.aktivieren-dialog__tausch { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border, rgba(127,127,127,0.25)); }
+.aktivieren-dialog__tausch h5 { margin: 0 0 0.25rem; }
+.aktivieren-dialog__liste { list-style: none; margin: 0.5rem 0 0.75rem; padding: 0; display: grid; gap: 0.3rem; }
+.aktivieren-dialog__liste label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+.ct-pill--aktiv { background: var(--color-accent-soft, rgba(0, 192, 167, 0.18)); border-color: var(--color-accent, #00c0a7); }
+.btn--leise { background: none; border: none; box-shadow: none; padding: 0 0.25rem; font: inherit; color: inherit; cursor: pointer; opacity: 0.7; }
+.btn--leise:hover { opacity: 1; text-decoration: none; }

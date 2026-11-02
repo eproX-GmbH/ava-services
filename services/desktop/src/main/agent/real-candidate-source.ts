@@ -38,6 +38,8 @@ interface MatrixZeile {
   companyId: string;
   name?: string | null;
   held?: boolean;
+  /** P10: ruhende Firmen bekommen keine Alarme und keine Beobachtung. */
+  zustand?: "aktiv" | "ruhend";
 }
 
 interface VolumeShape {
@@ -201,7 +203,7 @@ export async function ladeFirmenliste(gateway: GatewayClient): Promise<Map<strin
     );
     const teil = r.companies ?? [];
     for (const z of teil) {
-      if (!z.companyId) continue;
+      if (!z.companyId || z.zustand === "ruhend") continue;
       out.set(z.companyId, (z.name ?? "").trim() || z.companyId);
     }
     if (teil.length < MATRIX_SEITE) break;
