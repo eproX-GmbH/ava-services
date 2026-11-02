@@ -86,7 +86,7 @@ function isTimeoutCell(cell: StageCell): boolean {
 interface CompanyMatrixRow {
   /** v0.1.430 — P2: Verarbeitung fuer diese Firma ausgesetzt. */
   held?: boolean;
-  /** Z5 — Stufe der juengsten Aufnahme (klein | mittel | gross) und Preis in Cent. */
+  /** Z5 — Stufe der juengsten Aufnahme (klein | mittel | gross) und Preis in Cent. Seit 2026-11-02 nicht mehr in der Liste angezeigt (Joyce). */
   zugang?: { stufe: string; preisCents: number } | null;
   /** P10 — aktiv | ruhend je Nutzer; geplant = Vormerkung zum Monatswechsel. */
   zustand?: "aktiv" | "ruhend";
@@ -510,42 +510,36 @@ export function AllCompanies() {
                     <LandBadge country={row.country} />
                     <RegisterStatusBadge status={row.registerStatus} />
                     <InsolvenzBadge status={row.insolvencyStatus} />
-                    {aktivModell && row.zustand === "ruhend" && (
-                      <span className="ct-pill ct-pill--muted" title="Ruhend: AVA bereitet diese Firma nicht auf und meldet nichts; sie zählt nicht in deinem Kontingent.">
-                        ruhend
-                      </span>
-                    )}
-                    {aktivModell && row.geplant && (
-                      <span className="ct-pill ct-pill--muted" title={row.geplant.zustand === "aktiv" ? "Wird zum Monatswechsel aktiv" : "Ruht ab dem Monatswechsel"}>
-                        ab {monatsersterText(row.geplant.ab)} {row.geplant.zustand}
-                        <button
-                          type="button"
-                          className="btn btn--leise"
-                          title="Vormerkung zurücknehmen"
-                          aria-label={`Vormerkung für ${row.name} zurücknehmen`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            widerrufen.mutate(row.companyId);
-                          }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    )}
-                    {row.zugang && row.zustand !== "ruhend" && (
-                      <span
-                        className="ct-pill ct-pill--muted"
-                        title={`Stufe ${row.zugang.stufe === "gross" ? "groß" : row.zugang.stufe}: ${(row.zugang.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })} je Monat aus deinem Kontingent`}
-                      >
-                        {row.zugang.stufe === "gross" ? "groß" : row.zugang.stufe} · {(row.zugang.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
-                      </span>
-                    )}
                     <CrmBadgeRow
                       links={crmLinks.data?.links[row.companyId] ?? []}
                     />
-                    <div className="muted small">
-                      {row.location}
-                      {registerKennung(row) ? ` · ${registerKennung(row)}` : ""}
+                    <div className="muted small matrix-company__meta">
+                      <span>
+                        {row.location}
+                        {registerKennung(row) ? ` · ${registerKennung(row)}` : ""}
+                      </span>
+                      {aktivModell && row.zustand === "ruhend" && (
+                        <span className="zustand-marke zustand-marke--ruhend" title="Ruhend: AVA bereitet diese Firma nicht auf und meldet nichts; sie zählt nicht in deinem Kontingent.">
+                          ruhend
+                        </span>
+                      )}
+                      {aktivModell && row.geplant && (
+                        <span className="zustand-marke" title={row.geplant.zustand === "aktiv" ? "Wird zum Monatswechsel aktiv" : "Ruht ab dem Monatswechsel"}>
+                          ab {monatsersterText(row.geplant.ab)} {row.geplant.zustand}
+                          <button
+                            type="button"
+                            className="zustand-marke__weg"
+                            title="Vormerkung zurücknehmen"
+                            aria-label={`Vormerkung für ${row.name} zurücknehmen`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              widerrufen.mutate(row.companyId);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      )}
                     </div>
                   </td>
                   {PRODUCERS.map((p) => {

@@ -9330,3 +9330,11 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .problem-dialog__antwort { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .problem-status--wartet_auf_nutzer { border-color: var(--color-indigo-500, #00c0a7); }
 .problem-status--geloest, .problem-status--geschlossen { opacity: 0.7; }
+
+
+/* Stufe und Zustand in Meine Firmen: leise, in der Zeile unter dem Namen */
+.matrix-company__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; }
+.zustand-marke { display: inline-flex; align-items: center; gap: 4px; }
+.zustand-marke--ruhend { font-style: italic; }
+.zustand-marke__weg { background: none; border: none; padding: 0 2px; margin: 0; font: inherit; color: inherit; cursor: pointer; opacity: 0.6; line-height: 1; }
+.zustand-marke__weg:hover { opacity: 1; text-decoration: none; }
