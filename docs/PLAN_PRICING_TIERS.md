@@ -204,6 +204,28 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
 - Offen: Betreiber-Alarm bei 80 % des Apify-Monatslimits; Apify-Ausfall im Producer nicht
   mehr still (Meldung statt stiller SERP-Rückfall).
 
+### Stand der Umsetzung
+
+- **P0 umgesetzt** (v0.1.903, 2026-11-02): Takte 14/14/14/30/30, Apify-Delta-Abruf.
+- **P1 umgesetzt im Gateway** (Commit 5b0604db, 2026-11-02, noch nicht deployt): Migration
+  `20261102_pricing_sitze`, Plan-Katalog (`lib/billing-plans.ts`, `GET /v1/plaene`), `lib/sitze.ts`
+  (Sitze, PlanZeitraum, tagesanteiliges Kontingent, Test `test:kontingent`). Abweichung vom Plan:
+  `PlanZeitraum` statt `PlanTag`; `ausgabenLimitCents` bleibt bestehen, `paygLimitCents` kommt als
+  eigene Spalte dazu (keine Umbenennung, Altlogik bleibt lauffähig).
+- **P2 umgesetzt im Gateway** (2026-11-02, hinter `PRICING_TIERS=1`, Standard aus): `lib/kontingent.ts`
+  (Stand, Kostenschätzung je Pool-Stufe, Vorabprüfung mit 402 `kontingent_erschoepft` / `firmen_limit`),
+  Sitz-Routen `GET/POST /v1/tenants/me/sitze`, `PUT /v1/tenants/me/mitglieder/{actorId}/sitz`,
+  `PUT/DELETE /v1/tenants/me/sitze/{plan}/reduzieren`, `POST /v1/billing/plan-anfrage`,
+  `PUT /v1/usage/payg`; Beitrittsfreigabe mit `sitz` (Enterprise prüft `maxMitglieder`, sonst Sitz oder
+  Free-Platz), Austritt gibt den Sitz frei; Vorabprüfung in `/v1/imports/by-ids` (mit
+  `NeuverarbeitungEntry` bei `erzwingen`), `/v1/imports/from-list` und `/internal/quota/try-reserve`
+  (master-data übergibt jetzt `companyId`); `/v1/usage` liefert `kontingent` und `kannSelbstWechseln`;
+  `bestandVerbuchen` verbucht Konten im Modus `sitz`. Noch offen in P2: Meldungen bei 80/100 %,
+  Wartezustand ist die offene Beitrittsanfrage (kein eigener Mitgliedsstatus nötig; Spalte bleibt ungenutzt).
+- **Offen:** P3 Stripe (Mengen je Plan, Proration, Schedule, Webhooks, `sitzeStripeSync`), P4 LinkedIn
+  nach Verbrauch, P5 Neuverarbeitung-Regeln (Betreiber-Rolle), P6 Desktop, P7 Konsole, P8 PWA, P9
+  Migration/Texte. Deploy der Migration braucht Joyces Freigabe (Prod-DB).
+
 ### P1 Gateway: Datenmodell und Plan-Katalog
 
 - Migration `20261101_pricing_tiers`:

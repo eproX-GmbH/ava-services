@@ -29,6 +29,14 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] applyScheduledSeatChanges failed");
   }
+  // docs/PLAN_PRICING_TIERS.md P2 — vorgemerkte Sitz-Reduktionen zum Zyklusende ausfuehren.
+  try {
+    const { faelligeReduktionenAusfuehren } = await import("./sitze");
+    const n = await faelligeReduktionenAusfuehren(pool, now);
+    if (n > 0) logger.info({ beendet: n }, "[billing-cron] Sitz-Reduktionen ausgefuehrt");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Sitz-Reduktionen failed");
+  }
   try {
     const r = await closeCompletedPeriods(pool, now);
     if (r.created > 0) logger.info(r, "[billing-cron] Monatsabschluss verbucht");

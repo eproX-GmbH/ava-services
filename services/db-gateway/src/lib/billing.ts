@@ -82,11 +82,21 @@ export interface BillingAccount {
   betreiberLimitCents: number | null;
   /** Enterprise-Vertrag: ausgehandelter Fixpreis je Monat (Cent, netto); null = keiner. */
   enterprisePreisCents: number | null;
+  /** docs/PLAN_PRICING_TIERS.md P1 — Sitz-Modell. */
+  sitzeGeplant: Record<string, unknown> | null;
+  stripeScheduleId: string | null;
+  maxMitglieder: number | null;
+  firmenLimit: number | null;
+  linkedinLimitCents: number | null;
+  linkedinImVertrag: boolean;
+  paygFreigabePeriode: string | null;
+  paygLimitCents: number | null;
 }
 
 const ACCOUNT_COLUMNS = `"tenantId", "kind", "mode", tier, "quotaLimit", "status", "pastDueSince", "suspendedAt", "graceDays",
   "stripeCustomerId", "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd", "seatTier", "seatBillingSince",
-  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents", "betreiberLimitCents", "enterprisePreisCents"`;
+  "seatBillingEndsAt", "maxSeats", "karenzTag", "ausgabenLimitCents", "betreiberLimitCents", "enterprisePreisCents",
+  "sitzeGeplant", "stripeScheduleId", "maxMitglieder", "firmenLimit", "linkedinLimitCents", "linkedinImVertrag", "paygFreigabePeriode", "paygLimitCents"`;
 
 interface AccountRow {
   tenantId: string;
@@ -110,14 +120,22 @@ interface AccountRow {
   ausgabenLimitCents: number | null;
   betreiberLimitCents: number | null;
   enterprisePreisCents: number | null;
+  sitzeGeplant: Record<string, unknown> | null;
+  stripeScheduleId: string | null;
+  maxMitglieder: number | null;
+  firmenLimit: number | null;
+  linkedinLimitCents: number | null;
+  linkedinImVertrag: boolean | null;
+  paygFreigabePeriode: string | null;
+  paygLimitCents: number | null;
 }
 
 function mapAccount(r: AccountRow): BillingAccount {
   return {
     id: r.tenantId,
     kind: r.kind === "organisation" ? "organisation" : "personal",
-    mode: (["none", "subscription", "seats", "enterprise"].includes(r.mode) ? r.mode : "none") as BillingMode,
-    tier: (["free", "starter", "pro", "enterprise"].includes(r.tier) ? r.tier : "free") as BillingTier,
+    mode: (["none", "subscription", "seats", "enterprise", "sitz", "sitze"].includes(r.mode) ? r.mode : "none") as BillingMode,
+    tier: (["free", "starter", "pro", "max", "ultra", "enterprise"].includes(r.tier) ? r.tier : "free") as BillingTier,
     quotaLimit: r.quotaLimit,
     status: (["active", "past_due", "suspended", "canceled"].includes(r.status) ? r.status : "active") as BillingStatus,
     pastDueSince: r.pastDueSince,
@@ -135,6 +153,14 @@ function mapAccount(r: AccountRow): BillingAccount {
     ausgabenLimitCents: r.ausgabenLimitCents ?? null,
     betreiberLimitCents: r.betreiberLimitCents ?? null,
     enterprisePreisCents: r.enterprisePreisCents ?? null,
+    sitzeGeplant: r.sitzeGeplant ?? null,
+    stripeScheduleId: r.stripeScheduleId ?? null,
+    maxMitglieder: r.maxMitglieder ?? null,
+    firmenLimit: r.firmenLimit ?? null,
+    linkedinLimitCents: r.linkedinLimitCents ?? null,
+    linkedinImVertrag: Boolean(r.linkedinImVertrag),
+    paygFreigabePeriode: r.paygFreigabePeriode ?? null,
+    paygLimitCents: r.paygLimitCents ?? null,
   };
 }
 
@@ -186,6 +212,14 @@ export async function ensureBillingAccount(
     ausgabenLimitCents: null,
     betreiberLimitCents: null,
     enterprisePreisCents: null,
+    sitzeGeplant: null,
+    stripeScheduleId: null,
+    maxMitglieder: null,
+    firmenLimit: null,
+    linkedinLimitCents: null,
+    linkedinImVertrag: false,
+    paygFreigabePeriode: null,
+    paygLimitCents: null,
   };
 }
 
@@ -406,6 +440,10 @@ export interface UsageSnapshot {
   /** Z4 — Zugang zum Ergebnis: Stufen der Aufnahmen in der Periode, Verbrauch
    *  gegen das Guthaben (Cent, netto). Free: Guthaben 0, nur Zaehlung. */
   zugang: ZugangStand;
+  /** docs/PLAN_PRICING_TIERS.md P2 — Kontingent je Nutzer (Sitz-Modell), null ausserhalb davon. */
+  kontingent: import("./kontingent").KontingentStand | null;
+  /** P2 — Darf der Aufrufer Plaene wechseln/kaufen (Owner/Admin bzw. persoenliches Konto)? */
+  kannSelbstWechseln: boolean;
 }
 
 export interface ZugangStand {
@@ -549,11 +587,25 @@ export async function getUsageSnapshot(
     };
   }
 
+  // P2 — Kontingent je Nutzer (Sitz-Modell) und Enterprise-Stand.
+  let kontingent: import("./kontingent").KontingentStand | null = null;
+  let kannSelbstWechseln = !istOrgKonto || role === "owner" || role === "admin";
+  {
+    const { pricingAktiv, kontingentStand } = await import("./kontingent");
+    if (pricingAktiv() && (acc.mode === "sitz" || acc.mode === "enterprise")) kontingent = await kontingentStand(pool, billingAccountId);
+    if (pricingAktiv() && ctx.actorId && ctx.actorId !== ctx.tenantId) {
+      const m = await pool.query<{ role: string }>(`SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [ctx.tenantId, ctx.actorId]);
+      kannSelbstWechseln = m.rows[0]?.role === "owner" || m.rows[0]?.role === "admin";
+    }
+  }
+
   return {
     tier,
     used,
     limit,
     remaining,
+    kontingent,
+    kannSelbstWechseln,
     periodEnd: periodEnd ? periodEnd.toISOString() : null,
     periodKey: isUnlimited(tier) ? "unlimited" : periodKey,
     cancelAtPeriodEnd: acc.mode === "subscription" ? acc.cancelAtPeriodEnd : false,

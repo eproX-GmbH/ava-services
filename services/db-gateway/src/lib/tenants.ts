@@ -17,6 +17,8 @@ import { TenantError } from "./tenant-error";
 import { openMembership, closeMembership, updateMembershipRole, updateMembershipIdentity } from "./memberships";
 import { assertSeatAvailable, scheduleCancelPersonalSubscriptions } from "./seat-billing";
 import { readBillingAccount } from "./billing";
+import { sitzZuweisen, sitzEntziehen, freePlatzPruefen } from "./sitze";
+import { pricingAktiv } from "./kontingent";
 import { recordBillingEvent } from "./billing-events";
 
 export { TenantError };
@@ -253,7 +255,7 @@ export async function mitgliederFuerAdmin(pool: pg.Pool, auth: AuthContext): Pro
   return r.rows;
 }
 
-async function istAdmin(q: Q, tenantId: string, actorId: string): Promise<boolean> {
+export async function istAdmin(q: Q, tenantId: string, actorId: string): Promise<boolean> {
   const r = await q.query<{ role: string }>(
     `SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`,
     [tenantId, actorId],
@@ -430,6 +432,8 @@ export async function decideJoinRequest(
   auth: AuthContext,
   requestId: string,
   entscheidung: "approve" | "reject",
+  // docs/PLAN_PRICING_TIERS.md P2 — Sitz beim Freigeben: pro|max|ultra (kaufen = bei Bedarf dazukaufen) oder free (nur wenn ein Free-Platz frei ist).
+  sitz?: { plan: "free" | "pro" | "max" | "ultra"; kaufen?: boolean },
 ): Promise<{ actorId: string; tenantId: string }> {
   const client = await pool.connect();
   try {
@@ -475,6 +479,21 @@ export async function decideJoinRequest(
         name: reqIdent.rows[0]?.name ?? null,
       });
       tenantName = (await client.query<{ name: string | null }>(`SELECT "name" FROM "Tenant" WHERE "id" = $1`, [req.tenantId])).rows[0]?.name ?? null;
+      // P2 — Platz pruefen: Enterprise (maxMitglieder), sonst Sitz zuweisen oder Free-Platz.
+      if (pricingAktiv()) {
+        const org = await readBillingAccount(client, req.tenantId);
+        if (org?.mode === "enterprise") {
+          if (org.maxMitglieder != null) {
+            const n = Number((await client.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM "TenantMember" WHERE "tenantId" = $1`, [req.tenantId])).rows[0]?.n ?? "0");
+            if (n > org.maxMitglieder) throw new TenantError(409, `Eure Organisation darf laut Vertrag höchstens ${org.maxMitglieder} Mitglieder haben.`);
+          }
+        } else if (sitz && sitz.plan !== "free") {
+          await sitzZuweisen(client, { tenantId: req.tenantId, actorId: req.actorId, plan: sitz.plan, von: auth.actorId, kaufen: sitz.kaufen });
+        } else {
+          // Das neue Mitglied zaehlt schon mit (ist eingetragen): kein weiterer Platz noetig.
+          await freePlatzPruefen(client, req.tenantId, 0);
+        }
+      }
       const acc = await readBillingAccount(client, req.tenantId);
       if (acc?.mode === "seats" && acc.seatTier) {
         const { seatPriceCents } = await import("./billing-plans");
@@ -553,6 +572,8 @@ export async function removeMember(pool: pg.Pool, auth: AuthContext, actorId: st
       `DELETE FROM "RelevanzSperre" WHERE "tenantId" = $1 AND "actorId" = $2`,
       [auth.tenantId, actorId],
     );
+    // P2 — Sitz wird frei, Plan-Zeitraum endet, Nutzerkonto zurueck auf Free.
+    if (pricingAktiv()) await sitzEntziehen(client, { tenantId: auth.tenantId, actorId, von: auth.actorId, austritt: true });
     await setzeAufPersoenlichenTenant(client, actorId, email);
     await orgArchivierenWennLeer(client, auth.tenantId);
     const acc = await readBillingAccount(client, auth.tenantId);

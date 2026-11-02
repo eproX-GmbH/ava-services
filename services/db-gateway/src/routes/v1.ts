@@ -12,6 +12,7 @@ import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
 import { proxyRouter } from "./v1/proxy";
 import { tenantsRouter } from "./v1/tenants";
+import { sitzeRouter } from "./v1/sitze";
 import { notizenRouter } from "./v1/notizen";
 import { llmProxyRouter } from "./v1/llm-proxy";
 import { personsRouter } from "./v1/persons";
@@ -151,6 +152,8 @@ v1.route("/", discoveryRouter);
 
 // O1 — Organisationen (docs/PLAN_ORGANISATIONEN.md).
 v1.route("/", tenantsRouter);
+// docs/PLAN_PRICING_TIERS.md P2 — Sitze, Plan-Anfrage, Pay-as-you-go-Freigabe.
+v1.route("/", sitzeRouter);
 v1.route("/", notizenRouter);
 
 // B2 — Seat-Sammelabrechnung (docs/PLAN_ABRECHNUNG_SEATS.md).

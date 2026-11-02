@@ -1,6 +1,6 @@
 // docs/PLAN_PRICING_TIERS.md P1 — tagesanteiliges Monatskontingent je Nutzer.
 import assert from "node:assert/strict";
-const { kontingentAusZeitraeumen, monatsGrenzen } = await import("../src/lib/sitze.ts");
+const { kontingentAusZeitraeumen, monatsGrenzen } = await import("../src/lib/kontingent-rechnung.ts");
 const { planEintrag } = await import("../src/lib/billing-plans.ts");
 
 const nov = "2026-11";

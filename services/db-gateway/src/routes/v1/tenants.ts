@@ -120,14 +120,14 @@ tenantsRouter.openapi(
     summary: "Beitrittsanfrage annehmen oder ablehnen (Admin).",
     request: {
       params: z.object({ id: z.string().min(4).max(64) }),
-      body: { content: { "application/json": { schema: z.object({ entscheidung: z.enum(["approve", "reject"]) }) } } },
+      body: { content: { "application/json": { schema: z.object({ entscheidung: z.enum(["approve", "reject"]), sitz: z.object({ plan: z.enum(["free", "pro", "max", "ultra"]), kaufen: z.boolean().optional() }).optional() }) } } },
     },
     responses: { 200: { content: { "application/json": { schema: Ok } }, description: "entschieden" } },
   }),
   async (c) => {
     const { id } = c.req.valid("param");
-    const { entscheidung } = c.req.valid("json");
-    const r = await wrap(() => decideJoinRequest(getGatewayPool(), c.get("auth"), id, entscheidung));
+    const { entscheidung, sitz } = c.req.valid("json");
+    const r = await wrap(() => decideJoinRequest(getGatewayPool(), c.get("auth"), id, entscheidung, sitz));
     return c.json({ ok: true as const, ...r });
   },
 );

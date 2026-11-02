@@ -502,6 +502,8 @@ const fromListIngestRoute = createRoute({
 
 importsRouter.openapi(fromListIngestRoute, async (c) => {
   const { companies, transactionName, isFuzzy, dryRun, country } = c.req.valid("json");
+  // P2 — Vorabpruefung gegen das Kontingent (Firmen noch unbekannt → vorsichtige Schaetzung je Zeile).
+  if (!dryRun) await kontingentVorabpruefung(c, { anzahl: companies.length });
 
   // Q-track v0.1.137 — From-list ingest accepts unconditionally too.
   // Over-quota rows park in master-data's per-company publish step.
@@ -689,6 +691,9 @@ const byIdsRoute = createRoute({
 importsRouter.openapi(byIdsRoute, async (c) => {
   const { companyIds, transactionName, erzwingen } = c.req.valid("json");
   const name = transactionName ?? `Liste: ${companyIds.length} ${companyIds.length === 1 ? "Firma" : "Firmen"}`;
+  // docs/PLAN_PRICING_TIERS.md P2 — Vorabpruefung gegen das Kontingent (Sitz-Modell);
+  // Neuverarbeitung zaehlt wie eine weitere Aufnahme zum Stufenpreis.
+  const kontingentKonto = await kontingentVorabpruefung(c, { companyIds, neuverarbeitung: Boolean(erzwingen) });
   if (erzwingen) {
     const auth = c.get("auth");
     const { darfErzwingen, frischeLoeschen } = await import("../../lib/rollen");
@@ -712,8 +717,45 @@ importsRouter.openapi(byIdsRoute, async (c) => {
   if (!r?.transactionId) throw new HTTPException(502, { message: "upstream omitted transactionId" });
   setTransactionName(r.transactionId, name);
   await seedEntityProgressForTransaction(c, r.transactionId);
+  if (erzwingen && kontingentKonto) {
+    const auth = c.get("auth");
+    void neuverarbeitungVerbuchen(kontingentKonto, auth.actorId ?? null, companyIds).catch((err: unknown) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[imports] Neuverarbeitung nicht verbucht"));
+  }
   return c.json({ transactionId: r.transactionId, companyCount: r.companyCount ?? 0, nichtGefunden: r.nichtGefunden ?? [] }, 202);
 });
+
+/** P2 — wirft 402 kontingent_erschoepft (oder firmen_limit) mit Nutzlast fuer den Aufnahme-Dialog;
+ *  gibt das Abrechnungskonto zurueck, wenn das Sitz-Modell greift (sonst null). */
+async function kontingentVorabpruefung(
+  c: { get: (k: "auth") => { tenantId: string; actorId: string | null } },
+  args: { companyIds?: string[]; anzahl?: number; neuverarbeitung?: boolean },
+): Promise<string | null> {
+  const { kontingentPruefen } = await import("../../lib/kontingent");
+  const auth = c.get("auth");
+  const p = await kontingentPruefen(getGatewayPool(), { tenantId: auth.tenantId, actorId: auth.actorId ?? null, ...args });
+  if (p.ok) return p.billingAccountId;
+  const res = new Response(JSON.stringify({ error: p.code, ...p, ok: undefined }), { status: 402, headers: { "content-type": "application/json" } });
+  throw new HTTPException(402, { res, message: p.meldung });
+}
+
+/** P2 — Neuverarbeitung ganzer Firmen durch den Kunden: Zeile je Firma, die im Monat schon im Bestand ist. */
+async function neuverarbeitungVerbuchen(billingAccountId: string, actorId: string | null, companyIds: string[]): Promise<void> {
+  const pool = getGatewayPool();
+  const { readBillingAccount, effectiveTier, periodKeyFor } = await import("../../lib/billing");
+  const { kostenSchaetzung } = await import("../../lib/kontingent");
+  const acc = await readBillingAccount(pool, billingAccountId);
+  if (!acc || acc.mode === "enterprise") return;
+  const periodKey = periodKeyFor(effectiveTier(acc));
+  const kosten = await kostenSchaetzung(pool, billingAccountId, periodKey, companyIds, { neuverarbeitung: true });
+  const { randomUUID } = await import("node:crypto");
+  for (const k of kosten) {
+    if (!k.imBestand) continue; // neue Firmen zaehlen ueber den Bestand, nicht doppelt
+    await pool.query(
+      `INSERT INTO "NeuverarbeitungEntry" ("id", "billingAccountId", "periodKey", "companyId", "stufe", "preisCents", "actorId") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [randomUUID(), billingAccountId, periodKey, k.companyId, k.stufe, k.cents, actorId],
+    );
+  }
+}
 
 // =============================================================================
 // Workstream C helpers

@@ -50,6 +50,9 @@ const UsageResponseShape = z
     status: z.string(),
     /** B1 — Berechtigungsquelle (personal | seat | enterprise) und Details. */
     entitlement: z.object({}).passthrough(),
+    /** P2 — Kontingent je Nutzer (Sitz-Modell); null ausserhalb davon. */
+    kontingent: z.object({}).passthrough().nullable().optional(),
+    kannSelbstWechseln: z.boolean().optional(),
   })
   .openapi("UsageSnapshot");
 

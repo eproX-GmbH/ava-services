@@ -52,7 +52,7 @@ export async function bestandVerbuchen(pool: Pool, now: Date = new Date()): Prom
   const periodKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
   const konten = await pool.query<{ tenantId: string; kind: string; mode: string }>(
     `SELECT b."tenantId", b."kind", b."mode" FROM "TenantBilling" b
-      WHERE b."mode" IN ('subscription', 'seats', 'enterprise')
+      WHERE b."mode" IN ('subscription', 'seats', 'enterprise', 'sitz')
         AND NOT EXISTS (SELECT 1 FROM "BillingEvent" e WHERE e."billingAccountId" = b."tenantId" AND e.kind = 'bestand_verbucht' AND e.payload->>'periodKey' = $1)`,
     [periodKey],
   );

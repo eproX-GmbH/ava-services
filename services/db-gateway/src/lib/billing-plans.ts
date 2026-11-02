@@ -9,7 +9,11 @@
 // STRIPE_PRICE_STARTER=price_…`). Adding a new paid tier is a code
 // change here PLUS a webhook handler update.
 
-import { UNLIMITED, type BillingTier } from "./billing";
+import type { BillingTier } from "./billing";
+
+/** -1 = keine Begrenzung (identisch mit billing.ts; hier lokal, damit billing-plans
+ *  ohne Wertimport aus billing.ts auskommt und kein Importkreis entsteht). */
+const UNLIMITED = -1;
 
 /** Quota limits applied when a webhook flips a tenant to a new tier.
  *  Matches the locked pricing in the monetization plan. */

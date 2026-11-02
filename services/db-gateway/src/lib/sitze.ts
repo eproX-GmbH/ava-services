@@ -10,8 +10,10 @@
 
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { BillingTier } from "./billing";
+import { ensureBillingAccount, invalidateBillingResolution, UNLIMITED, type BillingTier } from "./billing";
 import { planEintrag, istSitzPlan, type SitzPlan } from "./billing-plans";
+import { TenantError } from "./tenant-error";
+import { recordBillingEvent } from "./billing-events";
 
 type Q = { query: pg.Pool["query"] };
 
@@ -107,51 +109,8 @@ export async function planZeitraumSetzen(
   );
 }
 
-/** Grenzen eines Kalendermonats (UTC) aus einem periodKey YYYY-MM. */
-export function monatsGrenzen(periodKey: string): { von: Date; bis: Date; tage: number } {
-  const [y, m] = periodKey.split("-").map(Number);
-  const von = new Date(Date.UTC(y, m - 1, 1));
-  const bis = new Date(Date.UTC(y, m, 1));
-  return { von, bis, tage: Math.round((bis.getTime() - von.getTime()) / 86_400_000) };
-}
-
-/**
- * Tagesanteiliges Monatskontingent eines Nutzers in Cent: Summe ueber die Tage
- * des Monats von Kontingent(Plan am Tag) / Tage im Monat. Tage ohne Zeitraum
- * zaehlen als Free (0). Enterprise liefert null (Vertrag/Betreiber-Limit).
- * `stand` begrenzt die Rechnung auf den Teil des Monats bis heute, wenn der
- * Monat noch laeuft (damit das Kontingent am 10. nicht schon den 30. enthaelt);
- * standardmaessig wird der ganze Monat gerechnet, weil die Vorabpruefung gegen
- * den Monatsbestand laeuft.
- */
-/** Reine Rechnung fuer kontingentCents (testbar ohne Datenbank). */
-export function kontingentAusZeitraeumen(
-  zeitraeume: Array<{ plan: string; ab: Date; bis: Date | null }>,
-  periodKey: string,
-  jetzt: Date = new Date(),
-): { kontingentCents: number | null; planHeute: BillingTier; anteilig: boolean } {
-  const { von, bis, tage } = monatsGrenzen(periodKey);
-  let summe = 0;
-  let anteilig = false;
-  let enterprise = false;
-  let planHeute: BillingTier = "free";
-  let abgedeckt = 0;
-  for (const z of zeitraeume) {
-    const plan = z.plan as BillingTier;
-    if (plan === "enterprise") enterprise = true;
-    const k = planEintrag(plan).kontingentCents ?? 0;
-    const a = Math.max(z.ab.getTime(), von.getTime());
-    const b = Math.min((z.bis ?? bis).getTime(), bis.getTime());
-    const tageImMonat = Math.max(0, (b - a) / 86_400_000);
-    abgedeckt += tageImMonat;
-    summe += (k * tageImMonat) / tage;
-    if (z.ab <= jetzt && (!z.bis || z.bis > jetzt)) planHeute = plan;
-  }
-  // Anteilig, sobald der Monat nicht durchgehend mit demselben Kontingent belegt ist.
-  if (zeitraeume.length > 0 && (abgedeckt < tage - 0.01 || new Set(zeitraeume.map((z) => z.plan)).size > 1)) anteilig = true;
-  if (enterprise) return { kontingentCents: null, planHeute: "enterprise", anteilig: false };
-  return { kontingentCents: Math.round(summe), planHeute, anteilig };
-}
+export { monatsGrenzen, kontingentAusZeitraeumen } from "./kontingent-rechnung";
+import { monatsGrenzen, kontingentAusZeitraeumen } from "./kontingent-rechnung";
 
 export async function kontingentCents(
   q: Q,
@@ -164,4 +123,141 @@ export async function kontingentCents(
     [actorId, von, bis],
   );
   return kontingentAusZeitraeumen(r.rows, periodKey);
+}
+
+// ---- P2 — Sitze kaufen, zuweisen, entziehen, reduzieren ---------------------
+//
+// Stripe (P3) haengt an sitzeStripeSync(): solange die Organisation kein Sitz-Abo
+// bei Stripe hat (oder der Betreiber Sitze fuer Enterprise/Tests anlegt), bleiben
+// die Zeilen ohne stripeItemId. Alle Funktionen laufen in der Transaktion des
+// Aufrufers (PoolClient), damit Beitritt und Zuweisung atomar sind.
+
+
+async function nutzerKontoSetzen(client: pg.PoolClient, actorId: string, plan: BillingTier | "free"): Promise<void> {
+  await ensureBillingAccount(client, actorId, "personal");
+  if (plan === "free") {
+    await client.query(
+      `UPDATE "TenantBilling" SET "mode" = 'none', "tier" = 'free', "quotaLimit" = 25, "paygFreigabePeriode" = NULL, "updatedAt" = NOW()
+        WHERE "tenantId" = $1 AND "mode" IN ('sitz', 'none')`,
+      [actorId],
+    );
+  } else {
+    await client.query(
+      `UPDATE "TenantBilling" SET "mode" = 'sitz', "tier" = $2, "quotaLimit" = $3, "status" = CASE WHEN "status" = 'canceled' THEN 'active' ELSE "status" END, "updatedAt" = NOW()
+        WHERE "tenantId" = $1`,
+      [actorId, plan, UNLIMITED],
+    );
+  }
+  invalidateBillingResolution(actorId);
+}
+
+/** Legt `anzahl` freie Sitze eines Plans an (Stripe-Menge folgt in sitzeStripeSync). */
+export async function sitzeKaufen(
+  client: pg.PoolClient,
+  args: { tenantId: string; plan: SitzPlan; anzahl: number; von: string | null },
+): Promise<string[]> {
+  if (args.anzahl < 1 || args.anzahl > 500) throw new TenantError(400, "Anzahl zwischen 1 und 500.");
+  const ids: string[] = [];
+  for (let i = 0; i < args.anzahl; i++) {
+    const id = randomUUID();
+    await client.query(`INSERT INTO "Sitz" ("id", "tenantId", "plan") VALUES ($1, $2, $3)`, [id, args.tenantId, args.plan]);
+    ids.push(id);
+  }
+  await client.query(`UPDATE "TenantBilling" SET "mode" = CASE WHEN "mode" IN ('none', 'subscription', 'seats') THEN 'sitze' ELSE "mode" END, "kind" = 'organisation', "updatedAt" = NOW() WHERE "tenantId" = $1`, [args.tenantId]);
+  await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "sitze_gekauft", source: "admin", actorId: args.von, payload: { plan: args.plan, anzahl: args.anzahl } });
+  return ids;
+}
+
+/**
+ * Weist einem Mitglied einen Sitz zu. Freier Sitz des Plans zuerst (aeltester);
+ * keiner frei und `kaufen` → ein neuer Sitz. Ein bisheriger Sitz des Mitglieds
+ * wird frei. Schreibt PlanZeitraum und das Nutzerkonto (mode sitz, tier = plan).
+ */
+export async function sitzZuweisen(
+  client: pg.PoolClient,
+  args: { tenantId: string; actorId: string; plan: SitzPlan; von: string | null; kaufen?: boolean },
+): Promise<{ sitzId: string; gekauft: boolean }> {
+  const mitglied = await client.query(`SELECT 1 FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [args.tenantId, args.actorId]);
+  if (!mitglied.rows[0]) throw new TenantError(404, "Kein Mitglied dieser Organisation.");
+  const bisher = await sitzVon(client, args.actorId);
+  if (bisher && bisher.plan === args.plan && bisher.tenantId === args.tenantId) return { sitzId: bisher.id, gekauft: false };
+  let frei = await client.query<{ id: string }>(
+    `SELECT "id" FROM "Sitz" WHERE "tenantId" = $1 AND "plan" = $2 AND "actorId" IS NULL AND "endetAm" IS NULL AND "reduziertZum" IS NULL ORDER BY "createdAt" LIMIT 1 FOR UPDATE SKIP LOCKED`,
+    [args.tenantId, args.plan],
+  );
+  let gekauft = false;
+  if (!frei.rows[0]) {
+    if (!args.kaufen) throw new TenantError(409, `Kein freier ${args.plan === "pro" ? "Pro" : args.plan === "max" ? "Max" : "Ultra"}-Sitz. Erst einen Sitz dazukaufen.`);
+    const [id] = await sitzeKaufen(client, { tenantId: args.tenantId, plan: args.plan, anzahl: 1, von: args.von });
+    frei = { rows: [{ id: id! }] } as typeof frei;
+    gekauft = true;
+  }
+  const sitzId = frei.rows[0]!.id;
+  const jetzt = new Date();
+  if (bisher) await client.query(`UPDATE "Sitz" SET "actorId" = NULL, "zugewiesenAm" = NULL, "zugewiesenVon" = NULL WHERE "id" = $1`, [bisher.id]);
+  await client.query(`UPDATE "Sitz" SET "actorId" = $2, "zugewiesenAm" = $3, "zugewiesenVon" = $4 WHERE "id" = $1`, [sitzId, args.actorId, jetzt, args.von]);
+  await planZeitraumSetzen(client, { actorId: args.actorId, tenantId: args.tenantId, plan: args.plan, sitzId, ab: jetzt });
+  await nutzerKontoSetzen(client, args.actorId, args.plan);
+  await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "sitz_zugewiesen", source: "admin", actorId: args.von, payload: { memberId: args.actorId, plan: args.plan, sitzId, gekauft, vorher: bisher?.plan ?? "free" } });
+  return { sitzId, gekauft };
+}
+
+/** Nimmt einem Mitglied den Sitz (wird frei); das Mitglied ist danach Free — nur,
+ *  wenn ein Free-Platz frei ist. `austritt` ueberspringt die Free-Pruefung. */
+export async function sitzEntziehen(
+  client: pg.PoolClient,
+  args: { tenantId: string; actorId: string; von: string | null; austritt?: boolean },
+): Promise<{ hatteSitz: boolean }> {
+  const bisher = await sitzVon(client, args.actorId);
+  if (!bisher) return { hatteSitz: false };
+  if (!args.austritt) {
+    const { freeBelegt } = await freeUndWartend(client, args.tenantId);
+    if (freeBelegt >= FREE_PLAETZE) {
+      throw new TenantError(409, `Alle ${FREE_PLAETZE} Free-Plätze sind belegt. Weise einen anderen Sitz zu oder entferne das Mitglied.`);
+    }
+  }
+  await client.query(`UPDATE "Sitz" SET "actorId" = NULL, "zugewiesenAm" = NULL, "zugewiesenVon" = NULL WHERE "id" = $1`, [bisher.id]);
+  await planZeitraumSetzen(client, { actorId: args.actorId, tenantId: args.tenantId, plan: "free", sitzId: null });
+  await nutzerKontoSetzen(client, args.actorId, "free");
+  await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "sitz_entzogen", source: "admin", actorId: args.von, payload: { memberId: args.actorId, plan: bisher.plan, sitzId: bisher.id, austritt: Boolean(args.austritt) } });
+  return { hatteSitz: true };
+}
+
+/** Prueft, ob ein weiteres Free-Mitglied Platz hat (3 je Organisation). */
+export async function freePlatzPruefen(client: pg.PoolClient, tenantId: string, zusaetzlich = 1): Promise<void> {
+  const { freeBelegt } = await freeUndWartend(client, tenantId);
+  if (freeBelegt + zusaetzlich > FREE_PLAETZE) {
+    throw new TenantError(409, `Eure Organisation hat schon ${FREE_PLAETZE} Mitglieder im Free-Plan. Weise einem davon einen Sitz zu oder nimm das neue Mitglied mit einem Sitz auf.`);
+  }
+}
+
+/** Merkt die Reduktion freier Sitze eines Plans zum Zyklusende vor (nur freie Sitze). */
+export async function sitzeReduzieren(
+  client: pg.PoolClient,
+  args: { tenantId: string; plan: SitzPlan; anzahl: number; zum: Date; von: string | null },
+): Promise<number> {
+  const frei = await client.query<{ id: string }>(
+    `SELECT "id" FROM "Sitz" WHERE "tenantId" = $1 AND "plan" = $2 AND "actorId" IS NULL AND "endetAm" IS NULL AND "reduziertZum" IS NULL ORDER BY "createdAt" DESC LIMIT $3 FOR UPDATE`,
+    [args.tenantId, args.plan, Math.max(0, args.anzahl)],
+  );
+  for (const z of frei.rows) await client.query(`UPDATE "Sitz" SET "reduziertZum" = $2 WHERE "id" = $1`, [z.id, args.zum]);
+  if (frei.rows.length > 0) await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "sitze_reduktion_geplant", source: "admin", actorId: args.von, payload: { plan: args.plan, anzahl: frei.rows.length, zum: args.zum.toISOString() } });
+  return frei.rows.length;
+}
+
+export async function reduktionWiderrufen(client: pg.PoolClient, args: { tenantId: string; plan: SitzPlan; von: string | null }): Promise<number> {
+  const r = await client.query(`UPDATE "Sitz" SET "reduziertZum" = NULL WHERE "tenantId" = $1 AND "plan" = $2 AND "endetAm" IS NULL AND "reduziertZum" IS NOT NULL`, [args.tenantId, args.plan]);
+  if ((r.rowCount ?? 0) > 0) await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "sitze_reduktion_widerrufen", source: "admin", actorId: args.von, payload: { plan: args.plan, anzahl: r.rowCount } });
+  return r.rowCount ?? 0;
+}
+
+/** Cron: faellige Reduktionen ausfuehren (freie Sitze beenden). */
+export async function faelligeReduktionenAusfuehren(q: Q, now: Date = new Date()): Promise<number> {
+  const r = await q.query(`UPDATE "Sitz" SET "endetAm" = $1 WHERE "endetAm" IS NULL AND "actorId" IS NULL AND "reduziertZum" IS NOT NULL AND "reduziertZum" <= $1`, [now]);
+  return r.rowCount ?? 0;
+}
+
+/** P3 — Stripe-Mengen je Plan mit der Sitz-Tabelle abgleichen. Ohne Abo: nichts zu tun. */
+export async function sitzeStripeSync(_q: Q, _tenantId: string): Promise<void> {
+  // Umsetzung in P3 (Stripe: subscriptionItems.update mit Proration / Schedule zum Zyklusende).
 }

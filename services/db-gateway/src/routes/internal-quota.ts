@@ -47,7 +47,7 @@ function parseBody<T>(raw: string): T | null {
 // automatisch nachspielen (K7/K8).
 internalQuotaRouter.post("/quota/try-reserve", async (c) => {
   const raw = c.get("internalRawBody");
-  const body = parseBody<{ tenantId?: string; userId?: string | null; count?: number }>(raw);
+  const body = parseBody<{ tenantId?: string; userId?: string | null; count?: number; companyId?: string | null }>(raw);
   if (!body?.tenantId || typeof body.count !== "number" || body.count <= 0) {
     return c.json({ error: "bad_request" }, 400);
   }
@@ -65,6 +65,24 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
     if (billing.status === "suspended") {
       await client.query("COMMIT");
       return c.json({ granted: false, used: 0, limit: billing.quotaLimit, parkedCount: 0, reason: "billing_suspended" });
+    }
+
+    // docs/PLAN_PRICING_TIERS.md P2 — Sitz-Modell: Kontingent je Nutzer bzw. Enterprise-
+    // Firmen-Limit. Greift nur mit PRICING_TIERS=1 und nur fuer Konten im Modus sitz/enterprise;
+    // alle anderen laufen unten den bisherigen Weg.
+    {
+      const { pricingAktiv, kontingentPruefen } = await import("../lib/kontingent");
+      const konto = await readBillingAccount(client, billingAccountId);
+      if (pricingAktiv() && konto && (konto.mode === "sitz" || konto.mode === "enterprise")) {
+        const p = await kontingentPruefen(client, {
+          tenantId,
+          actorId: body.userId ?? null,
+          ...(body.companyId ? { companyIds: [body.companyId] } : { anzahl: count }),
+        });
+        await client.query("COMMIT");
+        if (p.ok) return c.json({ granted: true, used: 0, limit: UNLIMITED, parkedCount: 0 });
+        return c.json({ granted: false, used: 0, limit: UNLIMITED, parkedCount: 0, reason: p.code, fehltCents: p.fehltCents, naechsterPlan: p.naechsterPlan });
+      }
     }
 
     if (isUnlimited(billing.tier)) {
