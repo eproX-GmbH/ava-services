@@ -4,7 +4,7 @@
 // Ansicht „Meine Problemmeldungen“ mit Verlauf und Antwort an das AVA-Team.
 // Einmal in der AppShell einhaengen; oeffnen ueber problemMeldenOeffnen().
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, Send, Mail, ChevronLeft, LifeBuoy } from "lucide-react";
+import { Paperclip, Send, Mail, ChevronLeft, LifeBuoy, X } from "lucide-react";
 import { PROBLEM_KATEGORIEN, PROBLEM_STATUS_TEXT, type MeldungDetail, type MeineMeldungen, type ProblemEingabe, type ProblemErgebnis } from "../../../shared/problem";
 
 export interface ProblemOeffnenDetail {
@@ -60,14 +60,27 @@ function ProblemDialog({ detail, onSchliessen }: { detail: ProblemOeffnenDetail;
     <div className="ek-dialog__hintergrund" role="presentation" onClick={onSchliessen}>
       <div className="ek-dialog ek-dialog--breit problem-dialog" role="dialog" aria-modal="true" aria-labelledby="problem-titel" onClick={(e) => e.stopPropagation()}>
         <div className="problem-dialog__kopf">
-          <h4 id="problem-titel"><LifeBuoy className="ct-icon-sm" aria-hidden="true" /> {ansicht === "neu" ? "Problem melden" : ansicht === "liste" ? "Meine Problemmeldungen" : "Problemmeldung"}</h4>
-          <div className="problem-dialog__tabs">
-            <button type="button" className={`ct-pill${ansicht === "neu" ? " ct-pill--aktiv" : ""}`} onClick={() => setAnsicht("neu")}>Neu</button>
-            <button type="button" className={`ct-pill${ansicht !== "neu" ? " ct-pill--aktiv" : ""}`} onClick={() => setAnsicht("liste")}>Meine Meldungen</button>
+          {ansicht === "detail" ? (
+            <button type="button" className="problem-dialog__zurueck" onClick={() => setAnsicht("liste")}>
+              <ChevronLeft className="ct-icon-sm" aria-hidden="true" /> Meine Meldungen
+            </button>
+          ) : (
+            <h4 id="problem-titel"><LifeBuoy className="ct-icon-sm" aria-hidden="true" /> {ansicht === "neu" ? "Problem melden" : "Meine Problemmeldungen"}</h4>
+          )}
+          <div className="problem-dialog__kopf-rechts">
+            {ansicht !== "detail" && (
+              <div className="problem-dialog__tabs" role="tablist">
+                <button type="button" role="tab" aria-selected={ansicht === "neu"} className={`ct-pill${ansicht === "neu" ? " ct-pill--aktiv" : ""}`} onClick={() => setAnsicht("neu")}>Neu</button>
+                <button type="button" role="tab" aria-selected={ansicht === "liste"} className={`ct-pill${ansicht === "liste" ? " ct-pill--aktiv" : ""}`} onClick={() => setAnsicht("liste")}>Meine Meldungen</button>
+              </div>
+            )}
+            <button type="button" className="problem-dialog__schliessen" onClick={onSchliessen} aria-label="Schließen" title="Schließen">
+              <X className="ct-icon-sm" aria-hidden="true" />
+            </button>
           </div>
         </div>
         {ansicht === "neu" && <NeueMeldung detail={detail} onFertig={() => setAnsicht("liste")} onSchliessen={onSchliessen} />}
-        {ansicht === "liste" && <MeldungsListe onOeffnen={(id) => { setDetailId(id); setAnsicht("detail"); }} onSchliessen={onSchliessen} />}
+        {ansicht === "liste" && <MeldungsListe onOeffnen={(id) => { setDetailId(id); setAnsicht("detail"); }} />}
         {ansicht === "detail" && detailId && <MeldungAnsicht id={detailId} onZurueck={() => setAnsicht("liste")} />}
       </div>
     </div>
@@ -200,7 +213,7 @@ function NeueMeldung({ detail, onFertig, onSchliessen }: { detail: ProblemOeffne
   );
 }
 
-function MeldungsListe({ onOeffnen, onSchliessen }: { onOeffnen: (id: string) => void; onSchliessen: () => void }) {
+function MeldungsListe({ onOeffnen }: { onOeffnen: (id: string) => void }) {
   const [daten, setDaten] = useState<MeineMeldungen | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   useEffect(() => { window.api.problem.meine().then(setDaten).catch((e) => setFehler(e instanceof Error ? e.message : String(e))); }, []);
@@ -213,20 +226,18 @@ function MeldungsListe({ onOeffnen, onSchliessen }: { onOeffnen: (id: string) =>
           {daten.meldungen.map((m) => (
             <li key={m.id}>
               <button type="button" className="problem-dialog__zeile" onClick={() => onOeffnen(m.id)}>
-                <span className="problem-dialog__zeile-kopf">
-                  <code>{m.kennung}</code>
+                <span className="problem-dialog__zeile-oben">
+                  <span className="problem-dialog__zeile-titel">{m.titel}</span>
                   <span className={`ct-pill ct-pill--muted problem-status problem-status--${m.status}`}>{PROBLEM_STATUS_TEXT[m.status] ?? m.status}</span>
                   {m.ungelesenNutzer && <span className="ct-pill ct-pill--aktiv">neue Antwort</span>}
                 </span>
-                <span className="problem-dialog__zeile-titel">{m.titel}</span>
-                {m.letzteNachricht && <span className="muted small">{m.letzteNachricht.slice(0, 120)}</span>}
-                <span className="muted small">{new Date(m.updatedAt).toLocaleString("de-DE")}</span>
+                {m.letzteNachricht && <span className="problem-dialog__zeile-vorschau muted small">{m.letzteNachricht.slice(0, 140)}</span>}
+                <span className="problem-dialog__meta muted small"><code>{m.kennung}</code><span>·</span><span>{new Date(m.updatedAt).toLocaleDateString("de-DE")}</span></span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      <div className="ek-dialog__aktionen"><button type="button" className="btn btn--primaer" onClick={onSchliessen}>Schließen</button></div>
     </div>
   );
 }
@@ -250,21 +261,34 @@ function MeldungAnsicht({ id, onZurueck }: { id: string; onZurueck: () => void }
     try { await window.api.problem.nachreichen(id, await Promise.all(Array.from(liste).slice(0, 3).map(dateiLesen))); await laden(); } catch (e) { setFehler(e instanceof Error ? e.message : String(e)); } finally { setLaeuft(false); }
   };
   if (!d) return <p className="muted">{fehler ?? "Wird geladen …"}</p>;
+  void onZurueck;
   const m = d.meldung;
   return (
     <div className="problem-dialog__detail">
-      <button type="button" className="link is-inline" onClick={onZurueck}><ChevronLeft className="ct-icon-sm" aria-hidden="true" /> Alle Meldungen</button>
-      <div className="problem-dialog__zeile-kopf">
-        <code>{m.kennung}</code>
-        <span className={`ct-pill ct-pill--muted problem-status problem-status--${m.status}`}>{PROBLEM_STATUS_TEXT[m.status] ?? m.status}</span>
-        <span className="muted small">{PROBLEM_KATEGORIEN.find((k) => k.id === m.kategorie)?.label ?? m.kategorie}</span>
-      </div>
-      <h5>{m.titel}</h5>
-      <p className="problem-dialog__beschreibung">{m.beschreibung}</p>
-      {d.anhaenge.length > 0 && (
-        <p className="muted small">Anhänge: {d.anhaenge.map((a) => `${a.dateiname} (${kb(a.groesse)})`).join(", ")}</p>
-      )}
-      <ol className="problem-dialog__verlauf">
+      <header className="problem-dialog__detail-kopf">
+        <h5 id="problem-titel">{m.titel}</h5>
+        <div className="problem-dialog__meta">
+          <span className={`ct-pill ct-pill--muted problem-status problem-status--${m.status}`}>{PROBLEM_STATUS_TEXT[m.status] ?? m.status}</span>
+          <span className="muted small">{PROBLEM_KATEGORIEN.find((k) => k.id === m.kategorie)?.label ?? m.kategorie}</span>
+          <span className="muted small">·</span>
+          <code className="muted small">{m.kennung}</code>
+          <span className="muted small">·</span>
+          <span className="muted small">{new Date(m.createdAt).toLocaleDateString("de-DE")}</span>
+        </div>
+      </header>
+      <section className="problem-dialog__block">
+        <p className="problem-dialog__beschreibung">{m.beschreibung}</p>
+        {d.anhaenge.length > 0 && (
+          <div className="problem-dialog__anhaenge">
+            {d.anhaenge.map((a) => (
+              <span key={a.id} className="ct-pill ct-pill--muted" title={a.verfuegbar ? a.dateiname : "Aufbewahrung abgelaufen"}>
+                <Paperclip className="ct-icon-sm" aria-hidden="true" /> {a.dateiname} · {kb(a.groesse)}
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+      <ol className="problem-dialog__verlauf" aria-label="Verlauf">
         {d.nachrichten.map((n) => (
           <li key={n.id} className={`problem-dialog__nachricht problem-dialog__nachricht--${n.von}${n.art !== "nachricht" ? " problem-dialog__nachricht--system" : ""}`}>
             <span className="muted small">{n.von === "betreiber" ? `AVA-Team${n.actorName ? ` (${n.actorName})` : ""}` : n.von === "nutzer" ? "Du" : ""} · {new Date(n.createdAt).toLocaleString("de-DE")}</span>
