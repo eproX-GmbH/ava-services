@@ -140,8 +140,34 @@ export interface QuotaExceededDetail {
   upgradeUrl: string;
 }
 
+// docs/PLAN_PRICING_TIERS.md P6 — Kontingent im Sitz-Modell reicht nicht: eigenes Ereignis
+// mit der Nutzlast des Gateways (passenNoch, naechsterPlan, paygMoeglich, kannSelbstWechseln).
+export interface KontingentErschoepftDetail {
+  error: "kontingent_erschoepft" | "firmen_limit";
+  fehltCents: number;
+  passenNoch: string[];
+  passenNochAnzahl: number;
+  naechsterPlan: string | null;
+  paygMoeglich: boolean;
+  kannSelbstWechseln: boolean;
+  plan: string;
+  kontingentCents: number | null;
+  verbrauchtCents: number;
+  benoetigtCents: number;
+  meldung: string;
+}
+
 function maybeDispatchQuotaExceeded(status: number, parsed: unknown): void {
   if (status !== 402) return;
+  const err = typeof parsed === "object" && parsed !== null ? (parsed as { error?: unknown }).error : null;
+  if (err === "kontingent_erschoepft" || err === "firmen_limit") {
+    try {
+      window.dispatchEvent(new CustomEvent<KontingentErschoepftDetail>("ava:kontingent-erschoepft", { detail: parsed as KontingentErschoepftDetail }));
+    } catch {
+      /* Testumgebung ohne window */
+    }
+    return;
+  }
   if (
     typeof parsed !== "object" ||
     parsed === null ||

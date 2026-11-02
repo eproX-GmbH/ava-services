@@ -269,3 +269,78 @@ export async function sitzeStripeSync(q: Q, tenantId: string, opts: { proration:
     logger.warn({ tenantId, err: err instanceof Error ? err.message : String(err) }, "[sitze] Stripe-Abgleich fehlgeschlagen");
   }
 }
+
+// ---- P6 — Planwechsel nach unten zum Zyklusende (je Mitglied) -----------------
+//
+// Gespeichert in TenantBilling.sitzeGeplant der Organisation als
+// { wechsel: [{ actorId, zu, am }] }. Der Cron fuehrt faellige Wechsel aus:
+// Sitz des Zielplans zuweisen (frei oder kaufen) bzw. Free; der alte Sitz wird frei.
+
+export interface PlanWechsel { actorId: string; zu: "free" | SitzPlan; am: string; von: string | null }
+
+async function geplanteLesen(q: Q, tenantId: string): Promise<PlanWechsel[]> {
+  const r = await q.query<{ sitzeGeplant: { wechsel?: PlanWechsel[] } | null }>(`SELECT "sitzeGeplant" FROM "TenantBilling" WHERE "tenantId" = $1`, [tenantId]);
+  return r.rows[0]?.sitzeGeplant?.wechsel ?? [];
+}
+
+async function geplanteSchreiben(q: Q, tenantId: string, wechsel: PlanWechsel[]): Promise<void> {
+  await q.query(
+    `UPDATE "TenantBilling" SET "sitzeGeplant" = jsonb_set(COALESCE("sitzeGeplant", '{}'::jsonb), '{wechsel}', $2::jsonb), "updatedAt" = NOW() WHERE "tenantId" = $1`,
+    [tenantId, JSON.stringify(wechsel)],
+  );
+}
+
+export async function planWechselLesen(q: Q, tenantId: string, actorId: string): Promise<PlanWechsel | null> {
+  return (await geplanteLesen(q, tenantId)).find((w) => w.actorId === actorId) ?? null;
+}
+
+export async function planWechselVormerken(client: pg.PoolClient, args: { tenantId: string; actorId: string; zu: "free" | SitzPlan; am: Date; von: string | null }): Promise<PlanWechsel> {
+  const liste = (await geplanteLesen(client, args.tenantId)).filter((w) => w.actorId !== args.actorId);
+  const w: PlanWechsel = { actorId: args.actorId, zu: args.zu, am: args.am.toISOString(), von: args.von };
+  liste.push(w);
+  await geplanteSchreiben(client, args.tenantId, liste);
+  await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "plan_downgrade_geplant", source: "admin", actorId: args.von, payload: { memberId: args.actorId, zu: args.zu, am: w.am } });
+  return w;
+}
+
+export async function planWechselWiderrufen(client: pg.PoolClient, args: { tenantId: string; actorId: string; von: string | null }): Promise<boolean> {
+  const liste = await geplanteLesen(client, args.tenantId);
+  const rest = liste.filter((w) => w.actorId !== args.actorId);
+  if (rest.length === liste.length) return false;
+  await geplanteSchreiben(client, args.tenantId, rest);
+  await recordBillingEvent(client, { billingAccountId: args.tenantId, kind: "plan_downgrade_widerrufen", source: "admin", actorId: args.von, payload: { memberId: args.actorId } });
+  return true;
+}
+
+/** Cron: faellige Planwechsel ausfuehren. Der frei werdende Sitz bleibt frei (Reduktion ist ein eigener Schritt). */
+export async function faelligePlanWechselAusfuehren(pool: pg.Pool, now: Date = new Date()): Promise<number> {
+  const orgs = await pool.query<{ tenantId: string; sitzeGeplant: { wechsel?: PlanWechsel[] } | null }>(
+    `SELECT "tenantId", "sitzeGeplant" FROM "TenantBilling" WHERE "sitzeGeplant" IS NOT NULL AND jsonb_array_length(COALESCE("sitzeGeplant"->'wechsel', '[]'::jsonb)) > 0`,
+  );
+  let n = 0;
+  for (const o of orgs.rows) {
+    const liste = o.sitzeGeplant?.wechsel ?? [];
+    const faellig = liste.filter((w) => Date.parse(w.am) <= now.getTime());
+    if (faellig.length === 0) continue;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const w of faellig) {
+        if (w.zu === "free") await sitzEntziehen(client, { tenantId: o.tenantId, actorId: w.actorId, von: w.von, austritt: true });
+        else await sitzZuweisen(client, { tenantId: o.tenantId, actorId: w.actorId, plan: w.zu, von: w.von, kaufen: true });
+        await recordBillingEvent(client, { billingAccountId: o.tenantId, kind: "plan_downgrade_wirksam", source: "cron", actorId: w.von, payload: { memberId: w.actorId, zu: w.zu } });
+        n++;
+      }
+      await geplanteSchreiben(client, o.tenantId, liste.filter((w) => Date.parse(w.am) > now.getTime()));
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      const { logger } = await import("./logger");
+      logger.warn({ tenantId: o.tenantId, err: err instanceof Error ? err.message : String(err) }, "[sitze] Planwechsel nicht ausgefuehrt");
+    } finally {
+      client.release();
+    }
+    void sitzeStripeSync(pool, o.tenantId, { proration: "create_prorations" });
+  }
+  return n;
+}

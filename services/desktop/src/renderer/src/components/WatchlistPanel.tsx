@@ -97,7 +97,7 @@ export function WatchlistPanel(): JSX.Element {
     return (
       <div className="ct-card wl">
         <p className="radar-lockbanner">
-          🔒 Die Personen-Watchlist ist ab dem <strong>Starter-Plan</strong>{" "}
+          🔒 Die Personen-Watchlist ist ab dem <strong>Plan Pro</strong>{" "}
           enthalten (25 Personen, 5 im Fokus) — Einstellungen → Abo.
         </p>
       </div>

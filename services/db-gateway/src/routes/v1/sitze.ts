@@ -12,7 +12,9 @@ import { readBillingAccount, periodKeyFor } from "../../lib/billing";
 import { recordBillingEvent } from "../../lib/billing-events";
 import {
   sitzeStand, sitzeLesen, sitzeKaufen, sitzZuweisen, sitzEntziehen, sitzeReduzieren, reduktionWiderrufen, sitzeStripeSync, sitzVon,
+  planWechselVormerken, planWechselWiderrufen, planWechselLesen,
 } from "../../lib/sitze";
+import { planRang } from "../../lib/billing-plans";
 import { ErrorShape } from "./schemas";
 import { istBetreiber } from "../../middleware/auth";
 import { sitzeCheckout, sitzeVorschau, stripeKonfiguriert } from "../../lib/sitze-stripe";
@@ -65,9 +67,18 @@ sitzeRouter.openapi(
       const sitz = sitze.find((s) => s.actorId === m.actorId) ?? null;
       const plan = enterprise ? "enterprise" : sitz?.plan ?? "free";
       const kontingent = admin || m.actorId === auth.actorId ? await kontingentStand(pool, enterprise ? auth.tenantId : m.actorId) : null;
-      liste.push({ actorId: m.actorId, role: m.role, email: m.email, name: m.name, status: m.status, plan, sitzId: sitz?.id ?? null, kontingent });
+      const wechsel = await planWechselLesen(pool, auth.tenantId, m.actorId);
+      liste.push({ actorId: m.actorId, role: m.role, email: m.email, name: m.name, status: m.status, plan, sitzId: sitz?.id ?? null, kontingent, wechsel });
     }
-    return c.json({ ...stand, enterprise: enterprise ? { maxMitglieder: org?.maxMitglieder ?? null, firmenLimit: org?.firmenLimit ?? null, linkedinLimitCents: org?.linkedinLimitCents ?? null } : null, mitglieder: liste, kannVerwalten: admin }, 200);
+    return c.json({
+      ...stand,
+      ich: auth.actorId,
+      zyklusende: org?.periodEnd ? org.periodEnd.toISOString() : null,
+      stripe: Boolean(org?.stripeSubscriptionId),
+      enterprise: enterprise ? { maxMitglieder: org?.maxMitglieder ?? null, firmenLimit: org?.firmenLimit ?? null, linkedinLimitCents: org?.linkedinLimitCents ?? null } : null,
+      mitglieder: liste,
+      kannVerwalten: admin,
+    }, 200);
   },
 );
 
@@ -115,7 +126,7 @@ sitzeRouter.openapi(
   createRoute({
     method: "put", path: "/tenants/me/mitglieder/{actorId}/sitz", tags: [tag],
     summary: "Mitglied einen Sitz zuweisen oder umsetzen (kaufen=true kauft bei Bedarf einen dazu); plan=free entzieht den Sitz.",
-    request: { params: z.object({ actorId: z.string().min(1) }), body: { content: { "application/json": { schema: z.object({ plan: z.enum(["free", "pro", "max", "ultra"]), kaufen: z.boolean().optional() }) } } } },
+    request: { params: z.object({ actorId: z.string().min(1) }), body: { content: { "application/json": { schema: z.object({ plan: z.enum(["free", "pro", "max", "ultra"]), kaufen: z.boolean().optional(), zum: z.enum(["sofort", "zyklusende"]).optional() }) } } } },
     responses: { 200: { content: { "application/json": { schema: Any } }, description: "ok" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" } },
   }),
   async (c) => {
@@ -123,14 +134,26 @@ sitzeRouter.openapi(
     const auth = c.get("auth");
     await nurAdmin(auth.tenantId, auth.actorId);
     const { actorId } = c.req.valid("param");
-    const { plan, kaufen } = c.req.valid("json");
+    const { plan, kaufen, zum } = c.req.valid("json");
     const pool = getGatewayPool();
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       let ergebnis: unknown;
-      if (plan === "free") ergebnis = await wrap(() => sitzEntziehen(client, { tenantId: auth.tenantId, actorId, von: auth.actorId }));
-      else if (istSitzPlan(plan)) ergebnis = await wrap(() => sitzZuweisen(client, { tenantId: auth.tenantId, actorId, plan, von: auth.actorId, kaufen }));
+      // P6 — nach unten (oder zu Free) standardmaessig zum Zyklusende vormerken, wie bei den
+      // Vorbildern: bezahlt bis Zyklusende, danach der kleinere Plan. "sofort" erzwingt.
+      const aktuell = await sitzVon(client, actorId);
+      const runter = planRang(plan) < planRang(aktuell?.plan ?? "free");
+      if (runter && zum !== "sofort") {
+        const org = await readBillingAccount(client, auth.tenantId);
+        const am = org?.periodEnd ?? new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1));
+        ergebnis = await wrap(() => planWechselVormerken(client, { tenantId: auth.tenantId, actorId, zu: plan === "free" ? "free" : (plan as "pro" | "max" | "ultra"), am, von: auth.actorId }));
+      } else {
+        // Ein vorgemerkter Wechsel wird durch eine sofortige Aenderung hinfaellig.
+        await planWechselWiderrufen(client, { tenantId: auth.tenantId, actorId, von: auth.actorId });
+        if (plan === "free") ergebnis = await wrap(() => sitzEntziehen(client, { tenantId: auth.tenantId, actorId, von: auth.actorId }));
+        else if (istSitzPlan(plan)) ergebnis = await wrap(() => sitzZuweisen(client, { tenantId: auth.tenantId, actorId, plan, von: auth.actorId, kaufen }));
+      }
       await client.query("COMMIT");
       void sitzeStripeSync(pool, auth.tenantId);
       return c.json({ ok: true, ergebnis, stand: await sitzeStand(pool, auth.tenantId) }, 200);
@@ -306,5 +329,34 @@ sitzeRouter.openapi(
     if (konto.enterprise) throw new HTTPException(409, { message: "Bei Enterprise setzt AVA das Limit laut Vertrag." });
     await linkedinLimitSetzen(pool, { kontoId: konto.kontoId, limitCents, von: auth.actorId, tenantId: auth.tenantId });
     return c.json({ ok: true, stand: await linkedinStand(pool, auth.tenantId, actorId) }, 200);
+  },
+);
+
+// DELETE /tenants/me/mitglieder/{actorId}/sitz/wechsel — vorgemerkten Planwechsel widerrufen.
+sitzeRouter.openapi(
+  createRoute({
+    method: "delete", path: "/tenants/me/mitglieder/{actorId}/sitz/wechsel", tags: [tag],
+    summary: "Vorgemerkten Planwechsel (Downgrade zum Zyklusende) widerrufen.",
+    request: { params: z.object({ actorId: z.string().min(1) }) },
+    responses: { 200: { content: { "application/json": { schema: Any } }, description: "ok" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" } },
+  }),
+  async (c) => {
+    pruefeSchalter();
+    const auth = c.get("auth");
+    await nurAdmin(auth.tenantId, auth.actorId);
+    const { actorId } = c.req.valid("param");
+    const pool = getGatewayPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const ok = await planWechselWiderrufen(client, { tenantId: auth.tenantId, actorId, von: auth.actorId });
+      await client.query("COMMIT");
+      return c.json({ ok: true, widerrufen: ok }, 200);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   },
 );

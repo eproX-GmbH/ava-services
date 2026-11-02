@@ -16,6 +16,14 @@ interface Usage {
   status: string;
   parkedCount: number;
   entitlement?: { source?: string; paidBy?: string | null; role?: string | null; seats?: { count?: number; tier?: string } | null };
+  /** docs/PLAN_PRICING_TIERS.md P2 — Kontingent je Nutzer im Sitz-Modell (null, solange der Schalter aus ist). */
+  kontingent?: {
+    plan: string; kontingentCents: number | null; anteilig: boolean; verbrauchtCents: number; uebrigCents: number | null; neuverarbeitungCents: number;
+    stufen: { klein: number; mittel: number; gross: number; offen: number };
+    payg: { moeglich: boolean; freigegeben: boolean; limitCents: number | null; ueberCents: number };
+    enterprise: { firmenLimit: number | null; firmenImBestand: number } | null;
+  } | null;
+  kannSelbstWechseln?: boolean;
   zugang?: {
     stufen: { klein: number; mittel: number; gross: number; offen: number };
     verbrauchtCents: number;
@@ -49,6 +57,33 @@ export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
     },
     run: async (_args, c) => {
       const u = await deps.gateway.request<Usage>("/v1/usage", { signal: c.signal });
+      // P6 — Sitz-Modell: Plan je Nutzer mit Monatskontingent in Euro.
+      if (u.kontingent) {
+        const k = u.kontingent;
+        const planName: Record<string, string> = { free: "Free", pro: "Pro", max: "Max", ultra: "Ultra", enterprise: "Enterprise" };
+        const firmen = k.stufen.klein + k.stufen.mittel + k.stufen.gross + k.stufen.offen;
+        return {
+          plan: planName[k.plan] ?? k.plan,
+          status: u.status,
+          periodenEnde: u.periodEnd,
+          kontingent: k.plan === "enterprise"
+            ? { art: "Vertrag", firmenImBestand: k.enterprise?.firmenImBestand ?? firmen, firmenLimit: k.enterprise?.firmenLimit ?? null }
+            : k.plan === "free"
+              ? { art: "Free", firmenGenutzt: u.used, firmenGesamt: u.limit }
+              : { art: "Monatskontingent", kontingentEur: eur(k.kontingentCents ?? 0), anteilig: k.anteilig, verbrauchtEur: eur(k.verbrauchtCents), uebrigEur: eur(k.uebrigCents ?? 0), neuverarbeitungenEur: eur(k.neuverarbeitungCents), firmenImBestand: firmen, stufen: k.stufen },
+          ueberDasKontingentHinaus: k.payg.moeglich ? { freigegeben: k.payg.freigegeben, deckelEur: k.payg.limitCents == null ? null : eur(k.payg.limitCents), bisherEur: eur(k.payg.ueberCents) } : null,
+          kannPlanSelbstWechseln: u.kannSelbstWechseln !== false,
+          preiseJeFirmaUndMonat: { klein: 0.5, mittel: 1.0, gross: 1.5 },
+          hinweis:
+            k.plan === "free"
+              ? "Free: 25 Firmen insgesamt, hoechstens 3 Free-Mitglieder je Organisation. Mehr mit einem Sitz (Pro 49 €, Max 149 €, Ultra 299 € je Nutzer und Monat = Monatskontingent)."
+              : k.plan === "enterprise"
+                ? "Enterprise: Abrechnung laut Vertrag mit AVA."
+                : u.kannSelbstWechseln === false
+                  ? "Den Plan weist die Organisation zu (Owner/Admin in der Konsole). Einen groesseren Plan kann der Nutzer in Einstellungen → Plan & Abrechnung anfragen."
+                  : "Plan aendern in Einstellungen → Plan & Abrechnung oder mit plan_wechseln: Upgrade sofort (anteilig berechnet), Downgrade zum Zyklusende.",
+        };
+      }
       const z = u.zugang;
       const aufnahmen = z ? z.stufen.klein + z.stufen.mittel + z.stufen.gross + z.stufen.offen : u.used;
       const limit = z?.ausgabenLimitCents ?? null;
@@ -171,5 +206,77 @@ export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
       return { limitEur: r.stand.limitCents == null ? null : eur(r.stand.limitCents), verbrauchtEur: eur(r.stand.verbrauchtCents) };
     },
   });
-  return [status, limitSetzen, linkedinLimit];
+  // P6 — eigener Plan (Sitz) wechseln: Owner/Admin fuer sich; Mitglieder fragen an.
+  const planWechseln = defineTool({
+    name: "plan_wechseln",
+    summary: "Eigenen Plan wechseln (Pro/Max/Ultra/Free): Upgrade sofort, Downgrade zum Zyklusende; Mitglieder fragen an.",
+    category: "plan wechseln upgrade downgrade abo kuendigen sitz",
+    description:
+      "Wechselt den Plan des Nutzers im Sitz-Modell. Upgrade wirkt sofort (freier Sitz der Organisation oder Kauf, anteilig berechnet), " +
+      "Downgrade oder Free wird zum Zyklusende vorgemerkt. Nur Owner/Admin duerfen wechseln; ein Mitglied stellt mit demselben Werkzeug eine Anfrage an Owner/Admin. Fragt vorher nach.",
+    parameters: { type: "object", required: ["plan"], properties: { plan: { type: "string", enum: ["free", "pro", "max", "ultra"] } } },
+    schema: yup.object({ plan: yup.mixed<"free" | "pro" | "max" | "ultra">().oneOf(["free", "pro", "max", "ultra"]).required() }).noUnknown(true),
+    preview: (r) => {
+      const x = r as { abgebrochen?: boolean; error?: string; angefragt?: boolean; vorgemerkt?: boolean; plan?: string; checkoutUrl?: string };
+      return x.error ? `Fehler: ${x.error.slice(0, 60)}` : x.abgebrochen ? "abgebrochen" : x.angefragt ? "Anfrage gesendet" : x.vorgemerkt ? `Wechsel zu ${x.plan} vorgemerkt` : x.checkoutUrl ? "Kasse geoeffnet" : `Plan ${x.plan}`;
+    },
+    run: async (args, c) => {
+      const u = await deps.gateway.request<Usage>("/v1/usage", { signal: c.signal });
+      if (!u.kontingent) return { error: "Der Planwechsel im Chat ist noch nicht freigeschaltet. In Einstellungen → Plan & Abrechnung nachsehen." };
+      const aktuell = u.kontingent.plan;
+      if (aktuell === "enterprise") return { error: "Enterprise-Vertraege aendert AVA." };
+      if (aktuell === args.plan) return { error: `Du hast bereits den Plan ${args.plan}.` };
+      const rang: Record<string, number> = { free: 0, pro: 1, max: 2, ultra: 3 };
+      const hoch = rang[args.plan]! > (rang[aktuell] ?? 0);
+      if (u.kannSelbstWechseln === false) {
+        const v = await c.ui.confirmAction({ kind: "additive", prompt: `Owner und Admins deiner Organisation um den Plan ${args.plan} bitten?`, confirmValue: "ja", options: [{ value: "ja", label: "Anfragen" }, { value: "cancel", label: "Abbrechen" }] }, c.signal);
+        if (v !== "ja") return { abgebrochen: true };
+        await deps.gateway.request("/v1/billing/plan-anfrage", { method: "POST", body: { plan: args.plan }, signal: c.signal });
+        return { angefragt: true, plan: args.plan };
+      }
+      type Sitze = { ich: string; zyklusende: string | null; stripe: boolean; jePlan: Record<string, { frei: number }> };
+      const sz = await deps.gateway.request<Sitze>("/v1/tenants/me/sitze", { signal: c.signal });
+      const bis = sz.zyklusende ? new Date(sz.zyklusende).toLocaleDateString("de-DE") : "zum Zyklusende";
+      const text = hoch
+        ? `Auf ${args.plan} wechseln? Dein Kontingent steigt sofort anteilig; ${sz.jePlan[args.plan]?.frei ? "ein freier Sitz eurer Organisation wird dir zugewiesen" : sz.stripe ? "ein neuer Sitz wird anteilig bis zum Zyklusende berechnet" : "der erste Sitz laeuft ueber die Kasse (Zahlungsmittel hinterlegen)"}.`
+        : `Zum ${bis} auf ${args.plan} wechseln? Bis dahin bleibt dein Plan ${aktuell}; der Wechsel laesst sich bis zum Stichtag zuruecknehmen.`;
+      const v = await c.ui.confirmAction({ kind: "additive", prompt: text, confirmValue: "ja", options: [{ value: "ja", label: hoch ? "Upgrade" : "Vormerken" }, { value: "cancel", label: "Abbrechen" }] }, c.signal);
+      if (v !== "ja") return { abgebrochen: true };
+      if (hoch) {
+        if (sz.jePlan[args.plan]?.frei) {
+          await deps.gateway.request(`/v1/tenants/me/mitglieder/${encodeURIComponent(sz.ich)}/sitz`, { method: "PUT", body: { plan: args.plan }, signal: c.signal });
+          return { plan: args.plan, sofort: true };
+        }
+        const r = await deps.gateway.request<{ checkout?: { url: string } | null }>("/v1/tenants/me/sitze", { method: "POST", body: { plan: args.plan, anzahl: 1, actorId: sz.ich, rueckkehr: "app" }, signal: c.signal });
+        if (r.checkout?.url) return { plan: args.plan, checkoutUrl: r.checkout.url, hinweis: "Zum Abschluss die Kasse im Browser oeffnen (Link)." };
+        return { plan: args.plan, sofort: true };
+      }
+      await deps.gateway.request(`/v1/tenants/me/mitglieder/${encodeURIComponent(sz.ich)}/sitz`, { method: "PUT", body: { plan: args.plan, zum: "zyklusende" }, signal: c.signal });
+      return { plan: args.plan, vorgemerkt: true, am: sz.zyklusende };
+    },
+  });
+
+  // P6 — Ultra: fuer den laufenden Monat ueber das Kontingent hinaus (Owner/Admin).
+  const paygFreigeben = defineTool({
+    name: "payg_freigeben",
+    summary: "Ultra: fuer den laufenden Monat Firmen ueber das Kontingent hinaus aufnehmen (freigeben oder zuruecknehmen, optional mit Deckel).",
+    category: "kontingent ueberschreiten freigeben pay deckel ultra",
+    description:
+      "Nur mit Ultra-Sitz und nur Owner/Admin: gibt fuer den laufenden Monat Aufnahmen ueber das Kontingent hinaus frei (jede weitere Firma zum Stufenpreis), optional mit Deckel in Euro; am Monatsersten endet die Freigabe von selbst. Fragt vorher nach.",
+    parameters: { type: "object", required: ["freigeben"], properties: { freigeben: { type: "boolean" }, deckelEur: { type: ["number", "null"] } } },
+    schema: yup.object({ freigeben: yup.boolean().required(), deckelEur: yup.number().min(0).max(100_000).nullable().optional() }).noUnknown(true),
+    preview: (r) => { const x = r as { abgebrochen?: boolean; error?: string; freigegeben?: boolean }; return x.error ? `Fehler: ${x.error.slice(0, 60)}` : x.abgebrochen ? "abgebrochen" : x.freigegeben ? "freigegeben" : "zurueckgenommen"; },
+    run: async (args, c) => {
+      const deckel = args.deckelEur == null ? null : Math.round(args.deckelEur * 100);
+      const v = await c.ui.confirmAction({ kind: "additive", prompt: args.freigeben ? `Fuer den laufenden Monat ueber das Kontingent hinaus aufnehmen${deckel != null ? `, hoechstens ${(deckel / 100).toFixed(2)} € zusaetzlich` : ""}? Jede weitere Firma wird zum Stufenpreis berechnet; am Monatsersten ist die Freigabe wieder aus.` : "Freigabe ueber das Kontingent hinaus zuruecknehmen?", confirmValue: "ja", options: [{ value: "ja", label: args.freigeben ? "Freigeben" : "Zuruecknehmen" }, { value: "cancel", label: "Abbrechen" }] }, c.signal);
+      if (v !== "ja") return { abgebrochen: true };
+      try {
+        await deps.gateway.request("/v1/usage/payg", { method: "PUT", body: { freigeben: args.freigeben, limitCents: deckel }, signal: c.signal });
+        return { freigegeben: args.freigeben };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+  return [status, limitSetzen, linkedinLimit, planWechseln, paygFreigeben];
 }

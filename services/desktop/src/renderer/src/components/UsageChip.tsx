@@ -17,6 +17,22 @@ const WARN_THRESHOLD = 0.8;
 export function UsageChip() {
   const { data, isLoading } = useUsage();
   if (isLoading || !data) return null;
+  // docs/PLAN_PRICING_TIERS.md P6 — Sitz-Modell: Kontingent in Euro statt Firmenzahl.
+  const k = data.kontingent;
+  if (k && k.kontingentCents != null && k.kontingentCents > 0 && k.plan !== "free") {
+    const ratio = k.verbrauchtCents / k.kontingentCents;
+    if (ratio < WARN_THRESHOLD || k.payg.freigegeben) return null;
+    const bucket = ratio >= 0.95 ? "red" : "orange";
+    const eur = (c: number) => (c / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+    const label = `${eur(k.verbrauchtCents)} von ${eur(k.kontingentCents)} Kontingent genutzt`;
+    return (
+      <Link to="/settings#plan-section" className={`watch-chip__btn watch-chip__btn--${bucket}`} aria-label={label} title={label} style={{ textDecoration: "none" }}>
+        <BoltIcon />
+        <span className="watch-chip__count">{Math.round(ratio * 100)} %</span>
+        <span className={`watch-chip__dot watch-chip__dot--${bucket}`} aria-hidden />
+      </Link>
+    );
+  }
   if (isUnlimited(data)) return null;
   if (data.limit <= 0) return null;
   const ratio = data.used / data.limit;

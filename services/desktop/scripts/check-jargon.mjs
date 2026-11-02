@@ -41,7 +41,7 @@ const JARGON = [
   "Cadence",
   "Rubric", "Judge", "Topics", "Kandidat(?:en)?",
   "Tokens?", "Input", "Output", "Cache[- ]?Read", "Cache",
-  "Tier", "Stufe [CBAS]\\b",
+  "Tier", "Stufe [CBAS]\\b", "Pay-as-you-go", "Apify", "Proration", "Seat",
   "API[- ]?Key", "API[- ]Schl[üu]ssel",
   "Endpoint", "Port", "PID", "Queue", "in flight",
   "AMQP", "Gateway", "Broker",

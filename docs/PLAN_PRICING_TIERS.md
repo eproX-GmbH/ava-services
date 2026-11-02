@@ -257,7 +257,24 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
   Desktop: Schritt-Formular nur noch mit `useIstBetreiber`, „Firma komplett neu verarbeiten“ für alle mit
   `bestaetigen()` und Kontingenthinweis (auch in der Firmenansicht), Chat-Werkzeug `firma_neu_verarbeiten`
   (confirmAction), Systemprompt und Fähigkeitsgruppe angepasst; `retry_stage` bleibt die Reparatur.
-- **Offen:** P6 Desktop, P7 Konsole, P8 PWA, P9 Migration/Texte. Stripe-Dashboard (2026-11-02, Joyce
+- **P6 Desktop, erster Teil umgesetzt** (2026-11-02): `routes/settings/PlanAbrechnungSection.tsx`
+  (erscheint, sobald `/v1/usage.kontingent` gefüllt ist; sonst alte PlanSection): Kopfkarte „Dein Plan“ mit
+  Kontingentbalken (anteilig gekennzeichnet), Bestand nach Stufen, Prognose, geplanter Wechsel mit „rückgängig“,
+  Zahlungszustände; Plan-Auswahl aus `/v1/plaene` (Upgrade sofort: freier Sitz oder Kauf mit Vorschau,
+  erster Kauf über die Kasse; Downgrade/Free zum Zyklusende vorgemerkt; Mitglieder „Anfragen“); Ultra-Karte
+  „Über das Kontingent hinaus“; LinkedIn-Karte (Verbrauch je Funktion, Limit, Preise). Gateway dazu:
+  geplante Planwechsel je Mitglied in `TenantBilling.sitzeGeplant.wechsel` (PUT …/sitz `zum: zyklusende`,
+  DELETE …/sitz/wechsel, Cron führt sie aus), `GET /tenants/me/sitze` mit `ich`, `zyklusende`, `stripe`,
+  `wechsel`; Portal nutzt den Stripe-Kunden der Sitz-Organisation (Owner/Admin). Aufnahme-Dialog
+  `KontingentDialogHost` auf das Ereignis `ava:kontingent-erschoepft` (Plan wechseln / Admin bitten / nur
+  passende Firmen aufnehmen / Abbrechen); `UsageChip` und `QuotaExhaustedBanner` zeigen das Kontingent in
+  Euro; Texte „Starter-Plan“ ersetzt; Chat: `abrechnung_status` mit Kontingent, `plan_wechseln`,
+  `payg_freigeben`; Jargon-Prüfung um Pay-as-you-go, Apify, Proration, Seat erweitert. Visuell geprüft
+  (statische Vorschau, hell/dunkel, 1280 und schmal).
+  Noch offen in P6: Stufen-Pille und Monatswert in „Meine Firmen“, Dialog mit Limit-Pflicht beim ersten
+  Einschalten einer LinkedIn-Beobachtung, Meldungen bei 80/100 %, Chat-Meldung bei LinkedIn-Pause, Systemprompt-
+  Regeln zum Plan.
+- **Offen:** P6 Rest, P7 Konsole, P8 PWA, P9 Migration/Texte. Stripe-Dashboard (2026-11-02, Joyce
   per Browser): Produkte „AVA Pro“ 49 € (`price_1TWLJF0r0BPxCh2slgfeLNb7`, vorher „AVA Starter“), „AVA Max“
   149 € (`price_1TWLJH0r0BPxCh2sUvtHrQX6`, vorher „AVA Pro“), „AVA Ultra“ 299 € neu
   (`price_1UXLSE0r0BPxCh2sdDGTbBXz`); Kundenportal erlaubt keine Plan- oder Mengenänderung. Secrets

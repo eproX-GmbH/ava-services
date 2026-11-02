@@ -12,7 +12,7 @@ import type { UsageEntitlement, BillingStatus } from "../../../shared/types";
 //   - Stripe success protocol callback (invalidates this query so the
 //     new tier surfaces immediately)
 
-export type BillingTier = "free" | "starter" | "pro" | "enterprise";
+export type BillingTier = "free" | "starter" | "pro" | "max" | "ultra" | "enterprise";
 
 export interface UsageSnapshot {
   tier: BillingTier;
@@ -51,6 +51,21 @@ export interface UsageSnapshot {
     /** Wer das wirksame Limit gesetzt hat: Kunde, Betreiber (Vertrag) oder niemand. */
     limitQuelle?: "kunde" | "betreiber" | null;
   };
+  /** docs/PLAN_PRICING_TIERS.md P2 — Kontingent je Nutzer im Sitz-Modell; null/fehlt, solange der Schalter aus ist. */
+  kontingent?: {
+    periodKey: string;
+    plan: BillingTier;
+    kontingentCents: number | null;
+    anteilig: boolean;
+    stufen: { klein: number; mittel: number; gross: number; offen: number };
+    bestandswertCents: number;
+    neuverarbeitungCents: number;
+    verbrauchtCents: number;
+    uebrigCents: number | null;
+    payg: { moeglich: boolean; freigegeben: boolean; limitCents: number | null; ueberCents: number };
+    enterprise: { firmenLimit: number | null; firmenImBestand: number } | null;
+  } | null;
+  kannSelbstWechseln?: boolean;
 }
 
 export const USAGE_QUERY_KEY = ["usage"] as const;

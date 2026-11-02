@@ -1,4 +1,5 @@
 import { AzureOpenAIKarte } from "./settings/AzureOpenAIKarte";
+import { PlanAbrechnungSection } from "./settings/PlanAbrechnungSection";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -4658,6 +4659,8 @@ const TIER_LABELS: Record<BillingTier, string> = {
   free: "Free",
   starter: "Starter",
   pro: "Pro",
+  max: "Max",
+  ultra: "Ultra",
   enterprise: "Enterprise",
 };
 
@@ -4808,6 +4811,8 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
 
 export function PlanSection() {
   const { data, isLoading, error, refetch } = useUsage();
+  // docs/PLAN_PRICING_TIERS.md P6 — Sitz-Modell: eigene Oberflaeche, sobald das Gateway ein Kontingent liefert.
+  if (data?.kontingent) return <PlanAbrechnungSection usage={data} />;
   const [busy, setBusy] = useState<"checkout-pro" | "portal" | null>(
     null,
   );

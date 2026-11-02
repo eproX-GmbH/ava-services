@@ -46,6 +46,21 @@ export function QuotaExhaustedBanner() {
       </div>
     );
   }
+  // docs/PLAN_PRICING_TIERS.md P6 — Sitz-Modell: Kontingent in Euro.
+  const k = data.kontingent;
+  if (k && k.plan !== "free" && k.plan !== "enterprise" && k.kontingentCents != null) {
+    if (k.payg.freigegeben || k.verbrauchtCents < k.kontingentCents) return null;
+    const eur = (c: number) => (c / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+    return (
+      <div className="quota-banner quota-banner--blocking" role="alert">
+        <span className="quota-banner__icon" aria-hidden><BoltIcon /></span>
+        <p className="quota-banner__msg">
+          <strong>Monatskontingent ausgeschöpft</strong> ({eur(k.verbrauchtCents)} von {eur(k.kontingentCents)}). Neue Firmen kannst du erst wieder aufnehmen, wenn du den Plan wechselst{k.payg.moeglich ? ", für diesen Monat über das Kontingent hinaus freigibst" : ""} oder der Monat wechselt.
+        </p>
+        <Link to="/settings#plan-section" className="quota-banner__cta">{data.kannSelbstWechseln === false ? "Plan ansehen" : "Plan ändern"}</Link>
+      </div>
+    );
+  }
   if (isUnlimited(data)) return null;
   if (data.limit <= 0) return null;
 

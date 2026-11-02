@@ -31,9 +31,11 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
   }
   // docs/PLAN_PRICING_TIERS.md P2 — vorgemerkte Sitz-Reduktionen zum Zyklusende ausfuehren.
   try {
-    const { faelligeReduktionenAusfuehren } = await import("./sitze");
+    const { faelligeReduktionenAusfuehren, faelligePlanWechselAusfuehren } = await import("./sitze");
     const n = await faelligeReduktionenAusfuehren(pool, now);
     if (n > 0) logger.info({ beendet: n }, "[billing-cron] Sitz-Reduktionen ausgefuehrt");
+    const w = await faelligePlanWechselAusfuehren(pool, now);
+    if (w > 0) logger.info({ wechsel: w }, "[billing-cron] Planwechsel ausgefuehrt");
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Sitz-Reduktionen failed");
   }

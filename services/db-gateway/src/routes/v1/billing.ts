@@ -258,14 +258,27 @@ billingRouter.openapi(portalRoute, async (c) => {
   const auth = c.get("auth");
   if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
 
-  const customerId = await readStripeCustomerId(auth.actorId);
+  // docs/PLAN_PRICING_TIERS.md P6 — Sitz-Organisation: Zahlungsmittel und Rechnungen haengen
+  // am Stripe-Kunden der Organisation; nur Owner/Admin duerfen dorthin.
+  let customerId = await readStripeCustomerId(auth.actorId);
+  const org = auth.tenantId !== auth.actorId ? await readBillingAccount(getGatewayPool(), auth.tenantId) : null;
+  if (org?.mode === "sitze" && org.stripeCustomerId) {
+    const { istAdmin } = await import("../../lib/tenants");
+    if (!(await istAdmin(getGatewayPool(), auth.tenantId, auth.actorId))) {
+      throw new HTTPException(403, { message: "Rechnungen und Zahlungsmittel der Organisation verwalten Owner und Admins." });
+    }
+    customerId = org.stripeCustomerId;
+  }
   if (!customerId) {
     throw new HTTPException(400, { message: "no stripe customer; complete a checkout first" });
   }
+  const rueckkehr = c.req.query("rueckkehr") === "konsole"
+    ? `${(process.env.ADMIN_KONSOLE_URL ?? "https://admin.ava.bi").replace(/\/+$/, "")}/abrechnung`
+    : "ava://billing/portal-return";
 
   const session = await getStripe().billingPortal.sessions.create({
     customer: customerId,
-    return_url: "ava://billing/portal-return",
+    return_url: rueckkehr,
   });
   return c.json({ url: session.url }, 200);
 });

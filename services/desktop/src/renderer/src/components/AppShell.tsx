@@ -37,6 +37,7 @@ import {
 } from "../lib/theme";
 import { XIcon } from "./icons";
 import { BestaetigungHost } from "./Bestaetigung";
+import { KontingentDialogHost } from "./KontingentDialog";
 
 // Top-level chrome for the routed app (Phase 8.l2).
 //
@@ -151,6 +152,7 @@ export function AppShell({ children }: PropsWithChildren) {
       <WorkerModusBanner />
       <main className="app-shell__main">{children}</main>
       <BestaetigungHost />
+      <KontingentDialogHost />
       <ChatSearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}

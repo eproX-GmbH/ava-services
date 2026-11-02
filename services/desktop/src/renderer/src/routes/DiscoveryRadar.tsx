@@ -530,7 +530,7 @@ export function DiscoveryRadar(): JSX.Element {
           {lockedIds.size > 0 && (
             <div className="radar-lockbanner">
               🔒 {lockedIds.size} weitere bewertete Treffer{hotCount > FREE_VISIBLE_MATCHES ? ` (davon ${hotCount - FREE_VISIBLE_MATCHES} heiß)` : ""} — im{" "}
-              <Link to="/settings#plan-section">Starter-Plan</Link> siehst du
+              <Link to="/settings#plan-section">Plan Pro</Link> siehst du
               alle Namen und Begründungen. Die Scores unten zeigen, was da ist.
             </div>
           )}
@@ -595,7 +595,7 @@ export function DiscoveryRadar(): JSX.Element {
                         }
                         title={
                           locked
-                            ? "Im Starter-Plan sichtbar"
+                            ? "Ab dem Plan Pro sichtbar"
                             : `https://${r.website} im Browser öffnen`
                         }
                       >
@@ -635,7 +635,7 @@ export function DiscoveryRadar(): JSX.Element {
                     </td>
                     <td
                       className={locked ? "radar-why radar-blur" : "radar-why"}
-                      title={locked ? "Im Starter-Plan sichtbar" : (r.matchBegruendung ?? undefined)}
+                      title={locked ? "Ab dem Plan Pro sichtbar" : (r.matchBegruendung ?? undefined)}
                     >
                       {r.matchBegruendung ?? "—"}
                     </td>

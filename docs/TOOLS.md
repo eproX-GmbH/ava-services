@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-02
-Anzahl Tools: 300
+Anzahl Tools: 302
 
 ## Firmen (28)
 
@@ -1093,7 +1093,7 @@ _Parameter:_
 - `title: string` (required) — Bold first line.
 - `body: string` (required) — One short sentence.
 
-## abrechnung (3)
+## abrechnung (5)
 
 ### `abrechnung_limit_setzen`
 
@@ -1120,6 +1120,25 @@ Die LinkedIn-Beobachtung wird nach Verbrauch berechnet. Setzt das Monatslimit in
 
 _Parameter:_
 - `limitEur: number,null` — Limit in Euro je Monat; weglassen = nur Stand anzeigen; null = aufheben
+
+### `payg_freigeben`
+
+_Datei:_ `services/desktop/src/main/agent/tools/abrechnung.ts`
+
+Nur mit Ultra-Sitz und nur Owner/Admin: gibt fuer den laufenden Monat Aufnahmen ueber das Kontingent hinaus frei (jede weitere Firma zum Stufenpreis), optional mit Deckel in Euro; am Monatsersten endet die Freigabe von selbst. Fragt vorher nach.
+
+_Parameter:_
+- `freigeben: boolean` (required)
+- `deckelEur: number,null`
+
+### `plan_wechseln`
+
+_Datei:_ `services/desktop/src/main/agent/tools/abrechnung.ts`
+
+Wechselt den Plan des Nutzers im Sitz-Modell. Upgrade wirkt sofort (freier Sitz der Organisation oder Kauf, anteilig berechnet), Downgrade oder Free wird zum Zyklusende vorgemerkt. Nur Owner/Admin duerfen wechseln; ein Mitglied stellt mit demselben Werkzeug eine Anfrage an Owner/Admin. Fragt vorher nach.
+
+_Parameter:_
+- `plan: string (enum: free, pro, max, ultra)` (required)
 
 ## account (1)
 
