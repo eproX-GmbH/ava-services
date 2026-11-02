@@ -16,6 +16,8 @@ import {
 import { ErrorShape } from "./schemas";
 import { istBetreiber } from "../../middleware/auth";
 import { sitzeCheckout, sitzeVorschau, stripeKonfiguriert } from "../../lib/sitze-stripe";
+import { linkedinStand, linkedinLimitSetzen, linkedinKonto } from "../../lib/linkedin-verbrauch";
+import { kundenPreistabelle } from "../../lib/apify-preise";
 
 export const sitzeRouter = new OpenAPIHono();
 const tag = "sitze";
@@ -262,5 +264,47 @@ sitzeRouter.openapi(
     const auth = c.get("auth");
     const { plan, anzahl } = c.req.valid("query");
     return c.json(await sitzeVorschau(getGatewayPool(), { tenantId: auth.tenantId, plan, anzahl }), 200);
+  },
+);
+
+// GET /usage/linkedin — Verbrauch der LinkedIn-Beobachtung im Monat, Limit, Preistabelle.
+sitzeRouter.openapi(
+  createRoute({
+    method: "get", path: "/usage/linkedin", tags: [tag],
+    summary: "LinkedIn-Beobachtung nach Verbrauch: Monatsverbrauch je Funktion, Limit, Kundenpreise je 1.000.",
+    request: { query: z.object({ actorId: z.string().min(1).optional() }) },
+    responses: { 200: { content: { "application/json": { schema: Any } }, description: "ok" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" } },
+  }),
+  async (c) => {
+    pruefeSchalter();
+    const auth = c.get("auth");
+    const { actorId: ziel } = c.req.valid("query");
+    const actorId = ziel ?? auth.actorId;
+    if (actorId !== auth.actorId) await nurAdmin(auth.tenantId, auth.actorId);
+    const stand = await linkedinStand(getGatewayPool(), auth.tenantId, actorId);
+    return c.json({ ...stand, preise: kundenPreistabelle().filter((p) => p.beobachtung) }, 200);
+  },
+);
+
+// PUT /usage/linkedin-limit — Monatslimit (Cent) fuer die LinkedIn-Beobachtung; Owner/Admin fuer sich und Mitglieder.
+sitzeRouter.openapi(
+  createRoute({
+    method: "put", path: "/usage/linkedin-limit", tags: [tag],
+    summary: "Monatslimit der LinkedIn-Beobachtung setzen (null = kein Limit, dann laeuft nichts).",
+    request: { body: { content: { "application/json": { schema: z.object({ actorId: z.string().min(1).optional(), limitCents: z.number().int().min(0).max(1_000_000).nullable() }) } } } },
+    responses: { 200: { content: { "application/json": { schema: Any } }, description: "ok" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" } },
+  }),
+  async (c) => {
+    pruefeSchalter();
+    const auth = c.get("auth");
+    const { actorId: ziel, limitCents } = c.req.valid("json");
+    const actorId = ziel ?? auth.actorId;
+    const pool = getGatewayPool();
+    // Kosten landen auf dem Zahlungsmittel der Organisation: nur Owner/Admin (persoenliches Konto: selbst).
+    if (auth.tenantId !== auth.actorId) await nurAdmin(auth.tenantId, auth.actorId);
+    const konto = await linkedinKonto(pool, auth.tenantId, actorId);
+    if (konto.enterprise) throw new HTTPException(409, { message: "Bei Enterprise setzt AVA das Limit laut Vertrag." });
+    await linkedinLimitSetzen(pool, { kontoId: konto.kontoId, limitCents, von: auth.actorId, tenantId: auth.tenantId });
+    return c.json({ ok: true, stand: await linkedinStand(pool, auth.tenantId, actorId) }, 200);
   },
 );

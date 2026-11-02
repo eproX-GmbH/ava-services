@@ -184,6 +184,14 @@ export function buildApifyProvider(
       throw new Error("APIFY_AUTH: Token ungueltig oder abgelaufen.");
     }
     if (res.status === 402) {
+      // docs/PLAN_PRICING_TIERS.md P4: Limit der LinkedIn-Beobachtung (Gateway) oder Apify-Guthaben.
+      const body = await res.text().catch(() => "");
+      try {
+        const j = JSON.parse(body) as { error?: string; meldung?: string };
+        if (j.error?.startsWith("linkedin_")) throw new Error(`LINKEDIN_LIMIT:${j.error}: ${j.meldung ?? "Limit der LinkedIn-Beobachtung erreicht."}`);
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith("LINKEDIN_LIMIT")) throw e;
+      }
       throw new Error("APIFY_CREDITS: Apify-Guthaben aufgebraucht.");
     }
     if (!res.ok) {
@@ -265,7 +273,7 @@ export function buildApifyProvider(
           for (const p of list) {
             fehlgeschlagen.push({ profileUrl: p, grund: `${lauf.kind}: ${grund}` });
           }
-          if (grund.startsWith("APIFY_AUTH") || grund.startsWith("APIFY_CREDITS") || grund.startsWith("APIFY_FORBIDDEN") || grund.startsWith("GATEWAY_AUTH")) {
+          if (grund.startsWith("APIFY_AUTH") || grund.startsWith("APIFY_CREDITS") || grund.startsWith("APIFY_FORBIDDEN") || grund.startsWith("GATEWAY_AUTH") || grund.startsWith("LINKEDIN_LIMIT")) {
             throw err; // Zugangs-Probleme sofort hochreichen (Supervisor entscheidet).
           }
           continue;

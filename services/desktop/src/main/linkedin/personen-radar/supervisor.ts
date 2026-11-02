@@ -150,7 +150,8 @@ export class PersonenRadarSupervisor {
           alle.push(...r.engager);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS")) {
+          if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
+            // P4: Limit der LinkedIn-Beobachtung → Lauf endet, Automatik bleibt an (naechster Monat/Limit-Erhoehung).
             this.finishRun(startedAt, msg, trigger, "error");
             return msg;
           }
@@ -212,7 +213,7 @@ export class PersonenRadarSupervisor {
             if (matches.length > 0) await this.deps.store.setFirmenCache(url, matches);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS")) {
+            if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
               this.finishRun(startedAt, msg, trigger, "error");
               return msg;
             }

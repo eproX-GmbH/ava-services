@@ -309,6 +309,8 @@ export class WatchlistSupervisor {
       const grund = err instanceof Error ? err.message : String(err);
       if (grund.startsWith("APIFY_AUTH")) return "auth";
       if (grund.startsWith("APIFY_CREDITS")) return "credits";
+      // P4: Limit der LinkedIn-Beobachtung — wie fehlendes Guthaben: Lauf-Abbruch, Automatik bleibt an.
+      if (grund.startsWith("LINKEDIN_LIMIT")) return "credits";
       if (grund.startsWith("GATEWAY_AUTH") || grund.startsWith("APIFY_FORBIDDEN")) {
         // Voruebergehend (Anmeldung/Proxy): kein Backoff fuer das Profil,
         // Automatik bleibt an, naechster Takt versucht es erneut.

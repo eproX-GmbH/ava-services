@@ -50,6 +50,14 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] bestandVerbuchen failed");
   }
+  // docs/PLAN_PRICING_TIERS.md P4 — LinkedIn-Beobachtung des Vormonats als Rechnungsposten.
+  try {
+    const { linkedinAbrechnen } = await import("./linkedin-verbrauch");
+    const l = await linkedinAbrechnen(pool, now);
+    if (l.posten > 0) logger.info(l, "[billing-cron] LinkedIn-Beobachtung abgerechnet");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] linkedinAbrechnen failed");
+  }
   try {
     await zugangUeberschreitungEinzelabo(now);
   } catch (err) {

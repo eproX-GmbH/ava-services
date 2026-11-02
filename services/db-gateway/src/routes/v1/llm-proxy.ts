@@ -195,7 +195,7 @@ const HOP_BY_HOP = new Set([
   "authorization", "host", "connection", "content-length", "keep-alive", "proxy-authorization",
   "te", "trailer", "transfer-encoding", "upgrade", "x-api-key", "x-goog-api-key", "cookie",
   // Interne AVA-Kopfzeilen nicht an den Anbieter weitergeben.
-  "x-ava-llm-channel", "x-ava-llm-quelle",
+  "x-ava-llm-channel", "x-ava-llm-quelle", "x-ava-apify-kontext",
 ]);
 const RESPONSE_DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection", "set-cookie"]);
 
@@ -225,12 +225,18 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
     zugang = { key: b.key, azure: null };
     festesModell = b.modell;
   } else if (kind === "apify" && betreiberApify()) {
-    // Z4: LinkedIn-Kontakte ueber den zentralen Apify-Token gibt es ab Starter;
-    // Free bleibt beim Website-Crawl (Stufe klein, docs/PLAN_ABRECHNUNG_ZUGANG.md §2).
-    const { effectiveTier, ensureBillingAccount, resolveBillingAccountId } = await import("../../lib/billing");
-    const kontoId = await resolveBillingAccountId(pool, { tenantId: auth.tenantId, actorId: auth.actorId });
-    const konto = await ensureBillingAccount(pool, kontoId, "personal");
-    if (effectiveTier(konto) === "free") throw new HTTPException(402, { message: "apify_nicht_im_free_plan" });
+    const { pricingAktiv } = await import("../../lib/kontingent");
+    if (!pricingAktiv()) {
+      // Z4 (bis zum Umschalten): LinkedIn-Kontakte ueber den zentralen Apify-Token gibt es ab
+      // Starter; Free bleibt beim Website-Crawl (docs/PLAN_ABRECHNUNG_ZUGANG.md §2).
+      const { effectiveTier, ensureBillingAccount, resolveBillingAccountId } = await import("../../lib/billing");
+      const kontoId = await resolveBillingAccountId(pool, { tenantId: auth.tenantId, actorId: auth.actorId });
+      const konto = await ensureBillingAccount(pool, kontoId, "personal");
+      if (effectiveTier(konto) === "free") throw new HTTPException(402, { message: "apify_nicht_im_free_plan" });
+    }
+    // docs/PLAN_PRICING_TIERS.md P4: Apify-Kontakte der Firmenverarbeitung sind fuer alle Plaene
+    // (auch Free) im Stufenpreis enthalten; die LinkedIn-Beobachtung (kontext linkedin) wird
+    // nach Verbrauch berechnet und unten gegen das Limit des Nutzers geprueft.
     zugang = { key: betreiberApify()!, azure: null };
   } else {
     if (!secretsConfigured()) throw new HTTPException(503, { message: "secrets_unconfigured" });
@@ -311,6 +317,29 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
     model = festesModell;
   }
 
+  // P4 — Apify: Kontext (firmenverarbeitung | linkedin), Kostenschaetzung und Limit-Pruefung.
+  let apifyKontext: "firmenverarbeitung" | "linkedin" | null = null;
+  let apifyPreisCents: number | null = null;
+  if (kind === "apify") {
+    const kopf = (c.req.header("x-ava-apify-kontext") ?? "").toLowerCase();
+    apifyKontext = kopf === "linkedin" ? "linkedin" : "firmenverarbeitung";
+    const am = /^acts\/([^/?]+)\//.exec(rest.replace(/^\/+/, ""));
+    if (am) {
+      const { schaetzeLaufUsd, kundenpreisCents } = await import("../../lib/apify-preise");
+      apifyPreisCents = kundenpreisCents(schaetzeLaufUsd(decodeURIComponent(am[1]!), requestJson));
+    }
+    if (apifyKontext === "linkedin") {
+      const { linkedinPruefen } = await import("../../lib/linkedin-verbrauch");
+      const p = await linkedinPruefen(pool, auth.tenantId, auth.actorId, apifyPreisCents ?? 0);
+      if (!p.ok) {
+        return new Response(JSON.stringify({ error: p.code, meldung: p.meldung, limitCents: p.limitCents, verbrauchtCents: p.verbrauchtCents, schaetzungCents: p.schaetzungCents }), {
+          status: 402,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
+  }
+
   const start = Date.now();
   let upstream: Response;
   try {
@@ -332,7 +361,7 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
   const abschluss = (text: string, status: number) => {
     const latencyMs = Date.now() - start;
     if (!meter) {
-      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false, quelle }).then((id) => {
+      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false, quelle, kontext: apifyKontext, preisCents: status < 400 && apifyKontext === "linkedin" ? apifyPreisCents : null }).then((id) => {
         // 2026-10-15 — Apify: Lauf-Kennung und echte Kosten laut Apify an die Zeile.
         if (id && kind === "apify" && status < 400) {
           void import("../../lib/anbieter-kosten").then(({ apifyLaufNachtragen }) => apifyLaufNachtragen(pool, id, rest, upstream.headers, text));
@@ -385,7 +414,7 @@ async function promptAuditAktiv(pool: ReturnType<typeof getGatewayPool>, tenantI
 
 async function recordUsage(
   pool: ReturnType<typeof getGatewayPool>,
-  e: { tenantId: string; actorId: string; kind: ProxyKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean; quelle?: string | null },
+  e: { tenantId: string; actorId: string; kind: ProxyKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean; quelle?: string | null; kontext?: string | null; preisCents?: number | null },
 ): Promise<string | null> {
   const input = e.usage?.inputTokens ?? 0;
   const output = e.usage?.outputTokens ?? 0;
@@ -394,9 +423,9 @@ async function recordUsage(
   const id = `lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   try {
     await pool.query(
-      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel", "quelle")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [id, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel, e.quelle ?? null],
+      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel", "quelle", "kontext", "preisCents")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      [id, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel, e.quelle ?? null, e.kontext ?? null, e.preisCents ?? null],
     );
     return id;
   } catch (err) {

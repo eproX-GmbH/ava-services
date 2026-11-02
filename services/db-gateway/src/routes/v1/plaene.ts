@@ -3,6 +3,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { planKatalog } from "../../lib/billing-plans";
 import { stufenPreise } from "../../lib/stufen";
+import { kundenPreistabelle } from "../../lib/apify-preise";
 
 export const plaeneRouter = new OpenAPIHono();
 
@@ -44,3 +45,13 @@ plaeneRouter.openapi(route, (c) => {
   }));
   return c.json({ plaene, stufen: { klein: st.klein.preisCents, mittel: st.mittel.preisCents, gross: st.gross.preisCents }, freePlaetzeJeOrganisation: 3 }, 200);
 });
+
+// Oeffentliche Kundenpreise der LinkedIn-Beobachtung (je 1.000 Reaktionen/Kommentare/Profile).
+plaeneRouter.openapi(
+  createRoute({
+    method: "get", path: "/plaene/linkedin-preise", tags: ["billing"],
+    summary: "Kundenpreise der LinkedIn-Beobachtung nach Verbrauch (oeffentlich).",
+    responses: { 200: { content: { "application/json": { schema: z.object({ preise: z.array(z.object({ schluessel: z.string(), einheit: z.string(), centsJe1000: z.number().int(), centsJeLauf: z.number().int(), beobachtung: z.boolean() })) }) } }, description: "ok" } },
+  }),
+  (c) => c.json({ preise: kundenPreistabelle().filter((p) => p.beobachtung) }, 200),
+);

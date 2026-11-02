@@ -97,6 +97,11 @@ export async function apifyLaufNachtragen(pool: Pool, usageId: string, rest: str
     }
     if (!runId) return;
     await pool.query(`UPDATE "LlmUsage" SET "ref" = $2, "model" = $3, "costMicroUsd" = COALESCE($4, "costMicroUsd") WHERE "id" = $1`, [usageId, runId, actorId.slice(0, 120), usd == null ? null : Math.round(usd * 1e6)]);
+    // P4 — LinkedIn-Beobachtung: Kundenpreis aus den echten Kosten (ersetzt die Schaetzung).
+    if (usd != null) {
+      const { kundenpreisCents } = await import("./apify-preise");
+      await pool.query(`UPDATE "LlmUsage" SET "preisCents" = $2 WHERE "id" = $1 AND "kontext" = 'linkedin'`, [usageId, kundenpreisCents(usd)]);
+    }
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err), usageId }, "[anbieter] Apify-Lauf nicht nachgetragen");
   }
@@ -113,6 +118,10 @@ export async function apifyFehlendeKostenNachtragen(pool: Pool): Promise<number>
     const k = await apifyLaufKosten(row.ref).catch(() => null);
     if (!k || !["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"].includes(k.status)) continue;
     await pool.query(`UPDATE "LlmUsage" SET "costMicroUsd" = $2 WHERE "id" = $1`, [row.id, Math.round(k.usd * 1e6)]);
+    {
+      const { kundenpreisCents } = await import("./apify-preise");
+      await pool.query(`UPDATE "LlmUsage" SET "preisCents" = $2 WHERE "id" = $1 AND "kontext" = 'linkedin'`, [row.id, kundenpreisCents(k.usd)]);
+    }
     n++;
   }
   return n;
@@ -168,6 +177,10 @@ export async function apifyLaeufeZuordnen(pool: Pool): Promise<number> {
       belegt.add(run.id);
       const usd = typeof run.usageTotalUsd === "number" ? Math.round(run.usageTotalUsd * 1e6) : null;
       await pool.query(`UPDATE "LlmUsage" SET "ref" = $2, "model" = COALESCE($3, "model"), "costMicroUsd" = COALESCE($4, "costMicroUsd") WHERE "id" = $1`, [best.id, run.id, run.actId ?? null, usd]);
+      if (usd != null) {
+        const { kundenpreisCents } = await import("./apify-preise");
+        await pool.query(`UPDATE "LlmUsage" SET "preisCents" = $2 WHERE "id" = $1 AND "kontext" = 'linkedin'`, [best.id, kundenpreisCents(usd / 1e6)]);
+      }
       n++;
     }
     const aelteste = items[items.length - 1]?.startedAt;

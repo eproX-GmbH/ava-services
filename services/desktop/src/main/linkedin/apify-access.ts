@@ -31,7 +31,10 @@ export function organisationsApifyZugang(gatewayUrl: string, jwt: string): Apify
     quelle: "organisation",
     base: `${gatewayUrl.replace(/\/+$/, "")}/v1/proxy/apify/v2`,
     token: null,
-    headers: { authorization: `Bearer ${jwt}` },
+    // docs/PLAN_PRICING_TIERS.md P4: alle Apify-Aufrufe des Hauptprozesses sind LinkedIn-
+    // Beobachtung (Watchlist, beobachtete Posts, Leads) und werden nach Verbrauch berechnet;
+    // der Kontakt-Producer schickt "firmenverarbeitung" (im Stufenpreis enthalten).
+    headers: { authorization: `Bearer ${jwt}`, "x-ava-apify-kontext": "linkedin" },
   };
 }
 

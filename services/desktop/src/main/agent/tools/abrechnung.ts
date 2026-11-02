@@ -126,5 +126,50 @@ export function buildAbrechnungTools(deps: { gateway: GatewayClient }): Tool[] {
       return { limitEur: r.ausgabenLimitCents == null ? null : eur(r.ausgabenLimitCents), vorherEur: alt == null ? null : eur(alt) };
     },
   });
-  return [status, limitSetzen];
+  // docs/PLAN_PRICING_TIERS.md P4 — Monatslimit der LinkedIn-Beobachtung (nach Verbrauch).
+  const linkedinLimit = defineTool({
+    name: "linkedin_limit_setzen",
+    summary: "Monatslimit fuer die LinkedIn-Beobachtung (beobachtete Posts, Watchlist, Leads) setzen oder aufheben.",
+    category: "linkedin beobachtung limit kosten verbrauch deckel",
+    description:
+      "Die LinkedIn-Beobachtung wird nach Verbrauch berechnet. Setzt das Monatslimit in Euro (limitEur) fuer den Nutzer; ohne Limit laeuft keine Beobachtung. " +
+      "Nur Owner oder Admin der Organisation duerfen es setzen (die Kosten landen auf der Rechnung der Organisation). Fragt vor dem Setzen nach Bestaetigung. " +
+      "Liefert ohne limitEur den aktuellen Stand (Verbrauch im Monat je Funktion, Limit, Preise je 1.000).",
+    parameters: {
+      type: "object",
+      properties: { limitEur: { type: ["number", "null"], description: "Limit in Euro je Monat; weglassen = nur Stand anzeigen; null = aufheben" } },
+    },
+    schema: yup.object({ limitEur: yup.number().min(0).max(10_000).nullable().optional() }).noUnknown(true),
+    preview: (r) => {
+      const u = r as { limitEur?: number | null; abgebrochen?: boolean; error?: string; verbrauchtEur?: number };
+      return u.error ? `Fehler: ${u.error.slice(0, 60)}` : u.abgebrochen ? "abgebrochen" : u.limitEur === undefined ? `Verbrauch ${u.verbrauchtEur ?? 0} €` : u.limitEur == null ? "Limit aufgehoben" : `LinkedIn-Limit ${u.limitEur} €`;
+    },
+    run: async (args, c) => {
+      type Stand = { limitCents: number | null; verbrauchtCents: number; geschaetztCents: number; jeFunktion: Record<string, number>; laeufe: number; enterprise: boolean; preise?: Array<{ einheit: string; centsJe1000: number }> };
+      let stand: Stand;
+      try {
+        stand = await deps.gateway.request<Stand>("/v1/usage/linkedin", { signal: c.signal });
+      } catch (err) {
+        return { error: err instanceof Error && /404/.test(err.message) ? "Die Abrechnung nach Verbrauch ist noch nicht freigeschaltet." : String(err) };
+      }
+      if (args.limitEur === undefined) {
+        return { limitEur: undefined, verbrauchtEur: eur(stand.verbrauchtCents), limitEurAktuell: stand.limitCents == null ? null : eur(stand.limitCents), jeFunktionEur: Object.fromEntries(Object.entries(stand.jeFunktion).map(([k, v]) => [k, eur(v)])), laeufe: stand.laeufe, preiseJe1000Eur: (stand.preise ?? []).map((p) => ({ einheit: p.einheit, eur: eur(p.centsJe1000) })) };
+      }
+      if (stand.enterprise) return { error: "Bei Enterprise legt AVA das Limit laut Vertrag fest." };
+      const neu = args.limitEur == null ? null : Math.round(args.limitEur * 100);
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `${neu == null ? "Limit der LinkedIn-Beobachtung aufheben? Danach laeuft keine Beobachtung mehr." : `Limit der LinkedIn-Beobachtung auf ${(neu / 100).toFixed(2)} € je Monat setzen?`}\n\nBisher: ${stand.limitCents == null ? "kein Limit" : `${(stand.limitCents / 100).toFixed(2)} €`}, verbraucht diesen Monat ${(stand.verbrauchtCents / 100).toFixed(2)} €.`,
+          confirmValue: "setzen",
+          options: [{ value: "setzen", label: neu == null ? "Aufheben" : "Setzen" }, { value: "cancel", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "setzen") return { abgebrochen: true };
+      const r = await deps.gateway.request<{ stand: Stand }>("/v1/usage/linkedin-limit", { method: "PUT", body: { limitCents: neu }, signal: c.signal });
+      return { limitEur: r.stand.limitCents == null ? null : eur(r.stand.limitCents), verbrauchtEur: eur(r.stand.verbrauchtCents) };
+    },
+  });
+  return [status, limitSetzen, linkedinLimit];
 }

@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-02
-Anzahl Tools: 298
+Anzahl Tools: 299
 
 ## Firmen (28)
 
@@ -1083,7 +1083,7 @@ _Parameter:_
 - `title: string` (required) — Bold first line.
 - `body: string` (required) — One short sentence.
 
-## abrechnung (2)
+## abrechnung (3)
 
 ### `abrechnung_limit_setzen`
 
@@ -1101,6 +1101,15 @@ _Datei:_ `services/desktop/src/main/agent/tools/abrechnung.ts`
 Liest den Abrechnungsstand des Nutzers: Plan (free/pro/enterprise), Aufnahmen der Periode nach Stufe, voraussichtliche Kosten (zugeordnete Aufnahmen zum Stufenpreis plus offene), Ausgabenlimit je Monat und wer zahlt (eigenes Abo oder Seat der Organisation).
 
 _Parameter:_ keine.
+
+### `linkedin_limit_setzen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/abrechnung.ts`
+
+Die LinkedIn-Beobachtung wird nach Verbrauch berechnet. Setzt das Monatslimit in Euro (limitEur) fuer den Nutzer; ohne Limit laeuft keine Beobachtung. Nur Owner oder Admin der Organisation duerfen es setzen (die Kosten landen auf der Rechnung der Organisation). Fragt vor dem Setzen nach Bestaetigung. Liefert ohne limitEur den aktuellen Stand (Verbrauch im Monat je Funktion, Limit, Preise je 1.000).
+
+_Parameter:_
+- `limitEur: number,null` — Limit in Euro je Monat; weglassen = nur Stand anzeigen; null = aufheben
 
 ## account (1)
 

@@ -234,7 +234,22 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
   `invoices.createPreview` (nur Proration-Zeilen). Persönliches Checkout ist für Mitglieder einer
   Sitz-Organisation gesperrt. Offen in P3: `reconcileWithStripe` für Sitz-Abos, Stripe-Preise im Dashboard
   anlegen (Betreiber), Portal-Konfiguration ohne Mengenänderung.
-- **Offen:** P4 LinkedIn
+- **P4 umgesetzt** (2026-11-02): Gateway `lib/apify-preise.ts` (Preistabelle je Actor, Startgebühr,
+  USD→EUR, Aufschlag 300 % per Env; Schätzung aus `maxItems` × Ziele; Kundenpreistabelle), Proxy liest
+  Header `x-ava-apify-kontext` (linkedin | firmenverarbeitung, Standard firmenverarbeitung), schätzt den
+  Lauf, prüft bei `linkedin` das Limit (`402 linkedin_nicht_im_free_plan | linkedin_limit_fehlt |
+  linkedin_limit_erreicht`, 20 % Puffer) und schreibt `LlmUsage.kontext/preisCents`; echte Apify-Kosten
+  ersetzen die Schätzung (`anbieter-kosten.ts`). Mit `PRICING_TIERS=1` sind Apify-Kontakte der
+  Firmenverarbeitung auch für Free erlaubt (nur Beobachtung bleibt gesperrt). Routen `GET /v1/usage/linkedin`,
+  `PUT /v1/usage/linkedin-limit` (Owner/Admin), öffentlich `GET /v1/plaene/linkedin-preise`; Cron
+  `linkedinAbrechnen` legt je Nutzer einen Rechnungsposten des Vormonats auf den Stripe-Kunden der
+  Organisation (Enterprise nur Ereignis). Desktop: Hauptprozess sendet `linkedin`, Kontakt-Producer
+  `firmenverarbeitung`; Watchlist/Personen-Radar behandeln `LINKEDIN_LIMIT` wie fehlendes Guthaben (Lauf
+  endet, Automatik bleibt an); Chat-Werkzeug `linkedin_limit_setzen` (Stand + Limit, confirmAction).
+  Offen in P4: Dialog mit Preistabelle und Limit-Pflicht beim ersten Einschalten einer Beobachtung (P6),
+  Chat-Meldung bei Pause.
+- **Offen:** P5 Neuverarbeitung-Regeln (Betreiber-Rolle), P6 Desktop, P7 Konsole, P8 PWA, P9 Migration/Texte;
+  entfällt: P4 LinkedIn
   nach Verbrauch, P5 Neuverarbeitung-Regeln (Betreiber-Rolle), P6 Desktop, P7 Konsole, P8 PWA, P9
   Migration/Texte. Deploy der Migration braucht Joyces Freigabe (Prod-DB).
 
