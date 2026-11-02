@@ -111,7 +111,7 @@ jobs:
   build-mac-arm64:
     name: Build & sign macOS (arm64)
     needs: prepare-release
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -510,7 +510,8 @@ jobs:
   # the macos-13 runner pool in early 2026 -- v0.1.174 / .175 / .176
   # all sat 30-45 min in queue without ever getting a runner. The
   # cross-arch path:
-  #   1. runs-on: macos-14 (arm64, plentiful capacity)
+  #   1. runs-on: macos-15 (arm64; macos-14 wurde am 2026-11-02 stillgelegt,
+  #      Brownout brach v0.1.900 ab — github.com/actions/runner-images/issues/13518)
   #   2. fetch-whisper.mjs uses `brew fetch --bottle-tag=sonoma`
   #      (Intel macOS 14 bottle) to download the Intel-x64 binaries
   #      directly from Homebrew's CDN
@@ -533,7 +534,7 @@ jobs:
   build-mac-x64:
     name: Build & sign macOS (x64, cross-built on arm64)
     needs: build-mac-arm64
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
