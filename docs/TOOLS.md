@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-02
-Anzahl Tools: 304
+Anzahl Tools: 305
 
 ## Firmen (28)
 
@@ -2331,6 +2331,16 @@ Doppelte Personen einer Firma (z. B. „Christian“ von der Website und „Chri
 - 'abgleichen' mit `companyId`: sofort prüfen. Sichere Fälle (gleiches LinkedIn-/Xing-Profil, Profil-Slug = voller Name, gleiche belegte Adresse) führt der Gateway zusammen; „nur Vorname mit genau einem Gegenstück“ entscheidet ein KI-Urteil. Läuft sonst wöchentlich im Hintergrund.
 - 'liste' mit `companyId`: bisherige Zusammenführungen mit Regel und Grund.
 - 'rueckgaengig' mit `id` aus der Liste: stellt beide Personen exakt wieder her.
+
+_Parameter:_ keine.
+
+## problem (1)
+
+### `problem_melden`
+
+_Datei:_ `services/desktop/src/main/agent/tools/problem.ts`
+
+Meldet ein Problem an das AVA-Team. Nutze es, wenn der Nutzer einen Fehler, Absturz, falsche Daten, eine haengende Verarbeitung, ein Anmelde- oder Abrechnungsproblem schildert, das du nicht selbst loesen kannst (z. B. nach retry_stage), oder einen Wunsch aeussert. Formuliere titel (kurz) und beschreibung (was getan, was passiert, was erwartet; mit Firmen-IDs/Namen aus dem Gespraech) aus dem Kontext. Fragt den Nutzer vorher um Bestaetigung; Protokolle und Angaben zum Geraet gehen automatisch mit (Schluessel maskiert). Nie ungefragt ausloesen. Ergebnis: Kennung der Meldung; Antworten des Teams erscheinen als Meldung in AVA.
 
 _Parameter:_ keine.
 

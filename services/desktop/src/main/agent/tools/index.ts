@@ -219,6 +219,8 @@ export function buildReadOnlyRegistry(deps: {
   getTenantCompanyIds: () => Promise<string[]>;
   /** Feste Anhänge für Mail-Entwürfe (docs/PLAN_MAIL_ENTWURF.md E8). */
   festeAnhaenge?: FesteAnhaenge;
+  /** docs/PLAN_PROBLEM_MELDEN.md — Problem an das AVA-Team melden (Snapshot + Upload bzw. Mail). */
+  problemMelden?: (e: import("../../../shared/problem").ProblemEingabe) => Promise<import("../../../shared/problem").ProblemErgebnis>;
   /** Chat-Uploads, aus denen feste Anhänge übernommen werden. */
   chatAnhaenge?: AttachmentStore;
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
@@ -464,5 +466,9 @@ export function buildReadOnlyRegistry(deps: {
     availableTools: () => registry.list().map((tool) => tool.name),
   }))
     registry.register(t);
+  if (deps.problemMelden) {
+    const { buildProblemTools } = require("./problem") as typeof import("./problem");
+    for (const t of buildProblemTools({ melden: deps.problemMelden })) registry.register(t);
+  }
   return registry;
 }

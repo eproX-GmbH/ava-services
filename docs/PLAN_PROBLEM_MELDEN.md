@@ -155,6 +155,25 @@ Producer auf 2.000 Zeilen.
 Reihenfolge: M1 → M2 → M4 → M3 → M5. Deploys: Gateway (Migration) nach M1, Konsole nach M4,
 Desktop-Release nach M2/M3.
 
+## 7a. Stand der Umsetzung (2026-11-02)
+
+- **M1 Gateway gebaut, NICHT deployt:** Migration `20261102_problem_meldungen`, lib/problem-meldungen.ts,
+  routes/v1/problem-meldungen.ts (Nutzer: anlegen multipart, meine, lesen, antworten, nachreichen,
+  gelesen; Betreiber: Liste mit Zaehlern, Detail mit Kunde, Anhang-Download, Nachricht/intern,
+  Status/Prioritaet/Zuweisung), Cron leert Anhaenge 90 Tage nach geschlossen. Telegram an den
+  Betreiber ueber `OPERATOR_TELEGRAM_BOT_TOKEN` + `OPERATOR_TELEGRAM_CHAT_ID` (Fly-Secrets, optional).
+- **M2/M3 Desktop v0.1.907:** Snapshot-Modul (main/problem/snapshot.ts, Maskierung, adm-zip),
+  Melden mit Mail-Rueckfall (melden.ts, problemMailOeffnen), Abholer alle 10 Min (abholen.ts),
+  IPC problem:*, Dialog (ProblemMeldenDialog: Neu, Meine Meldungen, Detail mit Antwort/Nachreichen),
+  Knopf unten links in der Chat-Seitenleiste mit Zaehler, Einstellungen → Erweitert, Werkzeug
+  `problem_melden` (confirmAction), Systemprompt-Regel. Nebenbei: Kontingent-Waechter (P6) war nie
+  gestartet, jetzt in main/index.ts.
+- **M4 Konsole (ava-admin 3005a76, Vercel):** /betreiber/meldungen Liste + Detail (Geraete-Karte aus
+  uebersicht.json/modell.json des ZIPs, Anhaenge, Kundenkarte, Verlauf, Vorlagen), Badge in der
+  Navigation.
+- **M5 Texte:** docs/WEBSITE_PROMPT_PROBLEM_MELDEN_2026-11-02.md (Datenschutzerklaerung).
+- Offen: PWA-Einstieg (Mail-Link), Telegram-Secrets setzen, Gateway-Deploy.
+
 ## 8. Offen (Empfehlung zuerst)
 
 - **Benachrichtigung des Betreibers bei neuer Meldung**: Empfehlung Telegram an die

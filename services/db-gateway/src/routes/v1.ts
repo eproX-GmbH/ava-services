@@ -14,6 +14,7 @@ import { proxyRouter } from "./v1/proxy";
 import { tenantsRouter } from "./v1/tenants";
 import { sitzeRouter } from "./v1/sitze";
 import { firmenZustandRouter } from "./v1/firmen-zustand";
+import { problemMeldungenRouter } from "./v1/problem-meldungen";
 import { notizenRouter } from "./v1/notizen";
 import { llmProxyRouter } from "./v1/llm-proxy";
 import { personsRouter } from "./v1/persons";
@@ -71,6 +72,8 @@ v1.use("*", auditMiddleware);
 v1.route("/", companiesMatrixRouter);
 // P10 — aktiv/ruhend je Nutzer (vor companiesRouter wegen /firmen/... Praefix).
 v1.route("/", firmenZustandRouter);
+// docs/PLAN_PROBLEM_MELDEN.md — Problemmeldungen (Nutzer) und Triage (Betreiber).
+v1.route("/", problemMeldungenRouter);
 
 // Workstream C — /companies/:id/crm reads. Must mount BEFORE the
 // generic companiesRouter so its `/companies/{companyId}` glob

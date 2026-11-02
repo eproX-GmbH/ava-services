@@ -34,6 +34,7 @@ import { BuyingCenterBlock } from "../components/BuyingCenterBlock";
 import { chartFenceState } from "../lib/chart-spec";
 import { MAIL_ENTWURF_FENCE_RE, MAIL_ENTWURF_OPEN_RE } from "../../../shared/mail-entwurf";
 import { MailEntwurfKarte } from "../components/MailEntwurfKarte";
+import { problemMeldenOeffnen, useProblemUngelesen } from "../components/ProblemMeldenDialog";
 import { useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useVoiceRecorder } from "../lib/recordVoice";
@@ -1902,6 +1903,15 @@ export function Chat() {
         onNew={() => startNewConversation()}
         onDelete={(id) => void handleDeleteConversation(id)}
         footer={status?.ready ? status.model : null}
+        onProblemMelden={() =>
+          problemMeldenOeffnen({
+            conversationId: conversationId || null,
+            chatAuszug: messages
+              .filter((m) => !m.pending && (m.role === "user" || m.role === "assistant" || m.activity))
+              .slice(-30)
+              .map((m) => ({ rolle: m.activity ? "werkzeug" : m.role, text: m.activity ? `${m.activity.toolName} (${m.activity.status})${m.activity.preview ? `: ${m.activity.preview}` : ""}` : m.content, werkzeug: m.activity?.toolName ?? null })),
+          })
+        }
       />
       <div
         className={`chat-route__main ${isEmpty ? "chat-route__main--empty" : "chat-route__main--active"}`}
@@ -2973,7 +2983,10 @@ function ChatSidebar(props: {
   onNew: () => void;
   onDelete: (id: string) => void;
   footer: string | null;
+  /** docs/PLAN_PROBLEM_MELDEN.md — Knopf unten links neben dem Modellnamen. */
+  onProblemMelden?: () => void;
 }) {
+  const problemUngelesen = useProblemUngelesen();
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -3081,7 +3094,18 @@ function ChatSidebar(props: {
             )}
           </div>
           <div className="chat-sidebar__footer muted small">
-            {props.footer ? props.footer : ""}
+            <span className="chat-sidebar__footer-modell">{props.footer ? props.footer : ""}</span>
+            {props.onProblemMelden && (
+              <button
+                type="button"
+                className="chat-sidebar__problem"
+                onClick={props.onProblemMelden}
+                title={problemUngelesen > 0 ? `${problemUngelesen} ${problemUngelesen === 1 ? "neue Antwort" : "neue Antworten"} des AVA-Teams` : "Ein Problem oder einen Wunsch an das AVA-Team melden"}
+              >
+                {problemUngelesen > 0 ? <span className="chat-sidebar__problem-punkt" aria-hidden="true" /> : null}
+                {problemUngelesen > 0 ? `${problemUngelesen} Antwort${problemUngelesen === 1 ? "" : "en"}` : "Problem melden"}
+              </button>
+            )}
           </div>
         </>
       )}

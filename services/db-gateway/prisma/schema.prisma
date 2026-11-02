@@ -1302,3 +1302,74 @@ model FirmenZustand {
   @@index([actorId, zustand])
   @@index([geplantAb])
 }
+
+/// docs/PLAN_PROBLEM_MELDEN.md — Problemmeldung eines Nutzers (Triage in der Konsole).
+model ProblemMeldung {
+  id                       String    @id
+  kennung                  String    @unique
+  tenantId                 String
+  actorId                  String
+  actorName                String?
+  actorEmail               String?
+  kategorie                String
+  titel                    String
+  beschreibung             String
+  quelle                   String    @default("dialog")
+  status                   String    @default("neu")
+  prioritaet               String    @default("normal")
+  zugewiesenAn             String?
+  appVersion               String?
+  plattform                String?
+  conversationId           String?
+  companyId                String?
+  ungelesenNutzer          Boolean   @default(false)
+  ungelesenBetreiber       Boolean   @default(true)
+  letzteNutzerAntwortAt    DateTime?
+  letzteBetreiberAntwortAt DateTime?
+  geloestAt                DateTime?
+  geschlossenAt            DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @default(now())
+  anhaenge                 ProblemAnhang[]
+  nachrichten              ProblemNachricht[]
+
+  @@index([status, updatedAt])
+  @@index([actorId, updatedAt])
+  @@index([tenantId])
+}
+
+model ProblemAnhang {
+  id          String         @id
+  meldungId   String
+  meldung     ProblemMeldung @relation(fields: [meldungId], references: [id], onDelete: Cascade)
+  /// snapshot | bild | dokument
+  art         String
+  dateiname   String
+  mime        String
+  groesse     Int
+  sha256      String?
+  /// NULL nach Ablauf der Aufbewahrung (90 Tage nach geschlossen).
+  inhalt      Bytes?
+  geloeschtAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([meldungId])
+}
+
+model ProblemNachricht {
+  id        String         @id
+  meldungId String
+  meldung   ProblemMeldung @relation(fields: [meldungId], references: [id], onDelete: Cascade)
+  /// nutzer | betreiber | system
+  von       String
+  actorId   String?
+  actorName String?
+  text      String
+  /// Nur fuer Betreiber sichtbar (Team-Kommentar).
+  intern    Boolean        @default(false)
+  /// nachricht | status | zuweisung | prioritaet
+  art       String         @default("nachricht")
+  createdAt DateTime       @default(now())
+
+  @@index([meldungId, createdAt])
+}

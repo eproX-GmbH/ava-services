@@ -8,6 +8,7 @@ import { VerlaufTab } from "./VerlaufTab";
 import { BrowserSection } from "./BrowserSection";
 import { StorageSection } from "../../components/StorageSection";
 import { DiagnoseSection } from "../../components/DiagnoseSection";
+import { ProblemSection } from "../../components/ProblemSection";
 import { DangerZoneSection } from "../../components/DangerZoneSection";
 import { useFeature } from "../../store/policy";
 
@@ -19,6 +20,7 @@ export function ErweitertTab() {
       {mail && <SchedulerSection />}
       <VerlaufTab />
       <UpdaterSection />
+      <ProblemSection />
       <StorageSection />
       <DiagnoseSection />
       <section id="dienste-section" className="provider-section">

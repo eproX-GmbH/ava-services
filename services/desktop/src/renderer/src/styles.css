@@ -9277,3 +9277,42 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .ct-pill--aktiv { background: var(--color-accent-soft, rgba(0, 192, 167, 0.18)); border-color: var(--color-accent, #00c0a7); }
 .btn--leise { background: none; border: none; box-shadow: none; padding: 0 0.25rem; font: inherit; color: inherit; cursor: pointer; opacity: 0.7; }
 .btn--leise:hover { opacity: 1; text-decoration: none; }
+
+
+/* docs/PLAN_PROBLEM_MELDEN.md — Problem melden */
+.chat-sidebar__footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.chat-sidebar__footer-modell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chat-sidebar__problem { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.35rem; background: none; border: none; padding: 2px 4px; font: inherit; color: inherit; opacity: 0.75; cursor: pointer; border-radius: 6px; }
+.chat-sidebar__problem:hover { opacity: 1; background: var(--color-bg-2, rgba(127,127,127,0.12)); text-decoration: none; }
+.chat-sidebar__problem-punkt { width: 7px; height: 7px; border-radius: 50%; background: var(--color-indigo-500, #00c0a7); }
+.problem-dialog { width: min(640px, 100%); max-height: 90vh; overflow: auto; display: flex; flex-direction: column; gap: 0.75rem; }
+.problem-dialog__kopf { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.problem-dialog__kopf h4 { display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; }
+.problem-dialog__tabs { display: flex; gap: 0.35rem; }
+.problem-dialog__tabs .ct-pill { cursor: pointer; }
+.problem-dialog__formular, .problem-dialog__liste, .problem-dialog__detail, .problem-dialog__ergebnis { display: flex; flex-direction: column; gap: 0.75rem; }
+.problem-dialog__kategorien { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.problem-dialog__kategorien .ct-pill { cursor: pointer; }
+.problem-dialog__feld { display: flex; flex-direction: column; gap: 0.3rem; }
+.problem-dialog__feld > span { font-size: 13px; opacity: 0.8; }
+.problem-dialog__feld input, .problem-dialog__feld textarea, .problem-dialog__antwort textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg-0, transparent); color: inherit; resize: vertical; }
+.problem-dialog__dateien { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.problem-dialog__mitgeht { border: 1px solid var(--color-border); border-radius: 8px; padding: 0.6rem 0.8rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.problem-dialog__mitgeht-kopf { display: flex; justify-content: space-between; align-items: center; }
+.problem-dialog__mitgeht p { margin: 0; }
+.problem-dialog__inhalt { margin: 0.25rem 0; padding-left: 1rem; font-size: 12px; display: grid; gap: 0.2rem; }
+.problem-dialog__haken { display: flex; align-items: center; gap: 0.4rem; font-size: 13px; cursor: pointer; }
+.problem-dialog__aktionen { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; }
+.problem-dialog__liste ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.problem-dialog__zeile { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; width: 100%; text-align: left; background: var(--color-bg-0, transparent); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.6rem 0.8rem; font: inherit; color: inherit; cursor: pointer; }
+.problem-dialog__zeile:hover { background: var(--color-bg-2, rgba(127,127,127,0.08)); text-decoration: none; }
+.problem-dialog__zeile-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.problem-dialog__zeile-titel { font-weight: 600; }
+.problem-dialog__beschreibung { white-space: pre-wrap; margin: 0; }
+.problem-dialog__verlauf { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.problem-dialog__nachricht { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.5rem 0.7rem; border-radius: 10px; max-width: 85%; white-space: pre-wrap; background: var(--color-bg-2, rgba(127,127,127,0.1)); }
+.problem-dialog__nachricht--nutzer { align-self: flex-end; background: var(--color-accent-soft, rgba(0,192,167,0.15)); }
+.problem-dialog__nachricht--system { align-self: center; background: none; padding: 0; font-size: 12px; opacity: 0.7; max-width: 100%; }
+.problem-dialog__antwort { display: flex; flex-direction: column; gap: 0.5rem; }
+.problem-status--wartet_auf_nutzer { border-color: var(--color-indigo-500, #00c0a7); }
+.problem-status--geloest, .problem-status--geschlossen { opacity: 0.7; }

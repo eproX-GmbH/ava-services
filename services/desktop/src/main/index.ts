@@ -6,6 +6,8 @@
 // ist für den headless Server dieselbe.
 
 // Plattform-Schicht zuerst: Stores lesen ihre Pfade schon beim Laden.
+import { registerProblemIpc } from "./ipc/problem";
+import { startKontingentWaechter } from "./billing/kontingent-waechter";
 import "./platform-electron";
 import { registerPersonenIpc } from "./ipc/personen";
 import { registerLeadsIpc } from "./ipc/leads";
@@ -423,6 +425,15 @@ app.whenReady().then(async () => {
   registerRelevanzIpc({ crmManager, gatewayClient });
   registerSystemIpc({ alerts, APP_CONFIG, audit, auth, eigenerBrowser: core.eigenerBrowser, gatewayClient, pendingWakeAcks, statusWatcher });
   registerMailEntwurfIpc({ attachments: core.attachments ?? null, festeAnhaenge: core.festeAnhaenge ?? null });
+  // docs/PLAN_PROBLEM_MELDEN.md — Problem melden (Snapshot, Upload/Mail, eigene Meldungen).
+  c.problemAbholer.onChanged = (n) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send("problem:ungelesen-geaendert", n);
+  };
+  c.problemSnapshotDeps.bildschirmfoto = async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    return win ? (await win.webContents.capturePage()).toPNG() : null;
+  };
+  registerProblemIpc({ ...c.problemSnapshotDeps, abholer: c.problemAbholer });
   registerWissenIpc({ knowledge, knowledgeStore });
   registerVerlaufIpc({ audit, auditStore, auth, broadcastDailyLimitStatus, computeDailyLimitStatus, providers, selfCorrectionsStore, usageStore });
   registerBeobachtungIpc({ audit, broadcastWatchesChanged, linkMonitorSupervisor: core.linkMonitorSupervisor, publicationStore, watchStore });
@@ -435,6 +446,9 @@ app.whenReady().then(async () => {
   createMainWindow();
 
   await c.startBackground();
+  // Antworten des AVA-Teams zu Problemmeldungen abholen; Kontingent-Waechter (P6) starten.
+  c.problemAbholer.start();
+  startKontingentWaechter({ gateway: gatewayClient, alerts, notify: () => undefined, isSignedIn: () => auth.getStatus().signedIn });
 
   // Auto-updater. No-op in dev. In packaged builds: checks GitHub
   // Releases on launch + every 4h while the app is open.

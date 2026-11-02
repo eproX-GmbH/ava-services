@@ -12,6 +12,8 @@
 //   ... Hülle registriert IPC / Fenster ...
 //   await core.startBackground();                      // Ollama, Postgres, Producer, Herzschlag, Worker-Modus
 
+import { ProblemAbholer } from "../main/problem/abholen";
+import { problemMelden } from "../main/problem/melden";
 import { PersonenAbgleich } from "../main/contacts/personen-abgleich";
 import { lifecycle, notifier, paths, platform, power, windows } from "./platform";
 import { KopfRelais } from "./relais/kopf-relais";
@@ -1757,9 +1759,46 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // I5 — lokale Top-Kunden-Profile (Aehnlichkeits-Signal im Match).
   const customerProfiles = new CustomerProfileStore();
 
+  // docs/PLAN_PROBLEM_MELDEN.md — Snapshot-Quellen fuer „Problem melden“ (lazy, weil
+  // Aufgaben und Provider-Store erst spaeter entstehen).
+  const problemSnapshotDeps: import("../main/problem/snapshot").SnapshotDeps = {
+    gateway: gatewayClient,
+    gatewayUrl: GATEWAY_URL,
+    authStatus: () => auth.getStatus(),
+    providerConfig: () => {
+      try {
+        const cfg = ProviderConfigStore.shared().getConfig() as unknown as Record<string, unknown>;
+        return { kind: cfg.kind, models: cfg.models, anthropicAuth: cfg.anthropicAuth ?? null };
+      } catch {
+        return null;
+      }
+    },
+    ollamaStatus: () => {
+      try {
+        return ollama.getStatus();
+      } catch {
+        return null;
+      }
+    },
+    aufgaben: () => {
+      try {
+        return hintergrundAufgaben.alle() as unknown[];
+      } catch {
+        return [];
+      }
+    },
+  };
+  const problemAbholer = new ProblemAbholer({
+    gateway: gatewayClient,
+    alerts,
+    notify: () => undefined, // alerts.onCreated uebernimmt die Benachrichtigung
+    isSignedIn: () => auth.getStatus().signedIn,
+  });
+
   const agentRegistry = buildReadOnlyRegistry({
     gateway: gatewayClient,
     providers,
+    problemMelden: (e) => problemMelden(problemSnapshotDeps, e),
     sprache: {
       get: () => SpracheStore.shared().get(),
       setzen: (teil) => SpracheStore.shared().setzen(teil),
@@ -4711,6 +4750,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     mcpRelais,
     instanz,
     umzug,
+    problemSnapshotDeps,
+    problemAbholer,
     startBackground,
   };
 }

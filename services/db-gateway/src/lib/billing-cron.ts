@@ -39,6 +39,14 @@ export async function runBillingCronOnce(now: Date = new Date()): Promise<void> 
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Sitz-Reduktionen failed");
   }
+  // docs/PLAN_PROBLEM_MELDEN.md — Anhaenge geschlossener Meldungen nach 90 Tagen leeren.
+  try {
+    const { anhaengeAufraeumen } = await import("./problem-meldungen");
+    const n = await anhaengeAufraeumen(pool);
+    if (n > 0) logger.info({ anhaenge: n }, "[billing-cron] Problem-Anhaenge aufgeraeumt");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] anhaengeAufraeumen failed");
+  }
   // docs/PLAN_PRICING_TIERS.md P10 — faellige Vormerkungen (ab Monatswechsel aktiv/ruhend).
   try {
     const { vormerkungenAusfuehren } = await import("./firmen-zustand");

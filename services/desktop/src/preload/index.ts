@@ -2183,6 +2183,22 @@ const api = {
    *  one-way send). `getLogPaths` backs a "reveal log" affordance in
    *  Settings → Diagnose so the user can attach the file after a
    *  wake-hang. See main/file-logger.ts for the rationale. */
+  // docs/PLAN_PROBLEM_MELDEN.md — Problem melden, eigene Meldungen, Antworten.
+  problem: {
+    inhalt: (): Promise<Array<{ datei: string; was: string }>> => ipcRenderer.invoke("problem:inhalt"),
+    melden: (eingabe: import("../shared/problem").ProblemEingabe): Promise<import("../shared/problem").ProblemErgebnis> => ipcRenderer.invoke("problem:melden", eingabe),
+    meine: (): Promise<import("../shared/problem").MeineMeldungen> => ipcRenderer.invoke("problem:meine"),
+    lesen: (id: string): Promise<import("../shared/problem").MeldungDetail> => ipcRenderer.invoke("problem:lesen", id),
+    antworten: (id: string, text: string): Promise<unknown> => ipcRenderer.invoke("problem:antworten", { id, text }),
+    gelesen: (id: string): Promise<number> => ipcRenderer.invoke("problem:gelesen", id),
+    nachreichen: (id: string, dateien: Array<{ name: string; mime: string; base64: string }>): Promise<unknown> => ipcRenderer.invoke("problem:nachreichen", { id, dateien }),
+    ungelesen: (): Promise<number> => ipcRenderer.invoke("problem:ungelesen"),
+    onUngelesen: (cb: (n: number) => void): (() => void) => {
+      const h = (_e: unknown, n: number) => cb(n);
+      ipcRenderer.on("problem:ungelesen-geaendert", h);
+      return () => ipcRenderer.removeListener("problem:ungelesen-geaendert", h);
+    },
+  },
   diag: {
     logToFile: (level: string, line: string): void =>
       ipcRenderer.send("log:renderer", { level, line }),

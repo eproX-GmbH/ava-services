@@ -73,6 +73,9 @@ const schema = z.object({
   OPERATOR_OPENAI_API_KEY: z.string().optional(),
   OPERATOR_POOL_MODEL: z.string().default("gpt-6-luna"),
   OPERATOR_APIFY_TOKEN: z.string().optional(),
+  /** docs/PLAN_PROBLEM_MELDEN.md — Telegram an den Betreiber bei neuen Problemmeldungen (optional). */
+  OPERATOR_TELEGRAM_BOT_TOKEN: z.string().optional(),
+  OPERATOR_TELEGRAM_CHAT_ID: z.string().optional(),
   // valueserp config defaults applied by the proxy when the caller
   // doesn't override. These are operator-deployment config, not
   // tenant-specific, so they live on the gateway side too.

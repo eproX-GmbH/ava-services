@@ -8,7 +8,7 @@ import { basename, join } from "node:path";
 import { app, shell } from "electron";
 import { paths } from "../../core/platform";
 import { autoWeg, emlDateiname, mailtoUrl, programmIstOutlook, webmailUrl, type MailEntwurf, type MailEntwurfZiel } from "../../shared/mail-entwurf";
-import { anhaengeLaden, emlBauen, entwurfInsPostfach, type AnhangQuellen } from "./eml";
+import { anhaengeLaden, emlBauen, entwurfInsPostfach, type AnhangQuellen, type EmlAnhang } from "./eml";
 import { mailEntwurfZiel } from "./einstellung";
 import { postfachStand } from "./postfach";
 
@@ -142,4 +142,25 @@ export function anhaengeZeigen(e: MailEntwurf, deps: { quellen: AnhangQuellen; c
   }
   shell.showItemInFolder(erste);
   return { ok: true, anzahl: r.anhaenge.length };
+}
+
+
+/**
+ * docs/PLAN_PROBLEM_MELDEN.md — Mail mit fertigen Anhaengen (Puffer) oeffnen:
+ * mit Mailprogramm als .eml (Anhaenge drin), sonst ZIP in einen Ordner legen,
+ * Ordner zeigen und mailto oeffnen.
+ */
+export async function problemMailOeffnen(e: MailEntwurf, anhaenge: EmlAnhang[]): Promise<{ weg: "eml"; programm: string | null } | { weg: "mailto"; programm: null; ordner: string }> {
+  const programm = await mailProgramm();
+  const ordner = neuerOrdner();
+  if (programm) {
+    const datei = join(ordner, emlDateiname(e));
+    writeFileSync(datei, await emlBauen(e, anhaenge));
+    await emlOeffnen(datei, programm);
+    return { weg: "eml", programm: programm.name };
+  }
+  for (const a of anhaenge) writeFileSync(join(ordner, basename(a.filename)), a.content);
+  shell.showItemInFolder(join(ordner, basename(anhaenge[0]?.filename ?? "")));
+  await shell.openExternal(mailtoUrl(e));
+  return { weg: "mailto", programm: null, ordner };
 }

@@ -39,6 +39,7 @@ import { XIcon } from "./icons";
 import { BestaetigungHost } from "./Bestaetigung";
 import { KontingentDialogHost } from "./KontingentDialog";
 import { LinkedinLimitDialogHost } from "./LinkedinLimitDialog";
+import { ProblemDialogHost } from "./ProblemMeldenDialog";
 
 // Top-level chrome for the routed app (Phase 8.l2).
 //
@@ -155,6 +156,7 @@ export function AppShell({ children }: PropsWithChildren) {
       <BestaetigungHost />
       <KontingentDialogHost />
       <LinkedinLimitDialogHost />
+      <ProblemDialogHost />
       <ChatSearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
