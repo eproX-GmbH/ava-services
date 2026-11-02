@@ -108,6 +108,7 @@ export interface AppKanalDeps {
 }
 
 const ABO_MS = 150_000;
+const APP_LAUF_MS = 15 * 60_000;
 const WARTE_MAX = 3;
 const WARTE_MS = 10 * 60_000;
 const MAX_NACHRICHTEN = 200;
@@ -127,19 +128,35 @@ export class AppFehler extends Error {
 
 export class AppKanal {
   private aboBis = 0;
+  /**
+   * Durchläufe, die aus der App gestartet wurden (requestId → Start): ihre Frames
+   * gehen immer raus, auch wenn das Abo gerade abgelaufen ist, denn die App wartet
+   * auf genau diese Antwort. Einträge verfallen nach APP_LAUF_MS.
+   */
+  private appLaeufe = new Map<string, number>();
   private warteschlange: Wartend[] = [];
   private letzterDurchlauf: string | null = null;
   private uploads = new Map<string, { teile: string[]; bis: number }>();
 
   constructor(private readonly deps: AppKanalDeps) {
     deps.agent.on("stream", (frame) => {
-      if (this.abo()) this.deps.senden({ kanal: "agent", frame });
+      if (this.abo() || this.appLauf(frame.requestId)) this.deps.senden({ kanal: "agent", frame });
     });
     deps.agent.on("status", (s) => this.statusGeaendert(s));
   }
 
   private abo(): boolean {
     return this.aboBis > Date.now();
+  }
+
+  private appLauf(requestId: string | null): boolean {
+    return requestId !== null && this.appLaeufe.has(requestId);
+  }
+
+  private appLaufMerken(requestId: string): void {
+    const grenze = Date.now() - APP_LAUF_MS;
+    for (const [id, seit] of this.appLaeufe) if (seit < grenze) this.appLaeufe.delete(id);
+    this.appLaeufe.set(requestId, Date.now());
   }
 
   /** Sprach-Ergebnisse und -Fortschritt (SpracheRelay) an die App. */
@@ -165,8 +182,9 @@ export class AppKanal {
 
   private statusGeaendert(s: AgentStatus): void {
     if (s.inFlightRequestId !== this.letzterDurchlauf) {
+      const meins = this.appLauf(s.inFlightRequestId) || this.appLauf(this.letzterDurchlauf);
       this.letzterDurchlauf = s.inFlightRequestId;
-      if (this.abo()) {
+      if (this.abo() || meins) {
         this.deps.senden({ kanal: "app", ereignis: { art: "durchlauf", aktiv: s.inFlightRequestId !== null, requestId: s.inFlightRequestId, conversationId: s.inFlightConversationId } });
       }
     }
@@ -194,6 +212,7 @@ export class AppKanal {
   /** Startet einen Durchlauf und zeigt die Nutzernachricht allen Oberflächen. */
   private starten(input: AgentSendInput): { requestId: string } {
     const { requestId } = this.deps.agent.send(input);
+    this.appLaufMerken(requestId);
     this.deps.agent.emit("stream", {
       kind: "user-message",
       requestId,
@@ -220,6 +239,10 @@ export class AppKanal {
   }
 
   async anfrage(art: string, daten: Record<string, unknown>): Promise<unknown> {
+    // Jede Anfrage einer App beweist, dass eine App zuhört: Abo mitverlängern,
+    // falls die Abo-Meldung des Gateways gerade ausblieb (z. B. direkt nach dem
+    // Neuverbinden des Relais).
+    if (art !== "abo") this.aboBis = Math.max(this.aboBis, Date.now() + ABO_MS);
     switch (art) {
       case "abo":
         this.aboBis = daten.an === false ? 0 : Date.now() + ABO_MS;

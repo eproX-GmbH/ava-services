@@ -70,6 +70,26 @@ const empfangen = [];
 const ab = strom.abonnieren("nutzer-1", null, (e) => empfangen.push(e));
 await new Promise((r) => setTimeout(r, 100));
 ok(aboMeldungen.length === 1 && beimKopf.some((n) => n.typ === "app" && n.art === "abo"), "erster Abonnent meldet das Abo beim Kopf");
+
+// Neue Instanz verbindet sich, während eine App lauscht: Abo sofort, nicht erst im Minutentakt
+// (sonst fehlen die Frames eines kurz danach gestarteten Durchlaufs).
+kopfRelais.onInstanzVerbunden((actorId, instanzId) => {
+  if (strom.lauscht(actorId)) void kopfRelais.appAnfrage(actorId, "abo", { an: true }, { instanzId, timeoutMs: 2000 });
+});
+ok(strom.lauscht("nutzer-1") && !strom.lauscht("nutzer-2"), "lauscht: nur Nutzer mit Abonnent");
+const spaet = new WebSocket(`ws://127.0.0.1:${port}/kopf-relais?access_token=gut`);
+const beiSpaet = [];
+spaet.on("message", (roh) => {
+  const n = JSON.parse(String(roh));
+  beiSpaet.push(n);
+  if (n.typ === "app") spaet.send(JSON.stringify({ typ: "ergebnis", id: n.id, text: JSON.stringify({ ok: true }) }));
+});
+await new Promise((r) => spaet.on("open", r));
+spaet.send(JSON.stringify({ typ: "hallo", version: "0.1.801", instanz: { id: "instanz-desktop-2", art: "desktop", name: "Zweiter Desktop" }, werkzeuge: [], zustand: {} }));
+await new Promise((r) => setTimeout(r, 150));
+ok(beiSpaet.some((n) => n.typ === "app" && n.art === "abo" && n.daten.an === true), "neu verbundene Instanz bekommt das Abo sofort");
+spaet.close();
+await new Promise((r) => setTimeout(r, 100));
 for (let i = 0; i < 3; i++) kopf.send(JSON.stringify({ typ: "app-frame", frame: { kanal: "agent", frame: { kind: "token", delta: String(i) } } }));
 await new Promise((r) => setTimeout(r, 100));
 ok(empfangen.length === 3 && JSON.parse(empfangen[0].daten).instanz === "instanz-server-1", "Frames des Kopfs landen im Strom (mit Instanz)");

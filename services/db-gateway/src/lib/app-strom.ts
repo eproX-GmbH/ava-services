@@ -72,6 +72,11 @@ export class AppStrom {
     };
   }
 
+  /** Ob gerade eine App dieses Nutzers am Strom hängt. */
+  lauscht(actorId: string): boolean {
+    return (this.abonnenten.get(actorId)?.size ?? 0) > 0;
+  }
+
   /** Für Tests. */
   stopp(): void {
     for (const t of this.takte.values()) clearInterval(t);

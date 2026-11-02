@@ -226,6 +226,7 @@ export class KopfRelais {
       this.zustandSetzen(k, n.zustand);
       logger.info({ actorId: k.actorId, instanz: k.instanzId, art: k.art, version: k.version, werkzeuge: k.werkzeuge.length }, "[kopf-relais] Instanz verbunden");
       this.verteileListe(k.actorId);
+      this.instanzVerbundenHandler?.(k.actorId, k.instanzId);
       return;
     }
     // App-Kanal (docs/PLAN_APP_PWA.md §3.2): gestreamte Frames an die Apps des Nutzers.
@@ -349,6 +350,12 @@ export class KopfRelais {
   }
 
   private appFrameHandler: ((actorId: string, instanzId: string, frame: unknown) => void) | null = null;
+  private instanzVerbundenHandler: ((actorId: string, instanzId: string) => void) | null = null;
+
+  /** Eine Instanz hat sich (neu) angemeldet: z. B. um ihr sofort das App-Abo zu melden. */
+  onInstanzVerbunden(cb: (actorId: string, instanzId: string) => void): void {
+    this.instanzVerbundenHandler = cb;
+  }
 
   /** Empfaenger fuer App-Frames (lib/app-strom.ts). */
   onAppFrame(cb: (actorId: string, instanzId: string, frame: unknown) => void): void {

@@ -123,5 +123,22 @@ const txt = await anhangAufbereiten(store, { filename: "notiz.md", bytes: new Ui
 ok(txt.typ === "text" && txt.marker.includes("Kurzansicht:"), "Text → Kurzansicht");
 ok(store.get(txt.id)?.seiten?.[0]?.includes("Wichtiger Kunde"), "Datei-Handle für datei_lesen abgelegt");
 
+// Lauf aus der App ohne Abo (Abo-Meldung des Gateways blieb aus, z. B. direkt nach dem
+// Neuverbinden des Relais): Frames DIESES Laufs gehen trotzdem raus, fremde nicht.
+agent.fertig(); agent.fertig(); agent.fertig(); // Warteschlange ("3", "4") abarbeiten
+ok(agent.inFlight === null, "Warteschlange leer");
+await kanal.anfrage("abo", { an: false });
+frames.length = 0;
+const r0 = await kanal.anfrage("senden", { conversationId: "conv-123456", nachricht: "Ohne Abo" });
+ok(frames.some((f) => f.kanal === "agent" && f.frame.kind === "user-message"), "Anfrage der App verlängert das Abo: Nutzernachricht kommt an");
+await kanal.anfrage("abo", { an: false });
+frames.length = 0;
+agent.emit("stream", { kind: "token", requestId: r0.requestId, conversationId: "conv-123456", messageId: "m", delta: "x" });
+agent.emit("stream", { kind: "token", requestId: "fremd", conversationId: "c", messageId: "m2", delta: "y" });
+ok(frames.length === 1 && frames[0].frame.requestId === r0.requestId, "ohne Abo: Frames des App-Laufs ja, fremde nein");
+frames.length = 0;
+agent.fertig();
+ok(frames.some((f) => f.kanal === "app" && f.ereignis.art === "durchlauf" && !f.ereignis.aktiv), "ohne Abo: Ende des App-Laufs gemeldet");
+
 console.log(fehler ? `\n${fehler} Fehler` : "\nAlle Prüfungen grün.");
 process.exit(fehler ? 1 : 0);

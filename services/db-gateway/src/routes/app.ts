@@ -48,8 +48,21 @@ const ARTEN: Record<string, number> = {
   push_test: 20_000,
 };
 
-export const appStrom = new AppStrom((actorId, an) => {
-  void kopfRelais.appAnfrage(actorId, "abo", { an }, { timeoutMs: 5_000 });
+/**
+ * Abo an die AVAs des Nutzers melden. An ALLE verbundenen Instanzen, nicht nur
+ * die Standard-AVA: die App kann jede davon wählen (?instanz=), und jede muss
+ * dann ihre Frames schicken.
+ */
+function aboMelden(actorId: string, an: boolean, nurInstanz?: string): void {
+  const ziele = nurInstanz ? [nurInstanz] : kopfRelais.instanzen(actorId).filter((i) => i.verbunden).map((i) => i.id);
+  for (const instanzId of ziele) void kopfRelais.appAnfrage(actorId, "abo", { an }, { instanzId, timeoutMs: 5_000 });
+}
+export const appStrom = new AppStrom((actorId, an) => aboMelden(actorId, an));
+// Verbindet sich eine AVA (neu), während eine App lauscht, bekommt sie das Abo
+// sofort und nicht erst im nächsten Minutentakt: sonst fehlen die Frames eines
+// kurz nach dem Neuverbinden gestarteten Durchlaufs (kein done, Chat „lädt“ ewig).
+kopfRelais.onInstanzVerbunden((actorId, instanzId) => {
+  if (appStrom.lauscht(actorId)) aboMelden(actorId, true, instanzId);
 });
 kopfRelais.onAppFrame((actorId, instanzId, frame) => appStrom.veroeffentlichen(actorId, { instanz: instanzId, ...(frame as Record<string, unknown>) }));
 
