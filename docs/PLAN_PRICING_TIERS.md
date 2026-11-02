@@ -292,7 +292,7 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
 - **P8 umgesetzt** (2026-11-02, ava-app): Karte „Dein Plan“ unter Mehr (Plan, Kontingentbalken, Bestand nach
   Stufen, LinkedIn-Verbrauch; Admins zur Konsole, Mitglieder Hinweis auf Anfrage), Allowlist `usage`,
   `usage/linkedin`, `plaene`.
-- **Offen:** P9 Migration/Texte (Joyce 2026-11-02: vorerst zurückgestellt). Stripe-Dashboard (2026-11-02, Joyce
+- **P9 (2026-11-02):** keine Migration nötig, da es keine zahlenden Kunden im alten Modell gibt (Joyce). Website- und AGB-Texte: docs/WEBSITE_PROMPT_PRICING_2026-11-02.md (Prompt für den Website-Agenten). Offen bleibt nur Monitoring/Betrieb. Stripe-Dashboard (2026-11-02, Joyce
   per Browser): Produkte „AVA Pro“ 49 € (`price_1TWLJF0r0BPxCh2slgfeLNb7`, vorher „AVA Starter“), „AVA Max“
   149 € (`price_1TWLJH0r0BPxCh2sUvtHrQX6`, vorher „AVA Pro“), „AVA Ultra“ 299 € neu
   (`price_1UXLSE0r0BPxCh2sdDGTbBXz`); Kundenportal erlaubt keine Plan- oder Mengenänderung. Secrets
