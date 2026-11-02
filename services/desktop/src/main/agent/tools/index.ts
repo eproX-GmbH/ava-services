@@ -30,6 +30,7 @@ import { buildSettingsTools } from "./settings";
 import type { FesteAnhaenge } from "../../mail-entwurf/feste-anhaenge";
 import { buildMemoryTools } from "./memory";
 import { buildImportTools } from "./imports";
+import { buildProblemTools } from "./problem";
 import { buildAlertsTools } from "./alerts";
 import { buildFreshnessTools } from "./freshness";
 import { buildProfileTools } from "./profile";
@@ -467,7 +468,6 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   if (deps.problemMelden) {
-    const { buildProblemTools } = require("./problem") as typeof import("./problem");
     for (const t of buildProblemTools({ melden: deps.problemMelden })) registry.register(t);
   }
   return registry;
