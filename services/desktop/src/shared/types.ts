@@ -1433,7 +1433,14 @@ export interface AlertCandidateDecision {
 export interface AlertTickInfo {
   startedAt: string;
   finishedAt: string;
+  /** Neue Fundstellen, die dieser Lauf vom Gateway geholt hat (ohne Rueckstand). */
   candidatesSeen: number;
+  /** Fundstellen, die in diesem Lauf durch das Modell gingen (auch Fehler). */
+  beurteilt: number;
+  /** Uebersprungen, weil das Urteil schon frueher fiel (Urteilsgedaechtnis). */
+  bereitsBeurteilt: number;
+  /** Warten nach diesem Lauf noch auf ein Urteil (naechster Lauf). */
+  rueckstand: number;
   alertsCreated: number;
   duplicates: number;
   skipped: boolean;

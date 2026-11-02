@@ -29,10 +29,12 @@ import type { CandidateSource, HeartbeatCandidate } from "./heartbeat";
 const MATRIX_SEITE = 200;
 const MAX_MATRIX_SEITEN = 50;
 const BUENDEL = 300;
-/** Obergrenze je Takt; der Heartbeat sortiert nach Relevanz und kappt
- *  weiter (maxPerTick). Was hier abgeschnitten wird, kommt im naechsten
- *  Takt wieder, solange das 30-Tage-Fenster es traegt. */
-const MAX_CANDIDATES = 200;
+/** Obergrenze je Abruf; der Heartbeat sortiert nach Relevanz, beurteilt
+ *  maxPerTick je Takt und hebt den Rest als Rueckstand auf (2026-11-02).
+ *  Was HIER abgeschnitten wird, kommt erst beim naechsten App-Start
+ *  wieder (Folgetakte fragen nur das Fenster seit dem letzten Takt ab),
+ *  deshalb grosszuegig. */
+const MAX_CANDIDATES = 500;
 
 interface MatrixZeile {
   companyId: string;

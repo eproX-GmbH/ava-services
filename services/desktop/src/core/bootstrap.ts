@@ -35,6 +35,8 @@ import { workerModus } from "../main/worker-modus";
 import { ChromeForTesting } from "../main/chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
 import { ORG_FEATURES } from "../shared/types";
+import { HeartbeatUrteile } from "../main/agent/heartbeat-urteile";
+import { laufZusammenfassung } from "../shared/meldungs-pruefung-text";
 import { avaKontextText } from "./relais/ava-kontext";
 import { AppKanal } from "./relais/app-kanal";
 import { bildVerkleinern } from "../main/app/bild";
@@ -1392,6 +1394,10 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
 
   const heartbeat = new Heartbeat({
     store: alerts,
+    // 2026-11-02 — Urteilsgedaechtnis: Fundstellen, die schon einmal als
+    // nicht meldenswert galten, laufen nach einem Neustart nicht erneut
+    // durch das Modell. Der Rest ueber maxPerTick wartet als Rueckstand.
+    urteile: new HeartbeatUrteile(),
     // BC5 — Fokuskunden (eigenes aktives Buying Center) im Alarmweg und die
     // monatliche Nachfrage, ob ein Buying Center noch stimmt.
     // BC6 — abgeschaltet heisst: keine Fokuskunden im Alarmweg, keine Nachfrage.
@@ -1481,11 +1487,12 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       severity: "info",
       subjectType: null,
       subjectId: null,
-      summary: info.skipped
-        ? `Heartbeat-Tick übersprungen${info.reason ? `: ${info.reason}` : ""}`
-        : `Heartbeat-Tick: ${info.candidatesSeen} Kandidat(en) geprüft, ${info.alertsCreated} Alert(s) neu, ${info.duplicates} Duplikate`,
+      summary: `Prüfung auf Meldungen: ${laufZusammenfassung(info)}`,
       metadata: {
         candidatesSeen: info.candidatesSeen,
+        beurteilt: info.beurteilt,
+        bereitsBeurteilt: info.bereitsBeurteilt,
+        rueckstand: info.rueckstand,
         alertsCreated: info.alertsCreated,
         duplicates: info.duplicates,
         skipped: info.skipped,

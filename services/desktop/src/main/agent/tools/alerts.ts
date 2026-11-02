@@ -163,16 +163,19 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
       "Force a heartbeat tick NOW, regardless of cadence. Returns the per-candidate decision log (alerted / duplicate / not-worth / judge-error) plus counters. Use when the user says 'check jetzt', 'run heartbeat', 'prüfe nach neuen Meldungen'. Same effect as the 'Jetzt auslösen' button in Settings.",
     parameters: { type: "object", properties: {} },
     schema: yup.object({}).noUnknown(true),
-    preview: (r: { skipped: boolean; alertsCreated: number; candidatesSeen: number }) =>
+    preview: (r: { skipped: boolean; alertsCreated: number; candidatesSeen: number; beurteilt: number; rueckstand: number }) =>
       r.skipped
         ? "heartbeat skipped"
-        : `heartbeat: ${r.candidatesSeen} candidate(s) → ${r.alertsCreated} new alert(s)`,
+        : `heartbeat: ${r.candidatesSeen} new candidate(s), ${r.beurteilt} judged → ${r.alertsCreated} new alert(s), ${r.rueckstand} waiting`,
     run: async () => {
       const info = await deps.heartbeat.triggerNow();
       return {
         startedAt: info.startedAt,
         finishedAt: info.finishedAt,
         candidatesSeen: info.candidatesSeen,
+        beurteilt: info.beurteilt,
+        bereitsBeurteilt: info.bereitsBeurteilt,
+        rueckstand: info.rueckstand,
         alertsCreated: info.alertsCreated,
         duplicates: info.duplicates,
         skipped: info.skipped,

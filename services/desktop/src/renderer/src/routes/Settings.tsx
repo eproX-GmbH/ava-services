@@ -50,6 +50,7 @@ import type {
   Watch,
 } from "../../../shared/types";
 import { WATCH_CAP_DEFAULT } from "../../../shared/types";
+import { laufZusammenfassung } from "../../../shared/meldungs-pruefung-text";
 import { bestaetigen } from "../components/Bestaetigung";
 
 // Settings route (Phase 8.g).
@@ -3650,6 +3651,7 @@ export function AlertsSection() {
     lastTickAt: string | null;
     inflight: boolean;
     historyCount: number;
+    rueckstand: number;
   } | null>(null);
 
   // Bootstrap + subscribe to main-side prefs changes so two windows
@@ -3909,6 +3911,7 @@ function HeartbeatHistory({
     lastTickAt: string | null;
     inflight: boolean;
     historyCount: number;
+    rueckstand: number;
   } | null;
 }) {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
@@ -3982,8 +3985,9 @@ function DecisionList({ tick }: { tick: AlertTickInfo }) {
   if (tick.decisions.length === 0) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Keine neuen Fundstellen seit dem letzten Lauf, also nichts zu
-        bewerten.
+        {tick.bereitsBeurteilt > 0
+          ? `Nichts Neues zu bewerten: ${tick.bereitsBeurteilt} Fundstellen waren schon früher bewertet.`
+          : "Keine neuen Fundstellen seit dem letzten Lauf, also nichts zu bewerten."}
       </p>
     );
   }
@@ -4018,20 +4022,8 @@ function DecisionList({ tick }: { tick: AlertTickInfo }) {
 }
 
 function summariseTick(t: AlertTickInfo): string {
-  if (t.skipped) {
-    return `übersprungen${t.reason ? ` (${t.reason})` : ""}`;
-  }
-  const parts: string[] = [];
-  parts.push(
-    `${t.candidatesSeen} ${t.candidatesSeen === 1 ? "Fundstelle" : "Fundstellen"} geprüft`,
-  );
-  if (t.alertsCreated > 0) {
-    parts.push(
-      `${t.alertsCreated} neue ${t.alertsCreated === 1 ? "Meldung" : "Meldungen"}`,
-    );
-  }
-  if (t.duplicates > 0) parts.push(`${t.duplicates} Duplikat(e)`);
-  return parts.join(" · ");
+  // Gleicher Text wie im Protokoll (src/shared/meldungs-pruefung-text.ts).
+  return laufZusammenfassung(t);
 }
 
 /**
@@ -4049,6 +4041,7 @@ function formatScheduleLine(
     nextScheduledAt: string | null;
     lastTickAt: string | null;
     inflight: boolean;
+    rueckstand?: number;
   } | null,
 ): string {
   if (!status) return "Lädt …";
@@ -4069,6 +4062,13 @@ function formatScheduleLine(
       minLeft < 1
         ? `nächster planmäßig ${hhmm} (gleich)`
         : `nächster planmäßig ${hhmm} (in ${minLeft} min)`,
+    );
+  }
+  if ((status.rueckstand ?? 0) > 0) {
+    parts.push(
+      status.rueckstand === 1
+        ? "1 Fundstelle wartet noch auf Bewertung"
+        : `${status.rueckstand} Fundstellen warten noch auf Bewertung`,
     );
   }
   if (status.lastTickAt) {

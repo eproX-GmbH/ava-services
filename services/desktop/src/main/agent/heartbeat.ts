@@ -5,6 +5,7 @@ import { reihenfolge } from "../relevanz/reihenfolge";
 import { alarmweg, wegBegruendung } from "../relevanz/alarmweg";
 import * as sammlung from "../relevanz/sammlung";
 import { JudgeProviderUnavailable } from "./alert-judge";
+import type { HeartbeatUrteile } from "./heartbeat-urteile";
 import type {
   Alert,
   AlertCandidateDecision,
@@ -86,8 +87,13 @@ export interface HeartbeatOptions {
    *  "always alert" — the real LLM judge lands in 8.f2. */
   judge?: Judge;
   /** Cap LLM calls per tick. Excess candidates roll over to the next tick
-   *  (not implemented in 8.f1; we just drop the tail). Default 20. */
+   *  as Rueckstand (seit 2026-11-02; vorher fiel der Rest weg, weil der
+   *  naechste Takt nur das 15-Minuten-Fenster abfragt). Default 20. */
   maxPerTick?: number;
+  /** Urteilsgedaechtnis: Fundstellen, zu denen schon ein Urteil gefallen
+   *  ist (nicht meldenswert, gesammelt), laufen nach einem Neustart nicht
+   *  erneut durch den Judge. Ohne Store gilt das Gedaechtnis nur je Takt. */
+  urteile?: HeartbeatUrteile;
   /** Hook for telemetry / dev logging — fires on every tick boundary. */
   onTick?: (info: TickInfo) => void;
   /** Phase 8.t2 — fires AFTER the primary alert judge has run, with
@@ -156,6 +162,12 @@ export class Heartbeat extends EventEmitter {
   private readonly source: CandidateSource;
   private readonly judge: Judge;
   private readonly maxPerTick: number;
+  private readonly urteile: HeartbeatUrteile | null;
+  /** Fundstellen, die geholt, aber noch nicht beurteilt wurden (ueber
+   *  maxPerTick hinaus oder weil kein Modell bereit war). Werden in den
+   *  Folgetakten vor den neuen Fundstellen abgearbeitet; neue Fundstellen
+   *  mit derselben Kennung ersetzen sie nicht, sondern fallen zusammen. */
+  private rueckstand: HeartbeatCandidate[] = [];
   private readonly onTick?: (info: TickInfo) => void;
   private readonly fokusFirmen?: () => Promise<Set<string>>;
   private readonly faelligeNachfragen?: HeartbeatOptions["faelligeNachfragen"];
@@ -187,6 +199,7 @@ export class Heartbeat extends EventEmitter {
     this.source = options.source ?? defaultStubSource();
     this.judge = options.judge ?? defaultStubJudge;
     this.maxPerTick = options.maxPerTick ?? 20;
+    this.urteile = options.urteile ?? null;
     this.postCandidateHook = options.postCandidateHook ?? null;
     this.fokusFirmen = options.fokusFirmen;
     this.faelligeNachfragen = options.faelligeNachfragen;
@@ -282,10 +295,13 @@ export class Heartbeat extends EventEmitter {
         startedAt: new Date().toISOString(),
         finishedAt: new Date().toISOString(),
         candidatesSeen: 0,
+        beurteilt: 0,
+        bereitsBeurteilt: 0,
+        rueckstand: this.rueckstand.length,
         alertsCreated: 0,
         duplicates: 0,
         skipped: true,
-        reason: "previous tick still running",
+        reason: "voriger Lauf läuft noch",
         decisions: [],
       };
       this.emit("tick", skipped);
@@ -295,6 +311,8 @@ export class Heartbeat extends EventEmitter {
     this.inflight = true;
     const startedAt = new Date();
     let candidatesSeen = 0;
+    let beurteilt = 0;
+    let bereitsBeurteilt = 0;
     let alertsCreated = 0;
     let duplicates = 0;
     const created: Alert[] = [];
@@ -305,27 +323,47 @@ export class Heartbeat extends EventEmitter {
       const roh = await this.source(this.lastTickAt);
       candidatesForHook = roh;
       candidatesSeen = roh.length;
+      // Rueckstand (2026-11-02): Was im letzten Takt nicht mehr drankam,
+      // steht vor den neuen Fundstellen an. Dieselbe Kennung zweimal (der
+      // erste Takt nach einem Neustart holt das 30-Tage-Fenster erneut)
+      // zaehlt einmal.
+      const offen = new Map<string, HeartbeatCandidate>();
+      for (const c of [...this.rueckstand, ...roh]) {
+        if (!offen.has(c.sourceRef)) offen.set(c.sourceRef, c);
+      }
+      this.rueckstand = [];
+      // Was schon entschieden ist, kostet keinen Platz im Takt: bereits
+      // gemeldet (alerts.jsonl) oder bereits beurteilt (Urteilsgedaechtnis).
+      const zuBeurteilen: HeartbeatCandidate[] = [];
+      for (const c of offen.values()) {
+        if (this.store.hasSourceRef(c.sourceRef)) {
+          duplicates += 1;
+          decisions.push(decisionFor(c, "duplicate", "Bereits gemeldet."));
+          continue;
+        }
+        if (this.urteile?.hat(c.sourceRef)) {
+          bereitsBeurteilt += 1;
+          continue;
+        }
+        zuBeurteilen.push(c);
+      }
       // Relevanz (docs/PLAN_RELEVANZ.md, 5.3): Der knappe Stoff ist die
-      // Zahl der Urteile je Durchgang — was hinten abgeschnitten wird,
-      // sieht der Nutzer nie. Also erst sortieren, dann kappen. Jeder
+      // Zahl der Urteile je Durchgang. Also erst sortieren, dann kappen;
+      // der Rest wartet als Rueckstand auf den naechsten Takt. Jeder
       // vierte Platz gehoert Firmen mit hohem Gewicht und niedriger
       // Naehe, sonst wird AVA blind fuer alles, was noch niemand
       // angesehen hat.
-      const candidates = await this.sortiereNachRelevanz(roh);
+      const candidates = await this.sortiereNachRelevanz(zuBeurteilen);
       // BC5: Fokuskunden einmal je Durchgang lesen; ohne Netz eine leere
       // Menge, und dann gilt der normale Weg.
       let fokus = new Set<string>();
       if (this.fokusFirmen && candidates.length > 0) {
         try { fokus = await this.fokusFirmen(); } catch { /* normaler Weg */ }
       }
-      for (const c of candidates.slice(0, this.maxPerTick)) {
-        // Dedup first — cheap and avoids burning an LLM call to re-decide
-        // a candidate we've already alerted on.
-        if (this.store.hasSourceRef(c.sourceRef)) {
-          duplicates += 1;
-          decisions.push(decisionFor(c, "duplicate", "Bereits gemeldet."));
-          continue;
-        }
+      const jetzt = candidates.slice(0, this.maxPerTick);
+      let rest = candidates.slice(this.maxPerTick);
+      for (let i = 0; i < jetzt.length; i++) {
+        const c = jetzt[i]!;
         let verdict;
         try {
           // 2026-10-05: Naehe + Fokuskunde mit in die Bewertung geben,
@@ -343,19 +381,24 @@ export class Heartbeat extends EventEmitter {
         } catch (err) {
           if (err instanceof JudgeProviderUnavailable) {
             // No LLM ready — abandon the rest of the tick rather than
-            // burning the dedup slot for every queued candidate. They'll
-            // re-appear on the next tick once a provider comes online.
+            // burning the dedup slot for every queued candidate. Alles ab
+            // hier wandert in den Rueckstand und kommt im naechsten Takt
+            // dran, sobald ein Modell bereit ist.
             providerUnavailable = true;
+            rest = [...jetzt.slice(i), ...rest];
             break;
           }
           // Non-recoverable judge failures (network blip, garbled
           // response, …) are recorded so the user can see *which*
           // candidate misbehaved instead of just a tick-level error.
           const message = err instanceof Error ? err.message : String(err);
+          beurteilt += 1;
           decisions.push(decisionFor(c, "judge-error", `Fehler: ${message}`));
           continue;
         }
+        beurteilt += 1;
         if (!verdict.worthAlerting) {
+          this.urteile?.merken(c.sourceRef, "not-worth", startedAt);
           decisions.push(
             decisionFor(
               c,
@@ -382,6 +425,7 @@ export class Heartbeat extends EventEmitter {
             sourceRef: c.sourceRef,
             occurredAt: c.occurredAt,
           });
+          this.urteile?.merken(c.sourceRef, "gesammelt", startedAt);
           decisions.push(
             decisionFor(c, "gesammelt", wegBegruendung(einstufung, rang) || verdict.rationale),
           );
@@ -431,6 +475,7 @@ export class Heartbeat extends EventEmitter {
           );
         }
       }
+      this.rueckstand = rest;
     } catch (err) {
       console.warn("[heartbeat] tick failed:", err);
     } finally {
@@ -533,11 +578,14 @@ export class Heartbeat extends EventEmitter {
       startedAt: startedAt.toISOString(),
       finishedAt: new Date().toISOString(),
       candidatesSeen,
+      beurteilt,
+      bereitsBeurteilt,
+      rueckstand: this.rueckstand.length,
       alertsCreated,
       duplicates,
       skipped: providerUnavailable,
       ...(providerUnavailable
-        ? { reason: "kein LLM-Provider bereit" }
+        ? { reason: "kein Sprachmodell bereit" }
         : {}),
       decisions,
     };
@@ -615,6 +663,8 @@ export class Heartbeat extends EventEmitter {
     lastTickAt: string | null;
     inflight: boolean;
     historyCount: number;
+    /** Fundstellen, die auf den naechsten Takt warten. */
+    rueckstand: number;
   } {
     return {
       running: !this.stopped && this.intervalMs > 0,
@@ -625,6 +675,7 @@ export class Heartbeat extends EventEmitter {
       lastTickAt: this.lastTickAt ? this.lastTickAt.toISOString() : null,
       inflight: this.inflight,
       historyCount: this.history.length,
+      rueckstand: this.rueckstand.length,
     };
   }
 }

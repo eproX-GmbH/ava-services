@@ -1261,6 +1261,7 @@ const api = {
       lastTickAt: string | null;
       inflight: boolean;
       historyCount: number;
+      rueckstand: number;
     }> => ipcRenderer.invoke("alerts:heartbeatStatus"),
     /** Subscribe to mutation events. Caller receives a void payload —
      *  refetch via `list()` / `unreadCount()` to get the current state. */
