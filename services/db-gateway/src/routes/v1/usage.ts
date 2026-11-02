@@ -29,7 +29,7 @@ export const usageRouter = new OpenAPIHono();
 
 const UsageResponseShape = z
   .object({
-    tier: z.enum(["free", "starter", "pro", "enterprise"]),
+    tier: z.enum(["free", "starter", "pro", "max", "ultra", "enterprise"]),
     used: z.number().int().nonnegative(),
     /** -1 sentinel = no enforcement (enterprise tier). Otherwise the
      *  per-period quota. Clients render -1 as "∞". */

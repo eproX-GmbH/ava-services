@@ -87,20 +87,20 @@ model EntityProgress {
 /// the customer once a few months of data are accumulated and we
 /// know what cardinality looks like.
 model ProxyAudit {
-  id        BigInt   @id @default(autoincrement())
-  proxy     String // 'valueserp' (room for more later)
-  tenantId  String
-  actorId   String
-  qHash     String // sha256(canonicalized request body)
-  status    Int // upstream HTTP status (or 429 for our own rate-limit)
-  latencyMs Int // 0 if denied at the rate-limit gate
-  cacheHit  Boolean  @default(false)
+  id             BigInt   @id @default(autoincrement())
+  proxy          String // 'valueserp' (room for more later)
+  tenantId       String
+  actorId        String
+  qHash          String // sha256(canonicalized request body)
+  status         Int // upstream HTTP status (or 429 for our own rate-limit)
+  latencyMs      Int // 0 if denied at the rate-limit gate
+  cacheHit       Boolean  @default(false)
   /// 2026-10-15 — geltender Abrechnungstarif (Env VALUESERP_TARIF) und Preis je Abfrage.
   tarif          String?
   kostenMicroUsd Int?
   /// Vorabanalyse: Lauf-Kennung "vorab:<id>" (Kosten je Lauf).
   ref            String?
-  createdAt DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   // Counter-window queries: WHERE proxy=$1 AND tenantId=$2 AND createdAt > NOW() - $window
   @@index([proxy, tenantId, createdAt])
@@ -294,6 +294,17 @@ model TenantBilling {
   karenzTag            Int?
   /// Z7 — Ausgabenlimit je Monat fuer Aufnahmen in Cent (NULL = keins). Setzt der Kunde selbst.
   ausgabenLimitCents   Int?
+  /// docs/PLAN_PRICING_TIERS.md P1 (2026-11-02) — Organisation: Sitz-Abo (Reduktionen je Plan
+  /// zum Zyklusende als JSON), Stripe-Schedule, Enterprise-Grenzen (Betreiber). Nutzer:
+  /// Pay-as-you-go-Freigabe fuer einen Monat (YYYY-MM) mit Deckel, LinkedIn-Limit.
+  sitzeGeplant         Json?
+  stripeScheduleId     String?
+  maxMitglieder        Int?
+  firmenLimit          Int?
+  linkedinLimitCents   Int?
+  linkedinImVertrag    Boolean   @default(false)
+  paygFreigabePeriode  String?
+  paygLimitCents       Int?
   /// Betreiber-Monatslimit Hintergrundverarbeitung (Cent, zu Stufenpreisen); NULL = keins.
   betreiberLimitCents  Int?
   /// Enterprise-Vertrag: ausgehandelter Fixpreis je Monat (Cent, netto); NULL = keiner.
@@ -323,11 +334,11 @@ model TenantBilling {
 /// short-circuits since they're free downstream of structured-content.
 model UsageEntry {
   /// B1 — Abrechnungskonto (TenantBilling.tenantId), nicht der Daten-Tenant.
-  billingAccountId String
-  periodKey        String
-  companyId        String
-  source           String
-  createdAt        DateTime @default(now())
+  billingAccountId  String
+  periodKey         String
+  companyId         String
+  source            String
+  createdAt         DateTime  @default(now())
   /// Z3 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Stufe nach dem Lauf — klein | mittel | gross.
   stufe             String?
   preisCents        Int?
@@ -461,19 +472,19 @@ model AuditLog {
 /// C2 (docs/PLAN_COPILOT_MCP.md): Anmeldung mit dem Microsoft-Konto des Unternehmens.
 /// Das Client-Geheimnis liegt nur in Keycloak (Identity Provider "entra-<tenantId>").
 model TenantSso {
-  tenantId        String   @id
-  anbieter        String   @default("entra")
+  tenantId        String    @id
+  anbieter        String    @default("entra")
   /// Entra-Tenant-ID (GUID) des Kunden; Claim `tid` im Token.
   entraTenantId   String
   clientId        String
   /// Keycloak-Alias des Identity Providers.
   idpAlias        String
-  aktiv           Boolean  @default(true)
+  aktiv           Boolean   @default(true)
   zuletztGeprueft DateTime?
   fehler          String?
   erstelltVon     String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now())
 
   @@index([entraTenantId])
 }
@@ -482,7 +493,7 @@ model TenantSso {
 /// externer Agent (Copilot, Claude) oder ein Mitglied bei AVA ablegt. Je Firma,
 /// optional je Person; sichtbar fuer die Organisation.
 model CompanyNotiz {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   tenantId  String
   actorId   String
   companyId String
@@ -492,7 +503,7 @@ model CompanyNotiz {
   quelle    String
   /// Datum des Gespraechs (vom Aufrufer), sonst createdAt.
   datum     DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([tenantId, companyId, createdAt])
 }
@@ -529,6 +540,8 @@ model TenantJoinRequest {
   email       String?
   name        String?
   status      String    @default("open") // open | approved | rejected | withdrawn
+  /// P1 — gewuenschter/zugesagter Sitz (pro | max | ultra | free), z. B. aus einer Einladung mit Plan
+  sitzWunsch  String?
   requestedAt DateTime  @default(now())
   decidedAt   DateTime?
   decidedBy   String?
@@ -678,6 +691,10 @@ model LlmUsage {
   quelle          String?
   /// 2026-10-15 — Apify: Lauf-Kennung; costMicroUsd traegt dann die echten Kosten laut Apify.
   ref             String?
+  /// P1 — Kundenpreis in Cent (LinkedIn-Beobachtung: Apify-Kosten + Aufschlag; Schaetzung bis Ist da ist).
+  preisCents      Int?
+  /// P1 — firmenverarbeitung | linkedin (Apify-Aufrufe), sonst NULL.
+  kontext         String?
   createdAt       DateTime @default(now())
 
   @@index([tenantId, createdAt])
@@ -705,6 +722,8 @@ model TenantMember {
   actorId  String
   role     String   @default("member") // owner | member
   joinedAt DateTime @default(now())
+  /// P1 — aktiv | wartend (Beitritt ohne freien Platz, bis ein Sitz zugewiesen ist)
+  status   String   @default("aktiv")
   email    String? // aus dem Token (whoami-Abgleich), Anzeige in der Mitgliederliste
   name     String?
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1155,21 +1174,21 @@ model AnbieterKosten {
 
 /// Vorabanalyse (docs/PLAN_VORABANALYSE.md): Betreiber-Werkzeug, eigene Tabellen.
 model VorabLauf {
-  id            String    @id
+  id            String          @id
   kundeName     String
   erstelltVon   String
-  status        String    @default("neu")
+  status        String          @default("neu")
   icp           Json?
-  einstellungen Json      @default("{}")
-  zaehler       Json      @default("{}")
+  einstellungen Json            @default("{}")
+  zaehler       Json            @default("{}")
   spalten       Json?
   dateiName     String?
   notiz         String?
   gestartetAt   DateTime?
   beendetAt     DateTime?
   deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now())
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @default(now())
   firmen        VorabFirma[]
   ereignisse    VorabEreignis[]
 }
@@ -1216,4 +1235,52 @@ model VorabEreignis {
   daten   Json?
 
   @@index([laufId, zeit])
+}
+
+/// docs/PLAN_PRICING_TIERS.md P1 — Sitz einer Organisation (Plan pro | max | ultra).
+/// Quelle fuer Mengen je Plan, freie Sitze und Zuweisung. Nie loeschen, nur endetAm setzen.
+model Sitz {
+  id            String    @id
+  tenantId      String
+  plan          String
+  stripeItemId  String?
+  /// NULL = frei
+  actorId       String?
+  zugewiesenAm  DateTime?
+  zugewiesenVon String?
+  /// NULL = laeuft
+  endetAm       DateTime?
+  /// vorgemerkte Reduktion zum Zyklusende
+  reduziertZum  DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([tenantId, plan, endetAm])
+  @@index([actorId, endetAm])
+}
+
+/// P1 — Historie des Plans je Nutzer; Grundlage fuer das tagesanteilige Monatskontingent.
+model PlanZeitraum {
+  id       String    @id
+  actorId  String
+  tenantId String
+  plan     String
+  sitzId   String?
+  ab       DateTime
+  bis      DateTime?
+
+  @@index([actorId, ab])
+}
+
+/// P1 — Neuverarbeitung einer ganzen Firma durch den Kunden (zaehlt wie eine Aufnahme zum Stufenpreis).
+model NeuverarbeitungEntry {
+  id               String   @id
+  billingAccountId String
+  periodKey        String
+  companyId        String
+  stufe            String?
+  preisCents       Int?
+  actorId          String?
+  createdAt        DateTime @default(now())
+
+  @@index([billingAccountId, periodKey])
 }

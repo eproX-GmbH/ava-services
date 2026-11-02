@@ -21,6 +21,7 @@ import { healthRouter } from "./routes/health";
 import { v1 } from "./routes/v1";
 import { billingWebhookRouter } from "./routes/v1/billing";
 import { publicAuthRouter } from "./routes/v1/auth";
+import { plaeneRouter } from "./routes/v1/plaene";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { internalRegisterJobsRouter } from "./routes/internal-register-jobs";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
@@ -97,6 +98,8 @@ app.route("/", billingWebhookRouter);
 // reach the handler (the /v1 chain requires a Bearer token). See
 // routes/v1/auth.ts — implements POST /v1/auth/register.
 app.route("/", publicAuthRouter);
+// docs/PLAN_PRICING_TIERS.md P1 — Plan-Katalog ohne Auth (Listenpreise fuer App, Konsole, Website).
+app.route("/v1", plaeneRouter);
 
 // Q-track v0.1.137 — Internal HMAC-authed surface for the gateway ↔
 // master-data quota / park-state channel. Mounted OUTSIDE /v1 so it

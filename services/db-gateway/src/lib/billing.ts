@@ -40,9 +40,12 @@ import { TIER_LIMITS } from "./billing-plans";
 
 /** Tier values the gateway recognizes. Stripe webhooks flip a tenant
  *  between these. Schema is `String` so adding a new tier is data-only. */
-export type BillingTier = "free" | "starter" | "pro" | "enterprise";
+/** docs/PLAN_PRICING_TIERS.md (2026-11-02): Plaene als Sitze — pro | max | ultra; starter nur noch Altbestand. */
+export type BillingTier = "free" | "starter" | "pro" | "max" | "ultra" | "enterprise";
 /** B1 — Abrechnungsart des Kontos. */
-export type BillingMode = "none" | "subscription" | "seats" | "enterprise";
+/** sitz = Nutzer mit zugewiesenem Sitz einer Organisation (Zahlung an der Organisation, mode sitze);
+ *  sitze = Organisation mit Sitz-Abo (ein Stripe-Abo, Mengen je Plan). */
+export type BillingMode = "none" | "subscription" | "seats" | "enterprise" | "sitz" | "sitze";
 /** B1 — Zahlungszustand des Kontos. */
 export type BillingStatus = "active" | "past_due" | "suspended" | "canceled";
 
@@ -228,6 +231,8 @@ export function effectiveTier(acc: BillingAccount): BillingTier {
   if (acc.mode === "enterprise") return "enterprise";
   if (acc.mode === "seats") return acc.seatTier ?? "starter";
   if (acc.mode === "subscription") return acc.tier;
+  // sitz: der Plan des zugewiesenen Sitzes wird bei der Zuweisung in tier geschrieben.
+  if (acc.mode === "sitz") return acc.tier;
   // mode none: Operator kann tier trotzdem gesetzt haben (Altbestand).
   return acc.tier;
 }

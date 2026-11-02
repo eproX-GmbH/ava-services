@@ -22,10 +22,90 @@ export const TIER_LIMITS: Record<BillingTier, number> = {
   free: 25,
   starter: UNLIMITED,
   pro: UNLIMITED,
+  max: UNLIMITED,
+  ultra: UNLIMITED,
   enterprise: UNLIMITED,
 };
 
-export type PaidTier = "starter" | "pro";
+export type PaidTier = "starter" | "pro" | "max" | "ultra";
+
+// ---- docs/PLAN_PRICING_TIERS.md P1 — Plan-Katalog (2026-11-02) -------------
+//
+// Eine Quelle fuer App, Konsole und PWA: Preis je Sitz und Monat, Kontingent in
+// Cent (Standard = Preis), Rang fuer Upgrade/Downgrade-Richtung, Merkmale fuer
+// die Plan-Karten. Preise/Kontingente per Env ohne Deploy aenderbar.
+
+export type SitzPlan = "pro" | "max" | "ultra";
+export const SITZ_PLAENE: readonly SitzPlan[] = ["pro", "max", "ultra"];
+
+export interface PlanEintrag {
+  plan: BillingTier;
+  name: string;
+  /** Rang: free 0 < pro 1 < max 2 < ultra 3; enterprise 9 (ausserhalb der Leiter). */
+  rang: number;
+  /** Preis je Sitz und Monat, Cent netto (0 = kostenlos, null = Vertrag). */
+  preisCents: number | null;
+  /** Monatskontingent in Cent (null = Vertrag/Betreiber-Limit); Free: 25 Firmen lebenslang. */
+  kontingentCents: number | null;
+  /** Free: Firmen lebenslang. */
+  firmenLebenslang: number | null;
+  payg: boolean;
+  linkedinBeobachtung: boolean;
+  merkmale: string[];
+}
+
+function envCents(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
+}
+
+export function planKatalog(): PlanEintrag[] {
+  const pro = envCents("PLAN_PRO_CENTS", 4900);
+  const max = envCents("PLAN_MAX_CENTS", 14900);
+  const ultra = envCents("PLAN_ULTRA_CENTS", 29900);
+  return [
+    {
+      plan: "free", name: "Free", rang: 0, preisCents: 0, kontingentCents: null, firmenLebenslang: TIER_LIMITS.free,
+      payg: false, linkedinBeobachtung: false,
+      merkmale: ["25 Firmen, einmalig", "Alle Firmendaten inklusive LinkedIn-Kontakte", "Höchstens 3 Free-Plätze je Organisation"],
+    },
+    {
+      plan: "pro", name: "Pro", rang: 1, preisCents: pro, kontingentCents: envCents("KONTINGENT_PRO_CENTS", pro), firmenLebenslang: null,
+      payg: false, linkedinBeobachtung: true,
+      merkmale: ["Monatskontingent in Höhe des Sitzpreises", "Firmen im Bestand ab 0,50 € je Monat", "LinkedIn-Beobachtung nach Verbrauch"],
+    },
+    {
+      plan: "max", name: "Max", rang: 2, preisCents: max, kontingentCents: envCents("KONTINGENT_MAX_CENTS", max), firmenLebenslang: null,
+      payg: false, linkedinBeobachtung: true,
+      merkmale: ["Dreifaches Kontingent gegenüber Pro", "Firmen im Bestand ab 0,50 € je Monat", "LinkedIn-Beobachtung nach Verbrauch"],
+    },
+    {
+      plan: "ultra", name: "Ultra", rang: 3, preisCents: ultra, kontingentCents: envCents("KONTINGENT_ULTRA_CENTS", ultra), firmenLebenslang: null,
+      payg: true, linkedinBeobachtung: true,
+      merkmale: ["Sechsfaches Kontingent gegenüber Pro", "Über das Kontingent hinaus nach Freigabe", "LinkedIn-Beobachtung nach Verbrauch"],
+    },
+    {
+      plan: "enterprise", name: "Enterprise", rang: 9, preisCents: null, kontingentCents: null, firmenLebenslang: null,
+      payg: false, linkedinBeobachtung: true,
+      merkmale: ["Vertrag mit Fixpreis und Sammelrechnung", "Mitgliederzahl und Grenzen nach Vereinbarung"],
+    },
+  ];
+}
+
+export function planEintrag(plan: BillingTier): PlanEintrag {
+  const e = planKatalog().find((p) => p.plan === plan);
+  if (e) return e;
+  // starter (Altbestand) verhaelt sich wie pro.
+  return planKatalog().find((p) => p.plan === "pro")!;
+}
+
+export function istSitzPlan(v: unknown): v is SitzPlan {
+  return v === "pro" || v === "max" || v === "ultra";
+}
+
+export function planRang(plan: BillingTier): number {
+  return planEintrag(plan).rang;
+}
 
 /** Z4 (docs/PLAN_ABRECHNUNG_ZUGANG.md): Zugangsguthaben je Monat und Seat in
  *  Euro-Cent (netto). Aufnahmen werden mit ihrem Stufenpreis dagegen gerechnet,
@@ -48,6 +128,8 @@ export function guthabenCents(tier: BillingTier): number {
 export function priceIdForTier(tier: PaidTier): string | null {
   if (tier === "starter") return process.env.STRIPE_PRICE_STARTER ?? null;
   if (tier === "pro") return process.env.STRIPE_PRICE_PRO ?? null;
+  if (tier === "max") return process.env.STRIPE_PRICE_MAX ?? null;
+  if (tier === "ultra") return process.env.STRIPE_PRICE_ULTRA ?? null;
   return null;
 }
 
@@ -58,6 +140,8 @@ export function priceIdForTier(tier: PaidTier): string | null {
 export function tierFromPriceId(priceId: string): PaidTier | null {
   if (priceId === process.env.STRIPE_PRICE_STARTER) return "starter";
   if (priceId === process.env.STRIPE_PRICE_PRO) return "pro";
+  if (priceId === process.env.STRIPE_PRICE_MAX) return "max";
+  if (priceId === process.env.STRIPE_PRICE_ULTRA) return "ultra";
   return null;
 }
 
