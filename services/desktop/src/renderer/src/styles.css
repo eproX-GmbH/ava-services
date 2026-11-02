@@ -9271,7 +9271,8 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .segment__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: none; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--fg); opacity: 0.75; cursor: pointer; white-space: nowrap; }
 .segment__item:hover { opacity: 1; text-decoration: none; background: var(--color-bg-2); }
 .segment__item--aktiv, .segment__item--aktiv:hover { opacity: 1; font-weight: 600; background: var(--color-bg-3, var(--color-bg-2)); }
-.segment__zahl { font-size: 12px; font-weight: 400; opacity: 0.65; font-variant-numeric: tabular-nums; }
+.segment__zahl { font-weight: 400; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.segment__item, .segment__zahl { line-height: 1; }
 .all-companies__matrix tr.ruhend-row .matrix-company > a,
 .all-companies__matrix tr.ruhend-row .matrix-cell { opacity: 0.55; }
 .company-ruhend { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0.75rem 0 1rem; padding: 0.9rem 1.1rem; }
