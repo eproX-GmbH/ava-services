@@ -26,7 +26,7 @@ Anbindung und die Betreiber-Sicht je Kunde.
 
 | Plan | Preis / Monat je Nutzer | Kontingent / Monat | Beispiel (nur klein / nur groß) | Apify-Kontakte in der Firmenverarbeitung | LinkedIn-Beobachtung |
 |---|---|---|---|---|---|
-| Free | 0 € | 25 Firmen lebenslang | 25 | ja (neu) | nein |
+| Free | 0 € | 25 Firmen lebenslang | 25 | nur Firmenprofil (Suche + Details), kein Mitarbeiter-Lauf (Joyce 2026-11-02) | nein |
 | Pro | 49 € | 49 € | 98 / 32 | ja | nach Verbrauch, eigenes Limit |
 | Max | 149 € | 149 € | 298 / 99 | ja | nach Verbrauch, eigenes Limit |
 | Ultra | 299 € | 299 € + Pay-as-you-go nach Freigabe | 598 / 199 (+ offen) | ja | nach Verbrauch, eigenes Limit |
@@ -637,6 +637,10 @@ Desktop/PWA, Umschalten und Migration an einem Monatsersten, empfohlen 2026-12-0
 - Enterprise manuell, ohne Standard-Limits, Betreiber kann Mitgliederzahl, Firmen-Limit und
   LinkedIn-Limit je Organisation setzen; Kosten je Organisation immer einsehbar.
 - Apify-Kontakte im Kontakt-Producer im Stufenpreis; Beobachtung rein nach Verbrauch.
+- **Free ohne Mitarbeiter-Lauf** (Joyce 2026-11-02, Kostenrisiko): Free bekommt bei LinkedIn nur
+  Firmensuche und Firmendetails (Cent-Betraege), der Mitarbeiter-Lauf (0,37 bis 0,46 € je Firma)
+  ist ab Pro. Durchsetzung im Apify-Proxy (402 `apify_mitarbeiter_nicht_im_free_plan`), der
+  Kontakt-Producer faellt auf Website und Suche zurueck. Direktkosten je Free-Nutzer damit unter 3 €.
 
 ## 6. Noch offen (Empfehlung jeweils zuerst)
 

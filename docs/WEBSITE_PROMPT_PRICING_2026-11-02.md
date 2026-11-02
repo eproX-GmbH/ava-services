@@ -35,7 +35,7 @@ Zahl der Firmen, nie die Nutzung von AVA selbst.
 
 | Plan | Preis | Was drin ist |
 |---|---|---|
-| Free | 0 € | 25 Firmen, einmal und für immer (kein monatlicher Reset). Ansprechpartner von Website und LinkedIn-Firmenprofil. Firmen-Radar als Wochen-Scan. Für bis zu drei Personen je Organisation. |
+| Free | 0 € | 25 Firmen, einmal und für immer (kein monatlicher Reset). Ansprechpartner von der Website; LinkedIn-Mitarbeiter ab Pro. Firmen-Radar als Wochen-Scan. Für bis zu drei Personen je Organisation. |
 | Pro | 49 € je Nutzer und Monat | Monatliches Firmen-Kontingent im Wert von 49 €. Alle Funktionen. Beobachtung von LinkedIn-Aktivitäten nach Verbrauch, mit eigenem Limit. |
 | Max | 149 € je Nutzer und Monat | Monatliches Firmen-Kontingent im Wert von 149 €. Sonst wie Pro. |
 | Ultra | 299 € je Nutzer und Monat | Monatliches Firmen-Kontingent im Wert von 299 €. Auf Wunsch darüber hinaus nach Verbrauch (Pay-as-you-go), nur nach deiner ausdrücklichen Freigabe und immer nur für den laufenden Monat. Sonst wie Pro. |
@@ -206,5 +206,5 @@ AGB das bisher tun; sonst wie gehabt), nummeriert, ohne Marketing. Inhalte:
   Hinweis, dass Stellenanzeigen und Ausschreibungen über das eigene Modell laufen, streichen
   (laufen seit November 2026 in der Standardstufe über AVA, ohne eigenes Modell). Deep
   Research nicht erwähnen.
-- Free: Ansprechpartner von Website und LinkedIn-Firmenprofil dürfen genannt werden
+- Free: Ansprechpartner nur von der Website (Änderung 2026-11-02: kein LinkedIn-Mitarbeiter-Abruf, das gibt es ab Pro); die Zuordnung des LinkedIn-Firmenprofils selbst ist kein beworbenes Merkmal
   (neu); keine Beobachtung, kein Personen-Radar, Firmen-Radar nur als Wochen-Scan.

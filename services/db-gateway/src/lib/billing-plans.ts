@@ -71,7 +71,7 @@ export function planKatalog(): PlanEintrag[] {
     {
       plan: "free", name: "Free", rang: 0, preisCents: 0, kontingentCents: null, firmenLebenslang: TIER_LIMITS.free,
       payg: false, linkedinBeobachtung: false,
-      merkmale: ["25 Firmen, einmalig", "Alle Firmendaten inklusive LinkedIn-Kontakte", "Höchstens 3 Free-Plätze je Organisation"],
+      merkmale: ["25 Firmen, einmalig", "Ansprechpartner von der Website, LinkedIn-Mitarbeiter ab Pro", "Höchstens 3 Free-Plätze je Organisation"],
     },
     {
       plan: "pro", name: "Pro", rang: 1, preisCents: pro, kontingentCents: envCents("KONTINGENT_PRO_CENTS", pro), firmenLebenslang: null,

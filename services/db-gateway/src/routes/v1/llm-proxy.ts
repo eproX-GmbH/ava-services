@@ -328,6 +328,23 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
       const { schaetzeLaufUsd, kundenpreisCents } = await import("../../lib/apify-preise");
       apifyPreisCents = kundenpreisCents(schaetzeLaufUsd(decodeURIComponent(am[1]!), requestJson));
     }
+    // Free ohne Mitarbeiter-Lauf (Joyce 2026-11-02): Firmensuche und Firmendetails bei LinkedIn
+    // bleiben (Cent-Betraege), der teure Mitarbeiter-Abruf ist Pro, Max, Ultra und Enterprise
+    // vorbehalten. Der Kontakt-Producer faellt dann auf Website und Suche zurueck.
+    if (apifyKontext === "firmenverarbeitung" && am && /linkedin-company-employees/i.test(decodeURIComponent(am[1]!))) {
+      const { pricingAktiv } = await import("../../lib/kontingent");
+      if (pricingAktiv()) {
+        const { effectiveTier, ensureBillingAccount, resolveBillingAccountId } = await import("../../lib/billing");
+        const kontoId = await resolveBillingAccountId(pool, { tenantId: auth.tenantId, actorId: auth.actorId });
+        const konto = await ensureBillingAccount(pool, kontoId, "personal");
+        if (effectiveTier(konto) === "free") {
+          return new Response(JSON.stringify({ error: "apify_mitarbeiter_nicht_im_free_plan", meldung: "Im Free-Plan kommen Ansprechpartner von der Website; LinkedIn-Mitarbeiter gibt es ab Pro." }), {
+            status: 402,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
+    }
     if (apifyKontext === "linkedin") {
       const { linkedinPruefen } = await import("../../lib/linkedin-verbrauch");
       const p = await linkedinPruefen(pool, auth.tenantId, auth.actorId, apifyPreisCents ?? 0);
