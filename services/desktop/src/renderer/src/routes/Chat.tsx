@@ -1902,7 +1902,6 @@ export function Chat() {
         onSelect={(id) => void switchConversation(id)}
         onNew={() => startNewConversation()}
         onDelete={(id) => void handleDeleteConversation(id)}
-        footer={status?.ready ? status.model : null}
         onProblemMelden={() =>
           problemMeldenOeffnen({
             conversationId: conversationId || null,
@@ -2982,8 +2981,7 @@ function ChatSidebar(props: {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
-  footer: string | null;
-  /** docs/PLAN_PROBLEM_MELDEN.md — Knopf unten links neben dem Modellnamen. */
+  /** docs/PLAN_PROBLEM_MELDEN.md — Knopf unten links (ersetzt die Modellzeile). */
   onProblemMelden?: () => void;
 }) {
   const problemUngelesen = useProblemUngelesen();
@@ -3094,7 +3092,6 @@ function ChatSidebar(props: {
             )}
           </div>
           <div className="chat-sidebar__footer muted small">
-            <span className="chat-sidebar__footer-modell">{props.footer ? props.footer : ""}</span>
             {props.onProblemMelden && (
               <button
                 type="button"

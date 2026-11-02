@@ -1807,7 +1807,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .chat-sidebar__footer {
   flex: 0 0 auto;
-  padding: 10px 12px;
+  /* Buendig mit den Gespraechszeilen: Liste 6px + Zeile 8px. */
+  padding: 10px 14px;
+  font-size: 13px;
   border-top: 1px solid var(--color-border);
   white-space: nowrap;
   overflow: hidden;
@@ -9280,9 +9282,8 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 
 
 /* docs/PLAN_PROBLEM_MELDEN.md — Problem melden */
-.chat-sidebar__footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.chat-sidebar__footer-modell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.chat-sidebar__problem { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.35rem; background: none; border: none; padding: 2px 4px; font: inherit; color: inherit; opacity: 0.75; cursor: pointer; border-radius: 6px; }
+.chat-sidebar__footer { display: flex; align-items: center; }
+.chat-sidebar__problem { display: inline-flex; align-items: center; gap: 0.4rem; background: none; border: none; padding: 0; margin: 0; font: inherit; line-height: 1.4; color: inherit; opacity: 0.75; cursor: pointer; text-align: left; }
 .chat-sidebar__problem:hover { opacity: 1; background: var(--color-bg-2, rgba(127,127,127,0.12)); text-decoration: none; }
 .chat-sidebar__problem-punkt { width: 7px; height: 7px; border-radius: 50%; background: var(--color-indigo-500, #00c0a7); }
 .problem-dialog { width: min(640px, 100%); max-height: 90vh; overflow: auto; display: flex; flex-direction: column; gap: 0.75rem; }
