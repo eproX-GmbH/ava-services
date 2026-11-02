@@ -271,6 +271,29 @@ async function reconcileWithStripe(): Promise<void> {
     }
   }
   logger.info({ konten: r.rowCount ?? 0, geheilt }, "[billing-cron] Stripe-Abgleich");
+
+  // docs/PLAN_PRICING_TIERS.md P3 — Sitz-Abos der Organisationen: Mengen je Plan mit der
+  // Sitz-Tabelle abgleichen (verpasste Webhooks, manuelle Aenderungen im Dashboard).
+  try {
+    const { sitzeAusStripeAbgleichen } = await import("./sitze-stripe");
+    const orgs = await pool.query<{ tenantId: string; stripeCustomerId: string; stripeSubscriptionId: string; status: string }>(
+      `SELECT "tenantId", "stripeCustomerId", "stripeSubscriptionId", "status" FROM "TenantBilling" WHERE "mode" = 'sitze' AND "stripeSubscriptionId" IS NOT NULL`,
+    );
+    let sitzeGeprueft = 0;
+    for (const o of orgs.rows) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(o.stripeSubscriptionId, { expand: ["items.data.price"] });
+        const status = sub.status === "canceled" || sub.status === "incomplete_expired" ? "canceled" : sub.status === "past_due" || sub.status === "unpaid" ? (o.status === "suspended" ? "suspended" : "past_due") : "active";
+        await sitzeAusStripeAbgleichen(pool, { tenantId: o.tenantId, customerId: o.stripeCustomerId, sub, eventCreated: Math.floor(Date.now() / 1000), status });
+        sitzeGeprueft++;
+      } catch (err) {
+        logger.warn({ tenantId: o.tenantId, err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Sitz-Abo-Abgleich failed");
+      }
+    }
+    if (sitzeGeprueft > 0) logger.info({ sitzeGeprueft }, "[billing-cron] Sitz-Abos abgeglichen");
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[billing-cron] Sitz-Abo-Abgleich uebersprungen");
+  }
 }
 
 export function startBillingCron(): void {

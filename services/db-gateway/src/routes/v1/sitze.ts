@@ -14,6 +14,8 @@ import {
   sitzeStand, sitzeLesen, sitzeKaufen, sitzZuweisen, sitzEntziehen, sitzeReduzieren, reduktionWiderrufen, sitzeStripeSync, sitzVon,
 } from "../../lib/sitze";
 import { ErrorShape } from "./schemas";
+import { istBetreiber } from "../../middleware/auth";
+import { sitzeCheckout, sitzeVorschau, stripeKonfiguriert } from "../../lib/sitze-stripe";
 
 export const sitzeRouter = new OpenAPIHono();
 const tag = "sitze";
@@ -72,15 +74,22 @@ sitzeRouter.openapi(
   createRoute({
     method: "post", path: "/tenants/me/sitze", tags: [tag],
     summary: "Sitze eines Plans kaufen (sofort, anteilig) und optional einem Mitglied zuweisen.",
-    request: { body: { content: { "application/json": { schema: z.object({ plan: PlanParam, anzahl: z.number().int().min(1).max(500).default(1), actorId: z.string().min(1).optional() }) } } } },
+    request: { body: { content: { "application/json": { schema: z.object({ plan: PlanParam, anzahl: z.number().int().min(1).max(500).default(1), actorId: z.string().min(1).optional(), rueckkehr: z.enum(["app", "konsole"]).optional() }) } } } },
     responses: { 200: { content: { "application/json": { schema: Any } }, description: "ok" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" } },
   }),
   async (c) => {
     pruefeSchalter();
     const auth = c.get("auth");
     await nurAdmin(auth.tenantId, auth.actorId);
-    const { plan, anzahl, actorId } = c.req.valid("json");
+    const { plan, anzahl, actorId, rueckkehr } = c.req.valid("json");
     const pool = getGatewayPool();
+    // P3 — ohne Stripe-Abo laeuft der erste Kauf ueber Checkout (Zahlungsmittel); nur der
+    // Betreiber darf Sitze ohne Stripe anlegen (Enterprise, Tests).
+    const org = await readBillingAccount(pool, auth.tenantId);
+    if (stripeKonfiguriert() && !org?.stripeSubscriptionId && !istBetreiber(auth) && org?.mode !== "enterprise") {
+      const s = await sitzeCheckout(pool, { tenantId: auth.tenantId, actorId: auth.actorId, plan, anzahl, rueckkehr: rueckkehr ?? "app", email: auth.email ?? null });
+      return c.json({ ok: true, checkout: s, sitzIds: [], zuweisung: null, stand: await sitzeStand(pool, auth.tenantId) }, 200);
+    }
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -155,7 +164,7 @@ sitzeRouter.openapi(
       await client.query("BEGIN");
       const n = await wrap(() => sitzeReduzieren(client, { tenantId: auth.tenantId, plan, anzahl, zum, von: auth.actorId }));
       await client.query("COMMIT");
-      void sitzeStripeSync(pool, auth.tenantId);
+      void sitzeStripeSync(pool, auth.tenantId, { proration: "none" });
       return c.json({ ok: true, vorgemerkt: n, zum: zum.toISOString(), stand: await sitzeStand(pool, auth.tenantId) }, 200);
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -183,7 +192,7 @@ sitzeRouter.openapi(
       await client.query("BEGIN");
       const n = await reduktionWiderrufen(client, { tenantId: auth.tenantId, plan, von: auth.actorId });
       await client.query("COMMIT");
-      void sitzeStripeSync(pool, auth.tenantId);
+      void sitzeStripeSync(pool, auth.tenantId, { proration: "none" });
       return c.json({ ok: true, widerrufen: n, stand: await sitzeStand(pool, auth.tenantId) }, 200);
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -237,5 +246,21 @@ sitzeRouter.openapi(
     );
     await recordBillingEvent(pool, { billingAccountId: auth.tenantId, kind: freigeben ? "payg_freigegeben" : "payg_zurueckgenommen", source: "admin", actorId: auth.actorId, payload: { memberId: actorId, periode, limitCents: limitCents ?? null } });
     return c.json({ ok: true, kontingent: await kontingentStand(pool, actorId) }, 200);
+  },
+);
+
+// GET /billing/sitze/vorschau — was kostet es heute, Sitze dazuzunehmen (anteilig bis Zyklusende)?
+sitzeRouter.openapi(
+  createRoute({
+    method: "get", path: "/billing/sitze/vorschau", tags: [tag],
+    summary: "Vorschau: heutiger anteiliger Betrag und Monatspreis fuer zusaetzliche Sitze eines Plans.",
+    request: { query: z.object({ plan: PlanParam, anzahl: z.coerce.number().int().min(1).max(500).default(1) }) },
+    responses: { 200: { content: { "application/json": { schema: Any } }, description: "ok" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" } },
+  }),
+  async (c) => {
+    pruefeSchalter();
+    const auth = c.get("auth");
+    const { plan, anzahl } = c.req.valid("query");
+    return c.json(await sitzeVorschau(getGatewayPool(), { tenantId: auth.tenantId, plan, anzahl }), 200);
   },
 );

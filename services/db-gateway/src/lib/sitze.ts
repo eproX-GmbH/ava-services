@@ -257,7 +257,15 @@ export async function faelligeReduktionenAusfuehren(q: Q, now: Date = new Date()
   return r.rowCount ?? 0;
 }
 
-/** P3 — Stripe-Mengen je Plan mit der Sitz-Tabelle abgleichen. Ohne Abo: nichts zu tun. */
-export async function sitzeStripeSync(_q: Q, _tenantId: string): Promise<void> {
-  // Umsetzung in P3 (Stripe: subscriptionItems.update mit Proration / Schedule zum Zyklusende).
+/** P3 — Stripe-Mengen je Plan mit der Sitz-Tabelle abgleichen (lib/sitze-stripe.ts).
+ *  Fehler werden geloggt, nie geworfen: die Sitz-Tabelle ist die Wahrheit, Stripe folgt
+ *  (der Webhook/Reconcile gleicht spaeter nach). */
+export async function sitzeStripeSync(q: Q, tenantId: string, opts: { proration: "create_prorations" | "none" } = { proration: "create_prorations" }): Promise<void> {
+  try {
+    const { sitzeStripeSyncAusfuehren } = await import("./sitze-stripe");
+    await sitzeStripeSyncAusfuehren(q, tenantId, opts);
+  } catch (err) {
+    const { logger } = await import("./logger");
+    logger.warn({ tenantId, err: err instanceof Error ? err.message : String(err) }, "[sitze] Stripe-Abgleich fehlgeschlagen");
+  }
 }

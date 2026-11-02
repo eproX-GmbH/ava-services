@@ -222,7 +222,19 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
   (master-data übergibt jetzt `companyId`); `/v1/usage` liefert `kontingent` und `kannSelbstWechseln`;
   `bestandVerbuchen` verbucht Konten im Modus `sitz`. Noch offen in P2: Meldungen bei 80/100 %,
   Wartezustand ist die offene Beitrittsanfrage (kein eigener Mitgliedsstatus nötig; Spalte bleibt ungenutzt).
-- **Offen:** P3 Stripe (Mengen je Plan, Proration, Schedule, Webhooks, `sitzeStripeSync`), P4 LinkedIn
+- **P3 umgesetzt im Gateway** (2026-11-02): `lib/sitze-stripe.ts` — ein Abo je Organisation mit einer
+  Position je Plan (`STRIPE_PRICE_PRO|MAX|ULTRA`), Sitz dazu = Menge hoch mit Proration, Reduktion =
+  Menge sofort runter ohne Proration (bezahlt bis Zyklusende, Sitz endet per Cron), Widerruf = Menge hoch
+  ohne Proration; **kein Subscription Schedule nötig** (Abweichung vom Plan, einfacher und gleiches
+  Kundenverhalten). Erster Kauf ohne Abo → Checkout (`POST /v1/tenants/me/sitze` liefert `checkout.url`,
+  Rückkehr `app` oder `konsole` via `ADMIN_KONSOLE_URL`), Webhook `customer.subscription.*` erkennt
+  Sitz-Abos (`metadata.sitze` oder Max/Ultra-Preis) und gleicht Mengen mit der Sitz-Tabelle ab
+  (`sitzeAusStripeAbgleichen`; zu viele → freie Sitze enden, zugewiesene nie still), `subscription.deleted`
+  setzt alle Mitglieder auf Free. Vorschau `GET /v1/billing/sitze/vorschau?plan&anzahl` über
+  `invoices.createPreview` (nur Proration-Zeilen). Persönliches Checkout ist für Mitglieder einer
+  Sitz-Organisation gesperrt. Offen in P3: `reconcileWithStripe` für Sitz-Abos, Stripe-Preise im Dashboard
+  anlegen (Betreiber), Portal-Konfiguration ohne Mengenänderung.
+- **Offen:** P4 LinkedIn
   nach Verbrauch, P5 Neuverarbeitung-Regeln (Betreiber-Rolle), P6 Desktop, P7 Konsole, P8 PWA, P9
   Migration/Texte. Deploy der Migration braucht Joyces Freigabe (Prod-DB).
 

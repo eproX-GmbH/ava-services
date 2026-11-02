@@ -87,7 +87,7 @@ billingRouter.openapi(checkoutRoute, async (c) => {
   // Zugang die Organisation bezahlt, brauchen kein eigenes Abo.
   const billingAccountId = auth.actorId;
   const orgAcc = auth.tenantId !== auth.actorId ? await readBillingAccount(getGatewayPool(), auth.tenantId) : null;
-  if (orgAcc && (orgAcc.mode === "seats" || orgAcc.mode === "enterprise")) {
+  if (orgAcc && (orgAcc.mode === "seats" || orgAcc.mode === "enterprise" || orgAcc.mode === "sitze")) {
     throw new HTTPException(409, { message: "Dein Zugang wird von deiner Organisation bezahlt. Ein eigenes Abo ist nicht noetig." });
   }
 
@@ -359,6 +359,20 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         logger.warn({ eventId: event.id, customerId }, "subscription event has no tenantId mapping");
         return;
       }
+      // docs/PLAN_PRICING_TIERS.md P3 — Sitz-Abo der Organisation: Mengen je Plan abgleichen,
+      // kein Tier-Wechsel am Konto (die Mitglieder tragen die Plaene ueber ihre Sitze).
+      {
+        const { istSitzAbo, sitzeAusStripeAbgleichen } = await import("../../lib/sitze-stripe");
+        if (istSitzAbo(sub)) {
+          if (await isStaleEvent(tenantId, event)) return;
+          const vorherOrg = await readBillingAccount(getGatewayPool(), tenantId);
+          const st = subscriptionStatusToAccountStatus(sub.status, vorherOrg?.status ?? "active");
+          await sitzeAusStripeAbgleichen(getGatewayPool(), { tenantId, customerId, sub, eventCreated: event.created, status: st });
+          logger.info({ tenantId, subscriptionId: sub.id, status: st }, "stripe Sitz-Abo abgeglichen");
+          await resumeForBillingAccount(tenantId);
+          return;
+        }
+      }
       const priceId = sub.items.data[0]?.price?.id ?? null;
       const tier: PaidTier | null = priceId ? tierFromPriceId(priceId) : null;
       if (!tier) {
@@ -414,6 +428,24 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       if (await isStaleEvent(tenantId, event)) {
         logger.warn({ eventId: event.id, tenantId }, "stripe subscription.deleted older than last applied — ignored");
         return;
+      }
+      {
+        const { istSitzAbo, sitzeAusStripeAbgleichen } = await import("../../lib/sitze-stripe");
+        if (istSitzAbo(sub)) {
+          // Alle Sitze enden, Mitglieder fallen auf Free (Daten bleiben).
+          await sitzeAusStripeAbgleichen(getGatewayPool(), { tenantId, customerId, sub, eventCreated: event.created, status: "canceled" });
+          const { sitzeLesen, sitzEntziehen } = await import("../../lib/sitze");
+          const client = await getGatewayPool().connect();
+          try {
+            await client.query("BEGIN");
+            for (const s of await sitzeLesen(client, tenantId)) if (s.actorId) await sitzEntziehen(client, { tenantId, actorId: s.actorId, von: null, austritt: true });
+            await client.query(`UPDATE "Sitz" SET "endetAm" = NOW() WHERE "tenantId" = $1 AND "endetAm" IS NULL`, [tenantId]);
+            await client.query("COMMIT");
+          } catch (e) { await client.query("ROLLBACK").catch(() => undefined); throw e; } finally { client.release(); }
+          invalidateBillingResolution(tenantId);
+          logger.info({ tenantId }, "stripe Sitz-Abo beendet; Mitglieder auf Free");
+          return;
+        }
       }
       await downgradeToFree(tenantId, event.created);
       await recordBillingEvent(getGatewayPool(), {
