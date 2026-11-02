@@ -1581,9 +1581,13 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   // Z10 — Erzwingen (Frische loeschen) nur fuer Admins; sonst 403 mit Klartext.
   if (erzwungen) {
     const auth = c.get("auth");
-    const { darfErzwingen } = await import("../../lib/rollen");
-    if (!(await darfErzwingen(getGatewayPool(), auth.tenantId, auth.actorId))) {
-      throw new HTTPException(403, { message: "Einzelne Schritte neu erzwingen duerfen nur Owner oder Admins. Du kannst die ganze Firma erneut verarbeiten lassen." });
+    const { darfEinzelstufeErzwingen, pricingAktivRollen } = await import("../../lib/rollen");
+    if (!(await darfEinzelstufeErzwingen(getGatewayPool(), auth))) {
+      throw new HTTPException(403, {
+        message: pricingAktivRollen()
+          ? "Einzelne Schritte neu erzwingen kann nur AVA selbst. Du kannst die ganze Firma erneut verarbeiten lassen; das zählt wie eine weitere Aufnahme in deinem Kontingent."
+          : "Einzelne Schritte neu erzwingen duerfen nur Owner oder Admins. Du kannst die ganze Firma erneut verarbeiten lassen.",
+      });
     }
   }
 

@@ -231,6 +231,8 @@ export interface OrgState {
   providers?: Array<{ kind: string; keyHint: string; updatedAt: string; endpoint?: string | null; deployments?: Record<string, string> | null }>;
   /** O6 — Limit fuer Stellvertreter-Aufrufe (US-Cent, Schaetzwerte). */
   quota?: OrgQuota;
+  /** P5 — Aufrufer ist Betreiber (AVA selbst): darf einzelne Stufen erzwingen. */
+  betreiber?: boolean;
 }
 
 // ---- B1/B2 — Abrechnung (docs/PLAN_ABRECHNUNG_SEATS.md) --------------------

@@ -14,6 +14,7 @@
 // übernommen → übernehmen; schon übernommen → erneut verarbeiten, mit
 // einem Verweis in die Firmenliste.
 import { useState } from "react";
+import { bestaetigen } from "../components/Bestaetigung";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
@@ -82,7 +83,7 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, 
   const anstossen = async () => {
     // Z10 — "Neu verarbeiten" erzwingt alle Stufen (kostenpflichtig zum
     // Stufensatz); Uebernehmen respektiert die Frische wie jeder Import.
-    if (uebernommen && !window.confirm(`${(name ?? companyId ?? "").trim()} komplett neu verarbeiten? Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind.`)) return;
+    if (uebernommen && !(await bestaetigen({ titel: "Firma komplett neu verarbeiten", text: `${(name ?? companyId ?? "").trim()} komplett neu verarbeiten? Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Zählt wie eine weitere Aufnahme in deinem Monatskontingent.`, bestaetigen: "Neu verarbeiten" }))) return;
     setLaeuft(true);
     setMeldung(null);
     setFehler(null);

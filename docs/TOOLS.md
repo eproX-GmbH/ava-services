@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-02
-Anzahl Tools: 299
+Anzahl Tools: 300
 
 ## Firmen (28)
 
@@ -277,7 +277,17 @@ Person aus Gesellschafterlisten und Geschaeftsfuehrung (Id aus company_network o
 _Parameter:_
 - `personId: string` (required)
 
-## Importe (6)
+## Importe (7)
+
+### `firma_neu_verarbeiten`
+
+_Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
+
+Startet fuer EINE Firma alle Verarbeitungsschritte erneut, auch wenn die Daten noch frisch sind (Website, Profil, Kontakte, E-Mail-Adressen, Register, Abschluesse). Zaehlt wie eine weitere Aufnahme im Monatskontingent des Nutzers (Stufenpreis der Firma). Fragt vorher nach. Fuer fehlende oder fehlgeschlagene Schritte stattdessen retry_stage (kostenlos, respektiert die Frische). Dauert einige Minuten; Ergebnis spaeter nachsehen.
+
+_Parameter:_
+- `companyId: string` (required)
+- `name: string` — Firmenname fuer die Rueckfrage
 
 ### `import_companies`
 
@@ -324,7 +334,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-Re-run a single processing stage for one company inside an existing transaction. Useful when one stage failed (e.g. website crawl timed out, evaluation LLM errored) but the rest of the pipeline ran. The user usually phrases this as "retry the website for ACME", "run the contact scrape again for company X", "den Profil-Schritt nochmal laufen lassen". You need both the transactionId and the companyId — look them up via `transaction_entities` or `import_status` first if the user only named the company. Also the tool to use WITHOUT asking when company_get reports `verarbeitung.stand: unvollstaendig` and the user's question needs one of the missing stages (it carries the transactionId): run the stage, tell the user you are fetching that now — never answer 'there is no such data'. Respects freshness: a stage that is already up to date is skipped by the gateway (no cost, not billed); only failed or missing stages actually run. Forcing a fresh stage to recompute is admin-only in the app, not available here.
+Re-run a single processing stage for one company inside an existing transaction. Useful when one stage failed (e.g. website crawl timed out, evaluation LLM errored) but the rest of the pipeline ran. The user usually phrases this as "retry the website for ACME", "run the contact scrape again for company X", "den Profil-Schritt nochmal laufen lassen". You need both the transactionId and the companyId — look them up via `transaction_entities` or `import_status` first if the user only named the company. Also the tool to use WITHOUT asking when company_get reports `verarbeitung.stand: unvollstaendig` and the user's question needs one of the missing stages (it carries the transactionId): run the stage, tell the user you are fetching that now — never answer 'there is no such data'. Respects freshness: a stage that is already up to date is skipped by the gateway (no cost, not billed); only failed or missing stages actually run. Forcing a fresh stage to recompute is reserved for the operator; to recompute a whole company use firma_neu_verarbeiten.
 
 _Parameter:_
 - `transactionId: string` (required)

@@ -12,3 +12,10 @@ export function useIstAdmin(): boolean {
   if (!st) return false;
   return st.kind === "personal" || st.myRole === "owner" || st.myRole === "admin";
 }
+
+/** docs/PLAN_PRICING_TIERS.md P5 (2026-11-02): einzelne Stufen erzwingen darf nur AVA
+ *  selbst (Betreiber-Rolle aus dem Gateway). Kunden verarbeiten ganze Firmen neu. */
+export function useIstBetreiber(): boolean {
+  const org = useQuery({ queryKey: ["org"], queryFn: () => gatewayFetch<OrgState>("/v1/tenants/me"), retry: false, staleTime: 60_000 });
+  return org.data?.betreiber === true;
+}

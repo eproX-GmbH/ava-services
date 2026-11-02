@@ -9,7 +9,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFeature } from "../store/policy";
 import { gatewayFetch, GatewayError } from "../api/gateway";
-import { useIstAdmin } from "../api/org-rolle";
+import { useIstBetreiber } from "../api/org-rolle";
+import { bestaetigen } from "./Bestaetigung";
 
 /** v0.1.504 — verstaendliche Fehlertexte statt "gateway 403". Der
  *  Status allein sagt Nutzern nichts; jede Zeile nennt Ursache UND
@@ -179,7 +180,7 @@ export function RetryStageForm({
         {busy ? "Wird ausgelöst…" : "Schritt erneut starten"}
       </button>
       <p className="muted small">
-        Nur für Owner und Admins. Der Schritt rechnet auf jeden Fall neu, auch wenn der Datensatz noch frisch ist.
+        Nur für AVA (Betreiber). Der Schritt rechnet auf jeden Fall neu, auch wenn der Datensatz noch frisch ist.
       </p>
       {err && <p className="bad">Fehler: {err}</p>}
       {result && (
@@ -207,16 +208,21 @@ export function RetryStageForm({
   );
 }
 
-/** Z10 — Für alle Rollen: die ganze Firma erneut verarbeiten (kostenpflichtig,
- *  Frische-Markierungen aller Stufen weg). Admins sehen zusätzlich das
- *  Schritt-Formular; alle anderen nur diesen Knopf. */
+/** Z10/P5 — Für alle Rollen: die ganze Firma erneut verarbeiten (zählt wie eine
+ *  weitere Aufnahme im Monatskontingent, Frische-Markierungen aller Stufen weg).
+ *  Nur der Betreiber sieht zusätzlich das Schritt-Formular. */
 export function FirmaKomplettNeuVerarbeiten({ companyId, companyName, onDispatched }: { companyId: string; companyName?: string | null; onDispatched?: () => void }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [meldung, setMeldung] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const onClick = async () => {
-    if (!window.confirm(`${companyName ?? companyId} komplett neu verarbeiten? Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Das dauert einige Minuten.`)) return;
+    const ok = await bestaetigen({
+      titel: "Firma komplett neu verarbeiten",
+      text: `${companyName ?? companyId} komplett neu verarbeiten? Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Das dauert einige Minuten und zählt wie eine weitere Aufnahme in deinem Monatskontingent.`,
+      bestaetigen: "Neu verarbeiten",
+    });
+    if (!ok) return;
     setBusy(true);
     setErr(null);
     setMeldung(null);
@@ -239,19 +245,19 @@ export function FirmaKomplettNeuVerarbeiten({ companyId, companyName, onDispatch
       <button type="button" onClick={onClick} disabled={busy}>
         {busy ? "Wird angestoßen…" : "Firma komplett neu verarbeiten"}
       </button>
-      <p className="muted small">Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Im Monatsbetrag der Firma enthalten.</p>
+      <p className="muted small">Alle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Zählt wie eine weitere Aufnahme in deinem Monatskontingent.</p>
       {meldung && <p className="muted">{meldung}</p>}
       {err && <p className="bad">Fehler: {err}</p>}
     </div>
   );
 }
 
-/** Z10 — Admins: Schritt-Formular plus Komplett-Knopf; alle anderen nur den Knopf. */
+/** P5 — Betreiber: Schritt-Formular plus Komplett-Knopf; alle anderen nur den Knopf. */
 export function ErneutVerarbeiten(props: Parameters<typeof RetryStageForm>[0]) {
-  const istAdmin = useIstAdmin();
+  const istBetreiber = useIstBetreiber();
   return (
     <>
-      {istAdmin && <RetryStageForm {...props} />}
+      {istBetreiber && <RetryStageForm {...props} />}
       <FirmaKomplettNeuVerarbeiten companyId={props.companyId} companyName={props.defaultCompanyName} onDispatched={props.onDispatched} />
     </>
   );

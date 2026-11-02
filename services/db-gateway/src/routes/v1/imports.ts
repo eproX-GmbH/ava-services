@@ -696,8 +696,8 @@ importsRouter.openapi(byIdsRoute, async (c) => {
   const kontingentKonto = await kontingentVorabpruefung(c, { companyIds, neuverarbeitung: Boolean(erzwingen) });
   if (erzwingen) {
     const auth = c.get("auth");
-    const { darfErzwingen, frischeLoeschen } = await import("../../lib/rollen");
-    if (!(await darfErzwingen(getGatewayPool(), auth.tenantId, auth.actorId))) {
+    const { darfFirmaErzwingen, frischeLoeschen } = await import("../../lib/rollen");
+    if (!(await darfFirmaErzwingen(getGatewayPool(), auth))) {
       throw new HTTPException(403, { message: "Erneute Verarbeitung erzwingen duerfen nur Owner oder Admins." });
     }
     const n = await frischeLoeschen(getGatewayPool(), companyIds);

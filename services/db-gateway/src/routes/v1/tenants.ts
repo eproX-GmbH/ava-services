@@ -15,6 +15,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
+import { istBetreiber } from "../../middleware/auth";
 import { createShare, createRadarShares, listShares, revokeShare, markShare } from "../../lib/org-shares";
 import { getOrgWorkflow, listOrgWorkflows, revokeOrgWorkflow, shareWorkflow } from "../../lib/org-workflows";
 import { callUpstream } from "../../lib/upstream";
@@ -109,7 +110,12 @@ tenantsRouter.openapi(
     summary: "Zustand der eigenen Organisation (Mitglieder, offene Anfragen, Vorgaben).",
     responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
   }),
-  async (c) => c.json(await wrap(() => getOrgState(getGatewayPool(), c.get("auth")))),
+  async (c) => {
+    const auth = c.get("auth");
+    const st = await wrap(() => getOrgState(getGatewayPool(), auth));
+    // docs/PLAN_PRICING_TIERS.md P5 — Betreiber-Rolle fuer die App (Einzelstufen-Formular).
+    return c.json({ ...st, betreiber: istBetreiber(auth) });
+  },
 );
 
 tenantsRouter.openapi(

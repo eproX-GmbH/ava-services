@@ -248,7 +248,21 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
   endet, Automatik bleibt an); Chat-Werkzeug `linkedin_limit_setzen` (Stand + Limit, confirmAction).
   Offen in P4: Dialog mit Preistabelle und Limit-Pflicht beim ersten Einschalten einer Beobachtung (P6),
   Chat-Meldung bei Pause.
-- **Offen:** P5 Neuverarbeitung-Regeln (Betreiber-Rolle), P6 Desktop, P7 Konsole, P8 PWA, P9 Migration/Texte;
+- **P5 umgesetzt** (2026-11-02, hinter `PRICING_TIERS=1`): `lib/rollen.ts` unterscheidet
+  `darfEinzelstufeErzwingen` (nur Betreiber, Keycloak-Rolle) und `darfFirmaErzwingen` (jede Rolle;
+  Kontingent-Prüfung und `NeuverarbeitungEntry` aus P2). Retry-Endpunkt mit `erzwingen` → 403 mit
+  Hinweis auf die ganze Firma; `/v1/tenants/me` liefert `betreiber`. **Interpretation:** nicht erzwungene
+  Retries (Reparatur fehlender oder fehlgeschlagener Stufen, kostenlos, Frische bleibt) bleiben für alle
+  und für MCP `neu_verarbeiten`, sonst bräche der Chat-Ablauf „Firma unvollständig → Stufe nachholen“.
+  Desktop: Schritt-Formular nur noch mit `useIstBetreiber`, „Firma komplett neu verarbeiten“ für alle mit
+  `bestaetigen()` und Kontingenthinweis (auch in der Firmenansicht), Chat-Werkzeug `firma_neu_verarbeiten`
+  (confirmAction), Systemprompt und Fähigkeitsgruppe angepasst; `retry_stage` bleibt die Reparatur.
+- **Offen:** P6 Desktop, P7 Konsole, P8 PWA, P9 Migration/Texte. Stripe-Dashboard (2026-11-02, Joyce
+  per Browser): Produkte „AVA Pro“ 49 € (`price_1TWLJF0r0BPxCh2slgfeLNb7`, vorher „AVA Starter“), „AVA Max“
+  149 € (`price_1TWLJH0r0BPxCh2sUvtHrQX6`, vorher „AVA Pro“), „AVA Ultra“ 299 € neu
+  (`price_1UXLSE0r0BPxCh2sdDGTbBXz`); Kundenportal erlaubt keine Plan- oder Mengenänderung. Secrets
+  `STRIPE_PRICE_PRO/MAX/ULTRA`, `ADMIN_KONSOLE_URL` setzen und `STRIPE_PRICE_STARTER` entfernen muss Joyce
+  (Berechtigung).
   entfällt: P4 LinkedIn
   nach Verbrauch, P5 Neuverarbeitung-Regeln (Betreiber-Rolle), P6 Desktop, P7 Konsole, P8 PWA, P9
   Migration/Texte. Deploy der Migration braucht Joyces Freigabe (Prod-DB).

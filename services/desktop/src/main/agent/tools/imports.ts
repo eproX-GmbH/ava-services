@@ -1314,7 +1314,7 @@ export function buildImportTools(deps: {
       "transactionId): run the stage, tell the user you are fetching that " +
       "now — never answer 'there is no such data'. Respects freshness: a stage that is " +
       "already up to date is skipped by the gateway (no cost, not billed); only failed or " +
-      "missing stages actually run. Forcing a fresh stage to recompute is admin-only in the app, not available here.",
+      "missing stages actually run. Forcing a fresh stage to recompute is reserved for the operator; to recompute a whole company use firma_neu_verarbeiten.",
     parameters: {
       type: "object",
       required: ["transactionId", "companyId", "stage"],
@@ -1470,6 +1470,53 @@ export function buildImportTools(deps: {
     },
   });
 
+  // docs/PLAN_PRICING_TIERS.md P5 (2026-11-02) — ganze Firma erneut verarbeiten: fuer jede
+  // Rolle, zaehlt wie eine weitere Aufnahme im Monatskontingent. Einzelne Stufen erzwingen
+  // kann nur der Betreiber (in der App); retry_stage bleibt die kostenlose Reparatur.
+  const firmaNeuVerarbeiten = defineTool({
+    name: "firma_neu_verarbeiten",
+    summary: "Eine Firma komplett neu verarbeiten lassen (alle Schritte, auch wenn die Daten frisch sind).",
+    category: "firma neu verarbeiten aktualisieren erzwingen komplett",
+    description:
+      "Startet fuer EINE Firma alle Verarbeitungsschritte erneut, auch wenn die Daten noch frisch sind (Website, Profil, Kontakte, E-Mail-Adressen, Register, Abschluesse). " +
+      "Zaehlt wie eine weitere Aufnahme im Monatskontingent des Nutzers (Stufenpreis der Firma). Fragt vorher nach. " +
+      "Fuer fehlende oder fehlgeschlagene Schritte stattdessen retry_stage (kostenlos, respektiert die Frische). Dauert einige Minuten; Ergebnis spaeter nachsehen.",
+    parameters: {
+      type: "object",
+      required: ["companyId"],
+      properties: { companyId: { type: "string" }, name: { type: "string", description: "Firmenname fuer die Rueckfrage" } },
+    },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), name: yup.string().trim().max(200).optional() }).noUnknown(true),
+    preview: (r) => {
+      const x = r as { abgebrochen?: boolean; transactionId?: string; error?: string };
+      return x.error ? `Fehler: ${x.error.slice(0, 60)}` : x.abgebrochen ? "abgebrochen" : `Neuverarbeitung gestartet (${x.transactionId?.slice(0, 8) ?? "?"})`;
+    },
+    run: async (args, ctx) => {
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `${args.name ?? args.companyId} komplett neu verarbeiten?\n\nAlle Schritte laufen erneut, auch wenn die Daten noch frisch sind. Das zaehlt wie eine weitere Aufnahme in deinem Monatskontingent und dauert einige Minuten.`,
+          confirmValue: "start",
+          options: [{ value: "start", label: "Neu verarbeiten" }, { value: "cancel", label: "Abbrechen" }],
+        },
+        ctx.signal,
+      );
+      if (value !== "start") return { abgebrochen: true };
+      try {
+        const r = await deps.gateway.request<{ transactionId: string; companyCount: number }>("/v1/imports/by-ids", {
+          method: "POST",
+          body: { companyIds: [args.companyId], transactionName: `${(args.name ?? args.companyId).trim()} (erneut verarbeitet)`, erzwingen: true },
+          idempotencyKey: randomUUID(),
+          signal: ctx.signal,
+          attachUserLlm: true,
+        });
+        return { transactionId: r.transactionId, hinweis: "Die Verarbeitung laeuft im Hintergrund; mit import_status oder company_get spaeter nachsehen." };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
   return [
     importExcel,
     importStatus,
@@ -1477,5 +1524,6 @@ export function buildImportTools(deps: {
     resolveImportMatches,
     importFromCrm,
     retryStage,
+    firmaNeuVerarbeiten,
   ];
 }
