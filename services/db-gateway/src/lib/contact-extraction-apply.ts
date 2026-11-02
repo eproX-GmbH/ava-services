@@ -68,6 +68,10 @@ export interface CompanyContactPersistRequest {
       addresses?: string[];
       /** Social profile links keyed by platform slug. */
       socials?: { platform?: string; url: string }[];
+      /** 2026-11-02 — Mitarbeiterzahl laut LinkedIn-Firmenprofil (Details-Actor).
+       *  Der Kontakt-Producer vergleicht sie beim naechsten Lauf, um den teuren
+       *  Mitarbeiter-Abruf zu ueberspringen, wenn sich nichts geaendert hat. */
+      linkedinEmployeeCount?: number;
     };
     /** Person candidates from the website-people agent or SERP
      *  extract. Each becomes one upsert + observation set + reconcile
@@ -220,6 +224,9 @@ export async function applyCompanyContactPersist(
       ...(ce.emails ?? []).map((v) => ({ field: "email", value: v })),
       ...(ce.phones ?? []).map((v) => ({ field: "phone", value: v })),
       ...(ce.addresses ?? []).map((v) => ({ field: "address", value: v })),
+      ...(typeof ce.linkedinEmployeeCount === "number" && Number.isFinite(ce.linkedinEmployeeCount) && ce.linkedinEmployeeCount >= 0
+        ? [{ field: "linkedin:employeeCount", value: String(Math.round(ce.linkedinEmployeeCount)) }]
+        : []),
       // Teilen-Knoepfe sind keine Profile der Firma: Ein
       // "facebook.com/sharer/sharer.php?u=…" aus der Teilen-Leiste der
       // Website landete bisher als vermeintliches Facebook-Profil in der

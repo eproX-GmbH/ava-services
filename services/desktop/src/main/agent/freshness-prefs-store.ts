@@ -19,10 +19,13 @@ import type {
 // `userData/agent/freshness-prefs.json`. Same atomic write-temp +
 // rename pattern as `alert-prefs-store.ts`.
 //
-// Defaults reflect the cadences anchored in §8.r:
-//   - companyContact / companyProfile / website: 7 days
-//     (personnel turnover, address drift, site edits — weekly catches
-//     most of these without hammering producers).
+// Defaults (2026-11-02, Joyce/Patrick/Henning im Zuge der Pricing-Plaene,
+// docs/PLAN_PRICING_TIERS.md P0): Takte steuert und bezahlt der Betreiber,
+// der Nutzer kann sie seit v0.1.900 nicht mehr aendern.
+//   - companyContact / companyProfile / website: 14 days (vorher 7)
+//     (Personalwechsel, Adressen, Website-Aenderungen; der Apify-
+//     Mitarbeiter-Abruf laeuft dabei nur noch, wenn sich die LinkedIn-
+//     Mitarbeiterzahl geaendert hat oder der letzte Abruf alt ist).
 //   - structuredContent: 30 days
 //     (slow-changing aggregate; monthly is enough).
 //   - companyEvaluation: 0 = nie einzeln (2026-10-05, vorher 14); abgeleitet
@@ -39,9 +42,9 @@ const DEFAULT_PREFS: FreshnessPrefs = {
   cadenceDays: {
     structuredContent: 30,
     companyPublication: 30,
-    website: 7,
-    companyProfile: 7,
-    companyContact: 7,
+    website: 14,
+    companyProfile: 14,
+    companyContact: 14,
   },
   throttle: {
     perStagePerHour: 3,

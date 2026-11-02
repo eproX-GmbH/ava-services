@@ -189,12 +189,20 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
 
 ## 3. Arbeitspakete
 
-### P0 Kostenbremse vorab
+### P0 Kostenbremse vorab — umgesetzt 2026-11-02 (v0.1.903)
 
-- Kontakt-Auffrischung 7 → 90 Tage (`freshness-prefs-store.ts`, `companyContact: 90`); ohne
-  das kostet eine mittlere Firma ≈ 1,80 € Apify im Monat gegen 1,00 € Kontingent.
-- Betreiber-Alarm bei 80 % des Apify-Monatslimits; Apify-Ausfall im Producer nicht mehr
-  still (Meldung statt stiller SERP-Rückfall).
+- Takte (Entscheidung Joyce/Patrick/Henning): Kontakte, Profil, Website alle **14 Tage**
+  (vorher 7), Strukturierte Inhalte und Publikationen 30 Tage (`freshness-prefs-store.ts`).
+- Mitarbeiter-Abruf nur für Neues: Der Kontakt-Producer holt beim Auffrischen zuerst den
+  Stand vom Gateway (`GET /v1/companies/{id}/contacts/apify-stand`: bekannte Apify-Personen,
+  letzter Lauf, gespeicherte Mitarbeiterzahl) und fragt nur den günstigen Details-Actor
+  (≈ 0,02 $) nach der aktuellen Mitarbeiterzahl. Der volle Employees-Lauf (≈ 0,45 $) läuft nur,
+  wenn die Zahl sich um mehr als 2 Personen bzw. 5 % geändert hat, keine Zahl bekannt ist oder
+  der letzte Lauf 90 Tage alt ist (`APIFY_VOLLABRUF_TAGE`). Die Zahl wird als Fakt
+  `linkedin:employeeCount` persistiert. Damit kostet eine mittlere Firma im 14-Tage-Takt
+  ≈ 0,04 $ Apify im Monat statt ≈ 0,95 $.
+- Offen: Betreiber-Alarm bei 80 % des Apify-Monatslimits; Apify-Ausfall im Producer nicht
+  mehr still (Meldung statt stiller SERP-Rückfall).
 
 ### P1 Gateway: Datenmodell und Plan-Katalog
 
@@ -446,8 +454,9 @@ Desktop/PWA, Umschalten und Migration an einem Monatsersten, empfohlen 2026-12-0
 
 ## 7. Risiken und Hinweise
 
-- **Marge bei großen Firmen** nur mit 90-Tage-Kontakt-Takt (P0): Ultra voll mit großen Firmen
-  ≈ 62 € Direktkosten auf 299 €; mit 7 Tagen ≈ 360 € Apify und Verlust.
+- **Marge bei großen Firmen** hängt am Apify-Delta-Abruf (P0): Ultra voll mit großen Firmen
+  ≈ 62 € Direktkosten auf 299 €; ohne die Prüfung der Mitarbeiterzahl wären es im 14-Tage-Takt
+  ≈ 190 € Apify.
 - **Free-Deckel umgehen**: Die 25 Free-Firmen hängen am Nutzer (lebenslang), eine zweite
   Organisation bringt derselben Person nichts; bleibt der übliche Freemium-Missbrauch mit
   mehreren E-Mail-Adressen, wie bei den Vorbildern.

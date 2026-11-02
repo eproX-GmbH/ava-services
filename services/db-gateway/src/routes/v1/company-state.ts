@@ -13,7 +13,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { getGatewayPool } from "../../lib/producer-pools";
+import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { ErrorShape } from "./schemas";
 import { CompanyIdParam } from "./schemas";
 
@@ -130,4 +130,64 @@ companyStateRouter.openapi(stateRoute, async (c) => {
   }
 
   return c.json({ companyId, stages }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-02 — Apify-Stand je Firma fuer den Kontakt-Producer (Vorgabe Joyce:
+// beim Auffrischen nicht alles neu abrufen, sondern nur, was neu ist). Liefert,
+// wie viele Personen schon ueber Apify bekannt sind, wann der letzte Apify-Lauf
+// war und welche Mitarbeiterzahl das LinkedIn-Firmenprofil damals hatte. Der
+// Producer ruft zuerst nur den guenstigen Details-Actor und ueberspringt den
+// Mitarbeiter-Abruf, wenn sich die Zahl nicht geaendert hat.
+// ---------------------------------------------------------------------------
+const ApifyStandShape = z
+  .object({
+    companyId: z.string(),
+    /** Personen mit mindestens einer Apify-Beobachtung an dieser Firma. */
+    apifyPersonen: z.number().int(),
+    /** ISO-Zeit der juengsten Apify-Beobachtung, null = nie. */
+    letzterLauf: z.string().nullable(),
+    /** Mitarbeiterzahl laut LinkedIn beim letzten Lauf (Fakt linkedin:employeeCount), null = unbekannt. */
+    employeeCount: z.number().int().nullable(),
+    employeeCountAm: z.string().nullable(),
+  })
+  .openapi("ApifyStand");
+
+const apifyStandRoute = createRoute({
+  method: "get",
+  path: "/companies/{companyId}/contacts/apify-stand",
+  tags: ["companies"],
+  summary: "Stand des LinkedIn-Mitarbeiter-Abrufs (Apify) je Firma; der Kontakt-Producer entscheidet damit, ob ein neuer Abruf noetig ist.",
+  request: { params: CompanyIdParam },
+  responses: {
+    200: { content: { "application/json": { schema: ApifyStandShape } }, description: "ok" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+  },
+});
+
+companyStateRouter.openapi(apifyStandRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const { companyId } = c.req.valid("param");
+  const pool = getProducerPool("company-contact");
+  const r = await pool.query<{ personen: string; letzter: Date | null; count: string | null; countAm: Date | null }>(
+    `SELECT
+       (SELECT count(DISTINCT o."personId") FROM "Observation" o WHERE o."companyId" = $1 AND o."personId" IS NOT NULL AND o.source LIKE 'apify%')::text AS personen,
+       (SELECT max(o."observedAt") FROM "Observation" o WHERE o."companyId" = $1 AND o.source LIKE 'apify%') AS letzter,
+       (SELECT o.value FROM "Observation" o WHERE o."companyId" = $1 AND o.field = 'linkedin:employeeCount' ORDER BY o."observedAt" DESC LIMIT 1) AS count,
+       (SELECT o."observedAt" FROM "Observation" o WHERE o."companyId" = $1 AND o.field = 'linkedin:employeeCount' ORDER BY o."observedAt" DESC LIMIT 1) AS "countAm"`,
+    [companyId],
+  );
+  const row = r.rows[0];
+  const count = row?.count != null && Number.isFinite(Number(row.count)) ? Math.round(Number(row.count)) : null;
+  return c.json(
+    {
+      companyId,
+      apifyPersonen: Number(row?.personen ?? 0),
+      letzterLauf: row?.letzter ? row.letzter.toISOString() : null,
+      employeeCount: count,
+      employeeCountAm: row?.countAm ? row.countAm.toISOString() : null,
+    },
+    200,
+  );
 });
