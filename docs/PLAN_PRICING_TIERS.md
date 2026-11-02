@@ -274,7 +274,23 @@ greifen auch bei Enterprise, Fix des Kurzschlusses in internal-quota.ts:70).
   Noch offen in P6: Stufen-Pille und Monatswert in „Meine Firmen“, Dialog mit Limit-Pflicht beim ersten
   Einschalten einer LinkedIn-Beobachtung, Meldungen bei 80/100 %, Chat-Meldung bei LinkedIn-Pause, Systemprompt-
   Regeln zum Plan.
-- **Offen:** P6 Rest, P7 Konsole, P8 PWA, P9 Migration/Texte. Stripe-Dashboard (2026-11-02, Joyce
+- **P6 abgeschlossen** (2026-11-02): Stufen-Pille mit Monatswert in „Meine Firmen“, Dialog mit Preisen und
+  Limit-Pflicht beim ersten Einschalten von beobachteten Posts/Personen, Pause-Meldungen der Scheduler,
+  Kontingent-Wächter (80/100 % Kontingent und LinkedIn-Limit als Meldung), Systemprompt-Regeln.
+- **P7 Konsole umgesetzt** (2026-11-02, ava-admin): `/mitglieder` mit Kopfzeile „Sitze“ (Stand je Plan,
+  Free 3 Plätze, Zyklus, „Sitz hinzufügen“ mit Kasse beim ersten Kauf), Spalte „Plan“ je Mitglied
+  (Upgrade sofort über freien Sitz oder Kauf, Downgrade/Free zum Zyklusende vorgemerkt mit Widerruf,
+  Kontingentstand), Sitzwahl beim Aufnehmen einer Anfrage (Free gesperrt bei vollen Plätzen); `/abrechnung`
+  im Sitz-Modell: Sitze und Mengen je Plan mit Reduktion zum Zyklusende, Portal der Organisation (Rückkehr
+  in die Konsole), Kontingent je Mitglied, LinkedIn-Limit je Mitglied, Pay-as-you-go-Freigabe je Ultra-Mitglied
+  (alte Sammelabrechnung nur noch für Altkonten im Modus seats); `/betreiber` Kundenansicht: Sitz-Badge,
+  „Plan der Organisation“ mit Enterprise an/aus, höchstens Mitglieder, Firmen-Limit, LinkedIn-Limit oder
+  „im Vertrag“ (Gateway `PUT /v1/betreiber/kunden/{id}/plan`, Kundenliste mit `sitze`); `/verarbeitungskosten`:
+  Rechner mit Nutzern je Plan, Kontingent-Auslastung gegen den Bestandswert, LinkedIn nach Verbrauch
+  (Direktkosten = Umsatz/4), Angebot-PDF nur noch Enterprise (Lizenz je Nutzer, Instanz, LinkedIn-Pauschale,
+  Onboarding; Bedingungen angepasst). Preistexte „1,00 bis 3,50 €“ korrigiert. Proxy-Allowlist erweitert.
+- **Offen:** P8 PWA, P9 Migration/Texte; Gateway-Stand seit P6 (Planwechsel, Portal, Betreiber-Plan-Route)
+  noch nicht deployt; Konsole wird mit dem Push auf main über Vercel ausgerollt. Stripe-Dashboard (2026-11-02, Joyce
   per Browser): Produkte „AVA Pro“ 49 € (`price_1TWLJF0r0BPxCh2slgfeLNb7`, vorher „AVA Starter“), „AVA Max“
   149 € (`price_1TWLJH0r0BPxCh2sUvtHrQX6`, vorher „AVA Pro“), „AVA Ultra“ 299 € neu
   (`price_1UXLSE0r0BPxCh2sdDGTbBXz`); Kundenportal erlaubt keine Plan- oder Mengenänderung. Secrets

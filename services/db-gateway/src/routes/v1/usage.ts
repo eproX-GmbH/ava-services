@@ -331,6 +331,73 @@ usageRouter.openapi(betreiberKundeExportRoute, async (c) => {
   return new Response(kundeCsv(d), { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${datei}"` } }) as never;
 });
 
+// docs/PLAN_PRICING_TIERS.md P7 — Betreiber: Enterprise an/aus und Grenzen je Organisation.
+const betreiberKundePlanRoute = createRoute({
+  method: "put",
+  path: "/betreiber/kunden/{tenantId}/plan",
+  tags: ["billing"],
+  summary: "Betreiber: Enterprise ein-/ausschalten, Mitgliederzahl, Firmen-Limit, LinkedIn-Limit und LinkedIn-im-Vertrag je Organisation setzen.",
+  request: { params: KundeParam, body: { content: { "application/json": { schema: z.object({
+    enterprise: z.boolean().optional(),
+    maxMitglieder: z.number().int().min(1).max(100_000).nullable().optional(),
+    firmenLimit: z.number().int().min(0).max(10_000_000).nullable().optional(),
+    linkedinLimitCents: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+    linkedinImVertrag: z.boolean().optional(),
+  }) } }, required: true } },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "gesetzt" },
+    404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber oder Kunde unbekannt" },
+  },
+});
+usageRouter.openapi(betreiberKundePlanRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!istBetreiber(auth)) throw new HTTPException(404, { message: "not_found" });
+  const { tenantId } = c.req.valid("param");
+  const body = c.req.valid("json");
+  const pool = getGatewayPool();
+  const { ensureBillingAccount, readBillingAccount, invalidateBillingResolution } = await import("../../lib/billing");
+  const vorher = await ensureBillingAccount(pool, tenantId, "organisation");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    if (body.enterprise === true && vorher.mode !== "enterprise") {
+      // Alle Mitglieder tragen den Plan Enterprise: Sitze frei geben, Nutzerkonten zuruecksetzen, Zeitraeume schreiben.
+      const { sitzeLesen, sitzEntziehen, planZeitraumSetzen } = await import("../../lib/sitze");
+      for (const s of await sitzeLesen(client, tenantId)) if (s.actorId) await sitzEntziehen(client, { tenantId, actorId: s.actorId, von: auth.actorId, austritt: true });
+      await client.query(`UPDATE "Sitz" SET "endetAm" = NOW() WHERE "tenantId" = $1 AND "endetAm" IS NULL`, [tenantId]);
+      const m = await client.query<{ actorId: string }>(`SELECT "actorId" FROM "TenantMember" WHERE "tenantId" = $1`, [tenantId]);
+      for (const row of m.rows) await planZeitraumSetzen(client, { actorId: row.actorId, tenantId, plan: "enterprise", sitzId: null });
+      await client.query(`UPDATE "TenantBilling" SET "mode" = 'enterprise', "kind" = 'organisation', "tier" = 'enterprise', "quotaLimit" = -1, "updatedAt" = NOW() WHERE "tenantId" = $1`, [tenantId]);
+    } else if (body.enterprise === false && vorher.mode === "enterprise") {
+      const { planZeitraumSetzen } = await import("../../lib/sitze");
+      const m = await client.query<{ actorId: string }>(`SELECT "actorId" FROM "TenantMember" WHERE "tenantId" = $1`, [tenantId]);
+      for (const row of m.rows) await planZeitraumSetzen(client, { actorId: row.actorId, tenantId, plan: "free", sitzId: null });
+      await client.query(`UPDATE "TenantBilling" SET "mode" = CASE WHEN "stripeSubscriptionId" IS NOT NULL THEN 'sitze' ELSE 'none' END, "tier" = 'free', "updatedAt" = NOW() WHERE "tenantId" = $1`, [tenantId]);
+    }
+    await client.query(
+      `UPDATE "TenantBilling" SET
+         "maxMitglieder" = CASE WHEN $2::boolean THEN $3 ELSE "maxMitglieder" END,
+         "firmenLimit" = CASE WHEN $4::boolean THEN $5 ELSE "firmenLimit" END,
+         "linkedinLimitCents" = CASE WHEN $6::boolean THEN $7 ELSE "linkedinLimitCents" END,
+         "linkedinImVertrag" = CASE WHEN $8::boolean THEN $9 ELSE "linkedinImVertrag" END,
+         "updatedAt" = NOW()
+       WHERE "tenantId" = $1`,
+      [tenantId, body.maxMitglieder !== undefined, body.maxMitglieder ?? null, body.firmenLimit !== undefined, body.firmenLimit ?? null, body.linkedinLimitCents !== undefined, body.linkedinLimitCents ?? null, body.linkedinImVertrag !== undefined, body.linkedinImVertrag ?? false],
+    );
+    const { recordBillingEvent } = await import("../../lib/billing-events");
+    await recordBillingEvent(client, { billingAccountId: tenantId, kind: "betreiber_plan_gesetzt", source: "operator", actorId: auth.actorId, payload: body });
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+  invalidateBillingResolution(tenantId);
+  const nach = await readBillingAccount(pool, tenantId);
+  return c.json({ mode: nach?.mode ?? "none", maxMitglieder: nach?.maxMitglieder ?? null, firmenLimit: nach?.firmenLimit ?? null, linkedinLimitCents: nach?.linkedinLimitCents ?? null, linkedinImVertrag: nach?.linkedinImVertrag ?? false } as Record<string, unknown>, 200);
+});
+
 const betreiberKundeLimitRoute = createRoute({
   method: "put",
   path: "/betreiber/kunden/{tenantId}/limit",

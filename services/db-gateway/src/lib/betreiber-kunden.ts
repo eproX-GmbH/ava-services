@@ -29,6 +29,8 @@ export interface KundeZeile {
   enterprisePreisCents: number | null;
   /** Organisation ohne Mitglieder, als geloescht markiert (Daten bleiben). */
   geloescht: boolean;
+  /** docs/PLAN_PRICING_TIERS.md P7 — Sitz-Modell: laufende Sitze je Plan, Mitglieder ohne Sitz, Enterprise-Grenzen. */
+  sitze: { pro: number; max: number; ultra: number; free: number; maxMitglieder: number | null; firmenLimit: number | null; linkedinLimitCents: number | null; linkedinImVertrag: boolean; stripe: boolean };
 }
 
 export async function kundenListe(pool: Pool): Promise<KundeZeile[]> {
@@ -36,11 +38,16 @@ export async function kundenListe(pool: Pool): Promise<KundeZeile[]> {
   const r = await pool.query<{
     tenantId: string; name: string | null; kind: string | null; tier: string; mode: string; status: string;
     mitglieder: string; bestand: string; ausgabenLimitCents: number | null; betreiberLimitCents: number | null; enterprisePreisCents: number | null; deletedAt: Date | null;
+    sPro: string; sMax: string; sUltra: string; maxMitglieder: number | null; firmenLimit: number | null; linkedinLimitCents: number | null; linkedinImVertrag: boolean | null; stripeSubscriptionId: string | null;
   }>(
     // Kunden sind Organisationen (Registrierung verlangt seit 2026-10-15 eine
     // Organisation); persoenliche Tenants sind technische Altlast und bleiben aussen vor.
     `SELECT t.id AS "tenantId", t.name, t.kind, t."deletedAt", COALESCE(b.tier, 'free') AS tier, COALESCE(b.mode, 'none') AS mode, COALESCE(b.status, 'active') AS status,
             b."ausgabenLimitCents", b."betreiberLimitCents", b."enterprisePreisCents",
+            b."maxMitglieder", b."firmenLimit", b."linkedinLimitCents", b."linkedinImVertrag", b."stripeSubscriptionId",
+            (SELECT COUNT(*) FROM "Sitz" s WHERE s."tenantId" = t.id AND s."endetAm" IS NULL AND s.plan = 'pro')::text AS "sPro",
+            (SELECT COUNT(*) FROM "Sitz" s WHERE s."tenantId" = t.id AND s."endetAm" IS NULL AND s.plan = 'max')::text AS "sMax",
+            (SELECT COUNT(*) FROM "Sitz" s WHERE s."tenantId" = t.id AND s."endetAm" IS NULL AND s.plan = 'ultra')::text AS "sUltra",
             (SELECT COUNT(*) FROM "TenantMember" m WHERE m."tenantId" = t.id)::text AS mitglieder,
             (SELECT COUNT(*) FROM "UsageEntry" u WHERE u."billingAccountId" = t.id AND u."periodKey" IN ($1, 'lifetime'))::text AS bestand
        FROM "Tenant" t LEFT JOIN "TenantBilling" b ON b."tenantId" = t.id
@@ -61,6 +68,11 @@ export async function kundenListe(pool: Pool): Promise<KundeZeile[]> {
     betreiberLimitCents: x.betreiberLimitCents,
     enterprisePreisCents: x.enterprisePreisCents,
     geloescht: x.deletedAt != null,
+    sitze: {
+      pro: Number(x.sPro), max: Number(x.sMax), ultra: Number(x.sUltra),
+      free: Math.max(0, Number(x.mitglieder) - Number(x.sPro) - Number(x.sMax) - Number(x.sUltra)),
+      maxMitglieder: x.maxMitglieder, firmenLimit: x.firmenLimit, linkedinLimitCents: x.linkedinLimitCents, linkedinImVertrag: Boolean(x.linkedinImVertrag), stripe: Boolean(x.stripeSubscriptionId),
+    },
   }));
 }
 
@@ -155,10 +167,12 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
     );
     const x = r.rows[0];
     if (!x) return null;
-    kunde = { tenantId: x.tenantId, name: x.name ?? x.tenantId, kind: x.kind === "organisation" ? "organisation" : "personal", tier: x.tier, mode: x.mode, status: x.status, mitglieder: 1, bestandAktuell: 0, ausgabenLimitCents: x.ausgabenLimitCents, betreiberLimitCents: x.betreiberLimitCents, enterprisePreisCents: x.enterprisePreisCents, geloescht: false };
+    kunde = { tenantId: x.tenantId, name: x.name ?? x.tenantId, kind: x.kind === "organisation" ? "organisation" : "personal", tier: x.tier, mode: x.mode, status: x.status, mitglieder: 1, bestandAktuell: 0, ausgabenLimitCents: x.ausgabenLimitCents, betreiberLimitCents: x.betreiberLimitCents, enterprisePreisCents: x.enterprisePreisCents, geloescht: false,
+      sitze: { pro: 0, max: 0, ultra: 0, free: 1, maxMitglieder: null, firmenLimit: null, linkedinLimitCents: null, linkedinImVertrag: false, stripe: false } };
   }
+  const k0: KundeZeile = kunde;
   const preise = stufenPreise();
-  const zahlend = kunde.tier === "starter" || kunde.tier === "pro";
+  const zahlend = k0.tier === "starter" || k0.tier === "pro" || k0.tier === "max" || k0.tier === "ultra" || k0.mode === "sitze";
   const seatPreis = Math.round((tarif().find((t) => t.posten === "seat")?.preisEur ?? 49) * 100);
   const instanzTarif = tarif().find((t) => t.posten === "instanz");
   const instanzPreis = Math.round((instanzTarif?.preisEur ?? 59) * 100);
@@ -252,16 +266,16 @@ export async function kundeDetail(pool: Pool, tenantId: string, monate: number, 
   const lifetime = jeMonat.get("lifetime");
   if (lifetime) for (const k of Object.keys(bestandHeute) as Array<Stufe | "offen">) bestandHeute[k] += lifetime.aufnahmen[k];
 
-  const empfehlung = empfehlungRechnen({ kunde, zeilen, bestandHeute, preise, seatPreis, instanzen, instanzPreis, instanzKosten });
-  return { kunde, monate: zeilen, bestandHeute, preise, empfehlung };
+  const empfehlung = empfehlungRechnen({ kunde: k0, zeilen, bestandHeute, preise, seatPreis, instanzen, instanzPreis, instanzKosten });
+  return { kunde: k0, monate: zeilen, bestandHeute, preise, empfehlung };
 }
 
 function empfehlungRechnen(a: {
   kunde: KundeZeile; zeilen: MonatZeile[]; bestandHeute: Record<Stufe | "offen", number>;
   preise: Record<Stufe, { preisCents: number; direktkostenCents: number }>; seatPreis: number; instanzen: number; instanzPreis: number; instanzKosten: number;
 }): Empfehlung {
-  const { kunde, preise } = a;
-  const seats = Math.max(1, kunde.mitglieder);
+  const { kunde: k0, preise } = a;
+  const seats = Math.max(1, k0.mitglieder);
   const bestand = a.bestandHeute.klein + a.bestandHeute.mittel + a.bestandHeute.gross + a.bestandHeute.offen;
   // Stufenmix heute (offene zaehlen wie klein); ohne Bestand: Annahme mittel.
   const gewichtet = bestand > 0
