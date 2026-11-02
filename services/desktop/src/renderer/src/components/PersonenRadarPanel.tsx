@@ -5,6 +5,7 @@
 // normalen Firmen-Radar. Teilt sich den Apify-Key mit der Watchlist.
 
 import { useCallback, useEffect, useState } from "react";
+import { linkedinLimitSicherstellen } from "./LinkedinLimitDialog";
 
 interface PrState {
   error?: string;
@@ -109,13 +110,14 @@ export function PersonenRadarPanel(): JSX.Element {
                 type="checkbox"
                 checked={cfg.enabled}
                 disabled={busy || cfg.postUrls.length === 0}
-                onChange={(e) =>
-                  void run(() =>
-                    window.api.linkedin.personenRadar.setConfig({
-                      enabled: e.target.checked,
-                    }),
-                  )
-                }
+                onChange={(e) => {
+                  const an = e.target.checked;
+                  void (async () => {
+                    // P6: Beobachtung nach Verbrauch braucht ein Monatslimit.
+                    if (an && !(await linkedinLimitSicherstellen())) return;
+                    await run(() => window.api.linkedin.personenRadar.setConfig({ enabled: an }));
+                  })();
+                }}
               />
               <span>Regelmäßig prüfen</span>
             </label>

@@ -424,6 +424,14 @@ export function AllCompanies() {
                     <LandBadge country={row.country} />
                     <RegisterStatusBadge status={row.registerStatus} />
                     <InsolvenzBadge status={row.insolvencyStatus} />
+                    {row.zugang && (
+                      <span
+                        className="ct-pill ct-pill--muted"
+                        title={`Stufe ${row.zugang.stufe === "gross" ? "groß" : row.zugang.stufe}: ${(row.zugang.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })} je Monat aus deinem Kontingent`}
+                      >
+                        {row.zugang.stufe === "gross" ? "groß" : row.zugang.stufe} · {(row.zugang.preisCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}
+                      </span>
+                    )}
                     <CrmBadgeRow
                       links={crmLinks.data?.links[row.companyId] ?? []}
                     />

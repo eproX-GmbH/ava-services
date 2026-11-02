@@ -152,6 +152,7 @@ export class PersonenRadarSupervisor {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
             // P4: Limit der LinkedIn-Beobachtung → Lauf endet, Automatik bleibt an (naechster Monat/Limit-Erhoehung).
+            if (msg.startsWith("LINKEDIN_LIMIT")) this.linkedinLimitMelden(msg);
             this.finishRun(startedAt, msg, trigger, "error");
             return msg;
           }
@@ -214,6 +215,7 @@ export class PersonenRadarSupervisor {
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
+              if (msg.startsWith("LINKEDIN_LIMIT")) this.linkedinLimitMelden(msg);
               this.finishRun(startedAt, msg, trigger, "error");
               return msg;
             }
@@ -362,6 +364,23 @@ export class PersonenRadarSupervisor {
     } finally {
       this.running = false;
     }
+  }
+
+  /** P6 — Meldung im Chat, wenn die Beobachtung am Monatslimit haengt (einmal je Monat und Grund). */
+  private linkedinLimitMelden(msg: string): void {
+    const grund = msg.split(":")[1] ?? "linkedin_limit";
+    const monat = new Date().toISOString().slice(0, 7);
+    const alert = this.deps.alerts.add({
+      tenantId: null,
+      companyId: "",
+      companyName: "LinkedIn-Beobachtung",
+      kind: "linkedin-signal",
+      severity: "warn",
+      headline: grund === "linkedin_limit_fehlt" ? "Beobachtete Posts pausiert: Monatslimit fehlt" : "Beobachtete Posts pausiert: Monatslimit erreicht",
+      rationale: `${msg.replace(/^LINKEDIN_LIMIT:[a-z_]+:\s*/, "")} Limit in Einstellungen → Plan & Abrechnung.`,
+      sourceRef: `linkedin-limit:posts:${grund}:${monat}`,
+    });
+    if (alert) { try { this.deps.notify(alert); } catch { /* best-effort */ } }
   }
 
   private finishRun(

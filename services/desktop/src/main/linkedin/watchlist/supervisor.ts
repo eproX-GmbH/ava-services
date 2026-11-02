@@ -201,13 +201,26 @@ export class WatchlistSupervisor {
           return "Apify-Token ungueltig.";
         }
         if (r === "credits") {
+          // P6 — Monatslimit der LinkedIn-Beobachtung: Meldung einmal je Monat.
+          const monat = new Date().toISOString().slice(0, 7);
+          const alert = this.deps.alerts.add({
+            tenantId: null,
+            companyId: "",
+            companyName: "LinkedIn-Beobachtung",
+            kind: "linkedin-signal",
+            severity: "warn",
+            headline: "Beobachtete Personen pausiert: Monatslimit erreicht oder fehlt",
+            rationale: "Die Beobachtung läuft weiter, sobald das Monatslimit erhöht ist oder der Monat wechselt. Limit in Einstellungen → Plan & Abrechnung.",
+            sourceRef: `linkedin-limit:watchlist:${monat}`,
+          });
+          if (alert) { try { this.deps.notify(alert); } catch { /* best-effort */ } }
           this.finishRun(
             startedAt,
-            "Apify-Guthaben aufgebraucht — Lauf abgebrochen, Automatik bleibt an.",
+            "Monatslimit der LinkedIn-Beobachtung erreicht oder fehlt — Lauf abgebrochen, Automatik bleibt an.",
             trigger,
             "warning",
           );
-          return "Apify-Guthaben aufgebraucht.";
+          return "Monatslimit erreicht.";
         }
       }
 

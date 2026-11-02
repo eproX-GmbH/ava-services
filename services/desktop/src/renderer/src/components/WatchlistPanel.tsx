@@ -10,6 +10,7 @@
 // Datenschutz-Einordnung (§5) bleibt sichtbar, aber kurz.
 
 import { useCallback, useEffect, useState } from "react";
+import { linkedinLimitSicherstellen } from "./LinkedinLimitDialog";
 import { Link } from "react-router-dom";
 
 interface WlEntry {
@@ -244,7 +245,13 @@ export function WatchlistPanel(): JSX.Element {
             type="checkbox"
             checked={cfg.enabled}
             disabled={busy || !zugang}
-            onChange={(e) => setzeConfig({ enabled: e.target.checked })}
+            onChange={(e) => {
+              const an = e.target.checked;
+              void (async () => {
+                if (an && !(await linkedinLimitSicherstellen())) return;
+                setzeConfig({ enabled: an });
+              })();
+            }}
           />
           <span>Regelmäßig prüfen</span>
         </label>

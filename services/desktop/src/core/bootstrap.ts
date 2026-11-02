@@ -1016,6 +1016,11 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   }
   const alertPrefs = new AlertPrefsStore();
   const notifications = new NotificationManager(alertPrefs);
+  // docs/PLAN_PRICING_TIERS.md P6 — Meldungen bei 80/100 % Monatskontingent und LinkedIn-Limit.
+  {
+    const { startKontingentWaechter } = await import("../main/billing/kontingent-waechter");
+    startKontingentWaechter({ gateway: gatewayClient, alerts, notify: (a) => notifications.notifyForAlert(a), isSignedIn: () => auth.getStatus().signedIn });
+  }
   // v0.1.412 — Telegram als zusätzlicher Zustellkanal. Eigener Schalter +
   // eigener Schwellwert (unabhängig vom Desktop-Push), Queue mit Taktung und
   // Bündelung gegen Meldungswellen. Wird unten an den NotificationManager
