@@ -96,7 +96,6 @@ import { SelfCorrectionsStore } from "../main/agent/self-corrections-store";
 import type { ScheduledMailSendPayload, ScheduledReminderPayload } from "../shared/types";
 import { LINK_MONITOR_ACTIVE_CAP, type LinkMonitorSnapshot, type TelegramSnapshot } from "../shared/types";
 import type { MailSnapshot } from "../shared/types";
-import { ResearchFeaturesStore } from "../main/research/store";
 import { SpracheStore } from "../main/sprache/store";
 import { SpracheRelay } from "../main/sprache/relay";
 import { ProviderConfigStore } from "../main/agent/providers/store";
@@ -586,76 +585,23 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
             return { AVA_STRUCTURED_CONTENT_SOURCE: source };
           }
         : name === "website"
-          ? // v0.1.172 Phase D — Research Features per-feature env vars.
-            // Read tier/provider/key for both research pipelines from the
-            // ResearchFeaturesStore and project them into the producer's env.
-            // The website-side factory in infrastructure/research/index.ts
-            // reads exactly these 6 vars (3 per feature). Unset feature
-            // (tier=off) falls back to the legacy OPENAI_API_KEY path the
-            // factory implements, so existing installs without Settings
-            // migration keep working.
+          ? // Stellen/Ausschreibungen (2026-11-02, Vorgabe Joyce): keine Nutzer-
+            // Einstellung mehr. Beide Recherchen laufen immer in Stufe Standard
+            // ueber die Betreiber-Spur des Gateways (/v1/llm/betreiber, Kosten beim
+            // Betreiber, im Stufenpreis je Firma enthalten). Deep Research bleibt
+            // im Producer erhalten, ist aber nirgends mehr waehlbar.
             async (): Promise<Record<string, string>> => {
-              const store = ResearchFeaturesStore.shared();
               const env: Record<string, string> = {};
-              // 2026-09-06 — Organisationsschluessel: unter Anbieter-Sperre
-              // laeuft Research immer ueber den Gateway-Proxy; das Deep-
-              // Research-Modell gibt die Organisation vor.
-              const locked = providers.isProviderLocked();
               const pol = getOrgPolicy();
               if (pol.researchModel) env.RESEARCH_DEEP_MODEL = pol.researchModel;
-              // docs/PLAN_CHATGPT_ABO_UEBERALL.md: ohne Schluessel laeuft die
-              // Standard-Stufe ueber das ChatGPT-Abo (Deep braucht weiter einen Schluessel).
-              const ueberAbo = providers.producerUeberAbo();
-              const rcfg = store.getConfig();
-              const expansion = await store.resolveFeature("expansionTenders", { providerLocked: locked });
-              if (expansion) {
-                env.RESEARCH_EXPANSION_TIER = expansion.tier;
-                env.RESEARCH_EXPANSION_PROVIDER = expansion.provider;
-                env.RESEARCH_EXPANSION_API_KEY = expansion.apiKey;
-                if (expansion.viaGateway) env.RESEARCH_EXPANSION_VIA_GATEWAY = "1";
-              } else if (ueberAbo && rcfg.expansionTenders.tier === "standard") {
-                env.RESEARCH_EXPANSION_TIER = "standard";
-                env.RESEARCH_EXPANSION_VIA_PLAN = "1";
-              } else {
-                env.RESEARCH_EXPANSION_TIER = "off";
-              }
-              const jobs = await store.resolveFeature("jobPostings", { providerLocked: locked });
-              if (jobs) {
-                env.RESEARCH_JOBS_TIER = jobs.tier;
-                env.RESEARCH_JOBS_PROVIDER = jobs.provider;
-                env.RESEARCH_JOBS_API_KEY = jobs.apiKey;
-                if (jobs.viaGateway) env.RESEARCH_JOBS_VIA_GATEWAY = "1";
-              } else if (ueberAbo && rcfg.jobPostings.tier === "standard") {
-                env.RESEARCH_JOBS_TIER = "standard";
-                env.RESEARCH_JOBS_VIA_PLAN = "1";
-              } else {
-                env.RESEARCH_JOBS_TIER = "off";
-              }
-              // 2026-09-24 — manueller Lauf je Firma: Schluessel IMMER mitgeben,
-              // auch bei Stufe "Aus" (der Producer nimmt ihn nur fuer Laeufe
-              // mit Stufe im Ereignis). Vorrang wie im Chat: eigener zuerst.
-              const manuell = await store.resolveManuellOpenai({ providerLocked: locked });
-              if (manuell?.viaGateway) env.RESEARCH_OPENAI_VIA_GATEWAY = "1";
-              else if (manuell?.apiKey) env.RESEARCH_OPENAI_API_KEY = manuell.apiKey;
-              // v0.1.270 — wenn das Haupt-LLM nicht OpenAI ist (also kein
-              // OPENAI_API_KEY in llmConfig steckt), aber Research auf
-              // OpenAI läuft, projizieren wir den ersten verfügbaren
-              // Research-OpenAI-Key zusätzlich als OPENAI_API_KEY. Dadurch
-              // wird im Producer das `openaiInstance` in di.ts non-null,
-              // shared-Client-Reuse funktioniert und der Boot-Log meldet
-              // keinen scheinbaren Fehler mehr. Außer producer-supervisor
-              // setzt es schon aus dem Haupt-LLM (dann bleibt's so).
+              env.RESEARCH_EXPANSION_TIER = "standard";
+              env.RESEARCH_EXPANSION_VIA_BETREIBER = "1";
+              env.RESEARCH_JOBS_TIER = "standard";
+              env.RESEARCH_JOBS_VIA_BETREIBER = "1";
+              // Manuelle Laeufe je Firma: ebenfalls Betreiber-Spur (Stufe Standard).
+              env.RESEARCH_VIA_BETREIBER = "1";
               // Website-Themen (docs/PLAN_THEMEN.md): Datei je Lauf neu gelesen.
               env.AVA_THEMEN_CONFIG = themenStore.pfad();
-              const fallbackOpenaiKey =
-                expansion && expansion.provider === "openai" && !expansion.viaGateway
-                  ? expansion.apiKey
-                  : jobs && jobs.provider === "openai" && !jobs.viaGateway
-                    ? jobs.apiKey
-                    : null;
-              if (fallbackOpenaiKey) {
-                env.OPENAI_API_KEY = fallbackOpenaiKey;
-              }
               return env;
             }
           : name === "company-evaluation"
@@ -1809,7 +1755,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   const agentRegistry = buildReadOnlyRegistry({
     gateway: gatewayClient,
     providers,
-    getResearchStand: () => ResearchFeaturesStore.shared().manuellerStand({ providerLocked: providers.isProviderLocked() }),
     sprache: {
       get: () => SpracheStore.shared().get(),
       setzen: (teil) => SpracheStore.shared().setzen(teil),
@@ -3301,18 +3246,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   }
   providerConfigStore.on("keyChanged", (kind) => {
     scheduleCredentialCycle(`keyChanged(${kind})`);
-    // v0.1.356 — Wenn ein OpenAI-/Anthropic-Key (neu) gesetzt wird und der
-    // Nutzer Research nie selbst konfiguriert hat, Job-Postings + Deep-
-    // Research nachträglich auf tier=standard aktivieren. Behebt den Fall
-    // „Key später eingetragen → Features blieben still aus". Der dadurch
-    // ausgelöste research configChanged cycelt den Website-Producer.
-    if (kind === "openai" || kind === "anthropic") {
-      try {
-        ResearchFeaturesStore.shared().maybeAutoEnableFromGlobalKeys();
-      } catch (err) {
-        console.warn("[research-store] maybeAutoEnableFromGlobalKeys failed:", err);
-      }
-    }
     audit({
       actorType: "user",
       actorId: null,
@@ -3832,8 +3765,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       void ladeBetreiberSpuren().then((geaendert) => {
         if (geaendert) scheduleCredentialCycle("betreiber-spuren");
       });
-      // Deep Research ueber den OpenAI-Schluessel der Organisation.
-      ResearchFeaturesStore.shared().setOrgOpenaiAvailable(Boolean(provs.openai));
     },
     // O9 — Sammel-Meldung je Abgleich: „N neue Firmen aus der Organisation".
     onNeueRadarFreigaben: (shares) => {
@@ -4059,29 +3990,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // mehr (set/validate/clear/setAuthMode/connect). Anthropic läuft nur
   // noch per API-Key über die normale Key-IPC.
 
-  // ---- v0.1.172 Settings Phase A — Research Features --------------------
-  // Per-feature config + key registry for the website producer's two
-  // research pipelines (Deep Research / Tenders+Expansion, Job-Postings).
-  // See src/main/research/store.ts for the persistence layout.
-  const researchStore = ResearchFeaturesStore.shared();
-
-  function researchBundle() {
-    const pcs = ProviderConfigStore.shared();
-    return {
-      config: researchStore.getConfig(),
-      keys: researchStore.listKeys(),
-      globals: {
-        openai: pcs.hasKey("openai"),
-        anthropic: pcs.hasKey("anthropic"),
-      },
-      encryptionAvailable: pcs.isEncryptionAvailable(),
-      orgOpenai: researchStore.hasOrgOpenai(),
-      providerLock: providers.isProviderLocked(),
-      researchModel: getOrgPolicy().researchModel ?? null,
-    };
-  }
-
-
   // ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) -----------------------------
   const spracheStore = SpracheStore.shared();
   const spracheRelay = new SpracheRelay(
@@ -4280,53 +4188,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
 
 
 
-  // Push bundle updates to all renderer windows when config/keys change.
-  // Keeps Settings UI live-synced if another window (or future CLI tool)
-  // mutates it.
-  const broadcastResearchBundle = () => {
-    const bundle = researchBundle();
-    windows().broadcast("research:bundleChanged", bundle);
-  };
-  researchStore.on("configChanged", broadcastResearchBundle);
-  researchStore.on("keysChanged", broadcastResearchBundle);
-
-  // v0.1.172 Phase D — Restart-on-Change. When the user mutates a
-  // research feature in Settings, the website producer needs to
-  // re-spawn so its `extraEnvAsync` callback picks up the fresh
-  // RESEARCH_* env vars. We only cycle on configChanged (not
-  // keysChanged) because key probes / metadata writes don't affect
-  // what the supervisor sends to the producer; only the per-feature
-  // {tier, provider, keyId} triple does.
-  //
-  // Coalesce rapid edits (e.g. user typing in a key field that
-  // auto-saves) into a single restart by debouncing 500ms.
-  let researchRestartTimer: NodeJS.Timeout | null = null;
-  researchStore.on("configChanged", () => {
-    if (researchRestartTimer) clearTimeout(researchRestartTimer);
-    researchRestartTimer = setTimeout(() => {
-      researchRestartTimer = null;
-      const website = producers.find((p) => p.getStatus().name === "website");
-      if (!website) return;
-      const s = website.getStatus().state;
-      if (s === "idle" || s === "stopping") return;
-      console.info(
-        "[research-store] config changed — cycling website producer to pick up new RESEARCH_* env",
-      );
-      void (async () => {
-        try {
-          await website.stop();
-        } catch (err) {
-          console.warn("[research-store] website.stop() rejected:", err);
-        }
-        if (!auth.getStatus().signedIn) return;
-        try {
-          await website.start();
-        } catch (err) {
-          console.error("[research-store] website.start() rejected after restart:", err);
-        }
-      })();
-    }, 500);
-  });
 
   // v0.1.424 — Publikations-Analyse-Modus (PB1). IPC + Restart-on-Change
   // nach exakt dem Research-Muster: Aenderung -> debounced Neustart des
@@ -4801,8 +4662,6 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     providers,
     publicationStore,
     registerQueueStatus,
-    researchBundle,
-    researchStore,
     resolveApifyAccess,
     retryTicker,
     selfCorrectionsStore,

@@ -85,11 +85,6 @@ import type {
   SkillRow,
   SkillSavePayload,
   SkillSaveResult,
-  ResearchSettingsBundle,
-  ResearchFeature,
-  ResearchTier,
-  ResearchProvider,
-  ResearchKeyProbeResult,
   LinkMonitor,
   LinkMonitorInput,
   LinkMonitorSnapshot,
@@ -2182,75 +2177,6 @@ const api = {
         ipcRenderer.invoke("linkedin:calibration:runNow"),
     },
   },
-  /** v0.1.172 Settings Phase A — Research Features ("Erweiterte
-   *  Recherche-Funktionen" section in Settings). Per-feature provider
-   *  + tier + API-key config for the website producer's two cloud-LLM
-   *  enrichment pipelines. */
-  research: {
-    getBundle: (): Promise<ResearchSettingsBundle> =>
-      ipcRenderer.invoke("research:getBundle"),
-    /** 2026-09-24 — manueller Lauf je Firma: gibt es einen OpenAI-Schluessel, und woher? */
-    manuellerStand: (): Promise<{ verfuegbar: boolean; quelle: "eigen" | "organisation" | null }> =>
-      ipcRenderer.invoke("research:manuellerStand"),
-    setFeatureConfig: (args: {
-      feature: ResearchFeature;
-      partial: {
-        tier?: ResearchTier;
-        provider?: ResearchProvider | null;
-        keyId?: string | null;
-      };
-    }): Promise<ResearchSettingsBundle> =>
-      ipcRenderer.invoke("research:setFeatureConfig", args),
-    createKey: (args: {
-      provider: ResearchProvider;
-      label: string;
-      plaintext: string;
-    }): Promise<{ id: string; bundle: ResearchSettingsBundle }> =>
-      ipcRenderer.invoke("research:createKey", args),
-    deleteKey: (
-      keyId: string,
-    ): Promise<{
-      detachedFeatures: ResearchFeature[];
-      bundle: ResearchSettingsBundle;
-    }> => ipcRenderer.invoke("research:deleteKey", { keyId }),
-    probeKey: (keyId: string): Promise<ResearchKeyProbeResult> =>
-      ipcRenderer.invoke("research:probeKey", { keyId }),
-    /** Push notification: main fires this when config/keys change so the
-     *  Settings panel stays live-synced (also covers another window
-     *  mutating the same store). */
-    onBundleChanged: (handler: (bundle: ResearchSettingsBundle) => void) => {
-      const listener = (_: unknown, bundle: ResearchSettingsBundle) =>
-        handler(bundle);
-      ipcRenderer.on("research:bundleChanged", listener);
-      return () => ipcRenderer.removeListener("research:bundleChanged", listener);
-    },
-    /** v0.1.179 — pre-import skip-mode. See main/index.ts handlers
-     *  for the full lifecycle. The renderer calls these around the
-     *  import POST when the user picked "Ohne Anreicherung". */
-    beginSkipMode: (): Promise<{ snapshotKey: string }> =>
-      ipcRenderer.invoke("research:beginSkipMode"),
-    waitWebsiteReady: (
-      timeoutMs?: number,
-    ): Promise<{ ready: boolean; reason?: string }> =>
-      ipcRenderer.invoke("research:waitWebsiteReady", { timeoutMs }),
-    attachSkipToTransaction: (
-      snapshotKey: string,
-      transactionId: string,
-    ): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke("research:attachSkipToTransaction", {
-        snapshotKey,
-        transactionId,
-      }),
-    endSkipModeForTransaction: (
-      transactionId: string,
-    ): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke("research:endSkipModeForTransaction", {
-        transactionId,
-      }),
-    hasPendingSkipMode: (): Promise<{ pending: boolean }> =>
-      ipcRenderer.invoke("research:hasPendingSkipMode"),
-  },
-
   /** Diagnostics (file logger, v0.1.338). The renderer mirrors its own
    *  console.* + window error/unhandledrejection breadcrumbs into the
    *  persistent main-process log file via `logToFile` (fire-and-forget,

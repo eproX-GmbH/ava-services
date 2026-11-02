@@ -87,8 +87,8 @@ export const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
  */
 const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
   openai:
-    "Mit einem OpenAI-Schlüssel kann AVA Deep Research, den Sprachmodus und die " +
-    "Websuche nutzen. Ohne Schlüssel läuft alles andere weiter.",
+    "Mit einem OpenAI-Schlüssel kann AVA den Sprachmodus und die Websuche im Chat " +
+    "nutzen. Ohne Schlüssel läuft alles andere weiter.",
   anthropic:
     "Claude-Modelle für den Chat und die Verarbeitung deiner Firmen. " +
     "Anmeldung nur mit einem Schlüssel, ein Claude-Abo reicht dafür nicht.",
@@ -208,7 +208,6 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
   ],
   recherche: [
     { anchor: "themen-section", label: "Fokus-Themen" },
-    { anchor: "research-features", label: "Stellen & Expansion" },
     { anchor: "watches-section", label: "Beobachtungen" },
     { anchor: "link-monitor-section", label: "Link-Überwachung" },
     { anchor: "email-muster-section", label: "E-Mail-Adressen" },

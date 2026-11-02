@@ -224,7 +224,6 @@ export function buildReadOnlyRegistry(deps: {
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
   /** 2026-09-24 — manueller Recherche-Lauf: OpenAI-Schluessel vorhanden, und woher? */
-  getResearchStand?: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
   /** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Einstellungen lesen/setzen, Schluessel-Stand. */
   sprache?: {
     get: () => import("../../../shared/types").SpracheEinstellungen;
@@ -248,7 +247,7 @@ export function buildReadOnlyRegistry(deps: {
     getTenantCompanyIds: deps.getTenantCompanyIds,
   };
   for (const t of buildCompanyTools(ctx)) registry.register(t);
-  for (const t of buildResearchLaufTools({ gateway: deps.gateway, getResearchStand: deps.getResearchStand ?? (() => ({ verfuegbar: false, quelle: null })) })) registry.register(t);
+  for (const t of buildResearchLaufTools({ gateway: deps.gateway })) registry.register(t);
   if (deps.sprache) for (const t of buildSprachmodusTools(deps.sprache)) registry.register(t);
   // T5 — Konto + Tenant (read-only).
   for (const t of buildAccountTools({

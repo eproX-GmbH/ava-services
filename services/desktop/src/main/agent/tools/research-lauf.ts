@@ -1,7 +1,8 @@
 // Manueller Recherche-Lauf je Firma (2026-09-24): Stellenanzeigen oder
-// Ausschreibungen/Expansion gezielt anstossen, Standard oder Deep Research,
-// unabhaengig von der globalen Stufe in den Einstellungen. Deep Research
-// nur mit OpenAI-Schluessel (eigener oder der der Organisation).
+// Ausschreibungen/Expansion gezielt anstossen. Seit 2026-11-02 (Vorgabe Joyce)
+// nur noch Stufe Standard ueber die Betreiber-Spur: keine Einstellung, kein
+// Schluessel des Nutzers, keine Kosten fuer ihn. Deep Research bleibt im
+// Producer erhalten, ist im Chat aber nicht mehr waehlbar.
 
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
@@ -10,7 +11,6 @@ import type { Tool } from "../types";
 
 interface Ctx {
   gateway: GatewayClient;
-  getResearchStand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
 }
 
 const FEATURE_TEXT = { jobs: "Stellenanzeigen", expansion: "Ausschreibungen, Expansion und Beschaffung", themen: "Fokus-Themen" } as const;
@@ -19,9 +19,8 @@ export function buildResearchLaufTools(ctx: Ctx): Tool[] {
   const run = defineTool({
     name: "research_run",
     description:
-      "Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Fokus-Themen des Nutzers (feature=themen, nur stufe=standard, laeuft auf dem allgemeinen Modell ohne Recherche-Schluessel) — " +
-      "stufe=standard (guenstig, ca. 0,02–0,15 € je Firma) oder stufe=deep (Deep Research, gruendlicher, ca. 1–5 € je Firma, dauert Minuten). " +
-      "Laeuft unabhaengig von der globalen Einstellung, also auch wenn die Funktion dort auf 'Aus' steht. Braucht einen OpenAI-Schluessel (eigener oder der der Organisation). " +
+      "Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Fokus-Themen des Nutzers (feature=themen, laeuft auf dem allgemeinen Modell). " +
+      "Stellen und Expansion laufen ueber AVA, ohne Schluessel und ohne Kosten fuer den Nutzer, dauern etwa eine Minute. " +
       "Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.",
     parameters: {
       type: "object",
@@ -29,20 +28,17 @@ export function buildResearchLaufTools(ctx: Ctx): Tool[] {
         companyId: { type: "string" },
         name: { type: "string", description: "Firmenname fuer die Rueckfrage" },
         feature: { type: "string", enum: ["jobs", "expansion", "themen"] },
-        stufe: { type: "string", enum: ["standard", "deep"] },
       },
-      required: ["companyId", "feature", "stufe"],
+      required: ["companyId", "feature"],
     },
     schema: yup
       .object({
         companyId: yup.string().trim().min(1).required(),
         name: yup.string().trim().max(200).optional(),
         feature: yup.mixed<"jobs" | "expansion" | "themen">().oneOf(["jobs", "expansion", "themen"]).required(),
-        stufe: yup.mixed<"standard" | "deep">().oneOf(["standard", "deep"]).required(),
       })
       .noUnknown(true),
     run: async (args, c) => {
-      const stand = ctx.getResearchStand();
       if (args.feature === "themen") {
         const v = await c.ui.confirmAction(
           { kind: "additive", prompt: `Fokus-Themen für ${args.name ?? args.companyId} prüfen? Läuft auf deinem allgemeinen Modell, etwa eine Minute.`, confirmValue: "start", options: [{ value: "start", label: "Starten" }, { value: "cancel", label: "Abbrechen" }] },
@@ -54,15 +50,10 @@ export function buildResearchLaufTools(ctx: Ctx): Tool[] {
           { method: "POST", body: { feature: "themen", stufe: "standard" }, signal: c.signal },
         );
       }
-      if (!stand.verfuegbar) {
-        return { error: "Kein OpenAI-Schluessel hinterlegt — weder eigener noch einer der Organisation. In den Einstellungen unter Modelle eintragen." };
-      }
-      const wer = stand.quelle === "organisation" ? "über den OpenAI-Schlüssel deiner Organisation (Verbrauch wird ihr zugerechnet)" : "über deinen eigenen OpenAI-Schlüssel";
-      const kosten = args.stufe === "deep" ? "Deep Research: gründlicher, ca. 1–5 € je Firma, dauert mehrere Minuten." : "Standard: ca. 0,02–0,15 € je Firma, dauert etwa eine Minute.";
       const value = await c.ui.confirmAction(
         {
           kind: "additive",
-          prompt: `${FEATURE_TEXT[args.feature]} für ${args.name ?? args.companyId} suchen?\n\n${kosten}\nLäuft ${wer}.`,
+          prompt: `${FEATURE_TEXT[args.feature]} für ${args.name ?? args.companyId} suchen?\n\nDauert etwa eine Minute; die Ergebnisse erscheinen in der Firmenansicht.`,
           confirmValue: "start",
           options: [
             { value: "start", label: "Starten" },
@@ -74,7 +65,7 @@ export function buildResearchLaufTools(ctx: Ctx): Tool[] {
       if (value !== "start") return { abgebrochen: true };
       return ctx.gateway.request<{ angestossen: boolean; grund?: string; transactionId: string | null }>(
         `/v1/companies/${encodeURIComponent(args.companyId)}/research`,
-        { method: "POST", body: { feature: args.feature, stufe: args.stufe }, signal: c.signal },
+        { method: "POST", body: { feature: args.feature, stufe: "standard" }, signal: c.signal },
       );
     },
     preview: (r) => {

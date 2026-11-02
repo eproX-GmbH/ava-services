@@ -1,18 +1,18 @@
 // Gezielte Recherche je Firma (2026-09-24): Stellenanzeigen oder
-// Ausschreibungen/Expansion anstossen — Standard oder Deep Research —
-// unabhaengig von der globalen Stufe, plus Protokoll (wann, was, wie viele
+// Ausschreibungen/Expansion anstossen, plus Protokoll (wann, was, wie viele
 // Ergebnisse). Der Laufzustand kommt aus dem Protokoll des Gateways, nicht
 // aus dem Seitenzustand: Nach Seitenwechsel oder Neuladen steht der
 // Indikator wieder da, solange der Lauf nicht abgeschlossen ist.
 //
-// Ohne OpenAI-Schluessel (eigener oder Organisation) gibt es statt der
-// Knoepfe den Hinweis auf die Einstellungen; Deep Research ist komplett an
-// OpenAI verdrahtet.
+// Seit 2026-11-02 (Vorgabe Joyce) nur Stufe Standard ueber die Betreiber-Spur:
+// kein Schluessel, keine Kosten fuer den Nutzer, kein Deep-Research-Knopf.
+// Alte Laeufe mit Stufe Deep bleiben im Protokoll lesbar.
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
+import { bestaetigen } from "./Bestaetigung";
 
 export type RechercheFeature = "jobs" | "expansion" | "themen";
 type Stufe = "standard" | "deep";
@@ -33,11 +33,6 @@ function zeit(iso: string): string {
 
 export function RechercheBereich({ companyId }: { companyId: string }) {
   const qc = useQueryClient();
-  const stand = useQuery({
-    queryKey: ["research", "manuellerStand"],
-    queryFn: () => window.api.research.manuellerStand(),
-    staleTime: 60_000,
-  });
   const verlauf = useQuery({
     queryKey: ["company", companyId, "research-verlauf"],
     queryFn: () => gatewayFetch<{ items: Lauf[] }>(`/v1/companies/${encodeURIComponent(companyId)}/research/verlauf`),
@@ -59,12 +54,12 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
   }, [anzahlLaufend, vorher, qc, companyId]);
 
   const starten = async (feature: RechercheFeature, stufe: Stufe): Promise<void> => {
-    const quelle = stand.data?.quelle === "organisation" ? "über den OpenAI-Schlüssel deiner Organisation (Verbrauch wird ihr zugerechnet)" : "über deinen eigenen OpenAI-Schlüssel";
-    const kosten = stufe === "deep" ? "Deep Research: gründlicher, ca. 1–5 € je Firma, dauert mehrere Minuten." : "Standard: ca. 0,02–0,15 € je Firma, dauert etwa eine Minute.";
+    // Seit 2026-11-02 laeuft die Suche ueber AVA (Betreiber-Spur, Stufe Standard);
+    // fuer den Nutzer fallen keine Kosten an, Deep Research ist nicht mehr waehlbar.
     const frage = feature === "themen"
       ? "Fokus-Themen für diese Firma jetzt prüfen?\n\nLäuft auf deinem allgemeinen KI-Modell, etwa eine Minute."
-      : `${FEATURE_TEXT[feature]} jetzt suchen?\n\n${kosten}\nLäuft ${quelle}.`;
-    if (!window.confirm(frage)) return;
+      : `${FEATURE_TEXT[feature]} jetzt suchen?\n\nDauert etwa eine Minute, Ergebnisse erscheinen hier in der Firmenansicht.`;
+    if (!(await bestaetigen({ titel: FEATURE_TEXT[feature], text: frage, bestaetigen: "Starten" }))) return;
     setMeldung(null);
     try {
       const r = await gatewayFetch<{ angestossen: boolean; grund?: string }>(`/v1/companies/${encodeURIComponent(companyId)}/research`, {
@@ -90,12 +85,8 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
         <button type="button" className="btn small" onClick={() => void starten("themen", "standard")} title="Deine Fokus-Themen (Einstellungen → Datenquellen) auf dieser Website prüfen">Fokus prüfen</button>
       );
     }
-    if (!stand.data?.verfuegbar) return <span className="muted small">Kein OpenAI-Schlüssel hinterlegt.</span>;
     return (
-      <>
-        <button type="button" className="btn small" onClick={() => void starten(feature, "standard")} title="Günstige Suche, ca. 0,02–0,15 € je Firma">Jetzt suchen</button>
-        <button type="button" className="btn small" onClick={() => void starten(feature, "deep")} title="Deep Research, gründlicher, ca. 1–5 € je Firma">Deep Research</button>
-      </>
+      <button type="button" className="btn small" onClick={() => void starten(feature, "standard")} title="Sucht im Web nach aktuellen Treffern für diese Firma">Jetzt suchen</button>
     );
   };
 
@@ -105,9 +96,7 @@ export function RechercheBereich({ companyId }: { companyId: string }) {
         <div>
           <h3 className="rl-block__titel">Gezielte Recherche</h3>
           <p className="muted small" style={{ margin: 0 }}>
-            Für diese Firma jetzt suchen lassen, unabhängig von der globalen Einstellung.
-            {stand.data?.verfuegbar && <> Läuft {stand.data.quelle === "organisation" ? "über den Schlüssel der Organisation" : "über deinen OpenAI-Schlüssel"}.</>}
-            {stand.data && !stand.data.verfuegbar && <> Dafür fehlt ein OpenAI-Schlüssel: <Link to="/settings#provider-section">in den Einstellungen hinterlegen</Link>.</>}
+            Für diese Firma jetzt suchen lassen. Läuft über AVA, ohne Kosten für dich.
           </p>
         </div>
       </div>

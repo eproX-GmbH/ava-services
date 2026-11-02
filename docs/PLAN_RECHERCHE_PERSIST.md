@@ -145,3 +145,15 @@ damit nichts verschwindet.
    Schlüssel der Organisation“), kein automatisches Einschalten.
 3. Evaluation-DB löschen (nach Dump) oder nur die lebenden Tabellen leeren?
    Vorschlag: löschen, Dump im Betreiber-Archiv.
+
+## Nachtrag 2026-11-02: Standard-Recherche über die Betreiber-Spur
+
+Vorgabe Joyce: Die Einstellung „Stellen & Expansion“ (Modus Aus/Standard/Deep, Anbieter,
+Schlüssel, Kostenhinweis) ist aus der App entfernt. Beide Recherchen laufen immer in Stufe
+Standard über die Betreiber-Spur des Gateways; der website-Producer bekommt vom Desktop
+`RESEARCH_EXPANSION_TIER=standard`, `RESEARCH_EXPANSION_VIA_BETREIBER=1` (Jobs analog) und
+`RESEARCH_VIA_BETREIBER=1` für manuelle Läufe. Damit entfällt „Recherche auf Nutzer-Rechnung“
+für die Standard-Stufe; offene Frage 2 (Anbieter-Sperre) ist damit gegenstandslos. Ebenfalls
+entfernt: Import-Kostenabfrage mit „Ohne Anreicherung“ (Skip-Modus), Recherche-Schlüsselverwaltung
+(`main/research/store.ts`), IPC `research:*`. Deep Research bleibt im Producer (Schlüssel-Weg),
+ist aber in App, Chat (`research_run` nur Standard) und Firmenansicht nicht mehr wählbar.

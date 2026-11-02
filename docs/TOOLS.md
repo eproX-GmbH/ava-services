@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-10-31
+Stand: 2026-11-02
 Anzahl Tools: 298
 
 ## Firmen (28)
@@ -2415,13 +2415,12 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/research-lauf.ts`
 
-Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Fokus-Themen des Nutzers (feature=themen, nur stufe=standard, laeuft auf dem allgemeinen Modell ohne Recherche-Schluessel) — stufe=standard (guenstig, ca. 0,02–0,15 € je Firma) oder stufe=deep (Deep Research, gruendlicher, ca. 1–5 € je Firma, dauert Minuten). Laeuft unabhaengig von der globalen Einstellung, also auch wenn die Funktion dort auf 'Aus' steht. Braucht einen OpenAI-Schluessel (eigener oder der der Organisation). Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.
+Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs), nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) oder die Pruefung der Fokus-Themen des Nutzers (feature=themen, laeuft auf dem allgemeinen Modell). Stellen und Expansion laufen ueber AVA, ohne Schluessel und ohne Kosten fuer den Nutzer, dauern etwa eine Minute. Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.
 
 _Parameter:_
 - `companyId: string` (required)
 - `name: string` — Firmenname fuer die Rueckfrage
 - `feature: string (enum: jobs, expansion, themen)` (required)
-- `stufe: string (enum: standard, deep)` (required)
 
 ## scheduler (4)
 
