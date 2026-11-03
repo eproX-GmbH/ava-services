@@ -592,7 +592,10 @@ export async function getUsageSnapshot(
   let kannSelbstWechseln = !istOrgKonto || role === "owner" || role === "admin";
   {
     const { pricingAktiv, kontingentStand } = await import("./kontingent");
-    if (pricingAktiv() && (acc.mode === "sitz" || acc.mode === "enterprise")) kontingent = await kontingentStand(pool, billingAccountId);
+    // Im Sitz-Modell fuer JEDES Konto (auch Free / mode none / Altvertrag): die
+    // Desktop-Tarifseite schaltet an `kontingent` auf die neue Darstellung um;
+    // ohne diese Zeile sah ein Free-Konto weiter die alten Karten (2026-11-03).
+    if (pricingAktiv()) kontingent = await kontingentStand(pool, billingAccountId);
     if (pricingAktiv() && ctx.actorId && ctx.actorId !== ctx.tenantId) {
       const m = await pool.query<{ role: string }>(`SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [ctx.tenantId, ctx.actorId]);
       kannSelbstWechseln = m.rows[0]?.role === "owner" || m.rows[0]?.role === "admin";
