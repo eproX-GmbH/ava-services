@@ -4810,9 +4810,17 @@ function ZugangStand({ zugang, tier, limitAenderbar = true }: { zugang: UsageSna
 }
 
 export function PlanSection() {
-  const { data, isLoading, error, refetch } = useUsage();
-  // docs/PLAN_PRICING_TIERS.md P6 — Sitz-Modell: eigene Oberflaeche, sobald das Gateway ein Kontingent liefert.
+  const { data } = useUsage();
+  // docs/PLAN_PRICING_TIERS.md P6 — Sitz-Modell: eigene Oberflaeche, sobald das Gateway ein
+  // Kontingent liefert. Die Entscheidung liegt VOR allen Hooks der alten Seite in einer
+  // eigenen Komponente, sonst aendert sich die Hook-Reihenfolge beim Eintreffen der Daten
+  // (React-Fehler 300, leeres Fenster; Joyce 2026-11-03).
   if (data?.kontingent) return <PlanAbrechnungSection usage={data} />;
+  return <PlanSectionAlt />;
+}
+
+function PlanSectionAlt() {
+  const { data, isLoading, error, refetch } = useUsage();
   const [busy, setBusy] = useState<"checkout-pro" | "portal" | null>(
     null,
   );
