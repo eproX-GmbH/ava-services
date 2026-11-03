@@ -8206,7 +8206,7 @@ tr.held-row td:first-child::after {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  margin: 10px 14px 0;
+  margin: 10px 14px 28px;
   padding: 10px 14px;
   border: 1px solid rgba(0, 192, 167, 0.45);
   border-radius: 10px;
