@@ -35,6 +35,8 @@ import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
 import { mcpOauthRouter } from "./routes/mcp-oauth";
 import { makeMcpRouter } from "./routes/mcp";
+import { makeA2aRouter } from "./routes/a2a";
+import { startA2aTakt } from "./lib/a2a-tasks";
 import { appRouter } from "./routes/app";
 import { instanzRouter } from "./lib/instanz-router";
 
@@ -117,6 +119,8 @@ app.route("/v1", v1);
 // der MCP-Endpunkt (Bearer wie /v1); die Werkzeuge rufen /v1 im Prozess auf.
 app.route("/", mcpOauthRouter);
 app.route("/", makeMcpRouter(app));
+// docs/PLAN_MCP_OEFFNUNG.md §14: A2A-Fassade (Agentenkarte + JSON-RPC /a2a).
+app.route("/", makeA2aRouter(app));
 
 // OpenAPI spec + Swagger UI. Per D3 the REST + OpenAPI combo replaces tRPC.
 app.doc("/openapi.json", {
@@ -267,6 +271,8 @@ startPersonRetentionCron();
 // B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
 // Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
 startBillingCron();
+// A2A: offene Tasks pruefen, Push an fremde Agenten.
+startA2aTakt();
 // Vorabanalyse: Laeufe weiterfuehren, die beim letzten Neustart liefen.
 void import("./lib/vorabanalyse/laeufer").then(({ laeuferStarten }) => laeuferStarten(getGatewayPool())).catch(() => undefined);
 

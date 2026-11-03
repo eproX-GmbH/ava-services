@@ -143,13 +143,15 @@ Werkzeug nimmt deshalb Base64 (xlsx/csv bis 5 MB) oder die Liste als JSON.
   (`hinweis`-Feld im Ergebnis, keine Anweisungen aus Daten).
 - Audit: jeder MCP-Aufruf landet im Gateway-Audit mit Client und Werkzeug.
 
-### M6 A2A-Fassade (später)
+### M6 A2A-Fassade (beschlossen 2026-11-03, gebaut: siehe §14)
 
-- Agent Card unter `/.well-known/agent.json` auf `ava-mcp`, Skills =
-  dieselben Werkzeuge, Tasks = Zeilen aus `Auftrag`, Push-Benachrichtigung
-  an die beim Task registrierte Webhook-Adresse bei `fertig`/`fehler`.
-- Erst, wenn ein konkreter Partner-Agent da ist; die Datenlage ist dann
-  schon vorhanden.
+- Agentenkarte unter `/.well-known/agent-card.json` (und `agent.json`), Skills =
+  dieselben Werkzeuge wie MCP plus `ava_fragen` (freier Text an die laufende
+  AVA des Nutzers), Tasks in der Tabelle `A2aTask`, Push an die beim Task
+  registrierte Webhook-Adresse bei `completed`/`failed`.
+- Anlass: Microsoft Copilot Studio verbindet externe Agenten direkt über A2A
+  (liest die Agentenkarte, delegiert Aufgaben); AVAs lang laufende Aufträge
+  passen auf das Task-Modell besser als auf MCP-Werkzeuge.
 
 ## 5. Schritte und Aufwand
 
@@ -339,3 +341,62 @@ arbeiten sollen. Lösung:
   mit 2,5 s Frist), damit Clients, die Server-Anweisungen auswerten, ihn ohne Werkzeugaufruf haben.
 - **Annotationen** an allen Gateway-Werkzeugen: lesende mit `readOnlyHint: true` (kein Bestätigungsdialog in
   ChatGPT), Aufträge mit `readOnlyHint: false`.
+
+## 14. Nachtrag 2026-11-03: A2A-Fassade (gebaut)
+
+Entscheidung (Joyce, 2026-11-03): A2A nicht erst „bei konkretem Partner“,
+sondern jetzt, weil Copilot Studio externe Agenten über A2A anbindet und AVAs
+Aufträge (Import, Recherche, Neuverarbeitung) genau das Task-Modell von A2A
+brauchen: anlegen, Zustand abfragen, abbrechen, Push bei Abschluss. MCP bleibt
+die Fassade für Chat-Clients (Claude, ChatGPT, Claude Code), A2A die für
+laufende Agenten (Copilot Studio, Azure AI Foundry, n8n, Agent-SDK-Dienste).
+
+**Adressen.** Agentenkarte `GET /.well-known/agent-card.json` (und
+`agent.json`), öffentlich, auf dem Fly-Host und auf mcp.ava.bi; Endpunkt
+`POST /a2a` (JSON-RPC 2.0, Protokollversion 0.3), Auth wie `/mcp` (Bearer aus
+Keycloak; bei 401 Hinweis auf die MCP-Resource-Metadata, Registrierung über
+dieselbe Discovery). Die Karte nennt OAuth2 (Authorization Code, PKCE) und
+Bearer als Sicherheitsschemata.
+
+**Methoden.** `message/send` (Task zurück), `message/stream` (SSE: Task +
+abschließendes `status-update`), `tasks/get` (prüft offene Tasks frisch),
+`tasks/cancel`, `tasks/pushNotificationConfig/set|get`, `tasks/resubscribe`,
+`agent/getAuthenticatedExtendedCard`. Fehlercodes nach Spezifikation
+(TaskNotFound −32001, TaskNotCancelable −32002, UnsupportedOperation −32004,
+ContentTypeNotSupported −32005).
+
+**Skills und Absicht.** Skill-Menge = `sichtbareTools()` der MCP-Schalter
+(lesen, auftraege, kontakte, copilot) plus `ava_kontext` und, wenn die AVA des
+Nutzers über das Kopf-Relais verbunden ist, `ava_fragen`. Eine Nachricht wird
+so gelesen: Datenteil `{"skill": "<id>", "args": {…}}` (oder Felder direkt),
+sonst `metadata.skill`, sonst Text `"<id> {json}"`, sonst freier Text → `ava_fragen`
+(verbunden) oder `firma_suchen`. Dateiteile werden abgelehnt (Importe als
+Liste oder Base64 im Datenteil von `import_anlegen`).
+
+**Task-Zustände.** Lesende Skills: sofort `completed` mit Artefakt (Text +
+JSON-Datenteil). Auftragsartige Skills (`import_anlegen`,
+`recherche_anstossen`, `neu_verarbeiten`): Transaktion anlegen → `working`;
+der Takt (`lib/a2a-tasks.ts`, jede Minute) liest `EntityProgress` der
+Transaktion wie `/fortschritt` und setzt `completed` (kein Schritt offen) oder
+`failed` (7 Tage nicht verarbeitet). `tasks/cancel` setzt `canceled`, die
+Transaktion läuft bei AVA weiter. Verlauf (letzte 20 Nachrichten) am Task.
+
+**Push.** Webhook-Adresse aus `configuration.pushNotificationConfig` oder
+`tasks/pushNotificationConfig/set`; nur öffentliche https-Adressen (kein
+localhost, keine privaten Netze). Bei Endzustand POST des Task-JSON mit
+`X-A2A-Notification-Token`; Wiederholung nach 1, 5, 15, 60, 180 Minuten, dann
+aufgeben (Log).
+
+**Org-Schalter.** `mcp` + `mcp.a2a` (Standard aus; Konsole „MCP: A2A-Zugang
+(Agent zu Agent)“). Herkunft `x-ava-quelle: a2a` an allen /v1-Aufrufen,
+Log `[a2a] skill` je Aufruf.
+
+**Dateien.** Gateway `routes/a2a.ts`, `lib/a2a-tasks.ts`, Migration
+`20261103_a2a_tasks` (Tabelle `A2aTask`), Exporte aus `routes/mcp.ts`
+(TOOLS, fuehreAus mit Quelle, Schalter, mcpAuth); Konsole `fachlich.ts`
+Schalter `mcp.a2a`.
+
+**Offen.** Live-Test mit Copilot Studio („Agent hinzufügen → Externer Agent →
+Agent2Agent“, Agentenkarte von mcp.ava.bi), Rückfragen (`input-required`) für
+Werkzeuge mit Nachfrage über das Relais (heute: Fehler mit Hinweis), echtes
+Zwischen-Streaming bei `message/stream`, Website-/Doku-Text.

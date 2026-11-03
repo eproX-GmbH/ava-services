@@ -1373,3 +1373,29 @@ model ProblemNachricht {
 
   @@index([meldungId, createdAt])
 }
+
+/// docs/PLAN_MCP_OEFFNUNG.md §14 — A2A-Fassade: Task eines fremden Agenten.
+model A2aTask {
+  id              String    @id
+  contextId       String
+  tenantId        String
+  actorId         String
+  skill           String
+  eingabe         Json
+  /// submitted | working | completed | failed | canceled | rejected
+  zustand         String    @default("submitted")
+  statusText      String?
+  transactionId   String?
+  ergebnis        Json?
+  verlauf         Json      @default("[]")
+  pushUrl         String?
+  pushToken       String?
+  pushVersuche    Int       @default(0)
+  pushNaechster   DateTime?
+  pushErledigt    Boolean   @default(false)
+  abgeschlossenAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now())
+
+  @@index([actorId, createdAt])
+}

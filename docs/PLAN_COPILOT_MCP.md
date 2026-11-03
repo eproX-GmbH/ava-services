@@ -44,18 +44,19 @@ Drei Verbindungen, in dieser Reihenfolge gebaut:
 3. **Rückkanal** (klein): AVA liefert Meldungen per Webhook an einen Trigger
    in Copilot Studio oder Power Automate. Kein A2A.
 
-## 2. Warum MCP und nicht A2A
+## 2. MCP und A2A (Entscheidung geändert 2026-11-03)
 
 | Frage | MCP | A2A |
 |---|---|---|
-| Unterstützung bei Microsoft | Copilot Studio bindet MCP-Server als Werkzeuge ein, allgemein verfügbar; Veröffentlichung nach Microsoft 365 Copilot und Dynamics aus Copilot Studio heraus | in Copilot Studio als Vorschau; Partner-Agenten müssen eine Agentenkarte und Webhook-Adresse mitbringen |
-| Was AVA hat | MCP-Server mit OAuth, Org-Schalter je Werkzeug, Aufträge, Audit (`PLAN_MCP_OEFFNUNG.md`) | nichts; als Fassade über dieselben Aufträge denkbar (M6 dort) |
-| Bidirektional | Copilot → AVA über Werkzeuge; AVA → Copilot über Webhook an Trigger | beide Richtungen als Tasks |
-| Risiko beim Kunden | Werkzeugmenge je Organisation festlegbar, lesend als solche markiert | Agenten-zu-Agenten-Aufträge sind für Sicherheitsabteilungen schwerer zu bewerten |
+| Unterstützung bei Microsoft | Copilot Studio bindet MCP-Server als Werkzeuge ein | Copilot Studio verbindet externe Agenten direkt über A2A („Agent hinzufügen → Externer Agent → Agent2Agent“, liest die Agentenkarte unter `.well-known`) |
+| Was AVA hat | MCP-Server mit OAuth, Org-Schalter je Werkzeug, Audit | A2A-Fassade über dieselben Werkzeuge (`PLAN_MCP_OEFFNUNG.md` §14): Agentenkarte, Tasks, Push |
+| Passt zu | Chat-Clients: Frage, Antwort, Werkzeugaufruf | laufenden Agenten mit lang laufenden Aufträgen: Task anlegen, Stand, Abbruch, Push bei Abschluss |
+| Bidirektional | Copilot → AVA über Werkzeuge; AVA → Copilot über Webhook an Trigger | im Protokoll angelegt: Push an die Adresse des aufrufenden Agenten |
 
-Entscheidung: MCP zuerst. A2A nur, wenn ein Kunde einen konkreten Partner-
-Agenten benennt. Was der Operator "bidirektional" nennt, ist mit MCP plus
-Webhook abgedeckt.
+Entscheidung (Joyce, 2026-11-03): beides. MCP für die Werkzeug-Einbindung in
+Copilot, A2A für Copilot-Studio-Agenten, die AVA Aufgaben geben und das
+Ergebnis zurückbekommen wollen. Ursprüngliche Festlegung vom 2026-10-23 („MCP
+zuerst, A2A nur bei konkretem Partner“) ist damit aufgehoben.
 
 ## 3. Was es schon gibt
 
@@ -213,3 +214,18 @@ Verflechtungen. Alles, was AVA selbst schreiben würde, bleibt aus.
   Gateway-Deploy (`prisma migrate deploy`), Live-Test mit einem echten
   Entra-Tenant, Notizen in der Desktop-App.
 
+
+## 10. Nachtrag 2026-11-03: A2A gebaut
+
+- Gateway: Agentenkarte `/.well-known/agent-card.json`, Endpunkt `POST /a2a`
+  (JSON-RPC 0.3: message/send, message/stream, tasks/get, tasks/cancel,
+  pushNotificationConfig), Tabelle `A2aTask`, Takt mit Push. Details in
+  `PLAN_MCP_OEFFNUNG.md` §14.
+- Konsole: Schalter „MCP: A2A-Zugang (Agent zu Agent)“ (`mcp.a2a`, Standard
+  aus, unter `mcp`).
+- Einrichtung beim Kunden: In Copilot Studio „Agent hinzufügen → Externer
+  Agent → Agent2Agent“, Adresse der Agentenkarte `https://mcp.ava.bi/.well-known/agent-card.json`,
+  Anmeldung als AVA-Nutzer (OAuth wie bei MCP). Lang laufende Aufträge
+  melden sich an die vom Copilot-Agenten gesetzte Push-Adresse.
+- Offen: Live-Test mit einem Copilot-Studio-Agenten, `input-required` für
+  Rückfragen, Doku-Text.

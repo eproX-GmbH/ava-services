@@ -43,7 +43,7 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-interface ToolDef {
+export interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -55,7 +55,7 @@ function annotationen(t: ToolDef): Record<string, unknown> {
   return t.schalter === "auftraege" ? { readOnlyHint: false, openWorldHint: false } : { readOnlyHint: true, openWorldHint: false };
 }
 
-const TOOLS: ToolDef[] = [
+export const TOOLS: ToolDef[] = [
   {
     name: KONTEXT_WERKZEUG,
     schalter: "lesen",
@@ -216,8 +216,8 @@ const BEREICH_ROUTEN: Record<string, string> = {
 };
 
 /** Interner Aufruf einer /v1-Route mit dem Token des Nutzers. */
-async function api(app: OpenAPIHono, token: string, method: "GET" | "POST", path: string, body?: unknown, extra?: { formData?: FormData }): Promise<{ ok: boolean; status: number; json: unknown }> {
-  const headers: Record<string, string> = { authorization: `Bearer ${token}`, accept: "application/json", "x-ava-quelle": "mcp" };
+export async function apiAufruf(app: OpenAPIHono, token: string, method: "GET" | "POST", path: string, body?: unknown, extra?: { formData?: FormData; quelle?: string }): Promise<{ ok: boolean; status: number; json: unknown }> {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}`, accept: "application/json", "x-ava-quelle": extra?.quelle ?? "mcp" };
   let init: RequestInit = { method, headers };
   if (extra?.formData) init = { ...init, body: extra.formData };
   else if (body !== undefined) init = { ...init, headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) };
@@ -254,7 +254,9 @@ function qs(obj: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : "";
 }
 
-async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }> {
+export async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Record<string, unknown>, quelle = "mcp"): Promise<{ text: string; isError?: boolean }> {
+  // Herkunft (mcp | a2a) an jeder /v1-Anfrage dieses Aufrufs.
+  const api = (a: OpenAPIHono, t: string, m: "GET" | "POST", p: string, b?: unknown, e?: { formData?: FormData }) => apiAufruf(a, t, m, p, b, { ...e, quelle });
   switch (name) {
     case "firma_suchen": {
       const q = String(args.q ?? "").trim();
@@ -441,7 +443,7 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
   }
 }
 
-interface McpSchalter {
+export interface McpSchalter {
   aktiv: boolean;
   lesen: boolean;
   auftraege: boolean;
@@ -450,26 +452,28 @@ interface McpSchalter {
   kontakte: boolean;
   /** Werkzeuge der laufenden AVA des Nutzers ueber das Kopf-Relais (Standard an). */
   kopf: boolean;
+  /** A2A-Fassade (docs/PLAN_MCP_OEFFNUNG.md §14, Standard aus). */
+  a2a: boolean;
 }
 
-async function schalterFuer(tenantId: string): Promise<McpSchalter> {
+export async function schalterFuer(tenantId: string): Promise<McpSchalter> {
   const f = await loadFeatures(getGatewayPool(), tenantId);
   // C1 (docs/PLAN_COPILOT_MCP.md): Werkzeugmenge "copilot" = kleine, lesbare Liste fuer
   // die Freigabe im Microsoft-Tenant; Werkzeuge der laufenden AVA sind dann aus.
   const copilot = f["mcp.copilot"] === true;
-  return { aktiv: f["mcp"] === true, lesen: f["mcp.lesen"] !== false, auftraege: f["mcp.auftraege"] !== false, kontakte: f["mcp.kontakte"] === true, kopf: f["mcp.kopf"] !== false && !copilot, copilot };
+  return { aktiv: f["mcp"] === true, lesen: f["mcp.lesen"] !== false, auftraege: f["mcp.auftraege"] !== false, kontakte: f["mcp.kontakte"] === true, kopf: f["mcp.kopf"] !== false && !copilot, copilot, a2a: f["mcp.a2a"] === true };
 }
 
 const COPILOT_MENGE = new Set([KONTEXT_WERKZEUG, "firma_suchen", "firma_lesen", "firma_kontakte", "meine_firmen", "meldungen", "import_anlegen", "protokoll_ablegen", "auftrag_status"]);
 
 /** Werkzeuge des verbundenen Kopfs, ohne Namenskollisionen mit den Gateway-Werkzeugen. */
-function kopfWerkzeuge(actorId: string, s: McpSchalter) {
+export function kopfWerkzeuge(actorId: string, s: McpSchalter) {
   if (!s.kopf) return [];
   const eigene = new Set(TOOLS.map((t) => t.name));
   return kopfRelais.werkzeugeFuer(actorId).filter((w) => !eigene.has(w.name));
 }
 
-function sichtbareTools(s: McpSchalter): ToolDef[] {
+export function sichtbareTools(s: McpSchalter): ToolDef[] {
   return TOOLS.filter((t) => (t.schalter === "lesen" && s.lesen) || (t.schalter === "auftraege" && s.auftraege) || (t.schalter === "kontakte" && s.kontakte)).filter((t) => !s.copilot || COPILOT_MENGE.has(t.name));
 }
 
@@ -478,7 +482,7 @@ function rpcFehler(id: JsonRpcId, code: number, message: string) {
 }
 
 /** Auth wie /v1, aber mit WWW-Authenticate-Hinweis auf die Resource-Metadata (MCP-Pflicht bei 401). */
-const mcpAuth = createMiddleware(async (c, next) => {
+export const mcpAuth = createMiddleware(async (c, next) => {
   // authMiddleware antwortet bei fehlendem/ungueltigem Token selbst (401)
   // und ruft sonst next(); beides muss hier weitergereicht werden.
   const direkt = await authMiddleware(c, next);
