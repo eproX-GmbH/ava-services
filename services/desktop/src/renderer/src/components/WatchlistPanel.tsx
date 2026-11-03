@@ -99,7 +99,7 @@ export function WatchlistPanel(): JSX.Element {
       <div className="ct-card wl">
         <p className="radar-lockbanner">
           🔒 Die Personen-Watchlist ist ab dem <strong>Plan Pro</strong>{" "}
-          enthalten (25 Personen, 5 im Fokus) — Einstellungen → Abo.
+          enthalten, die LinkedIn-Beobachtung wird nach Verbrauch abgerechnet — Einstellungen → Abo.
         </p>
       </div>
     );
