@@ -8,7 +8,7 @@ import {
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { VerflechtungenTab } from "../components/VerflechtungenTab";
 import { KundenTab, type Kunde } from "../components/KundenTab";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -490,6 +490,24 @@ export function CompanyDetail() {
   const zustandAbfrage = useFirmenZustand(id, true);
   const zustand = zustandAbfrage.data?.zustaende[0];
   const ruhend = zustandAbfrage.data?.aktivModell === true && zustand?.zustand === "ruhend";
+  // Die Reiterleiste scrollt bei schmalem Fenster waagerecht (kein Umbruch).
+  // Ein Mausrad liefert nur senkrechte Bewegung; ueber der Leiste wird sie
+  // in waagerechtes Scrollen umgesetzt, damit auch Maus-Nutzer an die
+  // hinteren Reiter kommen. Natives Listener-Registrieren, weil Reacts
+  // onWheel passiv ist und preventDefault dort nichts bewirkt.
+  const reiterLeisteRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = reiterLeisteRef.current;
+    if (!el) return;
+    const aufRad = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener("wheel", aufRad, { passive: false });
+    return () => el.removeEventListener("wheel", aufRad);
+  }, [ruhend]);
   // Ergebnisse (Profil, Website, Kontakte, Abschluesse) erst laden, wenn klar ist, dass die Firma aktiv ist.
   const datenErlaubt = zustandAbfrage.isError || (zustandAbfrage.isSuccess && !ruhend);
   const [aktivierenAnfrage, setAktivierenAnfrage] = useState<AktivierenAnfrage | null>(null);
@@ -862,7 +880,7 @@ export function CompanyDetail() {
 
       {/* ---- Tabs --------------------------------------------------------- */}
       {!ruhend && (
-      <nav className="tabs">
+      <nav className="tabs" ref={reiterLeisteRef}>
         {/* Bis die Daten da sind, bleibt die Leiste leer, behaelt aber ihre
             Hoehe — sonst springt der Inhalt darunter. */}
         {tabsBereit &&

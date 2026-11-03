@@ -788,7 +788,20 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
      und gleich wieder zurueck. Gemessen an einer gefuellten Leiste. */
   min-height: 2.43rem;
   align-items: flex-end;
+  /* Bei schmalem Fenster scrollt die Leiste waagerecht, statt dass Reiter
+     zweizeilig umbrechen ("Expansion &" / "Ausschreibungen", Joyce
+     2026-11-03). Die Reiter behalten ihre Breite; die Trennlinie laeuft
+     mit dem sichtbaren Ausschnitt. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  /* Kein sichtbarer Balken: er saesse sonst (Windows, "immer anzeigen")
+     zwischen Reitern und Trennlinie. Der angeschnittene Reiter am Rand
+     zeigt, dass es weitergeht; Trackpad, Shift+Rad und das Mausrad ueber
+     der Leiste (CompanyDetail) scrollen. */
+  scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 .tabs .tab {
   font: inherit;
   background: none;
@@ -797,6 +810,8 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   padding: 0.4rem 0.75rem;
   color: var(--muted);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tabs .tab.active {
   color: var(--fg);
