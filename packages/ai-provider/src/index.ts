@@ -11,6 +11,12 @@ import { OPENAI_PLAN_BASE_URL, makePlanFetch, planAktiv, planTokenQuelleAusUmgeb
 export { planAktiv, planTokenQuelleAusUmgebung, makePlanFetch, bereinigeResponsesBody, planFehlerText, OPENAI_PLAN_BASE_URL } from "./plan-fetch";
 export type { PlanToken, PlanTokenQuelle } from "./plan-fetch";
 import { gatewayProxyBaseURL } from "./runtime";
+import { gatewayTokenDienstAktiv, makeGatewayFetch, startGatewayTokenAuffrischung } from "./gateway-token";
+export { gatewayTokenDienstAktiv, gatewayTokenHolen, gatewayTokenAktuell, makeGatewayFetch, startGatewayTokenAuffrischung, stopGatewayTokenAuffrischung } from "./gateway-token";
+
+// Token-Auffrischung beim Laden starten: jeder Producer bindet dieses Paket
+// ein, so bleibt PRODUCER_GATEWAY_TOKEN ueberall frisch (gateway-token.ts).
+if (gatewayTokenDienstAktiv()) startGatewayTokenAuffrischung();
 
 // Two distinct LLM call paths in AVA — keep them straight:
 //
@@ -80,7 +86,7 @@ export type EmbedProvider = "openai" | "google" | "ollama";
  * Anbieter-Aufrufe ueber `GATEWAY_URL/v1/llm/<anbieter>` mit dem
  * Nutzer-JWT (PRODUCER_GATEWAY_TOKEN); der Anbieterschluessel bleibt im Gateway.
  */
-function proxyOpts(provider: LLMProvider): { apiKey: string; baseURL: string; headers: Record<string, string> } | null {
+function proxyOpts(provider: LLMProvider): { apiKey: string; baseURL: string; headers: Record<string, string>; fetch: typeof fetch } | null {
   if (process.env.AVA_LLM_VIA_GATEWAY !== "1") return null;
   const gw = process.env.GATEWAY_URL;
   const token = process.env.PRODUCER_GATEWAY_TOKEN;
@@ -95,11 +101,13 @@ function proxyOpts(provider: LLMProvider): { apiKey: string; baseURL: string; he
       apiKey: token,
       baseURL: `${gw.replace(/\/+$/, "")}/v1/llm/betreiber`,
       headers: { authorization: `Bearer ${token}`, "x-ava-llm-channel": "background", ...(quelle ? { "x-ava-llm-quelle": quelle } : {}) },
+      // Bearer je Anfrage frisch (Laeufe laenger als die Token-Laufzeit).
+      fetch: makeGatewayFetch(globalThis.fetch),
     };
   }
   const base = gatewayProxyBaseURL(gw, provider);
   if (!base) return null;
-  return { apiKey: token, baseURL: base, headers: { authorization: `Bearer ${token}` } };
+  return { apiKey: token, baseURL: base, headers: { authorization: `Bearer ${token}` }, fetch: makeGatewayFetch(globalThis.fetch) };
 }
 
 function requireEnv(name: string): string {
@@ -138,6 +146,7 @@ export function getLLM(): LanguageModel {
         organization: process.env.OPENAI_ORGANIZATION_KEY,
         baseURL: px?.baseURL,
         headers: px?.headers,
+        fetch: px?.fetch,
       });
       return client(model ?? "gpt-4o-mini");
     }
@@ -152,7 +161,7 @@ export function getLLM(): LanguageModel {
       // shared with the desktop main path.
       const pxA = proxyOpts("anthropic");
       if (pxA) {
-        const client = createAnthropic({ apiKey: pxA.apiKey, baseURL: pxA.baseURL, headers: pxA.headers });
+        const client = createAnthropic({ apiKey: pxA.apiKey, baseURL: pxA.baseURL, headers: pxA.headers, fetch: pxA.fetch });
         return client(model ?? "claude-sonnet-4-6");
       }
       const subscriptionToken = process.env.ANTHROPIC_AUTH_TOKEN;
@@ -175,6 +184,7 @@ export function getLLM(): LanguageModel {
         apiKey: px?.apiKey ?? requireEnv("GOOGLE_API_KEY"),
         baseURL: px?.baseURL,
         headers: px?.headers,
+        fetch: px?.fetch,
       });
       return client(model ?? "gemini-2.5-pro");
     }
@@ -184,6 +194,7 @@ export function getLLM(): LanguageModel {
         apiKey: px?.apiKey ?? requireEnv("MISTRAL_API_KEY"),
         baseURL: px?.baseURL,
         headers: px?.headers,
+        fetch: px?.fetch,
       });
       return client(model ?? "mistral-large-latest");
     }
@@ -196,6 +207,7 @@ export function getLLM(): LanguageModel {
         apiKey: px?.apiKey ?? requireEnv(cfg.envKey),
         baseURL: px?.baseURL ?? cfg.baseURL,
         headers: px?.headers,
+        fetch: px?.fetch,
       });
       return client.chat(model ?? cfg.defaultModel);
     }
@@ -258,6 +270,7 @@ export function getEmbedder(): EmbeddingModel<string> | null {
         organization: process.env.OPENAI_ORGANIZATION_KEY,
         baseURL: px?.baseURL,
         headers: px?.headers,
+        fetch: px?.fetch,
       });
       return client.textEmbeddingModel(model ?? "text-embedding-3-large");
     }

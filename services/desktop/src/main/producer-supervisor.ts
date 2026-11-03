@@ -191,6 +191,8 @@ export interface ProducerSupervisorOptions {
   getTenantId?: () => Promise<string | null>;
   /** ChatGPT-Abo: Loopback-Token-Dienst des Mains (docs/PLAN_CHATGPT_ABO_UEBERALL.md). */
   planTokenEndpunkt?: () => { url: string; secret: string } | null;
+  /** Gateway-Token je Anfrage frisch vom Loopback-Dienst (packages/ai-provider gateway-token.ts). */
+  gatewayTokenEndpunkt?: () => { url: string; secret: string } | null;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
   /** v0.1.105 — dynamic extra env, evaluated at each spawn. Used for
@@ -865,6 +867,13 @@ export class ProducerSupervisor extends EventEmitter {
       // valueserp etc.). Same gateway the desktop main itself uses.
       GATEWAY_URL: process.env.GATEWAY_URL ?? "https://ava-db-gateway.fly.dev",
       ...(accessToken ? { PRODUCER_GATEWAY_TOKEN: accessToken } : {}),
+      // Laeufe laenger als die Token-Laufzeit (15 Min): der Producer holt
+      // alle paar Minuten ein frisches Token vom Main (Patrick 2026-11-03).
+      ...(this.opts.gatewayTokenEndpunkt?.()
+        ? { PRODUCER_GATEWAY_TOKEN_URL: this.opts.gatewayTokenEndpunkt()!.url, PRODUCER_GATEWAY_TOKEN_SECRET: this.opts.gatewayTokenEndpunkt()!.secret }
+        : {}),
+      // Zwischenspeicher der Producer (z. B. Einbettungen), ueberlebt Neustarts.
+      AVA_CACHE_DIR: join(screenshotDirForProducer(this.opts.config.name), "..", "..", "producer-cache", this.opts.config.name),
       // v0.1.53 — per-user AMQP queue + routing-key suffix. See
       // utils/per-user-routing.ts in each producer for the read
       // path. Empty / unset on legacy / dev paths; producer falls

@@ -33,15 +33,18 @@ export class GatewayFehler extends Error {
 
 type Fetch = typeof fetch;
 
-export function makeGatewayClient(opts: { url: string; token: string | null; fetch?: Fetch; timeoutMs?: number }): GatewayClient {
+export function makeGatewayClient(opts: { url: string; token: string | null | (() => string | null); fetch?: Fetch; timeoutMs?: number }): GatewayClient {
   const f = opts.fetch ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 15_000;
+  // Token je Aufruf lesen: der Producer frischt PRODUCER_GATEWAY_TOKEN laufend auf.
+  const tokenJetzt = () => (typeof opts.token === "function" ? opts.token() : opts.token);
 
   async function anfrage(pfad: string, init: { method?: string; body?: unknown } = {}): Promise<{ status: number; json: unknown; text: string }> {
-    if (!opts.token) throw new Error("PRODUCER_GATEWAY_TOKEN fehlt (setzt der ProducerSupervisor)");
+    const token = tokenJetzt();
+    if (!token) throw new Error("PRODUCER_GATEWAY_TOKEN fehlt (setzt der ProducerSupervisor)");
     const res = await f(`${opts.url}${pfad}`, {
       method: init.method ?? "GET",
-      headers: { authorization: `Bearer ${opts.token}`, ...(init.body !== undefined ? { "content-type": "application/json" } : {}) },
+      headers: { authorization: `Bearer ${token}`, ...(init.body !== undefined ? { "content-type": "application/json" } : {}) },
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       signal: AbortSignal.timeout(timeoutMs),
     });

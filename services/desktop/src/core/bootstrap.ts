@@ -688,6 +688,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       envNachbearbeiten: (env) => providers.azureUmgebung(env),
       // ChatGPT-Abo: Producer holen den Token vom Loopback-Dienst des Mains.
       planTokenEndpunkt: () => planTokenServer.endpunkt(),
+      gatewayTokenEndpunkt: () => planTokenServer.gatewayEndpunkt(),
       // v0.1.144 — surface a precise reason (e.g. "Subscription-OAuth
       // wird vom lokalen Producer noch nicht unterstützt — wechsle …")
       // instead of the generic "nicht angemeldet"-Hinweis when llmConfig
@@ -943,7 +944,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // active provider's key on dispatch HTTP requests.
   const providers = new LlmProviderManager(ollama);
   // docs/PLAN_CHATGPT_ABO_UEBERALL.md (E1): Loopback-Token-Dienst fuer Producer.
-  const planTokenServer = new PlanTokenServer(() => providers.planTokenFuerProducer());
+  // Derselbe Dienst liefert unter /gateway-token das Keycloak-Token des Nutzers,
+  // damit lange Producer-Laeufe nicht am 15-Minuten-Token scheitern (Patrick 2026-11-03).
+  const planTokenServer = new PlanTokenServer(() => providers.planTokenFuerProducer(), () => auth.getAccessToken());
   void planTokenServer.start().catch((err) => console.warn("[chatgpt-plan] Token-Dienst nicht gestartet:", err));
 
   // v0.1.466 — Plan-Tier-Cache (Radar-Staffelung). Synchron lesbar fuer

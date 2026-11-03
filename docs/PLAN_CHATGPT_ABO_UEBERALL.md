@@ -205,3 +205,29 @@ Ausgaben und `web_search` ueber den Plan laufen.
 - **Offen:** A0/A6 mit Plus/Pro-Konto (strukturierte Ausgaben, Bilder,
   `web_search`, 1-h-Tokenwechsel im Lauf, 429-Pause); Verbrauchsanzeige
   „ChatGPT-Abo" je Producer-Aufruf (S5) nicht gebaut.
+
+## Nachtrag 2026-11-03: Gateway-Token ueber denselben Loopback-Dienst
+
+Befund Patrick (Sprachnachricht, Firma IEF-Werner): der Publikations-Producer las
+30 Dokumente, bettete 1.385 Bloecke 13 Minuten lang lokal ein (Zweikern-Laptop),
+dann antwortete der Betreiber-LLM-Aufruf mit 401 — `PRODUCER_GATEWAY_TOKEN` ist ein
+beim Start eingefrorenes 15-Minuten-Token. Der Desktop erkannte das Gateway-401,
+startete die Producer neu, AMQP lieferte die Nachricht erneut, der Lauf begann von
+vorn (drei Durchlaeufe in einer Stunde, Luefter dauerhaft an).
+
+- `PlanTokenServer` liefert zusaetzlich `GET /gateway-token` (gleiches Geheimnis) mit
+  `auth.getAccessToken()` (erneuert selbst vor Ablauf). Supervisor setzt
+  `PRODUCER_GATEWAY_TOKEN_URL` + `PRODUCER_GATEWAY_TOKEN_SECRET`.
+- `packages/ai-provider/src/gateway-token.ts`: holt alle 4 Minuten ein frisches Token
+  und schreibt es in `process.env.PRODUCER_GATEWAY_TOKEN` — alle Stellen, die das
+  Token je Aufruf aus der Umgebung lesen (fresh-skip, Valueserp/Apify-Proxy,
+  structured-content gateway-client), bleiben ohne Aenderung frisch. Start beim Laden
+  des Pakets; company-publication, structured-content und company-email rufen
+  `startGatewayTokenAuffrischung()` zusaetzlich explizit. `makeGatewayFetch` setzt den
+  Bearer je Anfrage fuer die SDK-Clients der Gateway-Spur (OpenAI/Anthropic/Google/
+  Mistral, Betreiber-Spur); company-email liest das Token je Aufruf; die
+  Recherche-Fabrik im website-Producer baut ihre Implementierung bei neuem Token neu.
+- Der reaktive Weg (Gateway-401 → Refresh → Producer-Neustart) bleibt als Rueckfall.
+- Einbettungen des Publikations-Producers liegen jetzt als Zwischenspeicher auf Platte
+  (`AVA_CACHE_DIR/embed`, Schluessel Modell+Text, 30 Tage), damit ein abgebrochener
+  Lauf beim naechsten Versuch nicht alles neu rechnet.

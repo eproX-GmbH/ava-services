@@ -21,11 +21,13 @@ import { makeUrteil } from "./urteil";
 import { makeWorker, type TriggerEreignis } from "./worker";
 import { leseEinstellungen } from "./einstellungen";
 import { logger } from "./log";
+import { startGatewayTokenAuffrischung } from "@ava/ai-provider";
 
 function main(): void {
   const cfg = ladeConfig();
   const netz = new NetzStatus();
-  const gateway = makeGatewayClient({ url: cfg.gatewayUrl, token: cfg.gatewayToken });
+  startGatewayTokenAuffrischung((m) => logger.info(m));
+  const gateway = makeGatewayClient({ url: cfg.gatewayUrl, token: () => process.env.PRODUCER_GATEWAY_TOKEN ?? cfg.gatewayToken });
   let bus: Bus | null = null;
 
   const verarbeite = makeWorker({
