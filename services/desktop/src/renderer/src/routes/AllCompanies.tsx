@@ -478,7 +478,7 @@ export function AllCompanies() {
                 {PRODUCERS.map((p) => (
                   <th key={p}>{PRODUCER_LABEL[p]}</th>
                 ))}
-                <th>Zuletzt gesehen</th>
+                <th title="Jüngster Abschluss einer Verarbeitungsstufe (auch durch die automatische Auffrischung)">Zuletzt verarbeitet</th>
                 <th aria-label="Aktionen"></th>
               </tr>
             </thead>
@@ -556,7 +556,7 @@ export function AllCompanies() {
                       </td>
                     );
                   })}
-                  <td className="muted">{formatTime(row.lastSeenAt)}</td>
+                  <td className="muted">{formatTime(zuletztVerarbeitet(row))}</td>
                   <td className="all-companies__actions">
                     {aktivModell && (
                       <button
@@ -822,6 +822,21 @@ export function AllCompanies() {
       )}
     </section>
   );
+}
+
+/**
+ * Juengster Stufen-Zeitstempel der Firma. `lastSeenAt` aus den Stammdaten ist der
+ * Start der letzten Transaktion mit dieser Firma; die Auffrischung laeuft ueber
+ * den Wiederholungs-Weg derselben Transaktion und bewegte das Datum nie (Patrick
+ * 2026-11-03: "keine Folgeverarbeitung", obwohl die Stufen aufgefrischt waren).
+ */
+function zuletztVerarbeitet(row: CompanyMatrixRow): string {
+  let best = "";
+  for (const cell of Object.values(row.stages ?? {})) {
+    const t = cell?.updatedAt;
+    if (t && t > best) best = t;
+  }
+  return best || row.lastSeenAt;
 }
 
 function formatTime(iso: string): string {

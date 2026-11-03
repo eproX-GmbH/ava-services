@@ -44,13 +44,16 @@ const MAX_LINKS_JE_SEITE = 400;
 
 const RE: Record<Exclude<Zweck, "sonstiges">, RegExp> = {
   karriere: /karriere|career|jobs\b|\/job\b|stellen|arbeiten-bei|work-with-us|join-us|wir-suchen|mitarbeit|bewerb|vacanc|recruit/i,
-  stelle: /\(\s*[mwdfx]\s*[\/|]\s*[mwdfx]\s*([\/|]\s*[mwdfx*]\s*)?\)|\b[mwdf]-[mwdf]-[mwdfx]\b|\(gn\)|\(all genders\)|festanstellung\/[a-z0-9]|ausbildung-|werkstudent|praktikum|\/jobs?\/[a-z0-9]|\/stellen(angebote)?\/[a-z0-9]|\/karriere\/[a-z0-9][^"']{3,}|\/career[s]?\/[a-z0-9][^"']{3,}|job-?(id|detail|posting)/i,
+  stelle: /\(\s*[mwdfx]\s*[\/|]\s*[mwdfx]\s*([\/|]\s*[mwdfx*]\s*)?\)|\b[mwdf]-[mwdf]-[mwdfx]\b|\(gn\)|\(all genders\)|festanstellung\/[a-z0-9]|ausbildung-|werkstudent|praktikum|\/jobs?\/[a-z0-9]|\/stellen(angebote?|anzeigen?|ausschreibung(en)?)?\/[a-z0-9]|\/(vacanc(y|ies)|positions?|offene-stellen?|job-?offers?|jobangebote?)\/[a-z0-9]|\/karriere\/[a-z0-9][^"']{3,}|\/career[s]?\/[a-z0-9][^"']{3,}|job-?(id|detail|posting)/i,
   referenzen: /referenz|kunden|customers|clients|case-stud|erfolgsgeschicht|success-stor|projekte\b|portfolio|testimonial|partner/i,
   team: /\/team\b|unser-team|ueber-uns|ueber_uns|about-us|about\b|wir-ueber-uns|unternehmen\b|management|geschaeftsfuehrung|ansprechpartner|mitarbeiter\b|people|leadership/i,
   impressum: /impressum|imprint|kontakt|contact|legal-notice/i,
   news: /news|aktuell|blog|presse|press|magazin|up2date|neuigkeit|artikel/i,
   produkt: /produkt|product|leistung|service|loesung|solution|angebot|branche|industr|portfolio/i,
 };
+
+/** Letztes Pfadsegment unter /karriere bzw. /career, das eine Uebersicht statt einer Anzeige ist. */
+const LISTENSEITE = /\/(karriere|career[s]?|jobs?)\/(stellenangebote?|stellenanzeigen|stellen|offene-stellen|jobs?|job-?offers?|vacancies|open-positions|positions|ausbildung|ausbildung-und-studium|praktikum|praktika|werkstudenten?|studenten|schueler|berufseinsteiger|professionals|benefits|wir-bieten|bewerbung|bewerbungsprozess|bewerbungstipps|faq|kontakt|ueber-uns|team|kultur|werte|initiativbewerbung)\/?$/i;
 
 /** Zwecke eines Links aus Pfad und Linktext. */
 export function zweckeVon(url: string, text: string): Set<Zweck> {
@@ -65,6 +68,11 @@ export function zweckeVon(url: string, text: string): Set<Zweck> {
   for (const k of Object.keys(RE) as Array<Exclude<Zweck, "sonstiges">>) {
     if (RE[k].test(pfad) || RE[k].test(t)) z.add(k);
   }
+  // Karriere-Unterseiten mit Listen- oder Infowort sind keine Anzeige, sondern
+  // eine Uebersicht (Befund ief.de 2026-11-03: /karriere/stellenangebote und
+  // /karriere/ausbildung wurden als Anzeige gelesen, die echten Anzeigen unter
+  // /stellenangebot/... nur als Listeneintrag).
+  if (z.has("stelle") && LISTENSEITE.test(pfad) && !RE.stelle.test(t)) z.delete("stelle");
   // Eine einzelne Anzeige zaehlt auch als Karriere-Zweig.
   if (z.has("stelle")) z.add("karriere");
   if (z.size === 0) z.add("sonstiges");

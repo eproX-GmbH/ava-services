@@ -147,3 +147,22 @@ festanstellung, /jobs/…), bis zu 16 Detailseiten, Modellpass in Bündeln zu vi
 Seiten, Titel ohne Doppelte. Website-Funde haben Vorrang vor Portal-Treffern mit
 gleichem Titel. Der Standardweg kürzt jetzt erst nach der Textumwandlung, und Seiten
 auf der eigenen Domain sind in allen Prompts erlaubt.
+
+## Nachtrag 2026-11-03: Anzeigen-Erkennung und Anforderungen (Patrick, Meldung PM-2026-0004)
+
+Befund IEF-Werner: die Anzeigen liegen unter `/stellenangebot/<slug>` (Einzahl). Der
+Walker kannte nur `/stellen/` und `/stellenangebote/`, zaehlte dafuer jede
+Karriere-Unterseite (`/karriere/stellenangebote`, `/karriere/ausbildung`) als Anzeige.
+Ergebnis: Uebersichten wurden als Anzeige gelesen, die echten Anzeigen nur als
+Listeneintrag, 5 Stellen ohne Beschreibung und Anforderungen.
+
+- `packages/website-walker/src/graph.ts`: Anzeigen-Muster um `stellenangebot`,
+  `stellenanzeige`, `stellenausschreibung`, `vacancy/vacancies`, `position(s)`,
+  `offene-stelle(n)`, `job-offer(s)`, `jobangebot(e)` erweitert; `LISTENSEITE`
+  nimmt Karriere-Unterseiten mit Listen- oder Infowort wieder aus „stelle“ heraus
+  (ausser der Linktext selbst ist eine Anzeige, z. B. „Entwickler (m/w/d)“).
+- `stellen.ts`: gleiche Muster fuer sichere Anzeigen und nachgezogene Listenlinks
+  (`ANZEIGEN_LINK`, exportiert); Prompt verlangt ALLE Anforderungen als Stichpunkte
+  und bei reinem Listeneintrag leere Felder statt eines Bruchstuecks („mittlere
+  Reife“); Deckel je Liste 30.
+- Themen lesen die Anzeigen mit (docs/PLAN_THEMEN.md T7).
