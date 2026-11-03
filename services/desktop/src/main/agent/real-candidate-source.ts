@@ -344,7 +344,9 @@ export function kandidatAus(
           summary = `${person} bei ${companyName} hat eine neue Funktion: „${n.before ?? "?"}“ → „${n.after ?? "?"}“.`;
           break;
         case "employer-changed":
-          summary = `${person} (${n.title ?? "Funktion unbekannt"}) hat den Arbeitgeber gewechselt; ${companyName} ist betroffen.`;
+          summary = n.after
+            ? `${person} (${n.title ?? "Funktion unbekannt"}) hat den Arbeitgeber gewechselt: jetzt bei „${n.after}“, vorher ${companyName}.`
+            : `${person} (${n.title ?? "Funktion unbekannt"}) hat den Arbeitgeber gewechselt; ${companyName} ist betroffen.`;
           break;
         case "company-phone-changed":
           summary = `Zentrale Telefonnummer von ${companyName} geändert: ${n.before ?? "?"} → ${n.after ?? "?"}.`;

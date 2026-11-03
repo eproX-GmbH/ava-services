@@ -191,3 +191,130 @@ companyStateRouter.openapi(apifyStandRoute, async (c) => {
     200,
   );
 });
+
+// ---- Lokale Profil-Pruefung (lib/contact-extraction/profil-pruefung.ts) -------
+// Der Kontakt-Producer holt sich hier die bekannten LinkedIn-Profile der aktuellen
+// Ansprechpartner samt letzter Pruefung und liest sie im Hintergrund-Chrome des
+// Nutzers (JSON-LD, ohne Anmeldung). Danach meldet er je Person das Ergebnis
+// ueber den Persist-Pfad (result.profilPruefungen).
+
+const LinkedinProfilShape = z
+  .object({
+    companyId: z.string(),
+    companyName: z.string().nullable(),
+    personen: z.array(
+      z.object({
+        personId: z.string(),
+        fullName: z.string(),
+        title: z.string().nullable(),
+        linkedinUrl: z.string(),
+        /** Letzte Pruefung (jedes Ergebnis), null = nie. */
+        zuletztGeprueft: z.string().nullable(),
+        letztesErgebnis: z.string().nullable(),
+      }),
+    ),
+  })
+  .openapi("LinkedinProfilListe");
+
+const linkedinProfilRoute = createRoute({
+  method: "get",
+  path: "/companies/{companyId}/contacts/linkedin-profile",
+  tags: ["companies"],
+  summary: "Bekannte LinkedIn-Profile der aktuellen Ansprechpartner einer Firma mit Stand der letzten lokalen Profil-Pruefung.",
+  request: { params: CompanyIdParam },
+  responses: {
+    200: { content: { "application/json": { schema: LinkedinProfilShape } }, description: "ok" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+  },
+});
+
+companyStateRouter.openapi(linkedinProfilRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const { companyId } = c.req.valid("param");
+  const pool = getProducerPool("company-contact");
+  const name = await pool.query<{ name: string | null }>(`SELECT name FROM "Company" WHERE id = $1`, [companyId]);
+  const r = await pool.query<{ personId: string; fullName: string; title: string | null; linkedinUrl: string; zuletzt: Date | null; ergebnis: string | null }>(
+    `SELECT e."personId", p."fullName", e.title, f.value AS "linkedinUrl",
+            pr."observedAt" AS zuletzt, pr.value AS ergebnis
+       FROM "Employment" e
+       JOIN "Person" p ON p.id = e."personId"
+       JOIN LATERAL (
+         SELECT f.value FROM "Fact" f
+          WHERE f."entityType" = 'PERSON' AND f."entityId" = e."personId" AND f.field = 'linkedinUrl' AND f.status = 'ACTIVE'
+          ORDER BY f."lastSeen" DESC LIMIT 1
+       ) f ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT o."observedAt", o.value FROM "Observation" o
+          WHERE o."personId" = e."personId" AND o.field = 'linkedin:pruefung'
+          ORDER BY o."observedAt" DESC LIMIT 1
+       ) pr ON TRUE
+      WHERE e."companyId" = $1 AND e."isCurrent"
+        AND f.value ~* '^https?://([a-z]{2,3}\\.)?linkedin\\.com/in/'
+      ORDER BY pr."observedAt" ASC NULLS FIRST, e."lastSeen" DESC
+      LIMIT 200`,
+    [companyId],
+  );
+  return c.json(
+    {
+      companyId,
+      companyName: name.rows[0]?.name ?? null,
+      personen: r.rows.map((x) => ({
+        personId: x.personId,
+        fullName: x.fullName,
+        title: x.title ?? null,
+        linkedinUrl: x.linkedinUrl,
+        zuletztGeprueft: x.zuletzt ? x.zuletzt.toISOString() : null,
+        letztesErgebnis: x.ergebnis ? x.ergebnis.split(" ")[0] ?? null : null,
+      })),
+    },
+    200,
+  );
+});
+
+const ProfilStatistikShape = z
+  .object({
+    tage: z.number().int(),
+    bestaetigt: z.number().int(),
+    gewechselt: z.number().int(),
+    gesperrt: z.number().int(),
+    nichtGefunden: z.number().int(),
+    ueberApify: z.number().int(),
+  })
+  .openapi("ProfilPruefungStatistik");
+
+const profilStatistikRoute = createRoute({
+  method: "get",
+  path: "/contacts/linkedin-profile/statistik",
+  tags: ["companies"],
+  summary: "Statistik der lokalen Profil-Pruefung des aufrufenden Nutzers (letzte 30 Tage).",
+  responses: {
+    200: { content: { "application/json": { schema: ProfilStatistikShape } }, description: "ok" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+  },
+});
+
+companyStateRouter.openapi(profilStatistikRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const pool = getProducerPool("company-contact");
+  const tage = 30;
+  const r = await pool.query<{ ergebnis: string; quelle: string; n: string }>(
+    `SELECT split_part(o.value, ' ', 1) AS ergebnis, o.source AS quelle, count(*)::text AS n
+       FROM "Observation" o
+      WHERE o.field = 'linkedin:pruefung' AND o."observedAt" > now() - ($2 || ' days')::interval
+        AND ($1::text IS NULL OR o."actorId" = $1 OR o."actorId" IS NULL)
+      GROUP BY 1, 2`,
+    [auth.actorId ?? null, String(tage)],
+  );
+  const z = { tage, bestaetigt: 0, gewechselt: 0, gesperrt: 0, nichtGefunden: 0, ueberApify: 0 };
+  for (const row of r.rows) {
+    const n = Number(row.n);
+    if (row.ergebnis === "bestaetigt") z.bestaetigt += n;
+    else if (row.ergebnis === "gewechselt") z.gewechselt += n;
+    else if (row.ergebnis === "gesperrt") z.gesperrt += n;
+    else if (row.ergebnis === "nicht_gefunden") z.nichtGefunden += n;
+    if (row.quelle.startsWith("apify")) z.ueberApify += n;
+  }
+  return c.json(z, 200);
+});

@@ -119,6 +119,8 @@ export interface CompanyContactPersistRequest {
       quelle?: string;
       konfidenz?: string;
     }>;
+    /** Ergebnisse der lokalen Profil-Pruefung (lib/contact-extraction/profil-pruefung.ts). */
+    profilPruefungen?: ProfilPruefung[];
     cleanupTtlMs?: number;
   };
 }
@@ -128,6 +130,7 @@ type Log = typeof Logger;
 /** Single-entry orchestrator the persist-bus calls. */
 import { behandleFirmenwert } from "./contact-extraction/firmenname-filter";
 import { schreibeKunden } from "./kunden";
+import { findePerson, pruefungVermerken, wechselVerbuchen, type ProfilPruefung } from "./contact-extraction/profil-pruefung";
 
 export async function applyCompanyContactPersist(
   data: PersistEvent<CompanyContactPersistRequest["result"]>,
@@ -414,6 +417,49 @@ export async function applyCompanyContactPersist(
       evidenceUrl: evidenceUrl ?? undefined,
     });
     personsTouched += 1;
+  }
+
+  // ---- 2b. Lokale Profil-Pruefung (oeffentliche LinkedIn-Profile) ----------
+  for (const p of result.profilPruefungen ?? []) {
+    try {
+      const am = new Date(data.computedAt ?? Date.now());
+      const quelle = p.quelle ?? source;
+      if (p.ergebnis === "bestaetigt" && p.fullName) {
+        // Wie ein Website-Fund: Identitaet, Beobachtungen, Reconcile, Beschaeftigung.
+        const r = await applySingleEmployeeCandidate({
+          companyId,
+          candidate: { fullName: p.fullName, title: p.titel, linkedinUrl: p.linkedinUrl, sourceUrl: p.evidenceUrl ?? p.linkedinUrl },
+          source: quelle,
+          evidenceUrl: p.evidenceUrl ?? p.linkedinUrl,
+          runId,
+        });
+        await pruefungVermerken(prisma, { runId, personId: r.personId, companyId, p, am });
+        personsTouched += 1;
+        continue;
+      }
+      const person = await findePerson(prisma, companyId, p);
+      if (!person) {
+        log.info({ runId, companyId, url: p.linkedinUrl, ergebnis: p.ergebnis }, "profil-pruefung: Person nicht zugeordnet — uebersprungen");
+        continue;
+      }
+      if (p.ergebnis === "gewechselt") {
+        await wechselVerbuchen(prisma, log, { runId, personId: person.id, companyId, companyName: bekannterFirmenname ?? null, p, am });
+      }
+      await pruefungVermerken(prisma, { runId, personId: person.id, companyId, p, am });
+      personsTouched += 1;
+    } catch (err) {
+      log.warn({ runId, companyId, url: p.linkedinUrl, err: err instanceof Error ? err.message : String(err) }, "profil-pruefung fehlgeschlagen");
+    }
+  }
+
+  if ((result.profilPruefungen ?? []).length > 0) {
+    await contactPool
+      .query(
+        `UPDATE "Observation" SET "actorId" = COALESCE("actorId", $2), "tenantId" = COALESCE("tenantId", $3)
+          WHERE "runId" = $1 AND field IN ('linkedin:pruefung', 'linkedin:arbeitgeber')`,
+        [runId, actorId, tenantId && tenantId !== "pilot" ? tenantId : null],
+      )
+      .catch((err: unknown) => log.warn({ err: err instanceof Error ? err.message : String(err) }, "profil-pruefung: Stempel fehlgeschlagen"));
   }
 
   // ---- 3. Optional TTL cleanup (last event in chain) -----------------------

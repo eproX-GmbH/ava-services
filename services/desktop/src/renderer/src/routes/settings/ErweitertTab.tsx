@@ -6,6 +6,7 @@ import { SettingsSkills } from "../SettingsSkills";
 import { SchedulerSection } from "./SchedulerSection";
 import { VerlaufTab } from "./VerlaufTab";
 import { BrowserSection } from "./BrowserSection";
+import { ProfilPruefungSection } from "./ProfilPruefungSection";
 import { StorageSection } from "../../components/StorageSection";
 import { DiagnoseSection } from "../../components/DiagnoseSection";
 import { ProblemSection } from "../../components/ProblemSection";
@@ -31,6 +32,7 @@ export function ErweitertTab() {
         <PostgresSection />
         <ProducersSection />
         <BrowserSection />
+        <ProfilPruefungSection />
       </section>
       <DangerZoneSection />
     </>
