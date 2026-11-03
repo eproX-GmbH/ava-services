@@ -30,6 +30,12 @@ Meta-Text, `jobTitle` war maskiert).
 4. Urteil: `gesperrt` (Anmeldewand), `nicht_gefunden` (Name passt nicht, kein
    Arbeitgeber), `bestaetigt` (Arbeitgeber ≙ Firma, tolerant gegen Rechtsform
    und Zusätze), `gewechselt` (Name passt, Arbeitgeber eindeutig anders).
+4b. Kein Halbwissen (Joyce 2026-11-03): Zeigt die Seite eine Änderung, aber
+   unvollständig (Wechsel ohne lesbare Position; Name passt, aber kein
+   Arbeitgeber lesbar), geht die Person zusätzlich an den Apify-Profil-Actor,
+   dessen Ergebnis das lokale Urteil ersetzt. Ist Apify nicht verfügbar, wird
+   ein unvollständiger Wechsel nicht gemeldet, sondern als `nicht_gefunden`
+   vermerkt und beim nächsten Lauf erneut geprüft.
 5. Drei Anmeldewände in Folge: Abbruch des lokalen Wegs; der Rest geht in EINEM
    Lauf an den Apify-Profil-Actor (`harvestapi~linkedin-profile-scraper`, bis
    25 Adressen), wenn Apify verfügbar ist. Was dann noch offen ist, wird als
