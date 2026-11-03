@@ -400,3 +400,24 @@ Schalter `mcp.a2a`.
 Agent2Agent“, Agentenkarte von mcp.ava.bi), Rückfragen (`input-required`) für
 Werkzeuge mit Nachfrage über das Relais (heute: Fehler mit Hinweis), echtes
 Zwischen-Streaming bei `message/stream`, Website-/Doku-Text.
+
+## 15. Nachtrag 2026-11-03: Verbindungsdaten zum Kopieren, OAuth-Client je Organisation
+
+Copilot Studio fragt beim Verbinden eines A2A-Agenten Name, Beschreibung,
+Agentenkarte und OAuth 2.0 ab (Autorisierungs-, Token-, Refresh-URL; im Modus
+„Manuell“ Client-ID und Geheimnis; die Weiterleitungs-URL zeigt Copilot Studio
+beim Einrichten an und muss beim Identitätsanbieter hinterlegt sein, siehe
+[Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-copilot-studio/add-agent-agent-to-agent)).
+
+- Konsole admin.ava.bi → „Agenten-Zugang“ (Admin): alle Felder mit Kopierknopf,
+  Hinweis auf die Org-Schalter `mcp` + `mcp.a2a`.
+- Gateway `lib/a2a-client.ts`, Routen `GET/POST/PUT/DELETE /v1/tenants/me/a2a-client`,
+  `POST …/geheimnis`: vertraulicher Keycloak-Client `a2a-<tenantId>`
+  (`keycloak-admin.ts`: anlegen mit Redirects, Scopes wie MCP-Vorlage,
+  Geheimnis lesen/erneuern, Redirects ändern, löschen). Das Geheimnis kommt
+  nur beim Anlegen und Erneuern in die Antwort.
+- Modus „Dynamisch“ (Copilot Studio registriert sich selbst): Redirect-Allowlist
+  der MCP-Registrierung um `*.consent.azure-apim.net`, `*.microsoft.com`,
+  `*.powerplatform.com`, `*.powerapps.com`, `*.dynamics.com` erweitert.
+- Offen: Live-Test beider Modi mit einem Copilot-Studio-Agenten; exakte
+  Weiterleitungs-URL aus dem Assistenten übernehmen.

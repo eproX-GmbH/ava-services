@@ -20,6 +20,7 @@ import { createShare, createRadarShares, listShares, revokeShare, markShare } fr
 import { getOrgWorkflow, listOrgWorkflows, revokeOrgWorkflow, shareWorkflow } from "../../lib/org-workflows";
 import { callUpstream } from "../../lib/upstream";
 import { ssoEntfernen, ssoLesen, ssoPruefen, ssoSetzen } from "../../lib/sso";
+import { a2aClientEntfernen, a2aClientErstellen, a2aGeheimnisErneuern, a2aRedirectsAendern, a2aVerbindung } from "../../lib/a2a-client";
 import {
   createOrganisation,
   requestJoin,
@@ -439,5 +440,77 @@ tenantsRouter.openapi(
     const { discoveryIds, note } = c.req.valid("json");
     const r = await wrap(() => createRadarShares(getGatewayPool(), c.get("auth"), discoveryIds, note ?? null));
     return c.json({ ok: true as const, ...r }, 201);
+  },
+);
+
+// ---- Agenten-Zugang (A2A) fuer Copilot Studio u. a.: Verbindungsdaten zum Kopieren ----
+const A2aVerbindungShape = z.object({
+  name: z.string(),
+  beschreibung: z.string(),
+  agentenkarteUrl: z.string(),
+  endpunktUrl: z.string(),
+  autorisierungsUrl: z.string().nullable(),
+  tokenUrl: z.string().nullable(),
+  aktualisierungsUrl: z.string().nullable(),
+  scopes: z.string(),
+  client: z.object({ clientId: z.string(), redirectUris: z.array(z.string()), erstelltAm: z.string().nullable() }).nullable(),
+  secret: z.string().optional(),
+  freigeschaltet: z.boolean(),
+});
+const RedirectBody = z.object({ redirectUris: z.array(z.string().max(500)).max(10) });
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/a2a-client",
+    tags: ["tenants"],
+    summary: "Agenten-Zugang (A2A): Verbindungsdaten fuer Copilot Studio u. a. (ohne Geheimnis).",
+    responses: { 200: { content: { "application/json": { schema: A2aVerbindungShape } }, description: "Stand" } },
+  }),
+  async (c) => c.json(await wrap(() => a2aVerbindung(getGatewayPool(), c.get("auth")))),
+);
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/a2a-client",
+    tags: ["tenants"],
+    summary: "Vertraulichen OAuth-Client der Organisation anlegen (Admin); Geheimnis einmalig in der Antwort.",
+    request: { body: { content: { "application/json": { schema: RedirectBody } } } },
+    responses: { 200: { content: { "application/json": { schema: A2aVerbindungShape } }, description: "angelegt" } },
+  }),
+  async (c) => c.json(await wrap(() => a2aClientErstellen(getGatewayPool(), c.get("auth"), c.req.valid("json")))),
+);
+tenantsRouter.openapi(
+  createRoute({
+    method: "put",
+    path: "/tenants/me/a2a-client",
+    tags: ["tenants"],
+    summary: "Weiterleitungs-Adressen des Clients aendern (Admin).",
+    request: { body: { content: { "application/json": { schema: RedirectBody } } } },
+    responses: { 200: { content: { "application/json": { schema: A2aVerbindungShape } }, description: "geaendert" } },
+  }),
+  async (c) => c.json(await wrap(() => a2aRedirectsAendern(getGatewayPool(), c.get("auth"), c.req.valid("json")))),
+);
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/a2a-client/geheimnis",
+    tags: ["tenants"],
+    summary: "Client-Geheimnis erneuern (Admin); das alte gilt sofort nicht mehr.",
+    responses: { 200: { content: { "application/json": { schema: A2aVerbindungShape } }, description: "erneuert" } },
+  }),
+  async (c) => c.json(await wrap(() => a2aGeheimnisErneuern(getGatewayPool(), c.get("auth")))),
+);
+tenantsRouter.openapi(
+  createRoute({
+    method: "delete",
+    path: "/tenants/me/a2a-client",
+    tags: ["tenants"],
+    summary: "Client entfernen (Admin); verbundene Agenten verlieren den Zugang.",
+    responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.boolean() }) } }, description: "entfernt" } },
+  }),
+  async (c) => {
+    await wrap(() => a2aClientEntfernen(getGatewayPool(), c.get("auth")));
+    return c.json({ ok: true });
   },
 );

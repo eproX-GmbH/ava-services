@@ -524,3 +524,132 @@ export async function deleteEntraIdp(tenantId: string): Promise<void> {
   if (!r.ok && r.status !== 404) throw new KeycloakAdminError(r.status, await r.text().catch(() => ""), "keycloak_error");
 }
 
+
+// ---- A2A-Client je Organisation (docs/PLAN_MCP_OEFFNUNG.md §15) --------------------
+// Copilot Studio ("Manuell") braucht einen vertraulichen OAuth-Client mit Client-ID
+// und Geheimnis. Ein Client je Organisation, Kennung `a2a-<tenantId>`, Scopes wie
+// beim MCP-Vorlage-Client, Redirect-Adressen aus Copilot Studio.
+
+export function a2aClientId(tenantId: string): string {
+  return `a2a-${tenantId.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`;
+}
+
+export interface A2aClientStand {
+  uuid: string;
+  clientId: string;
+  redirectUris: string[];
+  erstelltAm: string | null;
+}
+
+async function clientLesen(clientId: string): Promise<(A2aClientStand & { raw: Record<string, unknown> }) | null> {
+  const res = await adminFetch(`/clients?clientId=${encodeURIComponent(clientId)}`);
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const liste = (await res.json()) as Array<Record<string, unknown>>;
+  const c = liste[0];
+  if (!c || typeof c.id !== "string") return null;
+  const attrs = (c.attributes ?? {}) as Record<string, unknown>;
+  return {
+    uuid: c.id,
+    clientId: String(c.clientId ?? clientId),
+    redirectUris: Array.isArray(c.redirectUris) ? (c.redirectUris as string[]) : [],
+    erstelltAm: typeof attrs["ava.erstelltAm"] === "string" ? (attrs["ava.erstelltAm"] as string) : null,
+    raw: c,
+  };
+}
+
+async function scopesWieVorlage(uuid: string): Promise<void> {
+  const env = loadEnv();
+  const vorlage = await adminFetch(`/clients?clientId=${encodeURIComponent(env.KEYCLOAK_MCP_TEMPLATE_CLIENT_ID)}`);
+  if (vorlage.ok) {
+    const liste = (await vorlage.json()) as Array<{ id: string }>;
+    const vorlageUuid = liste[0]?.id;
+    if (vorlageUuid) {
+      for (const art of ["default", "optional"] as const) {
+        const scopes = await clientScopesVon(vorlageUuid, art).catch(() => [] as ClientScopeRep[]);
+        for (const sc of scopes) {
+          await adminFetch(`/clients/${encodeURIComponent(uuid)}/${art}-client-scopes/${encodeURIComponent(sc.id)}`, { method: "PUT" }).catch(() => undefined);
+        }
+      }
+    }
+  }
+  const alle = await adminFetch("/client-scopes");
+  if (alle.ok) {
+    const offline = ((await alle.json()) as ClientScopeRep[]).find((s) => s.name === "offline_access");
+    if (offline) await adminFetch(`/clients/${encodeURIComponent(uuid)}/optional-client-scopes/${encodeURIComponent(offline.id)}`, { method: "PUT" }).catch(() => undefined);
+  }
+}
+
+async function geheimnisLesen(uuid: string): Promise<string> {
+  const res = await adminFetch(`/clients/${encodeURIComponent(uuid)}/client-secret`);
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const j = (await res.json()) as { value?: string };
+  if (!j.value) throw new KeycloakAdminError(500, "Keycloak lieferte kein Client-Geheimnis", "keycloak_error");
+  return j.value;
+}
+
+export async function a2aClientLesen(tenantId: string): Promise<A2aClientStand | null> {
+  const c = await clientLesen(a2aClientId(tenantId));
+  if (!c) return null;
+  const { raw: _r, ...stand } = c;
+  return stand;
+}
+
+/** Legt den vertraulichen Client an (oder liefert den vorhandenen) und gibt das Geheimnis EINMAL zurueck. */
+export async function a2aClientAnlegen(args: { tenantId: string; tenantName: string; redirectUris: string[] }): Promise<A2aClientStand & { secret: string }> {
+  const clientId = a2aClientId(args.tenantId);
+  const vorhanden = await clientLesen(clientId);
+  if (vorhanden) {
+    const { raw: _r, ...stand } = vorhanden;
+    return { ...stand, secret: await geheimnisLesen(vorhanden.uuid) };
+  }
+  const rep = {
+    clientId,
+    name: `A2A: ${args.tenantName}`,
+    description: `Agent2Agent-Zugang der Organisation ${args.tenantName} (Copilot Studio u. a.)`,
+    protocol: "openid-connect",
+    enabled: true,
+    publicClient: false,
+    clientAuthenticatorType: "client-secret",
+    standardFlowEnabled: true,
+    implicitFlowEnabled: false,
+    directAccessGrantsEnabled: false,
+    serviceAccountsEnabled: false,
+    redirectUris: args.redirectUris,
+    webOrigins: ["+"],
+    attributes: { "use.refresh.tokens": "true", "ava.erstelltAm": new Date().toISOString(), "ava.tenantId": args.tenantId },
+  };
+  const res = await adminFetch("/clients", { method: "POST", body: JSON.stringify(rep) });
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const uuid = (res.headers.get("location") ?? "").split("/").pop() ?? "";
+  if (!uuid) throw new KeycloakAdminError(500, "Location-Header ohne Client-ID", "keycloak_error");
+  await scopesWieVorlage(uuid);
+  const secret = await geheimnisLesen(uuid);
+  logger.info({ tenantId: args.tenantId, clientId }, "[a2a] Client angelegt");
+  return { uuid, clientId, redirectUris: args.redirectUris, erstelltAm: rep.attributes["ava.erstelltAm"], secret };
+}
+
+export async function a2aClientRedirectsSetzen(tenantId: string, redirectUris: string[]): Promise<A2aClientStand> {
+  const c = await clientLesen(a2aClientId(tenantId));
+  if (!c) throw new KeycloakAdminError(404, "Client nicht vorhanden", "keycloak_error");
+  const res = await adminFetch(`/clients/${encodeURIComponent(c.uuid)}`, { method: "PUT", body: JSON.stringify({ ...c.raw, redirectUris }) });
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  return { uuid: c.uuid, clientId: c.clientId, redirectUris, erstelltAm: c.erstelltAm };
+}
+
+export async function a2aClientGeheimnisErneuern(tenantId: string): Promise<string> {
+  const c = await clientLesen(a2aClientId(tenantId));
+  if (!c) throw new KeycloakAdminError(404, "Client nicht vorhanden", "keycloak_error");
+  const res = await adminFetch(`/clients/${encodeURIComponent(c.uuid)}/client-secret`, { method: "POST" });
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const j = (await res.json()) as { value?: string };
+  return j.value ?? (await geheimnisLesen(c.uuid));
+}
+
+export async function a2aClientLoeschen(tenantId: string): Promise<boolean> {
+  const c = await clientLesen(a2aClientId(tenantId));
+  if (!c) return false;
+  const res = await adminFetch(`/clients/${encodeURIComponent(c.uuid)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  logger.info({ tenantId, clientId: c.clientId }, "[a2a] Client geloescht");
+  return true;
+}

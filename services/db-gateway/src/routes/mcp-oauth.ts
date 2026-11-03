@@ -34,6 +34,9 @@ const REDIRECT_ERLAUBT: RegExp[] = [
   /^https:\/\/chatgpt\.com\//,
   /^https:\/\/chat\.openai\.com\//,
   /^https:\/\/platform\.openai\.com\//,
+  // Microsoft Copilot Studio / Power Platform ("Dynamisch": registriert sich selbst).
+  /^https:\/\/[a-z0-9.-]*consent\.azure-apim\.net\//,
+  /^https:\/\/[a-z0-9.-]+\.(microsoft|powerplatform|powerapps|dynamics)\.com\//,
   /^http:\/\/localhost(:\d+)?\//,
   /^http:\/\/127\.0\.0\.1(:\d+)?\//,
   /^https:\/\/localhost(:\d+)?\//,
