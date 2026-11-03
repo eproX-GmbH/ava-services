@@ -36,38 +36,21 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
 
-// v0.1.221 — Floor-Version statt fixer Pin.
-//
-// Bedeutet: AVA installiert beim Update IMMER mindestens diese Version,
-// kann aber auch eine NEUERE installieren, wenn Upstream eine
-// veröffentlicht hat. Beim Klick auf "Aktualisieren" fragt der
-// Updater GitHub `/repos/ollama/ollama/releases/latest` ab und nimmt
-// `max(floor, latest)`. So bekommen Nutzer automatisch neue Ollama-
-// Versionen, sobald Upstream sie released — ohne dass wir AVA-seitig
-// für jeden Bump ein Release machen müssen.
-//
-// Wozu der Floor: Schutz gegen seltsame Antworten von GitHub (z. B. ein
-// zurückgezogenes Release das niedriger ist als unsere bekannte
-// Mindest-Kompatibilität). qwen3 / qwen3.5 / qwen3.6 brauchen ≥ v0.24.0;
-// alles darunter ist für uns funktional unbrauchbar.
-//
-// Wann den Floor bumpen: nur wenn wir wissen, dass eine Version unter X
-// definitiv nicht mehr funktioniert (z. B. Ollama macht erneut einen
-// Breaking Change wie damals v0.3→v0.5). Routine-Bumps sind nicht
-// nötig — der Latest-Lookup macht das automatisch.
-export const OLLAMA_FLOOR_VERSION = "v0.24.0";
-
-// 1-Stunden-Cache für den GitHub-Latest-Lookup. Wenn der User
-// klick-happy ist, hämmern wir nicht die API. Reset bei App-Restart.
-const LATEST_LOOKUP_CACHE_TTL_MS = 60 * 60 * 1000;
-let cachedLatestTag: { tag: string; fetchedAt: number } | null = null;
+// 2026-11-03 (Joyce): EIN Pin statt "neueste von GitHub". Der Updater
+// installiert ausschliesslich OLLAMA_PINNED_VERSION aus ./ollama-pin.ts —
+// dieselbe Version, die das Bundle beim Build bekommt. Neue Ollama-Versionen
+// kommen nur noch ueber ein AVA-Release, nachdem wir sie geprueft haben.
+// Der Download wird gegen sha256sum.txt des Releases geprueft.
+import { OLLAMA_PINNED_VERSION } from "./ollama-pin";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 
 // v0.1.223 — Wie viele alte Managed-Versionen wir nach einem
 // erfolgreichen Update aufheben. Jede Version frisst ~200-400 MB
 // (extrahierte macOS-App, Windows-Zip kleiner). 1 Behalter = aktuelle
 // + 1 vorherige als Rollback-Sicherheit. Nach 3-4 Updates wären sonst
 // schnell mehrere GB im UserData-Verzeichnis.
-const KEEP_OLD_MANAGED_VERSIONS = 1;
+const KEEP_OLD_MANAGED_VERSIONS = 0;
 
 interface PlatformTarget {
   assetName: string;
@@ -157,42 +140,17 @@ export class OllamaBinaryUpdater extends EventEmitter {
    * gebundelte Variante zurückfällt.
    */
   getManagedBinaryPath(): string | null {
-    const root = managedRoot();
-    if (!existsSync(root)) return null;
     const target = targetForHost();
     if (!target) return null;
-    // Aktuell installierte Version: marker-Datei `.version` neben
-    // der Binary. Wir nehmen die HÖCHSTE Version aus dem Verzeichnis
-    // (lexikographisch ist OK für `v0.24.0`-Schema).
-    const candidates = readdirSync(root)
-      .filter((d) => d.startsWith("v"))
-      .sort()
-      .reverse();
-    for (const v of candidates) {
-      const p = join(root, v, target.exeName);
-      if (!existsSync(p)) continue;
-      // v0.1.437 — Vollstaendigkeits-Check auch bei der BOOT-Auswahl.
-      // Vor v0.1.406 extrahierte der Updater auf macOS nur die
-      // `ollama`-Binary ohne die separate `llama-server`-Runner-Binary
-      // (Ollama-0.30-Split). Solche Alt-Installationen starten zwar,
-      // aber JEDE Inferenz stirbt mit HTTP 500 ("llama-server binary
-      // not found") — Chat, Embeddings, alles. Der v0.1.410-Check griff
-      // nur bei NEU-Installationen; hier wurde die kaputte Version
-      // weiter ausgewaehlt und gewann gegen die vollstaendige gebundelte
-      // Binary. Unvollstaendige Versionen werden jetzt uebersprungen
-      // (Fallback: aeltere vollstaendige Version oder Bundle).
-      if (
-        process.platform === "darwin" &&
-        !existsSync(join(root, v, "llama-server"))
-      ) {
-        console.warn(
-          `[ollama-updater] managed ${v} ist unvollstaendig (llama-server fehlt) — uebersprungen`,
-        );
-        continue;
-      }
-      return p;
+    const dir = join(managedRoot(), OLLAMA_PINNED_VERSION);
+    const p = join(dir, target.exeName);
+    if (!existsSync(p)) return null;
+    // Vollstaendigkeits-Check (macOS: separate llama-server-Binary seit 0.30).
+    if (process.platform === "darwin" && !existsSync(join(dir, "llama-server"))) {
+      console.warn(`[ollama-updater] managed ${OLLAMA_PINNED_VERSION} ist unvollstaendig (llama-server fehlt) — uebersprungen`);
+      return null;
     }
-    return null;
+    return p;
   }
 
   getManagedVersion(): string | null {
@@ -231,23 +189,7 @@ export class OllamaBinaryUpdater extends EventEmitter {
 
     this.setState({ state: "checking" });
 
-    let version: string;
-    if (explicitVersion) {
-      version = explicitVersion;
-    } else {
-      try {
-        version = await this.resolveTargetVersion();
-      } catch (err) {
-        // GitHub nicht erreichbar → degradieren auf Floor. User
-        // bekommt wenigstens eine funktionierende Version, AVA
-        // läuft. Fehler wird geloggt, aber nicht eskaliert.
-        console.warn(
-          "[ollama-updater] latest-version-lookup failed, falling back to floor:",
-          err instanceof Error ? err.message : err,
-        );
-        version = OLLAMA_FLOOR_VERSION;
-      }
-    }
+    const version = explicitVersion ?? OLLAMA_PINNED_VERSION;
 
     const versionDir = join(managedRoot(), version);
     const finalBinary = join(versionDir, target.exeName);
@@ -288,6 +230,7 @@ export class OllamaBinaryUpdater extends EventEmitter {
       });
       await this.downloadWithProgress(url, archivePath, version);
       this.setState({ state: "installing", targetVersion: version });
+      await verifyChecksum(version, target.assetName, archivePath);
       await target.extract(archivePath, versionDir);
       // Inner-Binary an die Standard-Position verschieben + +x setzen.
       const innerAbs = join(versionDir, target.innerBinaryPath);
@@ -405,32 +348,20 @@ export class OllamaBinaryUpdater extends EventEmitter {
     return removed;
   }
 
-  /**
-   * v0.1.221 — Resolved-Version-Strategie: GitHub fragen + Floor
-   * anwenden. Mit 1-Stunden-Cache, damit GitHub nicht bei jedem Klick
-   * angerufen wird.
-   */
-  private async resolveTargetVersion(): Promise<string> {
-    const latest = await fetchLatestOllamaTag();
-    // semver-ähnliches Vergleich: höhere von beiden gewinnt.
-    return compareVersions(latest, OLLAMA_FLOOR_VERSION) >= 0
-      ? latest
-      : OLLAMA_FLOOR_VERSION;
+  /** Die Version, die AVA fuer diese Fassung vorsieht (der Pin). */
+  async peekResolvedTargetVersion(): Promise<string | null> {
+    return OLLAMA_PINNED_VERSION;
   }
 
-  /**
-   * Gibt — falls bekannt — die Version zurück, die ein Update gerade
-   * installieren würde. Nutzt den Cache; wenn der Cache leer ist und
-   * GitHub nicht erreichbar war, gibt `null` zurück. Nur zur UI-
-   * Anzeige gedacht (z. B. Settings-Tab: „Neueste verfügbare Version:
-   * v0.27.1"). Wirft NIE.
-   */
-  async peekResolvedTargetVersion(): Promise<string | null> {
-    try {
-      return await this.resolveTargetVersion();
-    } catch {
-      return null;
-    }
+  /** Stiller Abgleich beim Start: liegt die gepinnte Version noch nicht
+   *  vollstaendig im verwalteten Verzeichnis, wird sie geholt. Liefert true,
+   *  wenn danach eine (neue) Binary bereitsteht und der Supervisor neu
+   *  starten sollte. Nicht unterstuetzte Plattformen: false ohne Fehler. */
+  async abgleichen(): Promise<boolean> {
+    if (!targetForHost()) return false;
+    if (this.getManagedBinaryPath()) return false;
+    await this.update();
+    return this.getState().state === "ready";
   }
 
   private async downloadWithProgress(
@@ -560,49 +491,23 @@ function runCmd(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-/**
- * v0.1.221 — Holt den Tag-Namen des aktuellsten stable Releases von
- * GitHub. `/releases/latest` liefert nur Non-Draft, Non-Prerelease, also
- * keine zusätzliche Filterung nötig.
- *
- * Mit 1-Stunden-Cache, damit zufällige Klick-Bursts nicht das GitHub-
- * Anonymous-Rate-Limit (60 req/h) anknabbern.
- */
-async function fetchLatestOllamaTag(): Promise<string> {
-  const now = Date.now();
-  if (
-    cachedLatestTag &&
-    now - cachedLatestTag.fetchedAt < LATEST_LOOKUP_CACHE_TTL_MS
-  ) {
-    return cachedLatestTag.tag;
+/** Pruefsumme des Archivs gegen sha256sum.txt des Releases (seit Ollama
+ *  v0.40 Teil jedes Releases). Fehlt die Datei oder der Eintrag, bricht die
+ *  Installation ab — eine ungepruefte Binary wird nie ausgefuehrt. */
+async function verifyChecksum(version: string, assetName: string, file: string): Promise<void> {
+  const url = `https://github.com/ollama/ollama/releases/download/${version}/sha256sum.txt`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) throw new Error(`Pruefsummen-Datei fuer ${version} nicht erreichbar (HTTP ${res.status})`);
+  let erwartet: string | null = null;
+  for (const line of (await res.text()).split("\n")) {
+    const m = /^([0-9a-f]{64})\s+\.?\/?(\S+)$/.exec(line.trim());
+    if (m && m[2] === assetName) erwartet = m[1]!;
   }
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8_000);
-  try {
-    const res = await fetch(
-      "https://api.github.com/repos/ollama/ollama/releases/latest",
-      {
-        headers: {
-          accept: "application/vnd.github+json",
-          "x-github-api-version": "2022-11-28",
-        },
-        signal: ctrl.signal,
-      },
-    );
-    if (!res.ok) {
-      throw new Error(`GitHub responded HTTP ${res.status}`);
-    }
-    const body = (await res.json()) as { tag_name?: unknown };
-    const tag = typeof body.tag_name === "string" ? body.tag_name : null;
-    if (!tag || !/^v\d/.test(tag)) {
-      throw new Error(`Unexpected tag_name in GitHub response: ${tag}`);
-    }
-    cachedLatestTag = { tag, fetchedAt: now };
-    return tag;
-  } finally {
-    clearTimeout(timer);
-  }
+  if (!erwartet) throw new Error(`keine Pruefsumme fuer ${assetName} in sha256sum.txt (${version})`);
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(file), hash);
+  const ist = hash.digest("hex");
+  if (ist !== erwartet) throw new Error(`Pruefsumme von ${assetName} stimmt nicht (erwartet ${erwartet.slice(0, 12)}…, erhalten ${ist.slice(0, 12)}…)`);
 }
 
 /**
@@ -629,14 +534,11 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-// Backward-compat-Alias. Wir hatten `PINNED_OLLAMA_VERSION` in v0.1.220
-// exportiert und im main/index.ts via Re-Export aus diesem Modul geholt.
-// v0.1.221 verschiebt die Semantik: das ist jetzt der FLOOR. Der alte
-// Name bleibt erhalten damit der Import-Pfad nicht bricht.
-export const PINNED_OLLAMA_VERSION = OLLAMA_FLOOR_VERSION;
+export const PINNED_OLLAMA_VERSION = OLLAMA_PINNED_VERSION;
+export { OLLAMA_PINNED_VERSION };
 
 // Re-export für unit tests + die Supervisor-Patch-Stelle.
-export { managedRoot, targetForHost, fetchLatestOllamaTag, compareVersions };
+export { managedRoot, targetForHost, compareVersions };
 
 // Avoid TS unused-warning when `readFileSync` is imported only for symmetry.
 void readFileSync;

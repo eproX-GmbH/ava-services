@@ -60,8 +60,12 @@ import { pipeline } from "node:stream/promises";
 // Sicherungen nach erfolgreichem Umstieg auf). Decision-Modelle auch ueber
 // MLX, multimodale Embeddings, Responses-API-Fix. Asset-Layout unveraendert;
 // Releases liefern jetzt sha256sum.txt, das Skript prueft die Pruefsummen.
-const VERSION = process.env.OLLAMA_VERSION ?? "v0.40.5";
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Pin aus src/main/ollama-pin.ts (eine Wahrheit fuer Bundle und Laufzeit-Abgleich).
+const PIN_DATEI = resolve(__dirname, "..", "src", "main", "ollama-pin.ts");
+const pinMatch = /OLLAMA_PINNED_VERSION\s*=\s*"(v\d+\.\d+\.\d+)"/.exec(await readFile(PIN_DATEI, "utf8"));
+if (!pinMatch) throw new Error(`OLLAMA_PINNED_VERSION nicht in ${PIN_DATEI} gefunden`);
+const VERSION = process.env.OLLAMA_VERSION ?? pinMatch[1];
 const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "ollama");
 
 const TARGETS = [

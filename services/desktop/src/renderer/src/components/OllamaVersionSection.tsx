@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react";
 
-// v0.1.222 — Settings → System: Ollama-Version + Update-Affordance.
-//
-// Drei Werte werden nebeneinander gezeigt:
-//   - Installiert: was der laufende Ollama-Server unter /api/version meldet
-//   - Latest verfügbar: was GitHub gerade als stable Release listet
-//     (über den 1h-Cache des Updaters)
-//   - Floor: AVAs Mindestversion (nur als technischer Tooltip)
-//
-// Wenn `latest > installed`, zeigen wir den "Aktualisieren"-Button.
-// Sonst nur die Anzeige + "bereits aktuell".
+// Einstellungen → KI: Version der lokalen KI. Seit 2026-11-03 gibt es genau
+// eine von AVA vorgesehene Version (Pin); sie wird beim Start still
+// abgeglichen. Hier: laufende Version, vorgesehene Version, Fortschritt oder
+// Fehler des Abgleichs und ein Knopf "Neu installieren".
 
 type UpdaterState =
   | "idle"
@@ -30,8 +24,7 @@ interface UpdaterFrame {
 
 export function OllamaVersionSection() {
   const [installed, setInstalled] = useState<string | null>(null);
-  const [latest, setLatest] = useState<string | null>(null);
-  const [floor, setFloor] = useState<string | null>(null);
+  const [vorgesehen, setVorgesehen] = useState<string | null>(null);
   const [updater, setUpdater] = useState<UpdaterFrame>({ state: "idle" });
 
   // Initial-Load + Live-Subscription.
@@ -40,11 +33,8 @@ export function OllamaVersionSection() {
     void window.api.ollama.getInstalledVersion().then((v) => {
       if (!cancelled) setInstalled(v);
     });
-    void window.api.ollama.getResolvedTargetVersion().then((v) => {
-      if (!cancelled) setLatest(v);
-    });
     void window.api.ollama.getPinnedVersion().then((v) => {
-      if (!cancelled) setFloor(v);
+      if (!cancelled) setVorgesehen(v);
     });
     void window.api.ollama.getUpdaterState().then((s) => {
       if (!cancelled) setUpdater(s as UpdaterFrame);
@@ -67,8 +57,7 @@ export function OllamaVersionSection() {
     };
   }, []);
 
-  const newerAvailable =
-    installed && latest && compareVersions(latest, installed) > 0;
+  const passt = !!installed && !!vorgesehen && compareVersions(vorgesehen, installed) === 0;
   const busy =
     updater.state === "checking" ||
     updater.state === "downloading" ||
@@ -82,35 +71,27 @@ export function OllamaVersionSection() {
     <section className="provider-section" id="ollama-version">
       <h3>Lokale KI</h3>
       <p className="muted">
-        AVA bringt eine lokale KI mit und hält sie aktuell, ohne dass du AVA neu installieren musst.
+        AVA bringt eine lokale KI mit und hält sie auf der Version, die mit dieser AVA-Fassung geprüft wurde. Der Abgleich läuft beim Start von selbst.
       </p>
       <ul className="kv">
         <li>
-          <span className="muted">Installiert:</span>{" "}
+          <span className="muted">Läuft gerade:</span>{" "}
           <code>{installed ?? "—"}</code>
-          {installed && latest && !newerAvailable && (
+          {passt && (
             <span className="badge ok" style={{ marginLeft: "0.5rem" }}>
               aktuell
             </span>
           )}
         </li>
         <li>
-          <span className="muted">Neueste verfügbare Version:</span>{" "}
-          <code>{latest ?? "(GitHub nicht erreichbar)"}</code>
+          <span className="muted">Von AVA vorgesehen:</span>{" "}
+          <code>{vorgesehen ?? "—"}</code>
         </li>
-        {floor && (
-          <li
-            className="muted small"
-            title="AVAs Mindestversion. Floor schützt vor seltsamen Upstream-Antworten."
-          >
-            <span className="muted">Mindestversion:</span> <code>{floor}</code>
-          </li>
-        )}
       </ul>
 
       {busy && (
         <p className="muted small">
-          {updater.state === "checking" && "Prüfe Update…"}
+          {updater.state === "checking" && "Prüfe…"}
           {updater.state === "downloading" && (
             <>
               Lade Ollama
@@ -132,24 +113,19 @@ export function OllamaVersionSection() {
 
       {updater.state === "error" && (
         <p className="error small">
-          Update fehlgeschlagen: {updater.message ?? "Unbekannter Fehler"}
+          Abgleich fehlgeschlagen: {updater.message ?? "Unbekannter Fehler"}
         </p>
       )}
 
       <div className="actions">
-        {newerAvailable && !busy && (
-          <button type="button" onClick={() => void triggerUpdate()}>
-            {latest ? `Auf ${latest} aktualisieren` : "Aktualisieren"}
-          </button>
-        )}
-        {!newerAvailable && !busy && (
+        {!busy && (
           <button
             type="button"
-            className="link"
+            className={passt ? "link" : undefined}
             onClick={() => void triggerUpdate()}
-            title="Auch wenn keine neuere Version verfügbar scheint, einen Update-Lauf erzwingen."
+            title="Die vorgesehene Version neu herunterladen (mit Prüfsumme) und die lokale KI neu starten."
           >
-            Erneut prüfen
+            {passt ? "Neu installieren" : `Auf ${vorgesehen ?? "die vorgesehene Version"} bringen`}
           </button>
         )}
       </div>
@@ -186,6 +162,4 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-/** Exportiert für `OllamaUpdateBanner`, das dieselbe Vergleichslogik
- *  braucht. */
 export { compareVersions };

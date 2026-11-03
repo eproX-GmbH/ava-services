@@ -1,4 +1,5 @@
 import { getSharedDir } from "./account-space";
+import { OLLAMA_PINNED_VERSION } from "./ollama-pin";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
@@ -769,23 +770,18 @@ export class OllamaSupervisor extends EventEmitter {
    * werden (CI würde via Pfad-Mismatch sofort failen).
    */
   private resolveManagedBinaryPath(): string | null {
+    // 2026-11-03: Nur die gepinnte verwaltete Version zaehlt. Eine aeltere
+    // oder neuere Kopie im Nutzerverzeichnis gewinnt nie mehr gegen das
+    // Bundle — sonst bliebe ein Nutzer nach einem AVA-Update auf dem Stand
+    // seines letzten Klicks (Joyce: v0.40.4 trotz Bundle v0.40.5).
     try {
       const root = getSharedDir("ollama-managed");
-      if (!existsSync(root)) return null;
       const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
-      // Höchste Version aus dem Verzeichnis. Lexikographisch ist OK
-      // für das `v0.24.0`-Schema; wenn Ollama jemals auf semver-mit-
-      // Pre-Release umstellt, hier eine echte Semver-Sortierung
-      // einbauen.
-      const candidates = readdirSync(root)
-        .filter((d) => d.startsWith("v"))
-        .sort()
-        .reverse();
-      for (const v of candidates) {
-        const p = join(root, v, exe);
-        if (existsSync(p)) return p;
-      }
-      return null;
+      const dir = join(root, OLLAMA_PINNED_VERSION);
+      const p = join(dir, exe);
+      if (!existsSync(p)) return null;
+      if (process.platform === "darwin" && !existsSync(join(dir, "llama-server"))) return null;
+      return p;
     } catch {
       return null;
     }

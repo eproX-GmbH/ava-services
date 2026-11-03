@@ -5,6 +5,7 @@
 import { app, ipcMain, protocol, shell } from "electron";
 import type { StorageDeps } from "../storage-usage";
 import { OllamaBinaryUpdater, PINNED_OLLAMA_VERSION } from "../ollama-binary-updater";
+import { ollamaBinaryAbgleichen } from "../ollama-abgleich";
 import { processingControl } from "../processing-control";
 import { producerLogBuffer } from "../producer-log-buffer";
 import { listScreenshots } from "../producer-screenshots";
@@ -78,32 +79,7 @@ export function registerLaufzeitIpc(deps: LaufzeitIpcDeps): void {
   //   3. Auf state=ready: Supervisor stoppen, neu starten — der
   //      resolveBinaryPath findet jetzt die Managed-Variante zuerst.
   //   4. Renderer kann den fehlgeschlagenen Pull erneut anstoßen.
-  ipcMain.handle("ollama:updateBinary", async () => {
-    await ollamaUpdater.update();
-    const final = ollamaUpdater.getState();
-    if (final.state === "ready") {
-      // Supervisor sauber durchstarten, damit der neue Binary-Pfad
-      // greift. stop()+start() statt restart() weil die start()-Logik
-      // den Pfad neu auflöst — ein in-place reload wäre fragiler.
-      try {
-        await ollama.stop();
-      } catch (err) {
-        console.warn(
-          "[ollama-updater] stop() failed during binary swap:",
-          err instanceof Error ? err.message : err,
-        );
-      }
-      try {
-        await ollama.start();
-      } catch (err) {
-        console.warn(
-          "[ollama-updater] start() after swap failed:",
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-    return final;
-  });
+  ipcMain.handle("ollama:updateBinary", () => ollamaBinaryAbgleichen(ollama, ollamaUpdater, { erzwingen: true }));
 
   ipcMain.handle("ollama:getUpdaterState", () => ollamaUpdater.getState());
 
@@ -111,19 +87,10 @@ export function registerLaufzeitIpc(deps: LaufzeitIpcDeps): void {
     ollamaUpdater.getManagedVersion(),
   );
 
-  // v0.1.221 — was "getPinnedVersion": liefert jetzt die FLOOR-Version,
-  // also die Mindest-Kompatibilität. Floor wird nur installiert, wenn
-  // GitHub für das aktuelle Latest nicht erreichbar ist oder Upstream
-  // eine niedrigere Version als Latest meldet (Schutz vor zurückgezogenen
-  // Releases). Name bleibt aus Backward-Compat erhalten; semantisch ist
-  // es der Floor.
+  // Die von AVA vorgesehene Ollama-Version (Pin).
   ipcMain.handle("ollama:getPinnedVersion", () => PINNED_OLLAMA_VERSION);
 
-  // v0.1.221 — Welche Ollama-Version würde das Update gerade
-  // installieren? Antwortet mit dem Resolved-Wert (max(floor, latest)
-  // aus dem GitHub-Cache). Null wenn der GitHub-Lookup noch nicht
-  // gemacht wurde oder fehlschlug. Settings-UI nutzt das zur Anzeige
-  // „Neueste verfügbare: v0.27.1".
+  // Zielversion des Updaters (identisch mit dem Pin).
   ipcMain.handle("ollama:getResolvedTargetVersion", () =>
     ollamaUpdater.peekResolvedTargetVersion(),
   );

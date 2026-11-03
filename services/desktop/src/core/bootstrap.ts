@@ -4504,6 +4504,16 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       void ollama.start().catch((err) => {
         console.error("[ollama] supervisor.start() rejected:", err);
       });
+      // 2026-11-03 — stiller Abgleich auf die gepinnte Ollama-Version, sobald
+      // der Supervisor laeuft (Version per /api/version lesbar). Laeuft bereits
+      // der Pin, passiert nichts; sonst Download mit Pruefsumme + Neustart.
+      setTimeout(() => {
+        void import("../main/ollama-abgleich").then(({ ollamaBinaryAbgleichen }) =>
+          ollamaBinaryAbgleichen(ollama, ollamaUpdater).catch((err) => {
+            console.warn("[ollama-updater] Abgleich beim Start fehlgeschlagen:", err instanceof Error ? err.message : err);
+          }),
+        );
+      }, 45_000).unref?.();
     } else {
       console.warn(
         "[ollama] AVA_DISABLE_OLLAMA=1 — supervisor not started; renderer will see state=idle",
