@@ -1929,8 +1929,10 @@ export function Chat() {
       )}
 
       {/* I4 — ICP-Assistent-Vorschlag (B5): erscheint, solange kein ICP
-          existiert und "Spaeter" nicht gewaehlt wurde. */}
-      <IcpProposalCard />
+          existiert und "Spaeter" nicht gewaehlt wurde. Im leeren Chat steht
+          die Karte UNTER dem Eingabefeld (Joyce 2026-11-03: der Chat ist
+          wichtiger und gehoert nach oben); im laufenden Gespraech oben. */}
+      {!isEmpty && <IcpProposalCard />}
 
       {isEmpty ? (
         <div className="chat-welcome-stack">
@@ -1965,6 +1967,7 @@ export function Chat() {
             </div>
           )}
           {composer}
+          <IcpProposalCard />
         </div>
       ) : (
         <>

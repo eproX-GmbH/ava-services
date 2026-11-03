@@ -8213,6 +8213,10 @@ tr.held-row td:first-child::after {
   background: rgba(0, 192, 167, 0.06);
   font-size: 13px;
 }
+/* Im leeren Chat unter dem Eingabefeld: kein Aussenabstand, der Stapel-Abstand reicht. */
+.chat-welcome-stack .icp-proposal {
+  margin: 0;
+}
 .icp-proposal__text {
   flex: 1;
   min-width: 260px;
