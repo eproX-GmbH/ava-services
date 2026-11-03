@@ -654,6 +654,9 @@ export async function stripeRechnungErstellen(
       days_until_due: daysUntilDue,
       auto_advance: true,
       currency: "eur",
+      // Umsatzsteuer ueber Stripe Tax (19 % DE, Reverse Charge EU-Ausland); die
+      // Posten sind Nettopreise (tax_behavior exclusive).
+      automatic_tax: { enabled: true },
       description: `AVA Sammelabrechnung ${periodKey}`,
       metadata: { tenantId, periodKey, seatInvoiceId: invoiceId },
       pending_invoice_items_behavior: "exclude",
@@ -669,6 +672,7 @@ export async function stripeRechnungErstellen(
         currency: "eur",
         quantity: l.seats,
         unit_amount: l.unitPriceCents,
+        tax_behavior: "exclusive",
         description: `AVA ${l.tier === "pro" ? "Pro" : "Starter"}-Seat, ${periodKey}: ${l.seats} × ${(l.unitPriceCents / 100).toFixed(2)} EUR`,
         metadata: { tenantId, periodKey, tier: l.tier, art: "seat" },
       },
