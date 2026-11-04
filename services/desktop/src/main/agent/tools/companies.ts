@@ -983,6 +983,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Durchsucht die Belege ALLER eigenen Firmen (Meine Firmen) per Volltext: Stellenanzeigen, Karriereseite, Fokus-Themen, Referenzen/Partner, Firmenprofil, Jahresabschluesse. " +
       "PFLICHT bei jeder Frage ueber den Bestand ('gibt es Firmen, die …', 'welche meiner Firmen bieten/nutzen/suchen/haben …', 'wer von meinen Firmen …'): SOFORT aufrufen, keine Rueckfrage, keine Antwort aus Allgemeinwissen. " +
+      "bereich 'pool' (nur wenn der Nutzer ausdruecklich Firmen AUSSERHALB seiner Firmenliste will): durchsucht die Belege aller von AVA verarbeiteten Firmen ohne die eigenen; liefert hoechstens 5 Kandidaten mit Name und Ort — ohne Auszug, ohne Quelle, ohne Zusammenhang. Kandidaten haben keine Firmenseite: nicht verlinken, nichts dazuerfinden; mehr gibt es erst nach der Aufnahme in die Firmenliste (import_companies mit companyIds, nur auf Wunsch). " +
       "begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'); keine einzelnen Allerweltswoerter wie 'Remote', 'OEM', 'E-Bike', 'CO2' (treffen Fremdes), lieber zusammengesetzte Begriffe. " +
       "quellen nach Frageart waehlen: 'bietet Mitarbeitenden X' → karriere, thema, stelle; 'sucht/stellt ein' → stelle; 'nutzt/setzt ein (Technologie)' → stelle, profil; 'beliefert Branche/hat Kunden in' → kunde, profil; 'zertifiziert nach' → kunde, profil, thema; 'Zahlen/Lage' → abschluss; unklar → alle. " +
       "Belege IMMER lesen und einordnen: ein Treffer bei einer Referenz ('SAP' als Partner) heisst nicht, dass die Firma SAP nutzt. " +
@@ -992,6 +993,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     parameters: {
       type: "object",
       properties: {
+        bereich: { type: "string", enum: ["bestand", "pool"], description: "bestand (Standard) = eigene Firmen; pool = alle verarbeiteten Firmen ausserhalb des Bestands, nur Kandidaten" },
         begriffe: { type: "array", items: { type: "string" }, description: "Suchbegriffe, Synonyme und Abkuerzungen (1-12)" },
         frage: { type: "string", description: "Frage des Nutzers in einem Satz (fuer die semantische Nachsortierung)" },
         quellen: { type: "array", items: { type: "string", enum: ["stelle", "karriere", "thema", "kunde", "profil", "abschluss"] }, description: "Nur diese Quellen durchsuchen (leer = alle)" },
@@ -1001,6 +1003,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       required: ["begriffe"],
     },
     schema: yup.object({
+      bereich: yup.string().oneOf(["bestand", "pool"]).optional(),
       begriffe: yup.array().of(yup.string().trim().min(2).max(60).required()).min(1).max(12).required(),
       frage: yup.string().trim().max(300).optional(),
       quellen: yup.array().of(yup.string().oneOf(["stelle", "karriere", "thema", "kunde", "profil", "abschluss"]).required()).max(6).optional(),
@@ -1012,17 +1015,19 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       const frageText = (args.frage && args.frage.trim()) || args.begriffe.join(" ");
       const vektoren = await embedQueries([frageText]).catch(() => null);
       const frageEmbedding = vektoren?.[0] && vektoren[0].length >= 64 ? vektoren[0] : undefined;
+      const pool = args.bereich === "pool";
       const r = await gateway.request<{
-        anzahl: number; gesamtTreffer: number; limit: number; bestand: number; quellen: string[]; begriffe: string[];
-        firmen: Array<{ companyId: string; name: string | null; rang: number; quellen: string[]; belege: Array<{ quelle: string; titel: string; auszug: string; url: string | null; datum: string | null }> }>;
+        bereich?: "bestand" | "pool"; anzahl: number; gesamtTreffer: number; limit: number; bestand: number; quellen: string[]; begriffe: string[];
+        firmen: Array<{ companyId: string; name: string | null; ort?: string | null; rang: number; quellen: string[]; belege: Array<{ quelle: string; titel: string; auszug: string; url: string | null; datum: string | null }> }>;
         semantik?: { aktiv: boolean; kandidaten: number; mitVektor: number };
       }>("/v1/companies/bestand/suche", {
         method: "POST",
-        body: { begriffe: args.begriffe, ...(args.quellen?.length ? { quellen: args.quellen } : {}), limit: args.limit ?? 5, ...(args.companyIds?.length ? { companyIds: args.companyIds } : {}), ...(frageEmbedding ? { frageEmbedding } : {}) },
+        body: { bereich: pool ? "pool" : "bestand", begriffe: args.begriffe, ...(args.quellen?.length ? { quellen: args.quellen } : {}), limit: args.limit ?? 5, ...(args.companyIds?.length && !pool ? { companyIds: args.companyIds } : {}), ...(frageEmbedding ? { frageEmbedding } : {}) },
         signal: c.signal,
       });
       const QUELLE: Record<string, string> = { stelle: "Stellenanzeige", karriere: "Karriereseite", thema: "Fokus-Thema", kunde: "Referenz/Partner", profil: "Firmenprofil", abschluss: "Jahresabschluss" };
       return {
+        bereich: pool ? "pool" : "bestand",
         anzahl: r.anzahl,
         gesamtTreffer: r.gesamtTreffer,
         bestand: r.bestand,
@@ -1031,13 +1036,15 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         firmen: r.firmen.map((f) => ({
           companyId: f.companyId,
           name: f.name,
+          ...(pool ? { ort: f.ort ?? null, stand: "Nicht in der Firmenliste. Zusammenhang und Details erst nach der Aufnahme." } : {}),
           belege: f.belege.map((b) => ({ art: QUELLE[b.quelle] ?? b.quelle, titel: b.titel, auszug: b.auszug, ...(b.url ? { quelle: b.url } : {}), ...(b.datum ? { datum: b.datum } : {}) })),
         })),
-        ...(r.gesamtTreffer > r.anzahl ? { hinweis: `${r.gesamtTreffer - r.anzahl} weitere Firmen passen; mit limit bis 100 abrufbar.` } : {}),
-        ...(r.gesamtTreffer === 0 ? { hinweis: `Keine Belege zu ${r.begriffe.join(", ")} in ${r.bestand} Firmen. Andere Schreibweisen/Synonyme versuchen oder Fokus-Thema anlegen (themen_set) und pruefen lassen (research_run feature themen).` } : {}),
+        ...(pool ? { hinweisPool: "Kandidaten ausserhalb der Firmenliste: nicht verlinken, keinen Zusammenhang und keine Details nennen (liegen nicht vor). Aufnahme nur auf Wunsch des Nutzers per import_companies mit companyIds (kostenpflichtig je Firma)." } : {}),
+        ...(r.gesamtTreffer > r.anzahl ? { hinweis: pool ? `${r.gesamtTreffer - r.anzahl} weitere Kandidaten; hoechstens 5 auf einmal, naechste nach Aufnahme oder mit anderen Begriffen.` : `${r.gesamtTreffer - r.anzahl} weitere Firmen passen; mit limit bis 100 abrufbar.` } : {}),
+        ...(r.gesamtTreffer === 0 ? { hinweis: pool ? `Keine Belege zu ${r.begriffe.join(", ")} bei anderen verarbeiteten Firmen. Andere Begriffe versuchen; fuer neue Firmen in einer Region den Radar anbieten (discovery_scan).` : `Keine Belege zu ${r.begriffe.join(", ")} in ${r.bestand} Firmen. Andere Schreibweisen/Synonyme versuchen oder Fokus-Thema anlegen (themen_set) und pruefen lassen (research_run feature themen).` } : {}),
       };
     },
-    preview: (r) => `${r.anzahl} von ${r.gesamtTreffer} Firmen mit Belegen`,
+    preview: (r) => (r.bereich === "pool" ? `${r.anzahl} von ${r.gesamtTreffer} Kandidaten ausserhalb des Bestands` : `${r.anzahl} von ${r.gesamtTreffer} Firmen mit Belegen`),
   });
 
   const fokus = defineTool({

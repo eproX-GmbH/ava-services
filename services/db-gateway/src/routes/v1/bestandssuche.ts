@@ -18,7 +18,7 @@ import { resolveCompanyNames } from "../../lib/company-names";
 import { ruhendeIds } from "../../lib/firmen-zustand";
 import { masterData } from "../../lib/register-jobs";
 import { istBetreiber, requireScope } from "../../middleware/auth";
-import { SUCH_QUELLEN, backfillStand, embeddingsSetzen, fusioniere, offeneEmbeddings, suchblockBackfill, suchbloeckeSuchen, tsqueryAusdruck, type SuchQuelle } from "../../lib/suchblock";
+import { SUCH_QUELLEN, backfillStand, embeddingsSetzen, fusioniere, offeneEmbeddings, suchblockBackfill, suchbloeckePoolSuchen, suchbloeckeSuchen, tsqueryAusdruck, type SuchQuelle } from "../../lib/suchblock";
 
 const ErrorShape = z.object({ error: z.string() });
 const errorResponses = {
@@ -32,11 +32,21 @@ type Quelle = (typeof QUELLEN)[number];
 const MAX_BESTAND = 5000;
 const MAX_JE_QUELLE = 400;
 const BELEGE_JE_FIRMA = 3;
+// Pool (Joyce 2026-11-04, "Variante 1"): Belege aller verarbeiteten Firmen
+// ausserhalb des eigenen Bestands, nur als Kandidatenliste — Name und Ort,
+// hoechstens 5. Weder Auszug noch Fundstelle, nicht einmal die Art der Quelle:
+// in welchem Zusammenhang der Begriff faellt, gibt es erst nach der Aufnahme
+// in die Firmenliste (Abrechnung je Firma). Fokus-Themen bleiben draussen:
+// die Befunde entstehen aus den Themen anderer Nutzer.
+const POOL_MAX_LIMIT = 5;
+const POOL_QUELLEN: Quelle[] = ["stelle", "karriere", "kunde", "profil", "abschluss"];
 
 export const bestandssucheRouter = new OpenAPIHono();
 bestandssucheRouter.use("*", requireScope("company:read"));
 
 const Body = z.object({
+  /** bestand = eigene Firmen (Standard); pool = alle verarbeiteten Firmen ausserhalb des Bestands, nur Kandidaten. */
+  bereich: z.enum(["bestand", "pool"]).default("bestand"),
   begriffe: z.array(z.string().trim().min(2).max(60)).min(1).max(12),
   quellen: z.array(z.enum(QUELLEN)).max(QUELLEN.length).optional(),
   limit: z.number().int().min(1).max(100).default(5),
@@ -66,13 +76,14 @@ const route = createRoute({
       content: {
         "application/json": {
           schema: z.object({
+            bereich: z.enum(["bestand", "pool"]),
             anzahl: z.number(),
             gesamtTreffer: z.number(),
             limit: z.number(),
             bestand: z.number(),
             quellen: z.array(z.enum(QUELLEN)),
             begriffe: z.array(z.string()),
-            firmen: z.array(z.object({ companyId: z.string(), name: z.string().nullable(), rang: z.number(), quellen: z.array(z.enum(QUELLEN)), belege: z.array(Beleg) })),
+            firmen: z.array(z.object({ companyId: z.string(), name: z.string().nullable(), ort: z.string().nullable(), rang: z.number(), quellen: z.array(z.enum(QUELLEN)), belege: z.array(Beleg) })),
             semantik: z.object({ aktiv: z.boolean(), kandidaten: z.number(), mitVektor: z.number() }),
           }),
         },
@@ -96,11 +107,12 @@ interface Treffer {
 
 const HEADLINE = "'MaxWords=45, MinWords=20, MaxFragments=2, FragmentDelimiter=\" … \", StartSel=«, StopSel=»'";
 
-async function abschlussAbfragen(ids: string[], begriffe: string[]): Promise<Treffer[]> {
+async function abschlussAbfragen(ids: string[], begriffe: string[], modus: "nur" | "ausser" = "nur"): Promise<Treffer[]> {
   const q = tsqueryAusdruck(begriffe.length, 3);
+  const filter = modus === "nur" ? `"companyId" = ANY($1::text[])` : `NOT ("companyId" = ANY($1::text[]))`;
   const sql = `SELECT "companyId", coalesce("docName", type) || coalesce(' ' || year::text, '') AS titel, NULL::text AS url, NULL::text AS datum, embedding,
                       ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug, ts_rank_cd(tsv, ${q}) AS rang
-               FROM "PublicationBlock" WHERE "companyId" = ANY($1::text[]) AND tsv @@ (${q}) ORDER BY rang DESC LIMIT $2`;
+               FROM "PublicationBlock" WHERE ${filter} AND tsv @@ (${q}) ORDER BY rang DESC LIMIT $2`;
   try {
     const r = await getProducerPool("company-publication").query<Omit<Treffer, "quelle">>(sql, [ids, MAX_JE_QUELLE, ...begriffe]);
     return r.rows.map((x) => ({ ...x, quelle: "abschluss" as const, rang: Number(x.rang) || 0, auszug: (x.auszug ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }));
@@ -109,6 +121,19 @@ async function abschlussAbfragen(ids: string[], begriffe: string[]): Promise<Tre
     console.warn("[bestandssuche] abschluss:", err instanceof Error ? err.message : err);
     return [];
   }
+}
+
+/** Ort je Firma aus den Stammdaten (best-effort, fuer die Pool-Kandidaten). */
+async function orteAufloesen(ids: string[]): Promise<Map<string, string>> {
+  const orte = new Map<string, string>();
+  if (ids.length === 0) return orte;
+  try {
+    const r = await masterData<{ germanCompanies?: Array<{ companyId: string; location?: string | null }> }>("POST", "/internal/companies/by-ids", { companyIds: ids });
+    for (const c of r.germanCompanies ?? []) if (c.location) orte.set(c.companyId, c.location);
+  } catch (err) {
+    console.warn("[bestandssuche] orte:", err instanceof Error ? err.message : err);
+  }
+  return orte;
 }
 
 /** Bestand des Nutzers: eigene Firmen aus master-data ohne ruhende (P10). */
@@ -122,21 +147,26 @@ bestandssucheRouter.openapi(route, async (c) => {
   const auth = c.get("auth") as { tenantId?: string | null; actorId?: string | null } | undefined;
   if (!auth?.tenantId || !auth.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
   const body = c.req.valid("json");
+  const pool = body.bereich === "pool";
   const begriffe = [...new Set(body.begriffe.map((b) => b.trim()).filter(Boolean))];
-  const quellen: Quelle[] = body.quellen && body.quellen.length > 0 ? [...new Set(body.quellen)] : [...QUELLEN];
+  let quellen: Quelle[] = body.quellen && body.quellen.length > 0 ? [...new Set(body.quellen)] : [...QUELLEN];
+  if (pool) quellen = quellen.filter((q) => POOL_QUELLEN.includes(q));
+  const limit = pool ? Math.min(body.limit, POOL_MAX_LIMIT) : body.limit;
 
+  // Bestand: Suchmenge. Pool: Ausschlussmenge (eigene Firmen tauchen dort nicht auf).
   let ids = await bestandIds(auth.actorId);
-  if (body.companyIds && body.companyIds.length > 0) {
+  if (!pool && body.companyIds && body.companyIds.length > 0) {
     const menge = new Set(body.companyIds);
     ids = ids.filter((id) => menge.has(id));
   }
   const semantikLeer = { aktiv: Boolean(body.frageEmbedding), kandidaten: 0, mitVektor: 0 };
-  if (ids.length === 0) return c.json({ anzahl: 0, gesamtTreffer: 0, limit: body.limit, bestand: 0, quellen, begriffe, firmen: [], semantik: semantikLeer }, 200);
+  if (!pool && ids.length === 0) return c.json({ bereich: body.bereich, anzahl: 0, gesamtTreffer: 0, limit, bestand: 0, quellen, begriffe, firmen: [], semantik: semantikLeer }, 200);
 
   const suchQuellen = quellen.filter((q): q is SuchQuelle => (SUCH_QUELLEN as readonly string[]).includes(q));
+  const bloeckeSuchen = () => (pool ? suchbloeckePoolSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length) : suchbloeckeSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length));
   const [ausBloecken, ausAbschluessen] = await Promise.all([
-    suchQuellen.length ? suchbloeckeSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length).catch((err) => { console.warn("[bestandssuche] suchblock:", err instanceof Error ? err.message : err); return []; }) : Promise.resolve([]),
-    quellen.includes("abschluss") ? abschlussAbfragen(ids, begriffe) : Promise.resolve([] as Treffer[]),
+    suchQuellen.length ? bloeckeSuchen().catch((err) => { console.warn("[bestandssuche] suchblock:", err instanceof Error ? err.message : err); return []; }) : Promise.resolve([]),
+    quellen.includes("abschluss") ? abschlussAbfragen(ids, begriffe, pool ? "ausser" : "nur") : Promise.resolve([] as Treffer[]),
   ]);
   const roh: Treffer[] = [...ausBloecken, ...ausAbschluessen];
   // S3: BM25 bleibt die Pflicht (nur Volltext-Treffer sind Kandidaten); der
@@ -160,22 +190,26 @@ bestandssucheRouter.openapi(route, async (c) => {
       return { companyId, rang, quellen: quellenDerFirma, belege: belege.slice(0, BELEGE_JE_FIRMA) };
     })
     .sort((a, b) => b.rang - a.rang);
-  const auswahl = gereiht.slice(0, body.limit);
-  const names = await resolveCompanyNames(getGatewayPool(), auswahl.map((x) => x.companyId));
+  const auswahl = gereiht.slice(0, limit);
+  const auswahlIds = auswahl.map((x) => x.companyId);
+  const [names, orte] = await Promise.all([resolveCompanyNames(getGatewayPool(), auswahlIds), pool ? orteAufloesen(auswahlIds) : Promise.resolve(new Map<string, string>())]);
   return c.json(
     {
+      bereich: body.bereich,
       anzahl: auswahl.length,
       gesamtTreffer: gereiht.length,
-      limit: body.limit,
+      limit,
       bestand: ids.length,
       quellen,
       begriffe,
       firmen: auswahl.map((x) => ({
         companyId: x.companyId,
         name: names.get(x.companyId) ?? null,
+        ort: orte.get(x.companyId) ?? null,
         rang: Math.round(x.rang * 1000) / 1000,
-        quellen: x.quellen,
-        belege: x.belege.map((b) => ({ quelle: b.quelle, titel: b.titel, auszug: b.auszug, url: b.url, datum: b.datum, rang: Math.round(b.rang * 10000) / 10000 })),
+        // Pool: Kandidat ohne Zusammenhang — Quellen und Belege bleiben leer.
+        quellen: pool ? [] : x.quellen,
+        belege: pool ? [] : x.belege.map((b) => ({ quelle: b.quelle, titel: b.titel, auszug: b.auszug, url: b.url, datum: b.datum, rang: Math.round(b.rang * 10000) / 10000 })),
       })),
       semantik,
     },

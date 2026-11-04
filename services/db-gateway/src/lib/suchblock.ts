@@ -119,6 +119,22 @@ export async function suchbloeckeSuchen(companyIds: string[], quellen: SuchQuell
   return r.rows.map((x) => ({ ...x, rang: Number(x.rang) || 0, auszug: (x.auszug ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }));
 }
 
+/** Pool-Suche: alle Bloecke AUSSER denen der uebergebenen Firmen (eigener Bestand). */
+export async function suchbloeckePoolSuchen(ausgeschlossen: string[], quellen: SuchQuelle[], begriffe: string[], maxZeilen: number): Promise<SuchTreffer[]> {
+  if (quellen.length === 0 || begriffe.length === 0) return [];
+  const q = tsqueryAusdruck(begriffe.length, 4);
+  const r = await getGatewayPool().query<SuchTreffer>(
+    `SELECT "companyId", quelle, titel, "quelleUrl" AS url, to_char(datum, 'YYYY-MM-DD') AS datum, embedding,
+            ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
+            ts_rank_cd(tsv, ${q}) AS rang
+     FROM "SuchBlock"
+     WHERE NOT ("companyId" = ANY($1::text[])) AND quelle = ANY($2::text[]) AND tsv @@ (${q})
+     ORDER BY rang DESC LIMIT $3`,
+    [ausgeschlossen, quellen, maxZeilen, ...begriffe],
+  );
+  return r.rows.map((x) => ({ ...x, rang: Number(x.rang) || 0, auszug: (x.auszug ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }));
+}
+
 // ---- Altbestand (einmalig, Betreiber) ----
 
 export interface BackfillStand { stelle: number; karriere: number; thema: number; kunde: number; profil: number; firmen: number; laeuft: boolean; fehler: string | null; gestartet: string | null; beendet: string | null }
