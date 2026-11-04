@@ -1412,6 +1412,7 @@ model SuchBlock {
   datum     DateTime?
   tsv       Unsupported("tsvector")?
   embedding Unsupported("real[]")?
+  embeddingModell String?
   updatedAt DateTime                 @default(now())
 
   @@unique([quelle, companyId, ref])

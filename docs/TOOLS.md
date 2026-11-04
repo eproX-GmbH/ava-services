@@ -13,10 +13,11 @@ Anzahl Tools: 306
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Durchsucht die Belege ALLER eigenen Firmen (Meine Firmen) per Volltext: Stellenanzeigen, Karriereseite, Fokus-Themen, Referenzen/Partner, Firmenprofil, Jahresabschluesse. Nutzen fuer Fragen wie 'welche meiner Firmen bieten betriebliche Altersvorsorge / nutzen SAP / suchen Vertriebler'. begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'). Es kommen nur Firmen zurueck, deren Belege einen der Begriffe enthalten; jede mit bis zu drei Belegen (Auszug, Quelle, URL). limit: Standard 5 Firmen; will der Nutzer mehr ('zeig mir 50'), limit entsprechend setzen (hoechstens 100). gesamtTreffer sagt, wie viele Firmen insgesamt passen.
+Durchsucht die Belege ALLER eigenen Firmen (Meine Firmen) per Volltext: Stellenanzeigen, Karriereseite, Fokus-Themen, Referenzen/Partner, Firmenprofil, Jahresabschluesse. Nutzen fuer Fragen wie 'welche meiner Firmen bieten betriebliche Altersvorsorge / nutzen SAP / suchen Vertriebler'. begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'). Es kommen nur Firmen zurueck, deren Belege einen der Begriffe enthalten; jede mit bis zu drei Belegen (Auszug, Quelle, URL). limit: Standard 5 Firmen; will der Nutzer mehr ('zeig mir 50'), limit entsprechend setzen (hoechstens 100). gesamtTreffer sagt, wie viele Firmen insgesamt passen. frage: die Frage des Nutzers in einem Satz — sie wird lokal als Vektor gerechnet und sortiert die Treffer semantisch nach (Volltext-Treffer bleibt Pflicht).
 
 _Parameter:_
 - `begriffe: array` (required) — Suchbegriffe, Synonyme und Abkuerzungen (1-12)
+- `frage: string` — Frage des Nutzers in einem Satz (fuer die semantische Nachsortierung)
 - `quellen: array` — Nur diese Quellen durchsuchen (leer = alle)
 - `limit: integer` — Anzahl Firmen im Ergebnis, Standard 5, hoechstens 100
 - `companyIds: array` — Optional: nur diese Firmen (Teilmenge des Bestands)

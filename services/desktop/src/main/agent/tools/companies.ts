@@ -1,4 +1,5 @@
 import * as yup from "yup";
+import { embedQueries } from "./publications";
 import { defineTool } from "../define-tool";
 import type { GatewayClient } from "../gateway-client";
 import type { Tool } from "../types";
@@ -983,11 +984,13 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       "Nutzen fuer Fragen wie 'welche meiner Firmen bieten betriebliche Altersvorsorge / nutzen SAP / suchen Vertriebler'. " +
       "begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'). " +
       "Es kommen nur Firmen zurueck, deren Belege einen der Begriffe enthalten; jede mit bis zu drei Belegen (Auszug, Quelle, URL). " +
-      "limit: Standard 5 Firmen; will der Nutzer mehr ('zeig mir 50'), limit entsprechend setzen (hoechstens 100). gesamtTreffer sagt, wie viele Firmen insgesamt passen.",
+      "limit: Standard 5 Firmen; will der Nutzer mehr ('zeig mir 50'), limit entsprechend setzen (hoechstens 100). gesamtTreffer sagt, wie viele Firmen insgesamt passen. " +
+      "frage: die Frage des Nutzers in einem Satz — sie wird lokal als Vektor gerechnet und sortiert die Treffer semantisch nach (Volltext-Treffer bleibt Pflicht).",
     parameters: {
       type: "object",
       properties: {
         begriffe: { type: "array", items: { type: "string" }, description: "Suchbegriffe, Synonyme und Abkuerzungen (1-12)" },
+        frage: { type: "string", description: "Frage des Nutzers in einem Satz (fuer die semantische Nachsortierung)" },
         quellen: { type: "array", items: { type: "string", enum: ["stelle", "karriere", "thema", "kunde", "profil", "abschluss"] }, description: "Nur diese Quellen durchsuchen (leer = alle)" },
         limit: { type: "integer", description: "Anzahl Firmen im Ergebnis, Standard 5, hoechstens 100" },
         companyIds: { type: "array", items: { type: "string" }, description: "Optional: nur diese Firmen (Teilmenge des Bestands)" },
@@ -996,17 +999,23 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
     schema: yup.object({
       begriffe: yup.array().of(yup.string().trim().min(2).max(60).required()).min(1).max(12).required(),
+      frage: yup.string().trim().max(300).optional(),
       quellen: yup.array().of(yup.string().oneOf(["stelle", "karriere", "thema", "kunde", "profil", "abschluss"]).required()).max(6).optional(),
       limit: yup.number().integer().min(1).max(100).optional(),
       companyIds: yup.array().of(yup.string().trim().min(1).required()).max(5000).optional(),
     }),
     run: async (args, c) => {
+      // S3: Frage (oder die Begriffe) lokal einbetten; ohne Ollama bleibt es bei BM25.
+      const frageText = (args.frage && args.frage.trim()) || args.begriffe.join(" ");
+      const vektoren = await embedQueries([frageText]).catch(() => null);
+      const frageEmbedding = vektoren?.[0] && vektoren[0].length >= 64 ? vektoren[0] : undefined;
       const r = await gateway.request<{
         anzahl: number; gesamtTreffer: number; limit: number; bestand: number; quellen: string[]; begriffe: string[];
         firmen: Array<{ companyId: string; name: string | null; rang: number; quellen: string[]; belege: Array<{ quelle: string; titel: string; auszug: string; url: string | null; datum: string | null }> }>;
+        semantik?: { aktiv: boolean; kandidaten: number; mitVektor: number };
       }>("/v1/companies/bestand/suche", {
         method: "POST",
-        body: { begriffe: args.begriffe, ...(args.quellen?.length ? { quellen: args.quellen } : {}), limit: args.limit ?? 5, ...(args.companyIds?.length ? { companyIds: args.companyIds } : {}) },
+        body: { begriffe: args.begriffe, ...(args.quellen?.length ? { quellen: args.quellen } : {}), limit: args.limit ?? 5, ...(args.companyIds?.length ? { companyIds: args.companyIds } : {}), ...(frageEmbedding ? { frageEmbedding } : {}) },
         signal: c.signal,
       });
       const QUELLE: Record<string, string> = { stelle: "Stellenanzeige", karriere: "Karriereseite", thema: "Fokus-Thema", kunde: "Referenz/Partner", profil: "Firmenprofil", abschluss: "Jahresabschluss" };
@@ -1015,6 +1024,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         gesamtTreffer: r.gesamtTreffer,
         bestand: r.bestand,
         begriffe: r.begriffe,
+        sortierung: r.semantik?.aktiv ? `Volltext plus semantische Nachsortierung (${r.semantik.mitVektor} von ${r.semantik.kandidaten} Belegen mit Vektor)` : "Volltext (BM25)",
         firmen: r.firmen.map((f) => ({
           companyId: f.companyId,
           name: f.name,

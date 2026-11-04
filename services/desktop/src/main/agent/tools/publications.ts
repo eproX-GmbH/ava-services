@@ -89,7 +89,7 @@ async function decomposeQuestion(
 }
 
 /** Queries lokal einbetten. null, wenn Ollama/Modell nicht verfuegbar. */
-async function embedQueries(queries: string[]): Promise<number[][] | null> {
+export async function embedQueries(queries: string[]): Promise<number[][] | null> {
   try {
     const res = await fetch(`${OLLAMA_URL}/api/embed`, {
       method: "POST",

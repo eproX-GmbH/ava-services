@@ -96,7 +96,7 @@ export function profilBloecke(p: { profile: string; url?: string | null; updated
 
 // ---- Suche ----
 
-export interface SuchTreffer { companyId: string; quelle: SuchQuelle; titel: string; auszug: string; url: string | null; datum: string | null; rang: number }
+export interface SuchTreffer { companyId: string; quelle: SuchQuelle; titel: string; auszug: string; url: string | null; datum: string | null; rang: number; embedding?: number[] | null }
 
 const HEADLINE = "'MaxWords=45, MinWords=20, MaxFragments=2, FragmentDelimiter=\" … \", StartSel=«, StopSel=»'";
 
@@ -108,7 +108,7 @@ export async function suchbloeckeSuchen(companyIds: string[], quellen: SuchQuell
   if (companyIds.length === 0 || quellen.length === 0 || begriffe.length === 0) return [];
   const q = tsqueryAusdruck(begriffe.length, 4);
   const r = await getGatewayPool().query<SuchTreffer>(
-    `SELECT "companyId", quelle, titel, "quelleUrl" AS url, to_char(datum, 'YYYY-MM-DD') AS datum,
+    `SELECT "companyId", quelle, titel, "quelleUrl" AS url, to_char(datum, 'YYYY-MM-DD') AS datum, embedding,
             ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
             ts_rank_cd(tsv, ${q}) AS rang
      FROM "SuchBlock"
@@ -183,4 +183,58 @@ export async function suchblockBackfill(log: (m: string) => void): Promise<void>
     stand.laeuft = false;
     stand.beendet = new Date().toISOString();
   }
+}
+
+// ---- S3: Vektoren (lokal gerechnet) ----
+
+export function kosinus(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < n; i++) { dot += a[i]! * b[i]!; na += a[i]! * a[i]!; nb += b[i]! * b[i]!; }
+  return na === 0 || nb === 0 ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/**
+ * BM25-Rang und Kosinus-Rang je Block per RRF (k=60) verschmelzen. Bloecke ohne
+ * Embedding behalten nur den BM25-Anteil. Liefert dieselben Treffer mit neuem
+ * `rang` (RRF-Summe), absteigend sortiert, plus Zaehler fuer die Antwort.
+ */
+export function fusioniere<T extends { rang: number; embedding?: number[] | null }>(treffer: T[], frageEmbedding: number[] | null): { treffer: T[]; mitEmbedding: number } {
+  const bm25 = [...treffer].sort((a, b) => b.rang - a.rang);
+  const bmRang = new Map<T, number>(bm25.map((t, i) => [t, i]));
+  if (!frageEmbedding) return { treffer: bm25, mitEmbedding: 0 };
+  const mitVektor = treffer.filter((t) => Array.isArray(t.embedding) && t.embedding.length > 0);
+  const kos = new Map<T, number>(mitVektor.map((t) => [t, kosinus(frageEmbedding, t.embedding as number[])]));
+  const kosRang = new Map<T, number>([...mitVektor].sort((a, b) => (kos.get(b) ?? 0) - (kos.get(a) ?? 0)).map((t, i) => [t, i]));
+  const K = 60;
+  const neu = treffer.map((t) => {
+    let r = 1 / (K + (bmRang.get(t) ?? treffer.length));
+    const kr = kosRang.get(t);
+    if (kr !== undefined) r += 1 / (K + kr);
+    return { ...t, rang: r };
+  });
+  neu.sort((a, b) => b.rang - a.rang);
+  return { treffer: neu, mitEmbedding: mitVektor.length };
+}
+
+/** Bloecke der genannten Firmen ohne Vektor (fuer den lokalen Einbetter des Desktops). */
+export async function offeneEmbeddings(companyIds: string[], limit: number): Promise<Array<{ id: string; titel: string; text: string }>> {
+  if (companyIds.length === 0) return [];
+  const r = await getGatewayPool().query<{ id: string; titel: string; text: string }>(
+    `SELECT id, titel, left(text, 4000) AS text FROM "SuchBlock" WHERE "companyId" = ANY($1::text[]) AND embedding IS NULL ORDER BY "updatedAt" DESC LIMIT $2`,
+    [companyIds, limit],
+  );
+  return r.rows;
+}
+
+/** Vektoren eintragen; nur Zeilen der genannten Firmen. Liefert die Zahl der geschriebenen Zeilen. */
+export async function embeddingsSetzen(companyIds: string[], modell: string, eintraege: Array<{ id: string; embedding: number[] }>): Promise<number> {
+  if (companyIds.length === 0 || eintraege.length === 0) return 0;
+  let n = 0;
+  const pool = getGatewayPool();
+  for (const e of eintraege) {
+    const r = await pool.query(`UPDATE "SuchBlock" SET embedding = $3::real[], "embeddingModell" = $4 WHERE id = $1 AND "companyId" = ANY($2::text[])`, [e.id, companyIds, e.embedding, modell]);
+    n += r.rowCount ?? 0;
+  }
+  return n;
 }

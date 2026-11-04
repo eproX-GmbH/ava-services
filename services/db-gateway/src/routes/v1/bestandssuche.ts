@@ -18,7 +18,7 @@ import { resolveCompanyNames } from "../../lib/company-names";
 import { ruhendeIds } from "../../lib/firmen-zustand";
 import { masterData } from "../../lib/register-jobs";
 import { istBetreiber, requireScope } from "../../middleware/auth";
-import { SUCH_QUELLEN, backfillStand, suchblockBackfill, suchbloeckeSuchen, tsqueryAusdruck, type SuchQuelle } from "../../lib/suchblock";
+import { SUCH_QUELLEN, backfillStand, embeddingsSetzen, fusioniere, offeneEmbeddings, suchblockBackfill, suchbloeckeSuchen, tsqueryAusdruck, type SuchQuelle } from "../../lib/suchblock";
 
 const ErrorShape = z.object({ error: z.string() });
 const errorResponses = {
@@ -42,6 +42,8 @@ const Body = z.object({
   limit: z.number().int().min(1).max(100).default(5),
   /** Optional: Teilmenge statt des ganzen Bestands (z. B. eine Liste aus dem Chat). */
   companyIds: z.array(z.string().min(1).max(120)).max(MAX_BESTAND).optional(),
+  /** S3: lokal gerechneter Vektor der Frage (embeddinggemma); verschmilzt per RRF mit BM25. */
+  frageEmbedding: z.array(z.number()).min(64).max(4096).optional(),
 });
 
 const Beleg = z.object({
@@ -71,6 +73,7 @@ const route = createRoute({
             quellen: z.array(z.enum(QUELLEN)),
             begriffe: z.array(z.string()),
             firmen: z.array(z.object({ companyId: z.string(), name: z.string().nullable(), rang: z.number(), quellen: z.array(z.enum(QUELLEN)), belege: z.array(Beleg) })),
+            semantik: z.object({ aktiv: z.boolean(), kandidaten: z.number(), mitVektor: z.number() }),
           }),
         },
       },
@@ -88,13 +91,14 @@ interface Treffer {
   url: string | null;
   datum: string | null;
   rang: number;
+  embedding?: number[] | null;
 }
 
 const HEADLINE = "'MaxWords=45, MinWords=20, MaxFragments=2, FragmentDelimiter=\" … \", StartSel=«, StopSel=»'";
 
 async function abschlussAbfragen(ids: string[], begriffe: string[]): Promise<Treffer[]> {
   const q = tsqueryAusdruck(begriffe.length, 3);
-  const sql = `SELECT "companyId", coalesce("docName", type) || coalesce(' ' || year::text, '') AS titel, NULL::text AS url, NULL::text AS datum,
+  const sql = `SELECT "companyId", coalesce("docName", type) || coalesce(' ' || year::text, '') AS titel, NULL::text AS url, NULL::text AS datum, embedding,
                       ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug, ts_rank_cd(tsv, ${q}) AS rang
                FROM "PublicationBlock" WHERE "companyId" = ANY($1::text[]) AND tsv @@ (${q}) ORDER BY rang DESC LIMIT $2`;
   try {
@@ -126,14 +130,20 @@ bestandssucheRouter.openapi(route, async (c) => {
     const menge = new Set(body.companyIds);
     ids = ids.filter((id) => menge.has(id));
   }
-  if (ids.length === 0) return c.json({ anzahl: 0, gesamtTreffer: 0, limit: body.limit, bestand: 0, quellen, begriffe, firmen: [] }, 200);
+  const semantikLeer = { aktiv: Boolean(body.frageEmbedding), kandidaten: 0, mitVektor: 0 };
+  if (ids.length === 0) return c.json({ anzahl: 0, gesamtTreffer: 0, limit: body.limit, bestand: 0, quellen, begriffe, firmen: [], semantik: semantikLeer }, 200);
 
   const suchQuellen = quellen.filter((q): q is SuchQuelle => (SUCH_QUELLEN as readonly string[]).includes(q));
   const [ausBloecken, ausAbschluessen] = await Promise.all([
     suchQuellen.length ? suchbloeckeSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length).catch((err) => { console.warn("[bestandssuche] suchblock:", err instanceof Error ? err.message : err); return []; }) : Promise.resolve([]),
     quellen.includes("abschluss") ? abschlussAbfragen(ids, begriffe) : Promise.resolve([] as Treffer[]),
   ]);
-  const treffer: Treffer[] = [...ausBloecken, ...ausAbschluessen];
+  const roh: Treffer[] = [...ausBloecken, ...ausAbschluessen];
+  // S3: BM25 bleibt die Pflicht (nur Volltext-Treffer sind Kandidaten); der
+  // Frage-Vektor sortiert die Kandidaten per RRF nach.
+  const fusion = fusioniere(roh, body.frageEmbedding ?? null);
+  const treffer = fusion.treffer;
+  const semantik = { aktiv: Boolean(body.frageEmbedding), kandidaten: roh.length, mitVektor: fusion.mitEmbedding };
 
   // Je Firma: bester Rang plus kleiner Bonus je weiterer Quelle; Belege nach Rang.
   const jeFirma = new Map<string, Treffer[]>();
@@ -165,11 +175,39 @@ bestandssucheRouter.openapi(route, async (c) => {
         name: names.get(x.companyId) ?? null,
         rang: Math.round(x.rang * 1000) / 1000,
         quellen: x.quellen,
-        belege: x.belege.map((b) => ({ quelle: b.quelle, titel: b.titel, auszug: b.auszug, url: b.url, datum: b.datum, rang: Math.round(b.rang * 1000) / 1000 })),
+        belege: x.belege.map((b) => ({ quelle: b.quelle, titel: b.titel, auszug: b.auszug, url: b.url, datum: b.datum, rang: Math.round(b.rang * 10000) / 10000 })),
       })),
+      semantik,
     },
     200,
   );
+});
+
+// ---- S3: Vektoren kommen vom Desktop (lokal gerechnet) ----
+
+const offenRoute = createRoute({
+  method: "get", path: "/suchblock/offen", tags: ["companies"], summary: "Bloecke der eigenen Firmen ohne Vektor (fuer den lokalen Einbetter)",
+  request: { query: z.object({ limit: z.coerce.number().int().min(1).max(200).default(40) }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ bloecke: z.array(z.object({ id: z.string(), titel: z.string(), text: z.string() })) }) } }, description: "Bloecke" }, ...errorResponses },
+});
+bestandssucheRouter.openapi(offenRoute, async (c) => {
+  const auth = c.get("auth") as { actorId?: string | null } | undefined;
+  if (!auth?.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const ids = await bestandIds(auth.actorId);
+  return c.json({ bloecke: await offeneEmbeddings(ids, c.req.valid("query").limit) }, 200);
+});
+
+const embeddingsRoute = createRoute({
+  method: "put", path: "/suchblock/embeddings", tags: ["companies"], summary: "Lokal gerechnete Vektoren fuer Bloecke der eigenen Firmen eintragen",
+  request: { body: { content: { "application/json": { schema: z.object({ modell: z.string().min(1).max(80), eintraege: z.array(z.object({ id: z.string().min(1).max(64), embedding: z.array(z.number()).min(64).max(4096) })).min(1).max(200) }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ geschrieben: z.number() }) } }, description: "Anzahl" }, ...errorResponses },
+});
+bestandssucheRouter.openapi(embeddingsRoute, async (c) => {
+  const auth = c.get("auth") as { actorId?: string | null } | undefined;
+  if (!auth?.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
+  const body = c.req.valid("json");
+  const ids = await bestandIds(auth.actorId);
+  return c.json({ geschrieben: await embeddingsSetzen(ids, body.modell, body.eintraege) }, 200);
 });
 
 // ---- Betreiber: Altbestand nach SuchBlock uebernehmen (einmalig) ----

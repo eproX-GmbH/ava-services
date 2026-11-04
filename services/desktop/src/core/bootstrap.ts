@@ -12,6 +12,7 @@
 //   ... Hülle registriert IPC / Fenster ...
 //   await core.startBackground();                      // Ollama, Postgres, Producer, Herzschlag, Worker-Modus
 
+import { SuchblockEmbedder } from "../main/suchblock-embedder";
 import { ProblemAbholer } from "../main/problem/abholen";
 import { problemMelden } from "../main/problem/melden";
 import { PersonenAbgleich } from "../main/contacts/personen-abgleich";
@@ -1686,6 +1687,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       return new Map([...w].map(([id, x]) => [id, x.rang]));
     },
   });
+  // Bestandssuche S3: Vektoren der Belegtabelle lokal rechnen (docs/PLAN_BESTANDSSUCHE.md).
+  const suchblockEmbedder = new SuchblockEmbedder({ gateway: gatewayClient, ollamaStatus: () => ollama.getStatus(), signedIn: () => Boolean(auth.getStatus().signedIn) });
   function broadcastFreshnessPrefsChanged(): void {
     const next = freshnessPrefs.get();
     windows().broadcast("freshness:prefs-changed", next);
@@ -4577,6 +4580,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     // (default true). The `changed` listener above hooks pref-toggle
     // transitions so changing the toggle takes effect without restart.
     if (freshnessPrefs.get().enabled) freshness.start();
+    suchblockEmbedder.start();
     // Whisper sidecar (8.n1). Probes binary + model presence and emits
     // a status frame. Failure modes (missing binary, missing model) are
     // not fatal — the rest of the app still runs; the Settings panel
@@ -4618,6 +4622,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       anlaufen: () => freshness.start(),
       darfLaufen: () => freshnessPrefs.get().enabled,
     });
+    workerModus.anmelden({ name: "Suchindex-Vektoren", anhalten: () => suchblockEmbedder.stop(), anlaufen: () => suchblockEmbedder.start() });
     workerModus.anmelden({ name: "Nachlauf haengender Schritte", anhalten: () => stopPeriodicResumeSweep(), anlaufen: () => startPeriodicResumeSweep() });
     workerModus.anmelden({
       name: "Producer",
