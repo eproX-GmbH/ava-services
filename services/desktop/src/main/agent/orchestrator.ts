@@ -312,6 +312,14 @@ export class AgentOrchestrator extends EventEmitter {
       this.registry.register(t);
     }
 
+    // 2026-11-04: Kern-Werkzeuge muessen registriert sein, sonst verspricht
+    // der System-Prompt etwas, das das Modell nie sieht (bestand_suchen lag
+    // v0.1.923-926 nur in einer Bereichsliste und war nie aufrufbar).
+    const fehlendeKernWerkzeuge = [...ALWAYS_ON_CORE_TOOL_NAMES].filter((n) => !this.registry.get(n));
+    if (fehlendeKernWerkzeuge.length > 0) {
+      console.error(`[orchestrator] Kern-Werkzeuge nicht registriert: ${fehlendeKernWerkzeuge.join(", ")}`);
+    }
+
     // Re-emit status when the active provider moves so the renderer's
     // Chat tab can re-enable the input the moment the model is ready.
     // Covers both Ollama lifecycle transitions and OpenAI key changes.
