@@ -276,6 +276,12 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   "company_get",
   "company_contacts",
   "crm_search_hubspot_companies",
+  // 2026-11-04 (Bestandssuche S5): "Gibt es Firmen, die X bieten?" ist
+  // die haeufigste Bestandsfrage. Ueber tool_search/tool_load fragte das
+  // Modell lieber zweimal nach und antwortete dann aus dem Training
+  // (Befund Joyce 2026-11-04, 300k Tokens ohne einen Suchaufruf).
+  // Always-on macht die Bestandssuche zum 1-Hop-Pfad.
+  "bestand_suchen",
 ]);
 
 // v0.1.244 — Tool-Bundles. Wenn `tool_search` Treffer aus einer

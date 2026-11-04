@@ -979,9 +979,10 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   // (Patrick 2026-11-04): vorher gab es nur Werkzeuge je Firma.
   const bestandSuchen = defineTool({
     name: "bestand_suchen",
+    summary: "Welche eigenen Firmen bieten, nutzen, suchen oder nennen X? Volltext ueber die Belege aller Firmen in Meine Firmen (Stellen, Karriere, Themen, Referenzen, Profil, Abschluss).",
     description:
       "Durchsucht die Belege ALLER eigenen Firmen (Meine Firmen) per Volltext: Stellenanzeigen, Karriereseite, Fokus-Themen, Referenzen/Partner, Firmenprofil, Jahresabschluesse. " +
-      "Nutzen fuer Fragen wie 'welche meiner Firmen bieten betriebliche Altersvorsorge / nutzen SAP / suchen Vertriebler'. " +
+      "PFLICHT bei jeder Frage ueber den Bestand ('gibt es Firmen, die …', 'welche meiner Firmen bieten/nutzen/suchen/haben …', 'wer von meinen Firmen …'): SOFORT aufrufen, keine Rueckfrage, keine Antwort aus Allgemeinwissen. " +
       "begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'); keine einzelnen Allerweltswoerter wie 'Remote', 'OEM', 'E-Bike', 'CO2' (treffen Fremdes), lieber zusammengesetzte Begriffe. " +
       "quellen nach Frageart waehlen: 'bietet Mitarbeitenden X' → karriere, thema, stelle; 'sucht/stellt ein' → stelle; 'nutzt/setzt ein (Technologie)' → stelle, profil; 'beliefert Branche/hat Kunden in' → kunde, profil; 'zertifiziert nach' → kunde, profil, thema; 'Zahlen/Lage' → abschluss; unklar → alle. " +
       "Belege IMMER lesen und einordnen: ein Treffer bei einer Referenz ('SAP' als Partner) heisst nicht, dass die Firma SAP nutzt. " +
