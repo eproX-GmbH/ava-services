@@ -1072,7 +1072,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     stellen,
     expansion,
     fokus,
-    bestandSuchen,
     register: structuredContent,
     stichworte: keywords,
     publikationen: publications,
@@ -1422,6 +1421,9 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     personDelete,
     search,
     get,
+    // Bestandssuche (docs/PLAN_BESTANDSSUCHE.md). Bis v0.1.926 stand sie
+    // versehentlich nur in BEREICHE und war damit nie registriert.
+    bestandSuchen,
     insolvency,
     profile,
     keywords,
