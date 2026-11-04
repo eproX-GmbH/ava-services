@@ -973,6 +973,60 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     preview: (r) => `${r.anzahl} Eintraege`,
   });
 
+  // Bestandssuche (docs/PLAN_BESTANDSSUCHE.md S1): Volltext ueber die Belege
+  // ALLER eigenen Firmen. Antwort auf "welche meiner Firmen bieten bAV?"
+  // (Patrick 2026-11-04): vorher gab es nur Werkzeuge je Firma.
+  const bestandSuchen = defineTool({
+    name: "bestand_suchen",
+    description:
+      "Durchsucht die Belege ALLER eigenen Firmen (Meine Firmen) per Volltext: Stellenanzeigen, Karriereseite, Fokus-Themen, Referenzen/Partner, Firmenprofil, Jahresabschluesse. " +
+      "Nutzen fuer Fragen wie 'welche meiner Firmen bieten betriebliche Altersvorsorge / nutzen SAP / suchen Vertriebler'. " +
+      "begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'). " +
+      "Es kommen nur Firmen zurueck, deren Belege einen der Begriffe enthalten; jede mit bis zu drei Belegen (Auszug, Quelle, URL). " +
+      "limit: Standard 5 Firmen; will der Nutzer mehr ('zeig mir 50'), limit entsprechend setzen (hoechstens 100). gesamtTreffer sagt, wie viele Firmen insgesamt passen.",
+    parameters: {
+      type: "object",
+      properties: {
+        begriffe: { type: "array", items: { type: "string" }, description: "Suchbegriffe, Synonyme und Abkuerzungen (1-12)" },
+        quellen: { type: "array", items: { type: "string", enum: ["stelle", "karriere", "thema", "kunde", "profil", "abschluss"] }, description: "Nur diese Quellen durchsuchen (leer = alle)" },
+        limit: { type: "integer", description: "Anzahl Firmen im Ergebnis, Standard 5, hoechstens 100" },
+        companyIds: { type: "array", items: { type: "string" }, description: "Optional: nur diese Firmen (Teilmenge des Bestands)" },
+      },
+      required: ["begriffe"],
+    },
+    schema: yup.object({
+      begriffe: yup.array().of(yup.string().trim().min(2).max(60).required()).min(1).max(12).required(),
+      quellen: yup.array().of(yup.string().oneOf(["stelle", "karriere", "thema", "kunde", "profil", "abschluss"]).required()).max(6).optional(),
+      limit: yup.number().integer().min(1).max(100).optional(),
+      companyIds: yup.array().of(yup.string().trim().min(1).required()).max(5000).optional(),
+    }),
+    run: async (args, c) => {
+      const r = await gateway.request<{
+        anzahl: number; gesamtTreffer: number; limit: number; bestand: number; quellen: string[]; begriffe: string[];
+        firmen: Array<{ companyId: string; name: string | null; rang: number; quellen: string[]; belege: Array<{ quelle: string; titel: string; auszug: string; url: string | null; datum: string | null }> }>;
+      }>("/v1/companies/bestand/suche", {
+        method: "POST",
+        body: { begriffe: args.begriffe, ...(args.quellen?.length ? { quellen: args.quellen } : {}), limit: args.limit ?? 5, ...(args.companyIds?.length ? { companyIds: args.companyIds } : {}) },
+        signal: c.signal,
+      });
+      const QUELLE: Record<string, string> = { stelle: "Stellenanzeige", karriere: "Karriereseite", thema: "Fokus-Thema", kunde: "Referenz/Partner", profil: "Firmenprofil", abschluss: "Jahresabschluss" };
+      return {
+        anzahl: r.anzahl,
+        gesamtTreffer: r.gesamtTreffer,
+        bestand: r.bestand,
+        begriffe: r.begriffe,
+        firmen: r.firmen.map((f) => ({
+          companyId: f.companyId,
+          name: f.name,
+          belege: f.belege.map((b) => ({ art: QUELLE[b.quelle] ?? b.quelle, titel: b.titel, auszug: b.auszug, ...(b.url ? { quelle: b.url } : {}), ...(b.datum ? { datum: b.datum } : {}) })),
+        })),
+        ...(r.gesamtTreffer > r.anzahl ? { hinweis: `${r.gesamtTreffer - r.anzahl} weitere Firmen passen; mit limit bis 100 abrufbar.` } : {}),
+        ...(r.gesamtTreffer === 0 ? { hinweis: `Keine Belege zu ${r.begriffe.join(", ")} in ${r.bestand} Firmen. Andere Schreibweisen/Synonyme versuchen oder Fokus-Thema anlegen (themen_set) und pruefen lassen (research_run feature themen).` } : {}),
+      };
+    },
+    preview: (r) => `${r.anzahl} von ${r.gesamtTreffer} Firmen mit Belegen`,
+  });
+
   const fokus = defineTool({
     name: "company_fokus",
     description: "Befund der Fokus-Themen des Nutzers bei einer Firma (gefunden / nicht gefunden / unklar, je mit Zitat und Quelle).",
@@ -1005,6 +1059,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     stellen,
     expansion,
     fokus,
+    bestandSuchen,
     register: structuredContent,
     stichworte: keywords,
     publikationen: publications,

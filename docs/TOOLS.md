@@ -4,10 +4,22 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-03
-Anzahl Tools: 305
+Stand: 2026-11-04
+Anzahl Tools: 306
 
-## Firmen (28)
+## Firmen (29)
+
+### `bestand_suchen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Durchsucht die Belege ALLER eigenen Firmen (Meine Firmen) per Volltext: Stellenanzeigen, Karriereseite, Fokus-Themen, Referenzen/Partner, Firmenprofil, Jahresabschluesse. Nutzen fuer Fragen wie 'welche meiner Firmen bieten betriebliche Altersvorsorge / nutzen SAP / suchen Vertriebler'. begriffe: IMMER mehrere Schreibweisen und Synonyme mitgeben (z. B. 'betriebliche Altersvorsorge', 'bAV', 'Altersvorsorge', 'Pensionskasse'). Es kommen nur Firmen zurueck, deren Belege einen der Begriffe enthalten; jede mit bis zu drei Belegen (Auszug, Quelle, URL). limit: Standard 5 Firmen; will der Nutzer mehr ('zeig mir 50'), limit entsprechend setzen (hoechstens 100). gesamtTreffer sagt, wie viele Firmen insgesamt passen.
+
+_Parameter:_
+- `begriffe: array` (required) — Suchbegriffe, Synonyme und Abkuerzungen (1-12)
+- `quellen: array` — Nur diese Quellen durchsuchen (leer = alle)
+- `limit: integer` — Anzahl Firmen im Ergebnis, Standard 5, hoechstens 100
+- `companyIds: array` — Optional: nur diese Firmen (Teilmenge des Bestands)
 
 ### `company_contacts`
 
