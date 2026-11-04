@@ -207,6 +207,14 @@ export async function callUpstreamBinary(
       },
       "upstream binary call failed",
     );
+    // 2026-11-04 (Befund Alessandro, PM-2026-0005): master-data weist eine
+    // unbestaetigte Keycloak-Identitaet mit 404 ab; als "not_found" kam das
+    // beim Nutzer als "keine Firma bekannt" an. Klar benennen, 403 statt 404.
+    if (res.status === 404 && /unverified keycloak identity/i.test(bodySnippet)) {
+      throw new HTTPException(403, {
+        message: "email_nicht_bestaetigt: Die E-Mail-Adresse dieses Kontos ist noch nicht bestaetigt. Bestaetigungs-Mail oeffnen oder den Betreiber bitten, die Adresse zu bestaetigen; danach einmal ab- und wieder anmelden.",
+      });
+    }
     if (res.status === 404) throw new HTTPException(404, { message: "not_found" });
     if (res.status === 413) throw new HTTPException(413, { message: "payload_too_large" });
     // Forward client-error statuses (400/422 etc.) so the Desktop sees the
@@ -290,6 +298,14 @@ export async function callUpstreamBinaryExpectJson(
       },
       "upstream binary call (json) failed",
     );
+    // 2026-11-04 (Befund Alessandro, PM-2026-0005): master-data weist eine
+    // unbestaetigte Keycloak-Identitaet mit 404 ab; als "not_found" kam das
+    // beim Nutzer als "keine Firma bekannt" an. Klar benennen, 403 statt 404.
+    if (res.status === 404 && /unverified keycloak identity/i.test(text)) {
+      throw new HTTPException(403, {
+        message: "email_nicht_bestaetigt: Die E-Mail-Adresse dieses Kontos ist noch nicht bestaetigt. Bestaetigungs-Mail oeffnen oder den Betreiber bitten, die Adresse zu bestaetigen; danach einmal ab- und wieder anmelden.",
+      });
+    }
     if (res.status === 404) throw new HTTPException(404, { message: "not_found" });
     if (res.status === 413) throw new HTTPException(413, { message: "payload_too_large" });
     if (res.status >= 400 && res.status < 500) {
