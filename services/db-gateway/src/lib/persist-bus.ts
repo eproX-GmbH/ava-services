@@ -53,6 +53,7 @@ import { loadEnv } from "./env";
 import { logger } from "./logger";
 import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
 import { getProducerPool, getGatewayPool } from "./producer-pools";
+import { karriereBloecke, profilBloecke, stellenBloecke, suchbloeckeErsetzenLeise, themenBloecke } from "./suchblock";
 import { laufAbschliessen, researchFeaturesAusSource } from "./research-lauf";
 import {
   diffManagingDirectors,
@@ -746,6 +747,8 @@ const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
     }
 
     await client.query("COMMIT");
+    // Bestandssuche S2: Profiltext als Beleg spiegeln (nur wenn der Stand neuer war).
+    if (wroteProfile) await suchbloeckeErsetzenLeise(result.companyId, "profil", profilBloecke({ profile: result.profile, url: result.url, updatedAt }), (m) => log.warn({ companyId: result.companyId }, m));
     log.info(
       {
         runId,
@@ -1813,6 +1816,12 @@ const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
     }
 
     await client.query("COMMIT");
+
+    // Bestandssuche S2 (docs/PLAN_BESTANDSSUCHE.md): Belege nach SuchBlock spiegeln, best-effort.
+    const warn = (m: string) => log.warn({ companyId }, m);
+    if (Array.isArray(result.jobPostings)) await suchbloeckeErsetzenLeise(companyId, "stelle", stellenBloecke(result.jobPostings), warn);
+    if (Array.isArray(result.themen)) await suchbloeckeErsetzenLeise(companyId, "thema", themenBloecke(result.themen.map((t) => ({ ...t, updatedAt: computedAt }))), warn);
+    if (result.karriere) await suchbloeckeErsetzenLeise(companyId, "karriere", karriereBloecke({ ...result.karriere, updatedAt: computedAt }), warn);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;

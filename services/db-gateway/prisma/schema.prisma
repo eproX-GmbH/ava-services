@@ -1399,3 +1399,21 @@ model A2aTask {
 
   @@index([actorId, createdAt])
 }
+
+/// docs/PLAN_BESTANDSSUCHE.md S2 — Belege aller Quellen fuer die Bestandssuche (tsv generiert, Embedding S3).
+model SuchBlock {
+  id        String                   @id
+  companyId String
+  quelle    String
+  ref       String
+  titel     String
+  text      String
+  quelleUrl String?
+  datum     DateTime?
+  tsv       Unsupported("tsvector")?
+  embedding Unsupported("real[]")?
+  updatedAt DateTime                 @default(now())
+
+  @@unique([quelle, companyId, ref])
+  @@index([companyId, quelle])
+}

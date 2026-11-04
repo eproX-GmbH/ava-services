@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { Logger } from "pino";
 import { getGatewayPool } from "./producer-pools";
+import { kundenBloecke, suchbloeckeErsetzenLeise } from "./suchblock";
 
 export type KundenArt = "kunde" | "partner" | "referenzprojekt" | "zertifikat" | "technologiepartner";
 export const KUNDEN_ARTEN: KundenArt[] = ["kunde", "partner", "referenzprojekt", "zertifikat", "technologiepartner"];
@@ -134,6 +135,9 @@ export async function schreibeKunden(
       geschrieben += 1;
     }
     log.info({ companyId, kunden: geschrieben }, "kunden persisted");
+    // Bestandssuche S2: alle Referenzen der Firma (auch aeltere) als Belege spiegeln.
+    const alle = await pool.query<{ name: string; art: string; beleg: string | null; quelle: string | null; zuletztGesehen: Date }>(`SELECT name, art, beleg, quelle, "zuletztGesehen" FROM "CompanyKunde" WHERE "companyId" = $1`, [companyId]);
+    await suchbloeckeErsetzenLeise(companyId, "kunde", kundenBloecke(alle.rows), (m) => log.warn({ companyId }, m));
   } catch (err) {
     log.warn({ err, companyId }, "kunden persist failed (best-effort, persist unaffected)");
   }

@@ -7,17 +7,18 @@
 // (tsquery-Match, Joyce 2026-11-04: "wenigstens im Ansatz"). Ergebnis je Firma
 // mit bis zu drei Belegen (Auszug, Quelle, URL), Standard 5 Firmen, bis 100.
 //
-// S2 ersetzt die Abfragen je Tabelle durch die zentrale Tabelle SuchBlock mit
-// Embeddings (lokal gerechnet) — die Schnittstelle bleibt.
+// S2: Stellen, Karriere, Themen, Referenzen, Profil kommen aus der zentralen
+// Tabelle SuchBlock (lib/suchblock.ts, GIN auf tsv); Abschlussbloecke weiter
+// aus PublicationBlock. S3 ergaenzt Embeddings (lokal gerechnet).
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import type pg from "pg";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { resolveCompanyNames } from "../../lib/company-names";
 import { ruhendeIds } from "../../lib/firmen-zustand";
 import { masterData } from "../../lib/register-jobs";
-import { requireScope } from "../../middleware/auth";
+import { istBetreiber, requireScope } from "../../middleware/auth";
+import { SUCH_QUELLEN, backfillStand, suchblockBackfill, suchbloeckeSuchen, tsqueryAusdruck, type SuchQuelle } from "../../lib/suchblock";
 
 const ErrorShape = z.object({ error: z.string() });
 const errorResponses = {
@@ -89,91 +90,20 @@ interface Treffer {
   rang: number;
 }
 
-/** tsquery-Ausdruck: jeder Begriff als websearch-Query, alle ODER-verknuepft. */
-function tsqueryAusdruck(anzahl: number, offset: number): string {
-  return Array.from({ length: anzahl }, (_, i) => `websearch_to_tsquery('german', $${offset + i})`).join(" || ");
-}
-
 const HEADLINE = "'MaxWords=45, MinWords=20, MaxFragments=2, FragmentDelimiter=\" … \", StartSel=«, StopSel=»'";
 
-async function quelleAbfragen(pool: pg.Pool, quelle: Quelle, ids: string[], begriffe: string[]): Promise<Treffer[]> {
+async function abschlussAbfragen(ids: string[], begriffe: string[]): Promise<Treffer[]> {
   const q = tsqueryAusdruck(begriffe.length, 3);
-  const params: unknown[] = [ids, MAX_JE_QUELLE, ...begriffe];
-  let sql: string;
-  switch (quelle) {
-    case "stelle":
-      sql = `WITH t AS (
-          SELECT "companyId", title AS titel, "sourceUrl" AS url, to_char("releaseDate", 'YYYY-MM-DD') AS datum,
-                 concat_ws(' ', title, description, array_to_string(requirements, ' '), array_to_string(technologies, ' '), array_to_string(benefits, ' ')) AS text
-          FROM "JobPosting" WHERE "companyId" = ANY($1::text[]))
-        SELECT "companyId", titel, url, datum, ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
-               ts_rank_cd(to_tsvector('german', text), ${q}) AS rang
-        FROM t WHERE to_tsvector('german', text) @@ (${q}) ORDER BY rang DESC LIMIT $2`;
-      break;
-    case "karriere":
-      sql = `WITH t AS (
-          SELECT "companyId", 'Karriereseite' AS titel, "quelleUrl" AS url, to_char("updatedAt", 'YYYY-MM-DD') AS datum,
-                 concat_ws(' • ', array_to_string(benefits, ' • '), auszug) AS text
-          FROM "CompanyKarriere" WHERE "companyId" = ANY($1::text[]))
-        SELECT "companyId", titel, url, datum, ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
-               ts_rank_cd(to_tsvector('german', text), ${q}) AS rang
-        FROM t WHERE to_tsvector('german', text) @@ (${q}) ORDER BY rang DESC LIMIT $2`;
-      break;
-    case "thema":
-      sql = `WITH t AS (
-          SELECT "companyId", 'Fokus-Thema: ' || name || ' (' || status || ')' AS titel, "quelleUrl" AS url, to_char("updatedAt", 'YYYY-MM-DD') AS datum,
-                 concat_ws(' ', name, zitat, ueberschrift, begruendung) AS text
-          FROM "CompanyThema" WHERE "companyId" = ANY($1::text[]) AND status IN ('gefunden', 'unklar'))
-        SELECT "companyId", titel, url, datum, ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
-               ts_rank_cd(to_tsvector('german', text), ${q}) AS rang
-        FROM t WHERE to_tsvector('german', text) @@ (${q}) ORDER BY rang DESC LIMIT $2`;
-      break;
-    case "kunde":
-      sql = `WITH t AS (
-          SELECT "companyId", 'Referenz/Partner: ' || name AS titel, quelle AS url, to_char("zuletztGesehen", 'YYYY-MM-DD') AS datum,
-                 concat_ws(' ', name, art, beleg) AS text
-          FROM "CompanyKunde" WHERE "companyId" = ANY($1::text[]))
-        SELECT "companyId", titel, url, datum, ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
-               ts_rank_cd(to_tsvector('german', text), ${q}) AS rang
-        FROM t WHERE to_tsvector('german', text) @@ (${q}) ORDER BY rang DESC LIMIT $2`;
-      break;
-    case "profil":
-      sql = `WITH t AS (
-          SELECT id AS "companyId", 'Firmenprofil' AS titel, url, to_char("updatedAt", 'YYYY-MM-DD') AS datum, profile AS text
-          FROM "CompanyProfile" WHERE id = ANY($1::text[]))
-        SELECT "companyId", titel, url, datum, ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
-               ts_rank_cd(to_tsvector('german', text), ${q}) AS rang
-        FROM t WHERE to_tsvector('german', text) @@ (${q}) ORDER BY rang DESC LIMIT $2`;
-      break;
-    case "abschluss":
-      sql = `SELECT "companyId", coalesce("docName", type) || coalesce(' ' || year::text, '') AS titel, NULL::text AS url, NULL::text AS datum,
-                    ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug, ts_rank_cd(tsv, ${q}) AS rang
-             FROM "PublicationBlock" WHERE "companyId" = ANY($1::text[]) AND tsv @@ (${q}) ORDER BY rang DESC LIMIT $2`;
-      break;
-  }
+  const sql = `SELECT "companyId", coalesce("docName", type) || coalesce(' ' || year::text, '') AS titel, NULL::text AS url, NULL::text AS datum,
+                      ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug, ts_rank_cd(tsv, ${q}) AS rang
+               FROM "PublicationBlock" WHERE "companyId" = ANY($1::text[]) AND tsv @@ (${q}) ORDER BY rang DESC LIMIT $2`;
   try {
-    const r = await pool.query<Omit<Treffer, "quelle">>(sql, params);
-    return r.rows.map((x) => ({ ...x, quelle, rang: Number(x.rang) || 0, auszug: (x.auszug ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }));
+    const r = await getProducerPool("company-publication").query<Omit<Treffer, "quelle">>(sql, [ids, MAX_JE_QUELLE, ...begriffe]);
+    return r.rows.map((x) => ({ ...x, quelle: "abschluss" as const, rang: Number(x.rang) || 0, auszug: (x.auszug ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }));
   } catch (err) {
-    // 42P01 = Tabelle existiert (noch) nicht — Quelle ohne Treffer.
     if ((err as { code?: string }).code === "42P01") return [];
-    console.warn(`[bestandssuche] ${quelle}:`, err instanceof Error ? err.message : err);
+    console.warn("[bestandssuche] abschluss:", err instanceof Error ? err.message : err);
     return [];
-  }
-}
-
-function poolFuer(quelle: Quelle): pg.Pool {
-  switch (quelle) {
-    case "stelle":
-    case "karriere":
-    case "thema":
-      return getProducerPool("website");
-    case "kunde":
-      return getGatewayPool();
-    case "profil":
-      return getProducerPool("company-profile");
-    case "abschluss":
-      return getProducerPool("company-publication");
   }
 }
 
@@ -198,7 +128,12 @@ bestandssucheRouter.openapi(route, async (c) => {
   }
   if (ids.length === 0) return c.json({ anzahl: 0, gesamtTreffer: 0, limit: body.limit, bestand: 0, quellen, begriffe, firmen: [] }, 200);
 
-  const treffer = (await Promise.all(quellen.map((q) => quelleAbfragen(poolFuer(q), q, ids, begriffe)))).flat();
+  const suchQuellen = quellen.filter((q): q is SuchQuelle => (SUCH_QUELLEN as readonly string[]).includes(q));
+  const [ausBloecken, ausAbschluessen] = await Promise.all([
+    suchQuellen.length ? suchbloeckeSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length).catch((err) => { console.warn("[bestandssuche] suchblock:", err instanceof Error ? err.message : err); return []; }) : Promise.resolve([]),
+    quellen.includes("abschluss") ? abschlussAbfragen(ids, begriffe) : Promise.resolve([] as Treffer[]),
+  ]);
+  const treffer: Treffer[] = [...ausBloecken, ...ausAbschluessen];
 
   // Je Firma: bester Rang plus kleiner Bonus je weiterer Quelle; Belege nach Rang.
   const jeFirma = new Map<string, Treffer[]>();
@@ -235,4 +170,29 @@ bestandssucheRouter.openapi(route, async (c) => {
     },
     200,
   );
+});
+
+// ---- Betreiber: Altbestand nach SuchBlock uebernehmen (einmalig) ----
+
+const standRoute = createRoute({
+  method: "get", path: "/betreiber/suchblock/stand", tags: ["companies"], summary: "Betreiber: Stand der SuchBlock-Tabelle und des Backfills",
+  responses: { 200: { content: { "application/json": { schema: z.object({ zeilen: z.record(z.string(), z.number()), backfill: z.record(z.string(), z.unknown()) }) } }, description: "Stand" }, ...errorResponses },
+});
+bestandssucheRouter.openapi(standRoute, async (c) => {
+  if (!istBetreiber(c.get("auth"))) throw new HTTPException(404, { message: "not_found" });
+  const r = await getGatewayPool().query<{ quelle: string; n: string }>(`SELECT quelle, count(*)::text AS n FROM "SuchBlock" GROUP BY quelle`).catch(() => ({ rows: [] as Array<{ quelle: string; n: string }> }));
+  const zeilen: Record<string, number> = {};
+  for (const x of r.rows) zeilen[x.quelle] = Number(x.n);
+  return c.json({ zeilen, backfill: backfillStand() as unknown as Record<string, unknown> }, 200);
+});
+
+const backfillRoute = createRoute({
+  method: "post", path: "/betreiber/suchblock/backfill", tags: ["companies"], summary: "Betreiber: alle vorhandenen Belege einmal nach SuchBlock uebernehmen (laeuft im Hintergrund)",
+  responses: { 200: { content: { "application/json": { schema: z.object({ gestartet: z.boolean(), backfill: z.record(z.string(), z.unknown()) }) } }, description: "gestartet" }, ...errorResponses },
+});
+bestandssucheRouter.openapi(backfillRoute, async (c) => {
+  if (!istBetreiber(c.get("auth"))) throw new HTTPException(404, { message: "not_found" });
+  const vorher = backfillStand();
+  if (!vorher.laeuft) void suchblockBackfill((m) => console.info(m));
+  return c.json({ gestartet: !vorher.laeuft, backfill: backfillStand() as unknown as Record<string, unknown> }, 200);
 });
