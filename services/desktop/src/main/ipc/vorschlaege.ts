@@ -38,6 +38,14 @@ ipcMain.handle("aufgaben:abbrechen", (_e, id: string) => hintergrundAufgaben.abb
     }),
   );
 
+  // Vorschlag wegklicken (2026-11-04): merken, Cache verwerfen; der Renderer entfernt den Chip sofort.
+  ipcMain.handle("suggestions:ablehnen", (_e, chip: { titel?: unknown; gruppe?: unknown } | undefined) => {
+    const titel = typeof chip?.titel === "string" ? chip.titel.trim() : "";
+    const gruppe = typeof chip?.gruppe === "string" ? chip.gruppe.trim() : "";
+    if (!titel || !gruppe) return { abgelehnt: 0 };
+    return chipErzeugung.current!.ablehnen({ titel, gruppe });
+  });
+
   ipcMain.handle("suggestions:getSettings", () => ({ ...vorschlaegeSettings.current!.get(), orgErlaubt: featureEnabled("vorschlaege") }));
 
   ipcMain.handle("suggestions:setSettings", (_e, patch: { startseite?: boolean; gespraech?: boolean }) => {

@@ -1803,6 +1803,7 @@ const api = {
     faehigkeiten: (): Promise<{ gruppen: import("../shared/nutzerstand-types").Faehigkeit[]; text: string; nichtZugeordnet: string[] }> =>
       ipcRenderer.invoke("suggestions:faehigkeiten"),
     startseite: (opts?: { frisch?: boolean }): Promise<import("../shared/nutzerstand-types").StartseitenChips> => ipcRenderer.invoke("suggestions:startseite", opts ?? {}),
+    ablehnen: (chip: { titel: string; gruppe: string }): Promise<{ abgelehnt: number }> => ipcRenderer.invoke("suggestions:ablehnen", chip),
     getSettings: (): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> => ipcRenderer.invoke("suggestions:getSettings"),
     setSettings: (patch: { startseite?: boolean; gespraech?: boolean }): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> =>
       ipcRenderer.invoke("suggestions:setSettings", patch),

@@ -8671,12 +8671,26 @@ input, textarea, select, button, a, summary, details,
 .vs-chips { display: flex; flex-direction: column; gap: 6px; margin: 0.9rem 0 0; max-width: 640px; }
 .vs-chips__titel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 2px; }
 .vs-chip {
-  display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px;
-  text-align: left; padding: 9px 12px; border: 1px solid var(--border); border-radius: 12px;
-  background: var(--color-bg-0); color: var(--fg); cursor: pointer; text-decoration: none; font: inherit;
+  display: flex; align-items: center; gap: 0;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--color-bg-0); color: var(--fg); text-decoration: none; font: inherit;
   transition: var(--ctrl-transition);
 }
 .vs-chip:hover { border-color: var(--accent); background: var(--color-bg-1); }
+/* Hauptflaeche: Stufe, Text, Aktion (wie zuvor der ganze Chip). */
+.vs-chip__main {
+  flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px;
+  text-align: left; padding: 9px 12px; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; border-radius: 12px;
+}
+/* Wegklicken: 28px-Flaeche, SVG per Flex exakt auf der Zeilenmitte (kein Schriftzeichen). */
+.vs-chip__x {
+  flex: 0 0 auto; width: 28px; height: 28px; margin: 0 6px 0 0; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: var(--ctrl-transition);
+}
+.vs-chip__x svg { display: block; }
+.vs-chip__x:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.vs-chips--kompakt .vs-chip__x { width: 24px; height: 24px; margin-right: 4px; }
 .vs-chip__stufe { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .vs-chip__text { display: flex; flex-direction: column; min-width: 0; }
 .vs-chip__titel { font-weight: 600; font-size: 14px; }
@@ -8684,7 +8698,8 @@ input, textarea, select, button, a, summary, details,
 .vs-chip__aktion { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .vs-chip:hover .vs-chip__aktion { color: var(--accent); }
 .vs-chips--kompakt { margin-top: 0.75rem; }
-.vs-chips--kompakt .vs-chip { padding: 6px 10px; border-radius: 10px; }
+.vs-chips--kompakt .vs-chip { border-radius: 10px; }
+.vs-chips--kompakt .vs-chip__main { padding: 6px 10px; border-radius: 10px; }
 .vs-chips__hinweis { margin-top: 2px; }
 
 /* v0.1.651 — Header: das gerade gehoverte Menue liegt ueber anderen offenen Menues */

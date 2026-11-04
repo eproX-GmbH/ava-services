@@ -24,6 +24,10 @@ import { nutzerstandText } from "./nutzerstand";
 const MAX_CHIPS = 4;
 const MAX_CHIPS_GESPRAECH = 3;
 const TIMEOUT_MS = 8_000;
+// Weggeklickte Vorschlaege (Joyce 2026-11-04): bleiben 90 Tage ausgeschlossen,
+// hoechstens 100 Eintraege; beim naechsten Oeffnen kommen frische Chips.
+const ABGELEHNT_TAGE = 90;
+const ABGELEHNT_MAX = 100;
 
 /** Integrationen, die es NICHT gibt — ein Chip, der sie nennt, ist falsch. */
 const UNBEKANNTE_INTEGRATIONEN = [
@@ -53,6 +57,14 @@ interface CacheDatei {
   key: string;
   at: string;
   chips: Chip[];
+}
+
+interface AbgelehntEintrag { titel: string; gruppe: string; at: string }
+interface AbgelehntDatei { eintraege: AbgelehntEintrag[] }
+
+/** Vergleichsschluessel eines Chips: Titel ohne Gross/Klein und Satzzeichen plus Gruppe. */
+export function chipSchluessel(c: { titel: string; gruppe: string }): string {
+  return `${c.gruppe}|${c.titel.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()}`;
 }
 
 export function harteSchranke(chips: Chip[], faehigkeiten: Faehigkeit[], stand: Nutzerstand): Chip[] {
@@ -118,18 +130,61 @@ export function festeChips(stand: Nutzerstand, faehigkeiten: Faehigkeit[]): Chip
   return kandidaten.filter((k) => k.wenn).map((k) => k.chip).slice(0, MAX_CHIPS);
 }
 
-function cacheKey(stand: Nutzerstand, faehigkeiten: Faehigkeit[]): string {
+function cacheKey(stand: Nutzerstand, faehigkeiten: Faehigkeit[], abgelehnt: string[]): string {
   const tag = new Date().toISOString().slice(0, 10);
-  const basis = `${tag}\n${nutzerstandText(stand)}\n${faehigkeiten.map((f) => f.id).join(",")}`;
+  const basis = `${tag}\n${nutzerstandText(stand)}\n${faehigkeiten.map((f) => f.id).join(",")}\n${abgelehnt.join("|")}`;
   return createHash("sha1").update(basis).digest("hex");
 }
 
 export class ChipErzeugung {
   private readonly path: string;
+  private readonly abgelehntPath: string;
   private laufend: Promise<StartseitenChips> | null = null;
 
   constructor(private readonly deps: ErzeugungDeps) {
     this.path = join(deps.dir, "suggestions-cache.json");
+    this.abgelehntPath = join(deps.dir, "suggestions-abgelehnt.json");
+  }
+
+  // ---- Weggeklickte Vorschlaege ----
+
+  private leseAbgelehnt(): AbgelehntEintrag[] {
+    try {
+      if (!existsSync(this.abgelehntPath)) return [];
+      const d = JSON.parse(readFileSync(this.abgelehntPath, "utf8")) as AbgelehntDatei;
+      const grenze = Date.now() - ABGELEHNT_TAGE * 86_400_000;
+      return (d.eintraege ?? []).filter((e) => e && typeof e.titel === "string" && typeof e.gruppe === "string" && Date.parse(e.at) > grenze);
+    } catch {
+      return [];
+    }
+  }
+
+  private schreibeAbgelehnt(eintraege: AbgelehntEintrag[]): void {
+    try {
+      mkdirSync(this.deps.dir, { recursive: true });
+      writeFileSync(this.abgelehntPath, JSON.stringify({ eintraege: eintraege.slice(-ABGELEHNT_MAX) }), "utf8");
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /** Vorschlag wegklicken: merken und den Cache verwerfen, damit das naechste Oeffnen frische Chips bringt. */
+  ablehnen(chip: { titel: string; gruppe: string }): { abgelehnt: number } {
+    const key = chipSchluessel(chip);
+    const liste = this.leseAbgelehnt().filter((e) => chipSchluessel(e) !== key);
+    liste.push({ titel: chip.titel.trim(), gruppe: chip.gruppe.trim(), at: new Date().toISOString() });
+    this.schreibeAbgelehnt(liste);
+    this.schreibeCache({ key: "", at: new Date().toISOString(), chips: [] });
+    return { abgelehnt: liste.length };
+  }
+
+  abgelehnteTitel(): string[] {
+    return this.leseAbgelehnt().map((e) => e.titel);
+  }
+
+  private ohneAbgelehnte(chips: Chip[]): Chip[] {
+    const keys = new Set(this.leseAbgelehnt().map(chipSchluessel));
+    return keys.size === 0 ? chips : chips.filter((c) => !keys.has(chipSchluessel(c)));
   }
 
   private leseCache(): CacheDatei | null {
@@ -160,24 +215,29 @@ export class ChipErzeugung {
   private async startseiteInner(opts: { frisch?: boolean; ohneModell?: boolean }): Promise<StartseitenChips> {
     const stand = await this.deps.nutzerstand();
     const faehigkeiten = verfuegbareFaehigkeiten(this.deps.toolNamen(), stand.gesperrteModule);
-    const key = cacheKey(stand, faehigkeiten);
+    const abgelehnt = this.abgelehnteTitel();
+    const key = cacheKey(stand, faehigkeiten, abgelehnt);
     if (!opts.frisch) {
       const c = this.leseCache();
-      if (c && c.key === key && c.chips.length > 0) return { chips: c.chips, quelle: "cache", erzeugtAt: c.at };
+      if (c && c.key === key && c.chips.length > 0) {
+        const chips = this.ohneAbgelehnte(c.chips);
+        if (chips.length > 0) return { chips, quelle: "cache", erzeugtAt: c.at };
+      }
     }
+    const fest = () => this.ohneAbgelehnte(festeChips(stand, faehigkeiten));
     if (opts.ohneModell || !stand.modell.bereit) {
-      return { chips: festeChips(stand, faehigkeiten), quelle: "fest", erzeugtAt: new Date().toISOString() };
+      return { chips: fest(), quelle: "fest", erzeugtAt: new Date().toISOString() };
     }
     try {
-      const roh = await this.erzeuge(stand, faehigkeiten);
-      const chips = harteSchranke(roh, faehigkeiten, stand);
+      const roh = await this.erzeuge(stand, faehigkeiten, abgelehnt);
+      const chips = this.ohneAbgelehnte(harteSchranke(roh, faehigkeiten, stand));
       if (chips.length === 0) throw new Error("keine gueltigen Chips");
       const at = new Date().toISOString();
       this.schreibeCache({ key, at, chips });
       return { chips, quelle: "ki", erzeugtAt: at };
     } catch (err) {
       this.deps.log?.(`[vorschlaege] Startseite: Rueckfall auf feste Liste (${err instanceof Error ? err.message : String(err)})`);
-      return { chips: festeChips(stand, faehigkeiten), quelle: "fest", erzeugtAt: new Date().toISOString() };
+      return { chips: fest(), quelle: "fest", erzeugtAt: new Date().toISOString() };
     }
   }
 
@@ -224,14 +284,14 @@ ${ctx.antwortText.slice(0, 1600)}
       const nutzer = ctx.nutzerText.toLowerCase();
       const verwaltungErlaubt = /abo|abrechnung|rechnung|plan|tarif|schl[uü]ssel|api-key|anbieter|modell|organisation|mitglied|konto|update|version/.test(nutzer);
       const zulaessig = faehigkeiten.filter((f) => !f.verwaltung || verwaltungErlaubt);
-      return harteSchranke(roh, zulaessig.map((f) => ({ ...f, verwaltung: false })), stand).slice(0, MAX_CHIPS_GESPRAECH);
+      return this.ohneAbgelehnte(harteSchranke(roh, zulaessig.map((f) => ({ ...f, verwaltung: false })), stand)).slice(0, MAX_CHIPS_GESPRAECH);
     } catch (err) {
       this.deps.log?.(`[vorschlaege] Gespraech: kein Urteil (${err instanceof Error ? err.message : String(err)})`);
       return [];
     }
   }
 
-  private async erzeuge(stand: Nutzerstand, faehigkeiten: Faehigkeit[]): Promise<Chip[]> {
+  private async erzeuge(stand: Nutzerstand, faehigkeiten: Faehigkeit[], abgelehnt: string[] = []): Promise<Chip[]> {
     const system =
       "Du bist AVA, Assistentin fuer B2B-Vertrieb. Du schlaegst dem Nutzer auf der Chat-Startseite bis zu vier konkrete naechste Schritte vor. " +
       "Ein Vorschlag ist ein kurzer Auftrag in Du-Form, den der Nutzer per Klick an dich schickt; du fuehrst ihn danach mit deinen Werkzeugen aus.\n\n" +
@@ -244,7 +304,9 @@ ${ctx.antwortText.slice(0, 1600)}
       "5. Nutze konkrete Namen aus dem Nutzerstand (z. B. den Top-Radar-Treffer) statt Platzhaltern.\n" +
       "6. Kein Geviertstrich, keine Emojis, keine Superlative.\n\n" +
       'Antworte NUR als JSON: {"chips":[{"titel":"max 6 Woerter","auftrag":"der vollstaendige Auftrag in Du-Form, 1 Satz","gruppe":"<id aus der Faehigkeitsliste>","aktion":"Verbinden|Starten|Anlegen|Importieren|Analysieren|Einschalten","stufe":1|2|3}]}';
-    const user = `NUTZERSTAND:\n${nutzerstandText(stand)}\n\nFAEHIGKEITEN (id: Beschreibung):\n${faehigkeitenText(faehigkeiten)}`;
+    const user =
+      `NUTZERSTAND:\n${nutzerstandText(stand)}\n\nFAEHIGKEITEN (id: Beschreibung):\n${faehigkeitenText(faehigkeiten)}` +
+      (abgelehnt.length ? `\n\nVOM NUTZER WEGGEKLICKT (nicht erneut und nicht umformuliert vorschlagen):\n${abgelehnt.slice(-30).map((t) => `- ${t}`).join("\n")}` : "");
     const raw = await streamToText(this.deps.providers, buildMessages(system, user, "vorschlaege"), {
       timeoutMs: TIMEOUT_MS,
       channel: "vorschlaege",

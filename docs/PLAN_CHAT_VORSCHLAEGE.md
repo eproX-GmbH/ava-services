@@ -303,3 +303,7 @@ Chat-Tools, Verbrauchs-Ausweis.
    Tool; das wäre ein neuer zusammengesetzter Ablauf (Profil, Register,
    Publikationen, ICP-Urteil, Wettbewerb) und gehört als eigener Punkt
    geplant, bevor die Aktion in Stufe 3 erscheint.
+
+## Nachtrag 2026-11-04: Vorschläge wegklicken (v0.1.931)
+
+Joyce: Vorschläge sollen sich wegklicken lassen, damit beim nächsten Öffnen neue kommen. Je Chip ein X (SVG, per Flex auf der Zeilenmitte, nachgemessen: Chip-Mitte = X-Mitte). Klick entfernt den Chip sofort und meldet ihn an Main (`suggestions:ablehnen`); `ChipErzeugung` merkt Titel plus Gruppe in `suggestions-abgelehnt.json` (90 Tage, höchstens 100), verwirft den Cache und schließt weggeklickte Chips aus Cache, KI-Ergebnis, fester Liste und Gespräch-Urteil aus. Die KI bekommt die weggeklickten Titel als „nicht erneut und nicht umformuliert vorschlagen“ mit, damit wirklich andere Vorschläge kommen.

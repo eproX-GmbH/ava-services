@@ -1467,6 +1467,11 @@ export function Chat() {
   const [startChips, setStartChips] = useState<StartseitenChips | null>(null);
   // v0.1.649 (V4) — Chips aus dem Turn-Urteil, haengen unter einer Assistenten-Nachricht.
   const [turnChips, setTurnChips] = useState<{ messageId: string; chips: Chip[] } | null>(null);
+  // Vorschlag wegklicken: sofort aus der Liste, dauerhaft gemerkt (Main verwirft den Cache).
+  const chipAblehnen = useCallback((c: Chip) => {
+    setStartChips((prev) => (prev ? { ...prev, chips: prev.chips.filter((x) => !(x.titel === c.titel && x.gruppe === c.gruppe)) } : prev));
+    void window.api.suggestions.ablehnen({ titel: c.titel, gruppe: c.gruppe }).catch(() => undefined);
+  }, []);
   useEffect(() => {
     let alive = true;
     if (isEmpty || messages.some((m) => m.role === "assistant" && m.content.includes("nächste Schritte vorbereitet"))) {
@@ -1963,7 +1968,7 @@ export function Chat() {
               <p className="chat-welcome__lede">
                 Sag mir, woran du arbeitest, oder nimm einen dieser Schritte. Sie passen zu dem, was du mit AVA schon eingerichtet hast.
               </p>
-              {startChips && <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "startseite")} />}
+              {startChips && <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "startseite")} onDismiss={chipAblehnen} />}
             </div>
           )}
           {composer}
@@ -2088,7 +2093,7 @@ export function Chat() {
                       renderChatContent(m.content)
                     )}
                     {m.role === "assistant" && !m.pending && m.content.includes("nächste Schritte vorbereitet") && startChips && (
-                      <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt />
+                      <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "gespraech")} onDismiss={chipAblehnen} kompakt />
                     )}
                     {m.role === "assistant" && !m.pending && turnChips?.messageId === m.id && (
                       <VorschlagChips chips={turnChips.chips} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt titel="Nächster Schritt?" />
