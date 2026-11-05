@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.937",
+  "version": "0.1.938",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "description": "AVA Electron desktop app",
@@ -98,6 +98,8 @@
     "@xyflow/react": "12.3.6",
     "adm-zip": "^0.5.16",
     "ai": "^5.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "dagre": "0.8.5",
     "electron-updater": "^6.8.3",
     "imapflow": "^1.0.171",

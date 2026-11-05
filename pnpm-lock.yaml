@@ -997,6 +997,12 @@ importers:
       ai:
         specifier: ^5.0.0
         version: 5.0.179(zod@3.25.76)
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
       dagre:
         specifier: 0.8.5
         version: 0.8.5
