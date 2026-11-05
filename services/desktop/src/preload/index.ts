@@ -935,7 +935,7 @@ const api = {
   // Weitere Dienste (docs/PLAN_CLOSE_MCP.md C2): Dienste mit eigener Werkzeugschnittstelle.
   mcpDienste: {
     liste: (): Promise<import("../shared/types").McpDienstAnzeige[]> => ipcRenderer.invoke("mcp-dienste:liste"),
-    hinzufuegen: (args: { name: string; url: string; zugang: "keine" | "zugangscode" | "kopfzeilen"; zugangscode?: string; kopfzeilen?: Record<string, string> }): Promise<import("../shared/types").McpDienstAnzeige> =>
+    hinzufuegen: (args: { name: string; url: string; art?: "mcp" | "a2a"; zugang: "keine" | "zugangscode" | "kopfzeilen"; zugangscode?: string; kopfzeilen?: Record<string, string> }): Promise<import("../shared/types").McpDienstAnzeige> =>
       ipcRenderer.invoke("mcp-dienste:hinzufuegen", args),
     pruefen: (id: string): Promise<import("../shared/types").McpDienstAnzeige> => ipcRenderer.invoke("mcp-dienste:pruefen", id),
     entfernen: (id: string): Promise<void> => ipcRenderer.invoke("mcp-dienste:entfernen", id),

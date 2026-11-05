@@ -6,10 +6,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { McpDienstAnzeige } from "../../../../shared/types";
 
 type Zugang = "keine" | "zugangscode" | "kopfzeilen";
+type Art = "mcp" | "a2a";
 
-const VORLAGEN: Array<{ id: string; name: string; url: string; zugang: Zugang; kopfzeilen?: Array<{ name: string; hinweis: string; wert?: string }>; hinweis: string }> = [
+const VORLAGEN: Array<{ id: string; name: string; url: string; art: Art; zugang: Zugang; kopfzeilen?: Array<{ name: string; hinweis: string; wert?: string }>; hinweis: string }> = [
   {
     id: "close",
+    art: "mcp",
     name: "Close",
     url: "https://mcp.close.com/mcp",
     zugang: "kopfzeilen",
@@ -21,6 +23,7 @@ const VORLAGEN: Array<{ id: string; name: string; url: string; zugang: Zugang; k
   },
   {
     id: "compleadly",
+    art: "mcp",
     name: "CompLeadly",
     url: "https://mcp.complead.ly/user/mcp",
     zugang: "zugangscode",
@@ -35,6 +38,7 @@ export function DiensteSection() {
 
   const [offen, setOffen] = useState(false);
   const [vorlage, setVorlage] = useState<string>("");
+  const [art, setArt] = useState<Art>("mcp");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [zugang, setZugang] = useState<Zugang>("zugangscode");
@@ -47,6 +51,7 @@ export function DiensteSection() {
     setVorlage(id);
     const v = VORLAGEN.find((x) => x.id === id);
     if (!v) return;
+    setArt(v.art);
     setName(v.name);
     setUrl(v.url);
     setZugang(v.zugang);
@@ -57,6 +62,7 @@ export function DiensteSection() {
   const zuruecksetzen = () => {
     setOffen(false);
     setVorlage("");
+    setArt("mcp");
     setName("");
     setUrl("");
     setZugang("zugangscode");
@@ -72,6 +78,7 @@ export function DiensteSection() {
       await window.api.mcpDienste.hinzufuegen({
         name,
         url,
+        art,
         zugang,
         ...(zugang === "zugangscode" ? { zugangscode } : {}),
         ...(zugang === "kopfzeilen" ? { kopfzeilen: Object.fromEntries(kopfzeilen.filter((k) => k.name.trim()).map((k) => [k.name.trim(), k.wert])) } : {}),
@@ -94,8 +101,9 @@ export function DiensteSection() {
     <section className="provider-section" id="dienste-section">
       <h3>Weitere Dienste</h3>
       <p className="muted">
-        Dienste mit eigener Werkzeugschnittstelle, zum Beispiel Close oder CompLeadly. AVA nutzt ihre Werkzeuge im Chat und in
-        Workflows; was damit geschieht, bestimmst du mit deinen Anweisungen. Schreibende Aktionen fragen vorher nach.
+        Dienste mit eigener Werkzeugschnittstelle, zum Beispiel Close oder CompLeadly, und fremde Agenten, denen AVA Aufträge
+        geben kann. AVA nutzt sie im Chat und in Workflows; was damit geschieht, bestimmst du mit deinen Anweisungen. Schreibende
+        Aktionen fragen vorher nach. Läuft ein Zugang ab, siehst du es hier an der Karte und als Hinweis oben in der App.
       </p>
       {liste.isLoading ? (
         <p className="muted small">Lädt …</p>
@@ -124,12 +132,19 @@ export function DiensteSection() {
           </label>
           {vorlageInfo && <p className="muted small">{vorlageInfo.hinweis}</p>}
           <label className="dienste-feld">
+            <span className="muted small">Art des Dienstes</span>
+            <select value={art} onChange={(e) => setArt(e.target.value as Art)} disabled={busy}>
+              <option value="mcp">Werkzeugdienst (stellt einzelne Werkzeuge bereit)</option>
+              <option value="a2a">Agent (nimmt Aufträge in Textform an)</option>
+            </select>
+          </label>
+          <label className="dienste-feld">
             <span className="muted small">Name</span>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name des Dienstes" disabled={busy} />
           </label>
           <label className="dienste-feld">
             <span className="muted small">Adresse</span>
-            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" disabled={busy} />
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={art === "a2a" ? "https://… (Adresse des Agenten oder seiner Agentenkarte)" : "https://…"} disabled={busy} />
           </label>
           <label className="dienste-feld">
             <span className="muted small">Zugang</span>
@@ -186,9 +201,11 @@ export function DiensteSection() {
       <details className="muted small dienste-details">
         <summary>Technische Details</summary>
         <p>
-          Verbindung über das Model Context Protocol (MCP) per Streamable HTTP, bei älteren Diensten per SSE. Der Zugang wird
-          als Bearer-Token oder als eigene Kopfzeilen mitgeschickt und verschlüsselt im Schlüsselbund dieses Rechners abgelegt.
-          Werkzeuge erscheinen im Chat als <code>mcp_&lt;dienst&gt;_&lt;werkzeug&gt;</code>.
+          Werkzeugdienste über das Model Context Protocol (MCP) per Streamable HTTP, bei älteren Diensten per SSE; Agenten über
+          das Agent2Agent-Protokoll (A2A, Agentenkarte unter /.well-known/agent-card.json, JSON-RPC message/send und tasks/get).
+          Der Zugang wird als Bearer-Token oder als eigene Kopfzeilen mitgeschickt und verschlüsselt im Schlüsselbund dieses
+          Rechners abgelegt. Werkzeuge erscheinen im Chat als <code>mcp_&lt;dienst&gt;_&lt;werkzeug&gt;</code> bzw.{" "}
+          <code>a2a_&lt;agent&gt;_auftrag</code>.
         </p>
       </details>
     </section>
@@ -223,7 +240,7 @@ function DienstKarte({ dienst }: { dienst: McpDienstAnzeige }) {
       <div className="crm-card-header">
         <div className="crm-card-title">
           <span>{dienst.name}</span>
-          <span className={`status-dot ${tone}`}>{dienst.verbunden ? `${dienst.werkzeuge} Werkzeuge` : "nicht verbunden"}</span>
+          <span className={`status-dot ${tone}`}>{dienst.verbunden ? (dienst.art === "a2a" ? "Agent erreichbar" : `${dienst.werkzeuge} Werkzeuge`) : "nicht verbunden"}</span>
         </div>
         <div className="crm-card-actions">
           <button type="button" onClick={() => void pruefen()} disabled={busy}>{busy ? "Prüft…" : "Neu verbinden"}</button>

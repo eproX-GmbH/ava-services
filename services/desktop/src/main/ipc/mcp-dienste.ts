@@ -3,17 +3,18 @@
 
 import { ipcMain } from "electron";
 import type { McpDienste } from "../mcp-client";
-import type { McpZugangArt } from "../mcp-client/store";
+import type { DienstArt, McpZugangArt } from "../mcp-client/store";
 
 export function registerMcpDiensteIpc(deps: { mcpDienste: McpDienste }): void {
   const { mcpDienste } = deps;
   ipcMain.handle("mcp-dienste:liste", () => mcpDienste.liste());
   ipcMain.handle(
     "mcp-dienste:hinzufuegen",
-    (_e, args: { name: string; url: string; zugang: McpZugangArt; zugangscode?: string; kopfzeilen?: Record<string, string> }) =>
+    (_e, args: { name: string; url: string; art?: DienstArt; zugang: McpZugangArt; zugangscode?: string; kopfzeilen?: Record<string, string> }) =>
       mcpDienste.hinzufuegen({
         name: String(args?.name ?? ""),
         url: String(args?.url ?? ""),
+        art: args?.art === "a2a" ? "a2a" : "mcp",
         zugang: args?.zugang === "zugangscode" || args?.zugang === "kopfzeilen" ? args.zugang : "keine",
         ...(typeof args?.zugangscode === "string" ? { zugangscode: args.zugangscode } : {}),
         ...(args?.kopfzeilen && typeof args.kopfzeilen === "object" ? { kopfzeilen: args.kopfzeilen } : {}),

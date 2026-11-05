@@ -1739,6 +1739,8 @@ export const CRM_PROVIDER_KINDS: ReadonlyArray<CrmProviderKind> = [
 /** docs/PLAN_CLOSE_MCP.md C2 — verbundener Dienst, wie der Renderer ihn sieht (keine Zugangsdaten). */
 export interface McpDienstAnzeige {
   id: string;
+  /** mcp = Werkzeugdienst, a2a = Agent. */
+  art: "mcp" | "a2a";
   name: string;
   slug: string;
   url: string;
@@ -1749,7 +1751,7 @@ export interface McpDienstAnzeige {
   werkzeuge: number;
   fehler: string | null;
   verbunden: boolean;
-  transport: "http" | "sse" | null;
+  transport: "http" | "sse" | "a2a" | null;
   werkzeugNamen: string[];
 }
 

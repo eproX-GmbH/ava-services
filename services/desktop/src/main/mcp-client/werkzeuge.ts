@@ -10,6 +10,7 @@ import type { ActionKind } from "../agent/ui-bridge";
 import { userDeclined } from "../agent/define-tool";
 import type { McpWerkzeugBeschreibung } from "./client";
 import type { McpDienst } from "./store";
+import type { A2aAgentenkarte, A2aAuftragErgebnis } from "./a2a";
 
 const MAX_NAME = 64;
 
@@ -100,4 +101,65 @@ export function baueWerkzeuge(
     out.push({ tool: tool as unknown as Tool, klasse });
   }
   return out;
+}
+
+/** Zwei Werkzeuge je Agent: Auftrag geben (schreibend, mit Rueckfrage) und Stand abrufen. */
+export function baueAgentWerkzeuge(
+  dienst: McpDienst,
+  karte: A2aAgentenkarte,
+  senden: (text: string, signal: AbortSignal) => Promise<A2aAuftragErgebnis>,
+  status: (taskId: string, signal: AbortSignal) => Promise<A2aAuftragErgebnis>,
+): WerkzeugBau[] {
+  const skills = karte.skills.slice(0, 20).map((s) => `${s.name}${s.description ? `: ${kurz(s.description, 140)}` : ""}`).join("; ");
+  const auftrag: Tool<{ text: string }, A2aAuftragErgebnis & { agent: string }> = {
+    name: werkzeugName(dienst.slug, "auftrag").replace(/^mcp_/, "a2a_"),
+    summary: `${dienst.name} (Agent): Auftrag in natürlicher Sprache geben — ${kurz(karte.description, 90) || karte.name}`,
+    category: `a2a:${dienst.slug}`,
+    description:
+      `[${dienst.name}, Agent] ${kurz(karte.description, 600) || karte.name}. Gibt dem Agenten einen Auftrag als Text und wartet bis zu zwei Minuten auf das Ergebnis; laeuft er laenger, kommt der Stand mit taskId zurueck (dann ${werkzeugName(dienst.slug, "status").replace(/^mcp_/, "a2a_")}).` +
+      (skills ? ` Faehigkeiten laut Agentenkarte: ${skills}.` : "") +
+      " AVA fragt vor dem Senden nach.",
+    parameters: { type: "object", properties: { text: { type: "string", description: "Der Auftrag an den Agenten, vollstaendig und in natuerlicher Sprache" } }, required: ["text"] },
+    parseArgs: (raw: unknown) => {
+      const t = raw && typeof raw === "object" ? (raw as { text?: unknown }).text : undefined;
+      if (typeof t !== "string" || !t.trim()) throw new Error("text fehlt.");
+      return { text: t.trim() };
+    },
+    run: async (args, ctx) => {
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Soll ich dem Agenten ${dienst.name} diesen Auftrag geben?\n\n${args.text.slice(0, 1200)}`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Senden", description: `Geht an ${dienst.name}` },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        ctx.signal,
+      );
+      if (value !== "ja") return userDeclined(`${dienst.name}: Auftrag`) as unknown as A2aAuftragErgebnis & { agent: string };
+      const r = await senden(args.text, ctx.signal);
+      return { agent: dienst.name, ...r, text: r.text.slice(0, 60_000) };
+    },
+    preview: (r) => `${r.agent}: ${r.zustand}${r.text ? ` · ${kurz(r.text, 100)}` : ""}`,
+  };
+  const stand: Tool<{ taskId: string }, A2aAuftragErgebnis & { agent: string }> = {
+    name: werkzeugName(dienst.slug, "status").replace(/^mcp_/, "a2a_"),
+    summary: `${dienst.name} (Agent): Stand eines Auftrags abrufen (taskId)`,
+    category: `a2a:${dienst.slug}`,
+    description: `[${dienst.name}, Agent] Stand und Ergebnis eines frueher gegebenen Auftrags (taskId aus dem Auftrags-Werkzeug).`,
+    parameters: { type: "object", properties: { taskId: { type: "string" } }, required: ["taskId"] },
+    parseArgs: (raw: unknown) => {
+      const t = raw && typeof raw === "object" ? (raw as { taskId?: unknown }).taskId : undefined;
+      if (typeof t !== "string" || !t.trim()) throw new Error("taskId fehlt.");
+      return { taskId: t.trim() };
+    },
+    run: async (args, ctx) => ({ agent: dienst.name, ...(await status(args.taskId, ctx.signal)) }),
+    preview: (r) => `${r.agent}: ${r.zustand}${r.text ? ` · ${kurz(r.text, 100)}` : ""}`,
+  };
+  return [
+    { tool: auftrag as unknown as Tool, klasse: "mutating" },
+    { tool: stand as unknown as Tool, klasse: "read" },
+  ];
 }

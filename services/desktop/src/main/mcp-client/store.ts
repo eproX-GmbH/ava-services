@@ -10,9 +10,13 @@ import { randomBytes } from "node:crypto";
 import { credentials, paths } from "../../core/platform";
 
 export type McpZugangArt = "keine" | "zugangscode" | "kopfzeilen";
+/** Werkzeugdienst (MCP) oder Agent (A2A). */
+export type DienstArt = "mcp" | "a2a";
 
 export interface McpDienst {
   id: string;
+  /** Fehlt bei Eintraegen vor dem A2A-Ausbau: dann MCP. */
+  art?: DienstArt;
   /** Anzeigename, vom Nutzer vergeben ("Close", "CompLeadly"). */
   name: string;
   /** Kurzname fuer Werkzeugnamen: `mcp_<slug>_<werkzeug>`. */

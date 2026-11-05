@@ -174,7 +174,7 @@ export function AppShell({ children }: PropsWithChildren) {
 // IPCs (kein neues Main-Subsystem): wir pollen beim Mount, alle 30 s und
 // bei Fenster-Fokus; nach einer Fix-Aktion sofort neu.
 interface HealthProblem {
-  domain: "llm" | "linkedin" | "crm";
+  domain: "llm" | "linkedin" | "crm" | "dienste";
   /** Stabiler Schlüssel für Dismiss — ändert sich, wenn das Problem ein
    *  anderes wird, damit ein neues Problem wieder auftaucht. */
   signature: string;
@@ -208,6 +208,7 @@ function writeDismissed(set: Set<string>): void {
 }
 
 function ConnectionHealthBanner() {
+  const navigate = useNavigate();
   const [problems, setProblems] = useState<HealthProblem[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissed());
   const [busy, setBusy] = useState<string | null>(null);
@@ -272,6 +273,26 @@ function ConnectionHealthBanner() {
       /* ignore */
     }
 
+    // --- Weitere Dienste (MCP/A2A): abgelaufener Zugang, Dienst nicht erreichbar ---
+    try {
+      const dienste = await window.api.mcpDienste.liste();
+      for (const d of dienste) {
+        if (!d.fehler) continue;
+        next.push({
+          domain: "dienste",
+          signature: `dienste:${d.id}:${d.fehler}`,
+          message: `${d.name}: ${d.fehler}. Werkzeuge dieses Dienstes stehen AVA gerade nicht zur Verfügung.`,
+          fixLabel: /abgelaufen|abgelehnt|401|403/i.test(d.fehler) ? "Zugang erneuern" : "Neu verbinden",
+          fix: () =>
+            /abgelaufen|abgelehnt|401|403/i.test(d.fehler ?? "")
+              ? Promise.resolve(navigate("/settings/verbindungen#dienste-section"))
+              : window.api.mcpDienste.pruefen(d.id),
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+
     setProblems(next);
     // Dismiss-Einträge aufräumen, deren Problem nicht mehr existiert →
     // ein künftiges Wiederauftreten zeigt das Banner erneut.
@@ -286,7 +307,7 @@ function ConnectionHealthBanner() {
       if (changed) writeDismissed(cleaned);
       return changed ? cleaned : prev;
     });
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     void refresh();

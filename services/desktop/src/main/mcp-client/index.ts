@@ -8,13 +8,15 @@ import { EventEmitter } from "node:events";
 import type { ToolRegistry } from "../agent/tool-registry";
 import { featureEnabled, onOrgPolicyChange } from "../org-policy";
 import { setzeWerkzeugArt } from "../workflows/catalog";
-import { McpVerbindung, fehlerText } from "./client";
-import { entferneDienst, ladeDienste, neueId, slugAus, speichereDienst, type McpDienst, type McpGeheimnisse, type McpZugangArt } from "./store";
-import { baueWerkzeuge } from "./werkzeuge";
+import { McpVerbindung, fehlerText, kopfzeilenAus } from "./client";
+import { agentenkarteLaden, auftragSenden, auftragStatus } from "./a2a";
+import { entferneDienst, ladeDienste, neueId, slugAus, speichereDienst, type DienstArt, type McpDienst, type McpGeheimnisse, type McpZugangArt } from "./store";
+import { baueAgentWerkzeuge, baueWerkzeuge } from "./werkzeuge";
 
 export interface McpDienstAnzeige extends McpDienst {
+  art: DienstArt;
   verbunden: boolean;
-  transport: "http" | "sse" | null;
+  transport: "http" | "sse" | "a2a" | null;
   werkzeugNamen: string[];
 }
 
@@ -22,7 +24,13 @@ interface Laufend {
   dienst: McpDienst;
   geheimnisse: McpGeheimnisse;
   verbindung: McpVerbindung | null;
+  /** A2A: geladene Agentenkarte gilt als "verbunden". */
+  agentVerbunden: boolean;
   werkzeugNamen: string[];
+}
+
+function artVon(d: McpDienst): DienstArt {
+  return d.art === "a2a" ? "a2a" : "mcp";
 }
 
 export class McpDienste extends EventEmitter {
@@ -37,7 +45,7 @@ export class McpDienste extends EventEmitter {
     if (this.gestartet) return;
     this.gestartet = true;
     const alle = await ladeDienste().catch(() => []);
-    for (const { dienst, geheimnisse } of alle) this.laufend.set(dienst.id, { dienst, geheimnisse, verbindung: null, werkzeugNamen: [] });
+    for (const { dienst, geheimnisse } of alle) this.laufend.set(dienst.id, { dienst, geheimnisse, verbindung: null, agentVerbunden: false, werkzeugNamen: [] });
     onOrgPolicyChange(() => {
       if (!featureEnabled("mcp.dienste")) void this.alleTrennen();
       else void this.alleVerbinden();
@@ -46,13 +54,13 @@ export class McpDienste extends EventEmitter {
   }
 
   liste(): McpDienstAnzeige[] {
-    return [...this.laufend.values()].map((l) => ({ ...l.dienst, verbunden: Boolean(l.verbindung), transport: l.verbindung?.art ?? null, werkzeugNamen: [...l.werkzeugNamen] }));
+    return [...this.laufend.values()].map((l) => this.anzeige(l));
   }
 
   private async alleVerbinden(): Promise<void> {
     if (!featureEnabled("mcp.dienste")) return;
     for (const l of this.laufend.values()) {
-      if (l.verbindung) continue;
+      if (l.verbindung || l.agentVerbunden) continue;
       await this.verbinde(l).catch(() => undefined);
     }
   }
@@ -63,7 +71,7 @@ export class McpDienste extends EventEmitter {
   }
 
   /** Neuen Dienst anlegen: verbinden, Werkzeuge lesen, speichern. Wirft bei Fehlern (nichts gespeichert). */
-  async hinzufuegen(args: { name: string; url: string; zugang: McpZugangArt; zugangscode?: string; kopfzeilen?: Record<string, string> }): Promise<McpDienstAnzeige> {
+  async hinzufuegen(args: { name: string; url: string; art?: DienstArt; zugang: McpZugangArt; zugangscode?: string; kopfzeilen?: Record<string, string> }): Promise<McpDienstAnzeige> {
     if (!featureEnabled("mcp.dienste")) throw new Error("Deine Organisation hat weitere Dienste abgeschaltet.");
     const name = args.name.trim();
     const url = args.url.trim();
@@ -78,6 +86,7 @@ export class McpDienste extends EventEmitter {
     const vergeben = new Set([...this.laufend.values()].map((l) => l.dienst.slug));
     const dienst: McpDienst = {
       id: neueId(),
+      art: args.art === "a2a" ? "a2a" : "mcp",
       name,
       slug: slugAus(name, vergeben),
       url: u.toString(),
@@ -92,7 +101,7 @@ export class McpDienste extends EventEmitter {
       ...(args.zugang === "zugangscode" && args.zugangscode ? { zugangscode: args.zugangscode.trim() } : {}),
       ...(args.zugang === "kopfzeilen" && args.kopfzeilen ? { kopfzeilen: Object.fromEntries(Object.entries(args.kopfzeilen).filter(([k, v]) => k.trim() && v.trim()).map(([k, v]) => [k.trim(), v.trim()])) } : {}),
     };
-    const l: Laufend = { dienst, geheimnisse, verbindung: null, werkzeugNamen: [] };
+    const l: Laufend = { dienst, geheimnisse, verbindung: null, agentVerbunden: false, werkzeugNamen: [] };
     await this.verbinde(l, { werfen: true });
     await speichereDienst(l.dienst, geheimnisse);
     this.laufend.set(dienst.id, l);
@@ -121,15 +130,17 @@ export class McpDienste extends EventEmitter {
   }
 
   private anzeige(l: Laufend): McpDienstAnzeige {
-    return { ...l.dienst, verbunden: Boolean(l.verbindung), transport: l.verbindung?.art ?? null, werkzeugNamen: [...l.werkzeugNamen] };
+    const art = artVon(l.dienst);
+    return { ...l.dienst, art, verbunden: art === "a2a" ? l.agentVerbunden : Boolean(l.verbindung), transport: art === "a2a" ? (l.agentVerbunden ? "a2a" : null) : (l.verbindung?.art ?? null), werkzeugNamen: [...l.werkzeugNamen] };
   }
 
   private async verbinde(l: Laufend, opts: { werfen?: boolean } = {}): Promise<void> {
+    if (artVon(l.dienst) === "a2a") return this.verbindeAgent(l, opts);
     const v = new McpVerbindung(l.dienst, l.geheimnisse);
     try {
       await v.verbinden();
       const beschreibungen = await v.werkzeuge();
-      const gebaut = baueWerkzeuge(l.dienst, beschreibungen, (name, args, signal) => v.aufrufen(name, args, signal));
+      const gebaut = baueWerkzeuge(l.dienst, beschreibungen, (name, args, signal) => this.mitFehlermeldung(l, () => v.aufrufen(name, args, signal)));
       for (const n of l.werkzeugNamen) this.deps.registry.unregister(n);
       l.werkzeugNamen = [];
       for (const { tool, klasse } of gebaut) {
@@ -155,9 +166,78 @@ export class McpDienste extends EventEmitter {
     }
   }
 
+  /** A2A: Agentenkarte laden, zwei Werkzeuge registrieren; keine stehende Verbindung. */
+  private async verbindeAgent(l: Laufend, opts: { werfen?: boolean } = {}): Promise<void> {
+    try {
+      const headers = kopfzeilenAus(l.dienst, l.geheimnisse);
+      const karte = await agentenkarteLaden(l.dienst.url, headers);
+      const gebaut = baueAgentWerkzeuge(
+        l.dienst,
+        karte,
+        (text, signal) => this.mitFehlermeldung(l, () => auftragSenden(karte, headers, text, { signal })),
+        (taskId, signal) => this.mitFehlermeldung(l, () => auftragStatus(karte, headers, taskId, signal)),
+      );
+      for (const n of l.werkzeugNamen) this.deps.registry.unregister(n);
+      l.werkzeugNamen = [];
+      for (const { tool, klasse } of gebaut) {
+        if (this.deps.registry.has(tool.name)) this.deps.registry.unregister(tool.name);
+        this.deps.registry.register(tool);
+        setzeWerkzeugArt(tool.name, klasse);
+        l.werkzeugNamen.push(tool.name);
+      }
+      l.agentVerbunden = true;
+      l.dienst = { ...l.dienst, werkzeuge: gebaut.length, zuletztVerbunden: new Date().toISOString(), fehler: null };
+      this.deps.log?.(`[mcp-dienste] Agent ${l.dienst.name} (${karte.name}): ${karte.skills.length} Fähigkeiten`);
+      if (this.laufend.has(l.dienst.id)) {
+        await speichereDienst(l.dienst).catch(() => undefined);
+        this.emit("aenderung", this.liste());
+      }
+    } catch (err) {
+      const text = fehlerText(err);
+      l.agentVerbunden = false;
+      l.dienst = { ...l.dienst, fehler: text };
+      this.deps.log?.(`[mcp-dienste] Agent ${l.dienst.name}: ${text}`);
+      if (this.laufend.has(l.dienst.id)) this.emit("aenderung", this.liste());
+      if (opts.werfen) throw new Error(text);
+    }
+  }
+
+  /**
+   * Joyce 2026-11-05: Ein abgelaufener oder ungueltiger Zugang muss sichtbar
+   * werden — nicht nur als Werkzeugfehler im Chat. Zugangsfehler (401/403)
+   * landen als `fehler` am Dienst (Karte in den Einstellungen, Warnband in
+   * der App), und das Werkzeug sagt dem Modell, wo der Nutzer den Zugang
+   * erneuert. Andere Fehler bleiben Werkzeugfehler ohne Dienst-Markierung.
+   */
+  private async mitFehlermeldung<T>(l: Laufend, f: () => Promise<T>): Promise<T> {
+    try {
+      const r = await f();
+      if (l.dienst.fehler) {
+        l.dienst = { ...l.dienst, fehler: null };
+        this.emit("aenderung", this.liste());
+      }
+      return r;
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      const zugang = /\b(401|403)\b|unauthori|forbidden|invalid[_ ]token|token.*(expired|abgelaufen)|abgelaufen/i.test(m);
+      if (zugang) {
+        const text = `Zugang abgelehnt oder abgelaufen (${fehlerText(err)})`;
+        l.dienst = { ...l.dienst, fehler: text };
+        await speichereDienst(l.dienst).catch(() => undefined);
+        this.emit("aenderung", this.liste());
+        this.deps.log?.(`[mcp-dienste] ${l.dienst.name}: ${text}`);
+        throw new Error(
+          `Der Zugang zu ${l.dienst.name} ist abgelaufen oder ungültig. Das Werkzeug kann erst wieder laufen, wenn der Nutzer unter Einstellungen → Verbindungen → Weitere Dienste den Zugangscode erneuert (Dienst entfernen und neu verbinden). Nicht erneut versuchen; dem Nutzer den Weg nennen.`,
+        );
+      }
+      throw new Error(`${l.dienst.name}: ${fehlerText(err)}`);
+    }
+  }
+
   private async trenne(l: Laufend): Promise<void> {
     for (const n of l.werkzeugNamen) this.deps.registry.unregister(n);
     l.werkzeugNamen = [];
+    l.agentVerbunden = false;
     const v = l.verbindung;
     l.verbindung = null;
     if (v) await v.schliessen();
