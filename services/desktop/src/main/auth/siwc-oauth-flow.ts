@@ -74,10 +74,18 @@ export async function runSiwcOAuth(opts: {
       else reject(verdict.error);
     };
 
-    const handleNavigation = (event: ElectronEvent, url: string): void => {
+    const handleNavigation = (event: ElectronEvent | null, url: string): void => {
       if (!url.startsWith(SIWC_REDIRECT_URI)) return;
-      event.preventDefault();
+      event?.preventDefault();
       captured = true;
+      // 2026-11-05 (Befund Alessandro, "Bildschirm blieb schwarz"): Das
+      // Anmeldefenster sofort verstecken, sobald der Redirect gefangen ist;
+      // der Token-Tausch laeuft im Hintergrund, der Nutzer sieht wieder AVA.
+      try {
+        if (!win.isDestroyed()) win.hide();
+      } catch {
+        /* Fenster bereits weg */
+      }
       const cb = parseSiwcCallback(url);
       if (cb.error) {
         finish({
@@ -133,7 +141,12 @@ export async function runSiwcOAuth(opts: {
     win.webContents.on("did-fail-load", (_evt, errorCode, errorDescription, validatedURL) => {
       if (errorCode === -3) return;
       if (captured) return;
-      if (validatedURL.startsWith(SIWC_REDIRECT_URI)) return;
+      // Redirect kam ohne will-redirect/will-navigate durch (z. B. per Skript
+      // ausgeloest): der Ladefehler auf 127.0.0.1 traegt die Antwort in der URL.
+      if (validatedURL.startsWith(SIWC_REDIRECT_URI)) {
+        handleNavigation(null, validatedURL);
+        return;
+      }
       console.warn("[siwc-oauth-flow] did-fail-load:", errorCode, errorDescription, validatedURL);
       finish({ ok: false, error: new Error(`Netzwerk-Fehler beim Verbinden mit ChatGPT (${errorDescription || errorCode}).`) });
     });

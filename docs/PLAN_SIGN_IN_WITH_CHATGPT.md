@@ -255,3 +255,7 @@ Aufwand grob: S1–S2 drei Tage, S3–S4 zwei Tage, S5–S7 zwei Tage.
 - developers.openai.com/siwc/request-client-id
 - developers.openai.com/cookbook/articles/sign-in-with-chatgpt (Electron-Beispiel)
 - workos.com/blog/sign-in-with-chatgpt-plan-usage-scope (Einordnung, 1. Okt. 2026)
+
+## Nachtrag 2026-11-05: Einrichtung bleibt nach der Anmeldung stehen (v0.1.932)
+
+Befund Alessandro (erster Kunde, 2026-11-04): Nach „Continue with ChatGPT“ blieb das Anmeldefenster leer, und der Einrichtungsassistent zeigte danach weiter „Womit soll AVA denken?“, obwohl der Chip „ChatGPT-Abo verbunden“ stand; es brauchte einen fremden API-Schlüssel. Ursache: Der Assistent stammte aus v0.1.565, als das Abo nur den Chat trug („ersetzt den Schlüssel nicht“), und blieb nach dem Abo bewusst im Schritt. Seit v0.1.780 trägt das Abo auch die Firmenverarbeitung. Fix: Mit Plan-Freigabe gilt das Abo wie ein Schlüssel (Einbettungsmodell laden, weiter zur App); ohne Freigabe (kein Plus/Pro) bleibt der Schritt mit Erklärung und erneutem Anmelde-Knopf. Das Anmeldefenster wird beim Abfangen des Redirects sofort versteckt, und ein Redirect, der nur als Ladefehler auf 127.0.0.1 ankommt, wird ebenfalls ausgewertet.

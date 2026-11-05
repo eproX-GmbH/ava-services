@@ -158,18 +158,24 @@ export function FirstRunWizard({
     // `onApiKeyDone` / `onSubscriptionDone` callbacks set
     // `usingHostedLlm`, which trips App.tsx's escape clause and lets
     // the app boot normally.
-    // v0.1.565 — Abo verbunden: Konfiguration nachladen, aber im Schritt
-    // bleiben (Hintergrund braucht weiterhin Schluessel/lokales Modell).
-    const onAboVerbunden = async () => {
-      const next = await window.api.agent.getProviderConfig();
-      setConfig(next);
-      onProviderConfigChanged?.(next);
-    };
     const onCloudDone = async () => {
       const next = await window.api.agent.getProviderConfig();
       setConfig(next);
       onProviderConfigChanged?.(next);
       onPathChosen?.();
+    };
+    // 2026-11-05 (Befund Alessandro): Seit dem Abo-ueberall-Umbau laeuft auch
+    // die Firmenverarbeitung ueber das ChatGPT-Abo. Mit Plan-Freigabe ist
+    // die Einrichtung damit fertig; ohne Freigabe (kein Plus/Pro) bleibt
+    // der Schritt offen und sagt, warum.
+    const onAboVerbunden = async (planScope: boolean) => {
+      if (planScope) {
+        await onCloudDone();
+        return;
+      }
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
     };
     return (
       <div className="first-run">
@@ -306,13 +312,6 @@ export function FirstRunWizard({
   }
 
   if (view === "chooser") {
-    // v0.1.565 — Abo verbunden: Konfiguration nachladen, aber im Schritt
-    // bleiben (Hintergrund braucht weiterhin Schluessel/lokales Modell).
-    const onAboVerbunden = async () => {
-      const next = await window.api.agent.getProviderConfig();
-      setConfig(next);
-      onProviderConfigChanged?.(next);
-    };
     const onCloudDone = async () => {
       const next = await window.api.agent.getProviderConfig();
       setConfig(next);
@@ -323,6 +322,19 @@ export function FirstRunWizard({
       }
       onPathChosen?.();
       setView("intro");
+    };
+    // 2026-11-05 (Befund Alessandro): Das ChatGPT-Abo traegt Chat UND
+    // Firmenverarbeitung. Mit Plan-Freigabe ist der Schritt erledigt wie beim
+    // Schluessel (Einbettungsmodell laden, weiter zur App). Ohne Freigabe
+    // bleibt der Schritt stehen und die Karte erklaert, was fehlt.
+    const onAboVerbunden = async (planScope: boolean) => {
+      if (planScope) {
+        await onCloudDone();
+        return;
+      }
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
     };
     // v0.1.219 — User wählt im Local-Section ein konkretes Modell. Wir
     // setzen Provider+Model, kicken Pull an, wechseln in die Intro-
@@ -353,7 +365,7 @@ export function FirstRunWizard({
           <p className="muted">
             {config?.providerLock
               ? "Deine Organisation legt Anbieter, Schlüssel und Modell fest. Bestätige unten den Organisationsschlüssel."
-              : "AVA braucht für die Hintergrund-Verarbeitung (Firmenprofile, Jahresabschlüsse, Publikationen) einen eigenen API-Schlüssel oder ein lokales Modell. Ein ChatGPT-Abo kannst du zusätzlich für den Chat verbinden — es ersetzt den Schlüssel nicht. Die Wahl lässt sich später unter Einstellungen → Modelle ändern."}
+              : "Ein ChatGPT-Abo (Plus oder Pro), ein eigener API-Schlüssel oder ein lokales Modell: Einer der drei Wege reicht, AVA nutzt ihn für Chat und Hintergrund-Verarbeitung. Die Wahl lässt sich später unter Einstellungen → Modelle ändern."}
           </p>
           {memoryWarning}
           <ProviderChooserGrid
@@ -590,13 +602,15 @@ function ProviderChooserGrid({
    *  herunterlud. */
   onPickLocal: (modelId: string) => void;
   onApiKeyDone: () => Promise<void> | void;
-  onSubscriptionDone: () => Promise<void> | void;
+  onSubscriptionDone: (planScope: boolean) => Promise<void> | void;
   onBack: () => void;
   disableLocal?: boolean;
   hideBack?: boolean;
 }) {
   const [active, setActive] = useState<ChooserSubForm>(null);
   const [aboVerbunden, setAboVerbunden] = useState(false);
+  // Plan-Freigabe des verbundenen Kontos (false = angemeldet, aber kein Plus/Pro).
+  const [aboPlanScope, setAboPlanScope] = useState<boolean | null>(null);
   // v0.1.557 — Organisationsschluessel auch in der Anbieterwahl anbieten
   // (deckt die Ollama-Fehlerseite ab, die den Organisationsschritt nicht hat).
   const [orgKarte, setOrgKarte] = useState<{ kind: HostedProviderKind; hint: string; lock: boolean } | null>(null);
@@ -608,7 +622,10 @@ function ProviderChooserGrid({
         const provs = (b.orgProviders ?? {}) as Partial<Record<string, string>>;
         const kinds = (["openai", "anthropic", "google", "mistral", "deepseek", "xai", "qwen"] as HostedProviderKind[]).filter((k) => provs[k]);
         if (kinds.length > 0) setOrgKarte({ kind: kinds[0]!, hint: provs[kinds[0]!] ?? "", lock: b.providerLock === true });
-        if (b.hasOpenAISubscriptionToken) setAboVerbunden(true);
+        if (b.hasOpenAISubscriptionToken) {
+          setAboVerbunden(true);
+          void window.api.agent.chatgptPlanStand().then((s) => setAboPlanScope(s.planScope)).catch(() => undefined);
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -666,10 +683,9 @@ function ProviderChooserGrid({
       {/* v0.1.561 — unter Anbieter-Sperre gibt es nur den Organisationsweg;
           Abo, eigener Schluessel und lokale Modelle entfallen komplett. */}
       {!orgKarte?.lock && (<>
-      {/* v0.1.565 — Reihenfolge nach Notwendigkeit: Die Hintergrund-
-          Verarbeitung (Firmenprofile, Jahresabschluesse, Publikationen)
-          braucht einen API-Schluessel oder ein lokales Modell. Das ChatGPT-
-          Abo deckt nur den Chat ab und ist deshalb ein optionaler Zusatz. */}
+      {/* Reihenfolge: eigener Schluessel, lokale Modelle, ChatGPT-Abo. Seit
+          dem Abo-ueberall-Umbau traegt das Abo auch die Firmenverarbeitung;
+          jeder der drei Wege reicht fuer sich. */}
       {/* Sektion 1 — API-Key bei externem Provider (Pflichtweg A) */}
       <div className="first-run__hero-grid">
       <div className="first-run__hero">
@@ -782,16 +798,33 @@ function ProviderChooserGrid({
           Kontakte, Jahresabschlüsse) läuft über AVAs eigenes Modell und braucht keinen Zugang von dir.
           {orgKarte ? " Ist der Organisationsschlüssel gewählt, übernimmt er Chat und Hintergrund." : ""}
         </p>
-        {aboVerbunden ? (
+        {aboVerbunden && aboPlanScope === false ? (
+          <>
+            <p className="muted small">
+              <span className="badge warn">ChatGPT verbunden, aber ohne Plan-Freigabe</span> · Dein ChatGPT-Konto gibt die
+              Plan-Nutzung nicht frei (nötig ist Plus oder Pro, und die Freigabe im Anmeldefenster). AVA kann dieses Konto
+              deshalb nicht nutzen: Hinterlege einen eigenen Schlüssel, wähle ein lokales Modell oder verbinde ein anderes
+              ChatGPT-Konto.
+            </p>
+            <OpenAISubscriptionHeroCTA
+              onDone={async (planScope) => {
+                setAboVerbunden(true);
+                setAboPlanScope(planScope);
+                await onSubscriptionDone(planScope);
+              }}
+            />
+          </>
+        ) : aboVerbunden ? (
           <p className="muted small">
             <span className="badge ok">ChatGPT-Abo verbunden</span> · Chat und Hintergrund-KI laufen über dein Abo.
             Sprachmodus und Deep Research brauchen zusätzlich einen Schlüssel{orgKarte ? " oder den Organisationsschlüssel" : ""}.
           </p>
         ) : (
           <OpenAISubscriptionHeroCTA
-            onDone={async () => {
+            onDone={async (planScope) => {
               setAboVerbunden(true);
-              await onSubscriptionDone();
+              setAboPlanScope(planScope);
+              await onSubscriptionDone(planScope);
             }}
           />
         )}
@@ -961,7 +994,7 @@ function ApiKeySubForm({
 function OpenAISubscriptionHeroCTA({
   onDone,
 }: {
-  onDone: () => Promise<void> | void;
+  onDone: (planScope: boolean) => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -973,7 +1006,7 @@ function OpenAISubscriptionHeroCTA({
       // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — offizieller Flow mit Plan-Nutzung.
       const result = await window.api.agent.connectChatgptPlan();
       if (result.ok) {
-        await onDone();
+        await onDone(result.planScope);
         return;
       }
       setError(result.error);
