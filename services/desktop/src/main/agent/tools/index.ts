@@ -23,6 +23,7 @@ import type { MemoryStore } from "../memory";
 import { ToolRegistry } from "../tool-registry";
 import { buildCompanyTools } from "./companies";
 import { buildResearchLaufTools } from "./research-lauf";
+import { buildDiensteTools } from "./dienste";
 import { buildSprachmodusTools } from "./sprachmodus";
 import { buildTransactionTools } from "./transactions";
 import { buildUiTools } from "./ui";
@@ -251,6 +252,7 @@ export function buildReadOnlyRegistry(deps: {
   };
   for (const t of buildCompanyTools(ctx)) registry.register(t);
   for (const t of buildResearchLaufTools({ gateway: deps.gateway })) registry.register(t);
+  for (const t of buildDiensteTools({ gateway: deps.gateway })) registry.register(t);
   if (deps.sprache) for (const t of buildSprachmodusTools(deps.sprache)) registry.register(t);
   // T5 — Konto + Tenant (read-only).
   for (const t of buildAccountTools({

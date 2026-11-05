@@ -28,6 +28,7 @@ import { billingRouter } from "./v1/billing";
 import { seatBillingRouter } from "./v1/seat-billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { bestandssucheRouter } from "./v1/bestandssuche";
+import { dienstWebhooksRouter } from "./v1/dienst-webhooks";
 import { companyStateRouter } from "./v1/company-state";
 import { verflechtungenRouter } from "./v1/verflechtungen";
 import { companiesVerflechtungenRouter } from "./v1/companies-verflechtungen";
@@ -73,6 +74,7 @@ v1.use("*", auditMiddleware);
 v1.route("/", companiesMatrixRouter);
 // Bestandssuche: fester Pfad /companies/bestand/suche vor den /companies/{companyId}-Routen.
 v1.route("/", bestandssucheRouter);
+v1.route("/", dienstWebhooksRouter);
 // P10 — aktiv/ruhend je Nutzer (vor companiesRouter wegen /firmen/... Praefix).
 v1.route("/", firmenZustandRouter);
 // docs/PLAN_PROBLEM_MELDEN.md — Problemmeldungen (Nutzer) und Triage (Betreiber).

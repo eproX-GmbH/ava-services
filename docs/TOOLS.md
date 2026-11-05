@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-05
-Anzahl Tools: 306
+Anzahl Tools: 307
 
 ## Firmen (29)
 
@@ -1412,6 +1412,22 @@ _Parameter:_
 - `datei: string` (required)
 - `begriff: string` (required) — Suchbegriff oder Regex
 - `umfeld: integer` — Zeichen vor und nach dem Treffer (Standard 200)
+
+## dienste (1)
+
+### `dienst_ereignisse`
+
+_Datei:_ `services/desktop/src/main/agent/tools/dienste.ts`
+
+Liest Ereignisse, die verbundene Dienste über ihren Rückkanal an AVA gemeldet haben (z. B. CompLeadly: Kontaktanfrage angenommen, Lead hat geantwortet, Nachricht gesendet). Neueste zuerst, je Ereignis Typ, Name, Firma, Position, LinkedIn-Adresse und Zeit; die Rohdaten stehen in `nutzlast`. Ist für einen Dienst kein Rückkanal eingerichtet (kommt nichts an), den Stand über die Werkzeuge des Dienstes holen (mcp_<dienst>_…). Mit gelesenMarkieren=true gelten die gelieferten Ereignisse danach als erledigt.
+
+_Parameter:_
+- `dienst: string` — Nur dieser Dienst (Kurzname, z. B. compleadly)
+- `seit: string` — Nur Ereignisse nach diesem Zeitpunkt (ISO-8601)
+- `nurUngelesen: boolean` — Nur noch nicht als gelesen markierte Ereignisse
+- `limit: integer` — Anzahl, Standard 20, höchstens 200
+- `gelesenMarkieren: boolean` — Gelieferte Ereignisse als gelesen markieren
+- `mitRohdaten: boolean` — Rohdaten (nutzlast) mitliefern; Standard nein
 
 ## discovery (7)
 

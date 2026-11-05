@@ -1419,3 +1419,34 @@ model SuchBlock {
   @@unique([quelle, companyId, ref])
   @@index([companyId, quelle])
 }
+
+/// docs/PLAN_CLOSE_MCP.md C4 — Empfangsadresse fuer Ereignisse eines fremden Dienstes (je Nutzer und Dienst).
+model WebhookEmpfaenger {
+  id        String    @id
+  token     String    @unique
+  tenantId  String
+  actorId   String
+  dienst    String
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  zuletztAt DateTime? @db.Timestamptz(6)
+  anzahl    Int       @default(0)
+  ereignisse DienstEreignis[]
+
+  @@unique([actorId, dienst], map: "WebhookEmpfaenger_actor_dienst_key")
+}
+
+/// Eingehendes Ereignis eines fremden Dienstes, roh abgelegt.
+model DienstEreignis {
+  id           String    @id
+  empfaengerId String
+  tenantId     String
+  actorId      String
+  dienst       String
+  typ          String?
+  nutzlast     Json
+  empfangenAt  DateTime  @default(now()) @db.Timestamptz(6)
+  gelesenAt    DateTime? @db.Timestamptz(6)
+  empfaenger   WebhookEmpfaenger @relation(fields: [empfaengerId], references: [id], onDelete: Cascade)
+
+  @@index([actorId, empfangenAt(sort: Desc)], map: "DienstEreignis_actor_empfangen_idx")
+}

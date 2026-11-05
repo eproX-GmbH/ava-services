@@ -36,6 +36,7 @@ import { startRegisterJobCron } from "./lib/register-jobs";
 import { mcpOauthRouter } from "./routes/mcp-oauth";
 import { makeMcpRouter } from "./routes/mcp";
 import { makeA2aRouter } from "./routes/a2a";
+import { webhookEmpfangRouter } from "./routes/v1/dienst-webhooks";
 import { startA2aTakt } from "./lib/a2a-tasks";
 import { appRouter } from "./routes/app";
 import { instanzRouter } from "./lib/instanz-router";
@@ -95,6 +96,8 @@ app.route("/health", healthRouter);
 // route matching delivers `/v1/billing/webhook` here (signature-authed,
 // raw body) instead of the JWT-gated v1 chain.
 app.route("/", billingWebhookRouter);
+// C4 (docs/PLAN_CLOSE_MCP.md) — Ereignisse fremder Dienste, Token in der Adresse statt JWT.
+app.route("/", webhookEmpfangRouter);
 
 // Self-serve registration. Mounted BEFORE /v1 so anonymous calls
 // reach the handler (the /v1 chain requires a Bearer token). See

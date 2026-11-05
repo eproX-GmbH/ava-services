@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { McpDienstAnzeige } from "../../../../shared/types";
+import { gatewayFetch } from "../../api/gateway";
 
 type Zugang = "keine" | "zugangscode" | "kopfzeilen";
 type Art = "mcp" | "a2a";
@@ -212,6 +213,58 @@ export function DiensteSection() {
   );
 }
 
+/** Dezente Rückkanal-Zeile: Empfangsadresse für Ereignisse des Dienstes (nur Werkzeugdienste). */
+function Rueckkanal({ dienst }: { dienst: McpDienstAnzeige }) {
+  const qc = useQueryClient();
+  const liste = useQuery({ queryKey: ["dienst-webhooks"], queryFn: () => gatewayFetch<{ empfaenger: Array<{ id: string; dienst: string; url: string; anzahl: number; zuletztAt: string | null }> }>("/v1/dienste/webhooks") });
+  const [busy, setBusy] = useState(false);
+  const [kopiert, setKopiert] = useState(false);
+  const eintrag = (liste.data?.empfaenger ?? []).find((e) => e.dienst === dienst.slug);
+  const anlegen = async () => {
+    setBusy(true);
+    try {
+      await gatewayFetch("/v1/dienste/webhooks", { method: "POST", body: { dienst: dienst.slug } });
+      await qc.invalidateQueries({ queryKey: ["dienst-webhooks"] });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const kopieren = async () => {
+    if (!eintrag) return;
+    try {
+      await navigator.clipboard.writeText(eintrag.url);
+      setKopiert(true);
+      setTimeout(() => setKopiert(false), 1500);
+    } catch {
+      /* Adresse ist markierbar */
+    }
+  };
+  const istCompleadly = dienst.slug === "compleadly" || /compleadly|complead/i.test(dienst.url);
+  return (
+    <div className="dienste-rueckkanal">
+      <span className="dienste-rueckkanal__label">Rückkanal</span>
+      {eintrag ? (
+        <>
+          <code className="dienste-rueckkanal__url" title={eintrag.url}>{eintrag.url}</code>
+          <button type="button" className="link-button" onClick={() => void kopieren()}>{kopiert ? "Kopiert" : "Kopieren"}</button>
+          <span className="dienste-rueckkanal__stand">
+            {eintrag.anzahl > 0 ? `${eintrag.anzahl} Ereignisse, zuletzt ${eintrag.zuletztAt ? new Date(eintrag.zuletztAt).toLocaleString("de-DE") : "–"}` : "noch nichts eingegangen"}
+          </span>
+        </>
+      ) : (
+        <button type="button" className="link-button" onClick={() => void anlegen()} disabled={busy || liste.isLoading}>
+          {busy ? "Legt an…" : "Adresse anlegen"}
+        </button>
+      )}
+      <span className="dienste-rueckkanal__hinweis">
+        {istCompleadly
+          ? "In CompLeadly unter Einstellungen → Webhooks eintragen, dort ab Premium. Ohne Rückkanal fragt AVA den Stand über die Werkzeuge ab."
+          : "Beim Dienst als Webhook-Adresse eintragen, wenn er Ereignisse senden kann. Ohne Rückkanal fragt AVA den Stand über die Werkzeuge ab."}
+      </span>
+    </div>
+  );
+}
+
 function DienstKarte({ dienst }: { dienst: McpDienstAnzeige }) {
   const [busy, setBusy] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -252,6 +305,7 @@ function DienstKarte({ dienst }: { dienst: McpDienstAnzeige }) {
         {dienst.zuletztVerbunden && <span>Zuletzt verbunden: {new Date(dienst.zuletztVerbunden).toLocaleString("de-DE")}</span>}
       </div>
       {(fehler ?? dienst.fehler) && <p className="crm-card-error">{fehler ?? dienst.fehler}</p>}
+      {dienst.art !== "a2a" && <Rueckkanal dienst={dienst} />}
     </li>
   );
 }
