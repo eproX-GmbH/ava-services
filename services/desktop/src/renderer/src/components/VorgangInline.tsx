@@ -27,6 +27,8 @@ const STAGE_LABEL: Record<string, string> = {
   companyContact: "Kontakt",
   companyEmail: "E-Mail",
 };
+/** Kurzform fuer die Kopfzeile (52 px je Spalte); die Langform steht im Tooltip. */
+const STAGE_KURZ: Record<string, string> = { companyPublication: "Publik.", structuredContent: "Struktur" };
 const STATE_LABEL: Record<CellState, string> = {
   completed: "fertig",
   failed: "fehlgeschlagen",
@@ -81,37 +83,58 @@ export function VorgangInline({ transactionId, laeuft }: { transactionId: string
 
   if (!pipeline || pipeline.rows.length === 0 || pipeline.rows.length > INLINE_MAX_FIRMEN) return null;
   const stufen = pipeline.stages.filter((s) => s in STAGE_LABEL && !pipeline.unavailableStages.includes(s));
+  // 2026-11-05 (Joyce): keine Tabelle mehr — ein Raster, das sich ueber
+  // Container-Abfragen der Kartenbreite anpasst (schmal: Punkte unter dem
+  // Namen, Stufenkopf weg), Firmenname ohne Link-Blau, Fehler je Firma als
+  // eigene Zeile statt nur im Tooltip.
   return (
     <div className="vorgang-inline">
-      <table className="matrix vorgang-inline__tabelle">
-        <thead>
-          <tr>
-            <th>Firma</th>
-            {stufen.map((s) => <th key={s}>{STAGE_LABEL[s]}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {pipeline.rows.map((r) => (
-            <tr key={r.companyId}>
-              <td className="matrix-company">
-                <Link to={`/companies/${encodeURIComponent(r.companyId)}`}>{namen[r.companyId] ?? r.companyId}</Link>
-              </td>
-              {stufen.map((s) => {
-                const z = r.cells[s];
-                const titel = z ? `${STAGE_LABEL[s]}: ${STATE_LABEL[z.state]}${z.errorMessage ? ` · ${z.errorMessage.slice(0, 120)}` : ""}` : STAGE_LABEL[s];
-                return (
-                  <td key={s} className="matrix-cell">
-                    <span className="cell-dot" title={titel} aria-label={titel}>
+      <div className="vi-kopf" aria-hidden="true">
+        <span className="vi-kopf__firma">Firma</span>
+        <div className="vi-stufen vi-stufen--kopf">
+          {stufen.map((s) => <span key={s} className="vi-stufe vi-stufe--label" title={STAGE_LABEL[s]}>{STAGE_KURZ[s] ?? STAGE_LABEL[s]}</span>)}
+        </div>
+      </div>
+      <ul className="vi-liste">
+        {pipeline.rows.map((r) => {
+          const fehler = stufen
+            .map((s) => ({ s, z: r.cells[s] }))
+            .filter((x): x is { s: string; z: Cell } => Boolean(x.z && x.z.state === "failed"));
+          const fertig = stufen.filter((s) => r.cells[s]?.state === "completed").length;
+          return (
+            <li key={r.companyId} className="vi-zeile">
+              <Link className="vi-firma" to={`/companies/${encodeURIComponent(r.companyId)}`} title={namen[r.companyId] ?? r.companyId}>
+                {namen[r.companyId] ?? r.companyId}
+              </Link>
+              <div className="vi-stufen" role="img" aria-label={`${fertig} von ${stufen.length} Stufen fertig`}>
+                {stufen.map((s) => {
+                  const z = r.cells[s];
+                  const titel = z ? `${STAGE_LABEL[s]}: ${STATE_LABEL[z.state]}${z.errorMessage ? ` · ${z.errorMessage.slice(0, 120)}` : ""}` : STAGE_LABEL[s];
+                  return (
+                    <span key={s} className="vi-stufe" title={titel}>
                       <span className={`dot ${z ? stateClass(z.state, z.errorMessage) : "pending"}`} />
                     </span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <Link className="vorgang-inline__link" to={`/transactions/${encodeURIComponent(transactionId)}`}>Vorgang öffnen</Link>
+                  );
+                })}
+              </div>
+              {fehler.length > 0 && (
+                <div className="vi-fehler">
+                  {fehler.map(({ s, z }) => (
+                    <span key={s}>
+                      <strong>{STAGE_LABEL[s]}</strong> {STATE_LABEL[z.state]}
+                      {z.errorMessage ? `: ${z.errorMessage.slice(0, 90)}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <Link className="vi-oeffnen" to={`/transactions/${encodeURIComponent(transactionId)}`}>
+        Vorgang öffnen
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
+      </Link>
     </div>
   );
 }

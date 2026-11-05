@@ -8900,13 +8900,46 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .chat-msg-notiz .chat-content { background: transparent; padding: 0; border: 0; box-shadow: none; max-width: 100%; color: inherit; }
 /* 2026-10-04: Karten im Verlauf, eingerueckt wie die Werkzeug-Schritte */
 .auf-leiste--verlauf { margin: 6px 0 10px; max-width: 640px; }
-/* Vorgangs-Matrix in der Aufgabenkarte (bis 5 Firmen). */
-.vorgang-inline { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.vorgang-inline__tabelle { width: 100%; font-size: 12px; }
-.vorgang-inline__tabelle th, .vorgang-inline__tabelle td { padding: 3px 6px; }
-.vorgang-inline__tabelle tbody tr { cursor: default; }
-.vorgang-inline__tabelle .matrix-company { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vorgang-inline__link { font-size: 12px; align-self: flex-start; }
+/* Vorgangs-Matrix in der Aufgabenkarte (bis 5 Firmen). 2026-11-05: Raster
+   statt Tabelle, Container-Abfrage auf die Kartenbreite; Firmenname in
+   Textfarbe statt Link-Blau; Fehler je Firma als Zeile. */
+.auf-item { padding: 10px 12px 10px 14px; align-items: start; }
+.auf-item__punkt { margin-top: 5px; }
+.auf-item__x { margin-top: -2px; }
+.auf-item--fertig .auf-item__balken > div { background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 70%, var(--color-bg-0)); }
+.vorgang-inline { container-type: inline-size; margin-top: 8px; display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.vi-kopf { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 0 0 4px; border-bottom: 1px solid var(--border); }
+.vi-kopf__firma, .vi-stufe--label { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+.vi-kopf__firma { letter-spacing: 0.04em; text-transform: uppercase; }
+.vi-liste { list-style: none; margin: 0; padding: 0; }
+.vi-zeile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.vi-zeile:last-child { border-bottom: 0; }
+.vorgang-inline a.vi-firma { color: var(--fg); font-weight: 600; font-size: 13px; text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vorgang-inline a.vi-firma:hover { color: var(--color-brand-500, #00c0a7); text-decoration: underline; text-underline-offset: 3px; }
+.vi-stufen { display: flex; align-items: center; gap: 0; flex: none; }
+.vi-stufe { width: 52px; display: inline-flex; align-items: center; justify-content: center; }
+.vi-stufe .dot { width: 11px; height: 11px; }
+.vi-stufe .dot.bad { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+.vi-stufe .dot.warn { box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.2); }
+.vi-stufe--label { text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; display: inline-block; }
+.vi-fehler { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 11.5px; color: #b91c1c; line-height: 1.4; }
+:root.dark .vi-fehler { color: #f87171; }
+.vi-fehler strong { font-weight: 600; }
+.vorgang-inline a.vi-oeffnen, .auf-item a.vi-oeffnen {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
+  padding: 4px 10px 4px 11px; border: 1px solid var(--border); border-radius: 999px;
+  font-size: 12px; font-weight: 500; color: var(--fg); text-decoration: none; background: transparent; transition: var(--ctrl-transition);
+}
+.vorgang-inline a.vi-oeffnen:hover, .auf-item a.vi-oeffnen:hover { border-color: var(--color-brand-500, #00c0a7); color: var(--color-brand-500, #00c0a7); background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 7%, transparent); text-decoration: none; }
+.vi-oeffnen svg { display: block; }
+/* Schmal (Fenster neben einer Firmenseite, Handy im Web): Kopfzeile weg,
+   Punkte dichter und unter dem Namen. */
+@container (max-width: 480px) {
+  .vi-kopf { display: none; }
+  .vi-zeile { grid-template-columns: minmax(0, 1fr); gap: 3px 0; padding: 7px 0; }
+  .vi-stufe { width: 22px; justify-content: flex-start; }
+  .vi-stufe .dot { width: 10px; height: 10px; }
+}
 
 /* Kunden-Reiter (docs/PLAN_KUNDEN.md). Gruppen sind eigene Tabellen mit
    festen Spaltenbreiten, damit die Kanten über alle Gruppen gleich sind.

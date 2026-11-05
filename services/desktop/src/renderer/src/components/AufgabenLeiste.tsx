@@ -98,7 +98,10 @@ export function AufgabenKarten({ liste }: { liste: AufgabeAnzeige[] }) {
               {s && s.total > 0 && s.total <= INLINE_MAX_FIRMEN && a.status !== "nicht_verfolgt" ? (
                 <VorgangInline transactionId={a.transactionId} laeuft={laeuft} />
               ) : (
-                <Link className="vorgang-inline__link" to={`/transactions/${encodeURIComponent(a.transactionId)}`}>Vorgang öffnen</Link>
+                <Link className="vi-oeffnen" to={`/transactions/${encodeURIComponent(a.transactionId)}`}>
+                  Vorgang öffnen
+                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
+                </Link>
               )}
             </div>
             {laeuft && (
