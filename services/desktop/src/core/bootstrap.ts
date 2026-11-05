@@ -89,6 +89,7 @@ import { CrmManager } from "../main/crm";
 import { setOrgQuotaExceededHandler } from "../main/agent/providers/ai-sdk-provider";
 import { initOrganisation, onSignedIn as organisationSignedIn, checkTenantChange } from "../main/organisation";
 import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "../main/org-policy";
+import { McpDienste } from "../main/mcp-client";
 import * as relevanz from "../main/relevanz";
 import { fokusFirmen, faelligeNachfragen } from "../main/buying-center/fokus";
 import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "../main/linkedin/scheduler";
@@ -1808,6 +1809,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     isSignedIn: () => auth.getStatus().signedIn,
   });
 
+  // docs/PLAN_CLOSE_MCP.md C2 — verbundene Dienste; startet nach dem Aufbau der
+  // Werkzeugliste (siehe unten), Werkzeuge kommen zur Laufzeit dazu.
+  let mcpDienste: McpDienste | null = null;
   const agentRegistry = buildReadOnlyRegistry({
     gateway: gatewayClient,
     providers,
@@ -1942,6 +1946,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     selfCorrectionsStore,
     getActiveConversationId: () => agent.getStatus().inFlightConversationId,
   });
+  mcpDienste = new McpDienste({ registry: agentRegistry, log: (m) => console.info(m) });
+  mcpDienste.on("aenderung", (liste) => windows().broadcast("mcp-dienste:changed", liste));
+  void mcpDienste.start();
   // v0.1.405 — Tages-Token-Limit-Status berechnen (Chat + Agent teilen
   // EINEN Tageszähler). `usedToday` ist die Summe aller heute (UTC-
   // Kalendertag) verbrauchten Tokens im lokalen UsageStore.
@@ -4705,6 +4712,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     broadcastWatchesChanged,
     computeDailyLimitStatus,
     crmManager,
+    mcpDienste: mcpDienste!,
     customerProfiles,
     cycleCompanyContact,
     discoveryMatches,

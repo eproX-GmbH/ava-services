@@ -17,6 +17,7 @@ import { registerSkillsIpc } from "./ipc/skills";
 import { registerAgentIpc } from "./ipc/agent";
 import { registerInstanzIpc } from "./ipc/instanz";
 import { registerCrmIpc } from "./ipc/crm";
+import { registerMcpDiensteIpc } from "./ipc/mcp-dienste";
 import { registerStammdatenIpc } from "./ipc/stammdaten";
 import { registerVorschlaegeIpc } from "./ipc/vorschlaege";
 import { registerThemenIpc } from "./ipc/themen";
@@ -317,7 +318,7 @@ app.whenReady().then(async () => {
     },
   });
   core = c;
-  const { APP_CONFIG, GATEWAY_URL, agent, agentRegistry, alertPrefs, alerts, apifyZugangInfo, attachments, audit, auditStore, auth, autonomyStore, broadcastAlertsChanged, broadcastDailyLimitStatus, broadcastMailSnapshot, broadcastMissingProducers, broadcastWatchesChanged, computeDailyLimitStatus, crmManager, customerProfiles, cycleCompanyContact, discoveryMatches, externalServiceMonitor, freshness, freshnessPrefs, gatewayClient, generalMemory, getTenantTierCached, heartbeat, hintergrundAufgaben, icpStore, interest, knowledge, knowledgeStore, memory, memoryProbe, notifications, ollama, ollamaUpdater, postgres, producers, providerConfigStore, providers, publicationStore, registerQueueStatus, resolveApifyAccess, retryTicker, selfCorrectionsStore, skillStore, skillsPrefs, skillsTrust, spracheRelay, spracheStand, spracheStore, statusWatcher, storageDeps, telegramSnapshot, telegramStore, toSkillRow, updater, usageStore, userProfile, watchStore, wf, whisper, workerModusMerkerLoeschen, workerModusMerkerSetzen } = c;
+  const { APP_CONFIG, GATEWAY_URL, agent, agentRegistry, alertPrefs, alerts, apifyZugangInfo, attachments, audit, auditStore, auth, autonomyStore, broadcastAlertsChanged, broadcastDailyLimitStatus, broadcastMailSnapshot, broadcastMissingProducers, broadcastWatchesChanged, computeDailyLimitStatus, crmManager, mcpDienste, customerProfiles, cycleCompanyContact, discoveryMatches, externalServiceMonitor, freshness, freshnessPrefs, gatewayClient, generalMemory, getTenantTierCached, heartbeat, hintergrundAufgaben, icpStore, interest, knowledge, knowledgeStore, memory, memoryProbe, notifications, ollama, ollamaUpdater, postgres, producers, providerConfigStore, providers, publicationStore, registerQueueStatus, resolveApifyAccess, retryTicker, selfCorrectionsStore, skillStore, skillsPrefs, skillsTrust, spracheRelay, spracheStand, spracheStore, statusWatcher, storageDeps, telegramSnapshot, telegramStore, toSkillRow, updater, usageStore, userProfile, watchStore, wf, whisper, workerModusMerkerLoeschen, workerModusMerkerSetzen } = c;
 
   // Protokoll-Handler (Schemata sind oben vor whenReady privilegiert).
   registerScreenshotProtocol();
@@ -412,6 +413,7 @@ app.whenReady().then(async () => {
   // ---- IPC je Domäne (src/main/ipc/) --------------------------------------
   registerSkillsIpc({ agentRegistry, focusedWindow, skillsPrefs, skillStore, skillsTrust, toSkillRow });
   registerCrmIpc({ auth, crmManager, GATEWAY_URL });
+  registerMcpDiensteIpc({ mcpDienste });
   registerLaufzeitIpc({ externalServiceMonitor, ollama, ollamaUpdater, postgres, producers, storageDeps, updater });
   registerSpracheIpc({ auth, gatewayClient, providers, spracheRelay, spracheStand, spracheStore, userProfile });
   registerStammdatenIpc({ mithelfen: core.mithelfen, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });

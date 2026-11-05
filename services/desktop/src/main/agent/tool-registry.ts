@@ -28,6 +28,15 @@ export class ToolRegistry {
     return this.tools.get(name);
   }
 
+  /** 2026-11-05 (verbundene Dienste): Werkzeuge kommen und gehen zur Laufzeit. */
+  has(name: string): boolean {
+    return this.tools.has(name);
+  }
+
+  unregister(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   list(): Tool[] {
     return Array.from(this.tools.values()).filter((t) => !this.gesperrt(t.name));
   }

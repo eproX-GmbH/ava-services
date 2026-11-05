@@ -932,6 +932,20 @@ const api = {
       ipcRenderer.invoke("crm:linkManually", args),
   },
 
+  // Weitere Dienste (docs/PLAN_CLOSE_MCP.md C2): Dienste mit eigener Werkzeugschnittstelle.
+  mcpDienste: {
+    liste: (): Promise<import("../shared/types").McpDienstAnzeige[]> => ipcRenderer.invoke("mcp-dienste:liste"),
+    hinzufuegen: (args: { name: string; url: string; zugang: "keine" | "zugangscode" | "kopfzeilen"; zugangscode?: string; kopfzeilen?: Record<string, string> }): Promise<import("../shared/types").McpDienstAnzeige> =>
+      ipcRenderer.invoke("mcp-dienste:hinzufuegen", args),
+    pruefen: (id: string): Promise<import("../shared/types").McpDienstAnzeige> => ipcRenderer.invoke("mcp-dienste:pruefen", id),
+    entfernen: (id: string): Promise<void> => ipcRenderer.invoke("mcp-dienste:entfernen", id),
+    onChanged: (cb: (liste: import("../shared/types").McpDienstAnzeige[]) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, liste: import("../shared/types").McpDienstAnzeige[]) => cb(liste);
+      ipcRenderer.on("mcp-dienste:changed", handler);
+      return () => ipcRenderer.removeListener("mcp-dienste:changed", handler);
+    },
+  },
+
   // Agent (Phase 8). Renderer initiates a turn with `send`, then watches
   // `onStream` for token / tool-call / tool-result / done / error frames.
   // Status changes (Ollama up, model picked, in-flight) push via

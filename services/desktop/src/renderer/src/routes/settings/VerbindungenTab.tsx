@@ -6,6 +6,7 @@ import { MailAccountSection } from "./MailAccountSection";
 import { MailEntwurfSection } from "./MailEntwurfSection";
 import { TelegramSection } from "./TelegramSection";
 import { WissensquellenTab } from "./WissensquellenTab";
+import { DiensteSection } from "./DiensteSection";
 import { useFeature } from "../../store/policy";
 
 export function VerbindungenTab() {
@@ -13,6 +14,7 @@ export function VerbindungenTab() {
   const linkedin = useFeature("linkedin.beobachter");
   const mail = useFeature("mail");
   const telegram = useFeature("telegram");
+  const dienste = useFeature("mcp.dienste");
   return (
     <>
       <CrmSection />
@@ -29,6 +31,7 @@ export function VerbindungenTab() {
       </section>
       {telegram && <TelegramSection />}
       <WissensquellenTab />
+      {dienste && <DiensteSection />}
     </>
   );
 }

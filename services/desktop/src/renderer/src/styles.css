@@ -9411,3 +9411,12 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .zustand-marke--ruhend { font-style: italic; }
 .zustand-marke__weg { background: none; border: none; padding: 0 2px; margin: 0; font: inherit; color: inherit; cursor: pointer; opacity: 0.6; line-height: 1; }
 .zustand-marke__weg:hover { opacity: 1; text-decoration: none; }
+
+/* Einstellungen → Weitere Dienste (docs/PLAN_CLOSE_MCP.md C2) */
+.dienste-form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.dienste-feld { display: flex; flex-direction: column; gap: 4px; }
+.dienste-feld input, .dienste-feld select { width: 100%; max-width: 520px; }
+.dienste-kopfzeile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px; max-width: 520px; }
+.dienste-aktionen { display: flex; flex-wrap: wrap; gap: 8px; }
+.dienste-details { margin-top: 10px; }
+.dienste-details code { font-size: 11px; }

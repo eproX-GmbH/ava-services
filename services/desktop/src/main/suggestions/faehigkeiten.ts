@@ -28,6 +28,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "radar", text: "Firmen-Radar: Scan in einer Region, Kandidaten mit Mini-Profil und ICP-Score, importieren oder verwerfen, Automatik und Deckel, Live-Stand", tools: ["discovery_*", "radar_config", "radar_activity", "geo_places_nearby"] },
   { id: "publikationen", text: "Jahresabschluesse und Publikationen einer Firma durchsuchen", tools: ["publication_search"] },
   { id: "hubspot", text: "HubSpot oder Close verbinden: Firmen, Kontakte, Deals, Aufgaben, Notizen lesen, anlegen, aktualisieren, mit AVA-Firmen verknuepfen", tools: ["crm_*", "connect_crm", "disconnect_crm"] },
+  { id: "dienste", text: "Weitere Dienste mit eigener Werkzeugschnittstelle (z. B. Close, CompLeadly) verbinden und deren Werkzeuge nutzen", tools: ["mcp_*"] },
   { id: "notion", text: "Notion verbinden, Datenbanken und Seiten lesen, anlegen, aktualisieren", tools: ["notion_*"] },
   { id: "obsidian", text: "Obsidian verbinden, Notizen lesen, anlegen, aendern, Tags und Ordner", tools: ["obsidian_*"] },
   { id: "linkedin_beobachter", text: "LinkedIn-Beobachter: eigenes Konto verbinden, Feed-Signale zu Firmen (Personalwechsel, Produkte, Messen) erkennen und bewerten", tools: ["linkedin_status", "linkedin_connect", "linkedin_disconnect", "linkedin_scan_cancel", "linkedin_signals_cancel", "linkedin_killswitch", "linkedin_beobachter"], feature: "linkedin.beobachter" },

@@ -81,6 +81,8 @@ export const ORG_FEATURES = [
   { key: "mcp.auftraege", label: "MCP: Auftraege", hinweis: "Importe und Verarbeitungen aus Claude/ChatGPT anlegen (zaehlen gegen das Kontingent wie in der App)" },
   { key: "mcp.kopf", label: "MCP: Werkzeuge der laufenden AVA", hinweis: "Claude/ChatGPT duerfen die Werkzeuge der laufenden AVA des Nutzers (Desktop-App oder Server) ueber das Relais aufrufen; Rueckfragen und Freigaben gehen an den Nutzer" },
   { key: "mcp.kontakte", label: "MCP: Kontakte", hinweis: "Ansprechpartner mit Personendaten ueber MCP lesen. Standard aus", standardAus: true },
+  // docs/PLAN_CLOSE_MCP.md C2 — AVA als Client fremder Dienste (Close, CompLeadly, ...).
+  { key: "mcp.dienste", label: "Weitere Dienste (MCP-Client)", hinweis: "Mitglieder duerfen fremde Dienste mit eigener Werkzeugschnittstelle verbinden (z. B. Close CRM, CompLeadly); AVA nutzt deren Werkzeuge im Chat und in Workflows" },
 ] as const;
 
 // ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) ---------------------------------
@@ -1733,6 +1735,23 @@ export const CRM_PROVIDER_KINDS: ReadonlyArray<CrmProviderKind> = [
   "dynamics",
   "close",
 ];
+
+/** docs/PLAN_CLOSE_MCP.md C2 — verbundener Dienst, wie der Renderer ihn sieht (keine Zugangsdaten). */
+export interface McpDienstAnzeige {
+  id: string;
+  name: string;
+  slug: string;
+  url: string;
+  zugang: "keine" | "zugangscode" | "kopfzeilen";
+  kopfzeilenNamen: string[];
+  erstelltAm: string;
+  zuletztVerbunden: string | null;
+  werkzeuge: number;
+  fehler: string | null;
+  verbunden: boolean;
+  transport: "http" | "sse" | null;
+  werkzeugNamen: string[];
+}
 
 export interface CrmProviderStatus {
   provider: CrmProviderKind;

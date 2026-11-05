@@ -31,10 +31,19 @@ const MUTATING_RE = /(_update|_sync|_enrich|_associate|_disassociate|_complete|_
 const ADDITIVE_RE = /(_create|_send|_reply|_forward|_log|_append|_register|_add|_start|_run|_import|_share|_write|_schedule|_ablegen)/;
 
 const KONTINGENT_RE = /^(discovery_scan|discovery_decide|import_|radar_run|company_(profile|publications|contacts))/;
-const EXTERN_RE = /^(crm_|mail_|notion_|obsidian_|linkedin_|watchlist_|personen_radar|apify)/;
+const EXTERN_RE = /^(crm_|mail_|notion_|obsidian_|linkedin_|watchlist_|personen_radar|apify|mcp_)/;
 const KI_RE = /^(icp_assist|deep_research|research_)/;
 
+/** 2026-11-05 (docs/PLAN_CLOSE_MCP.md C2): Werkzeuge verbundener Dienste tragen ihre
+ *  Wirkungsklasse aus den Annotationen des Dienstes, nicht aus dem Namen. */
+const dynamischeArten = new Map<string, WorkflowCatalogEntry["actionKind"]>();
+export function setzeWerkzeugArt(name: string, art: WorkflowCatalogEntry["actionKind"]): void {
+  dynamischeArten.set(name, art);
+}
+
 export function toolActionKind(name: string): WorkflowCatalogEntry["actionKind"] {
+  const dyn = dynamischeArten.get(name);
+  if (dyn) return dyn;
   if (DESTRUCTIVE_RE.test(name)) return "destructive";
   if (MUTATING_RE.test(name)) return "mutating";
   if (ADDITIVE_RE.test(name)) return "additive";
