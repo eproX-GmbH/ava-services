@@ -27,7 +27,7 @@ interface Props {
   companyName: string;
 }
 
-type CrmKind = "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+type CrmKind = "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE";
 
 interface CrmLinkRow {
   crmType: CrmKind;
@@ -69,12 +69,14 @@ const CRM_LABEL: Record<CrmKind, string> = {
   HUBSPOT: "HubSpot",
   SALESFORCE: "Salesforce",
   DYNAMICS: "Microsoft Dynamics",
+  CLOSE: "Close",
 };
 
 const CRM_BADGE: Record<CrmKind, string> = {
   HUBSPOT: "HS",
   SALESFORCE: "SF",
   DYNAMICS: "MS",
+  CLOSE: "CL",
 };
 
 const SOURCE_LABEL: Record<string, string> = {

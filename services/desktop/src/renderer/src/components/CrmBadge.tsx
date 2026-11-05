@@ -8,7 +8,7 @@
 
 import type { CSSProperties } from "react";
 
-type CrmKind = "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+type CrmKind = "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE";
 
 interface BadgeLink {
   crmType: CrmKind;
@@ -19,12 +19,14 @@ const CRM_SHORT: Record<CrmKind, string> = {
   HUBSPOT: "HS",
   SALESFORCE: "SF",
   DYNAMICS: "MS",
+  CLOSE: "CL",
 };
 
 const CRM_LABEL: Record<CrmKind, string> = {
   HUBSPOT: "HubSpot",
   SALESFORCE: "Salesforce",
   DYNAMICS: "Microsoft Dynamics",
+  CLOSE: "Close",
 };
 
 const baseStyle: CSSProperties = {

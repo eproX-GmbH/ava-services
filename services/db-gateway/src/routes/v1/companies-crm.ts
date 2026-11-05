@@ -50,7 +50,7 @@ const CompanyIdParam = z
 
 const CrmLinkShape = z
   .object({
-    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS", "CLOSE"]),
     crmExternalId: z.string(),
     crmDisplayName: z.string().nullable(),
     confirmedAt: z.string(),
@@ -121,7 +121,7 @@ const DetailsQuery = z
 
 const CrmDetailShape = z
   .object({
-    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS", "CLOSE"]),
     fetchedAt: z.string(),
     notConfigured: z.boolean().optional(),
     contacts: z.array(z.record(z.unknown())).optional(),
@@ -248,7 +248,7 @@ function isFresh(at: Date, hours: number): boolean {
 
 const CachePushBody = z
   .object({
-    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS", "CLOSE"]),
     payload: z.record(z.unknown()),
   })
   .openapi("CompanyCrmCachePushBody");
@@ -302,7 +302,7 @@ companiesCrmRouter.openapi(cachePushRoute, async (c) => {
 
 const ManualLinkBody = z
   .object({
-    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS", "CLOSE"]),
     crmExternalId: z.string().min(1),
     crmDisplayName: z.string().nullable().optional(),
   })
@@ -356,7 +356,7 @@ const BatchLinksBody = z
   .openapi("CompanyCrmBatchLinksBody");
 
 const BatchLinkShape = z.object({
-  crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+  crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS", "CLOSE"]),
   crmDisplayName: z.string().nullable(),
 });
 

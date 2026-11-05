@@ -5,6 +5,7 @@
 import { ipcMain } from "electron";
 import { CrmManager } from "../crm";
 import { runCrmEnrichment, searchHubspotCompanies } from "../crm/fetch-enrichment";
+import { searchCloseLeads } from "../crm/close";
 import type { Auth } from "../auth";
 import type { CrmProvider, CrmStatus } from "../crm/types";
 
@@ -32,6 +33,29 @@ export function registerCrmIpc(deps: CrmIpcDeps): void {
     async (_e, args: { provider: CrmProvider; orgUrl?: string }) => {
       await crmManager.connect(args.provider, { orgUrl: args.orgUrl });
       return crmManager.getStatus(args.provider);
+    },
+  );
+
+  // 2026-11-05 (C1): Close ueber API-Schluessel; der Schluessel verlaesst
+  // den Hauptprozess nie wieder (Schluesselbund-Verschluesselung).
+  ipcMain.handle(
+    "crm:connectWithKey",
+    async (_e, args: { provider: CrmProvider; apiKey: string }): Promise<CrmStatus> => {
+      await crmManager.connectWithApiKey(args.provider, String(args.apiKey ?? ""));
+      return crmManager.getStatus(args.provider);
+    },
+  );
+
+  ipcMain.handle(
+    "crm:close:searchLeads",
+    async (_e, args: { query: string; limit?: number }) => {
+      try {
+        const key = await crmManager.getAccessToken("close");
+        if (!key) return { items: [], error: "Close ist nicht verbunden. Bitte zuerst in den Einstellungen den API-Schlüssel eintragen." };
+        return await searchCloseLeads(key, args);
+      } catch (err) {
+        return { items: [], error: err instanceof Error ? err.message : String(err) };
+      }
     },
   );
 
@@ -137,7 +161,7 @@ export function registerCrmIpc(deps: CrmIpcDeps): void {
       _e,
       args: {
         companyId: string;
-        crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+        crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE";
         crmExternalId: string;
         crmDisplayName?: string | null;
       },

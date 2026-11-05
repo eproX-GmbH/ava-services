@@ -493,7 +493,7 @@ export const ImportExcelResponseShape = z
  *  Excel uploads detect this via typed header names; the binary path
  *  doesn't carry the field through. */
 export const CrmLinkInput = z.object({
-  type: z.enum(["hubspot", "salesforce", "dynamics"]),
+  type: z.enum(["hubspot", "salesforce", "dynamics", "close"]),
   externalId: z.string().min(1).max(200),
   displayName: z.string().max(500).optional(),
 });

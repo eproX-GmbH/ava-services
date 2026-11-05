@@ -1725,12 +1725,13 @@ export interface UserProfile {
 // agent invokes connect_crm / disconnect_crm / crm_status tools to
 // drive the same flow.
 
-export type CrmProviderKind = "salesforce" | "hubspot" | "dynamics";
+export type CrmProviderKind = "salesforce" | "hubspot" | "dynamics" | "close";
 
 export const CRM_PROVIDER_KINDS: ReadonlyArray<CrmProviderKind> = [
   "salesforce",
   "hubspot",
   "dynamics",
+  "close",
 ];
 
 export interface CrmProviderStatus {

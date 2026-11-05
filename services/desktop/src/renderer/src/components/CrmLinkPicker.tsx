@@ -27,7 +27,7 @@ interface Props {
   onLinked: () => void;
 }
 
-type CrmKind = "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+type CrmKind = "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE";
 
 interface HubspotHit {
   id: string;
@@ -74,7 +74,7 @@ export function CrmLinkPicker({
   // Debounced auto-search whenever the query changes. The picker only
   // exercises HubSpot today; other CRMs short-circuit before this fires.
   useEffect(() => {
-    if (crmKind !== "HUBSPOT") return;
+    if (crmKind !== "HUBSPOT" && crmKind !== "CLOSE") return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = query.trim();
     if (q.length < 2) {
@@ -100,10 +100,9 @@ export function CrmLinkPicker({
     setSearching(true);
     setError(null);
     try {
-      const res = await window.api.crm.searchHubspotCompanies({
-        query: q,
-        limit: 25,
-      });
+      const res = crmKind === "CLOSE"
+        ? await window.api.crm.searchCloseLeads({ query: q, limit: 25 })
+        : await window.api.crm.searchHubspotCompanies({ query: q, limit: 25 });
       if (res.error) {
         setError(res.error);
         setResults([]);
@@ -125,7 +124,7 @@ export function CrmLinkPicker({
     try {
       const res = await window.api.crm.linkManually({
         companyId,
-        crmType: "HUBSPOT",
+        crmType: crmKind,
         crmExternalId: hit.id,
         crmDisplayName: hit.name ?? null,
       });
@@ -175,6 +174,7 @@ export function CrmLinkPicker({
             style={{ display: "block", width: "100%", marginTop: "0.25rem" }}
           >
             <option value="HUBSPOT">HubSpot</option>
+            <option value="CLOSE">Close</option>
             <option value="SALESFORCE" disabled>
               Salesforce (demnächst verfügbar)
             </option>

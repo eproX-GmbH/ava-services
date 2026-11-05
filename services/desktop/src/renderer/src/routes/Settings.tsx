@@ -878,14 +878,24 @@ export function ProducersSection() {
 // Der Connect-Button wird gegen einen disabled "Demnächst verfügbar"
 // ausgetauscht. HubSpot bleibt unverändert frei.
 const CRM_PROVIDER_LABELS: Record<
-  "salesforce" | "hubspot" | "dynamics",
+  "salesforce" | "hubspot" | "dynamics" | "close",
   {
     label: string;
     helper: string;
     requiresOrgUrl: boolean;
     comingSoon: boolean;
+    /** 2026-11-05 (C1): Verbindung ueber einen API-Schluessel statt OAuth. */
+    apiKey?: boolean;
   }
 > = {
+  close: {
+    label: "Close",
+    helper:
+      "Verbindung über deinen persönlichen Schlüssel aus Close: dort unter Einstellungen erzeugen und hier eintragen. AVA liest Leads für den Import und verknüpft Firmen; Kontakte, Aktivitäten und Chancen folgen über die Close-Werkzeuge.",
+    requiresOrgUrl: false,
+    comingSoon: false,
+    apiKey: true,
+  },
   salesforce: {
     label: "Salesforce",
     helper:
@@ -928,7 +938,7 @@ export function CrmSection() {
     <section className="provider-section" id="crm-connections">
       <h3>CRM</h3>
       <p className="muted">
-        Verbinde dein CRM, zum Beispiel HubSpot. AVA liest Firmen und Kontakte und schreibt Ergebnisse zurück. Geht auch im Chat: „Verbinde mein HubSpot-Konto“.
+        Verbinde dein CRM, zum Beispiel HubSpot oder Close. AVA liest Firmen und Kontakte und schreibt Ergebnisse zurück. HubSpot geht auch im Chat: „Verbinde mein HubSpot-Konto“.
       </p>
       {list.isLoading ? (
         <p className="muted small">Lädt …</p>
@@ -947,7 +957,7 @@ function CrmCard({
   status,
 }: {
   status: {
-    provider: "salesforce" | "hubspot" | "dynamics";
+    provider: "salesforce" | "hubspot" | "dynamics" | "close";
     connected: boolean;
     account: string | null;
     lastRefreshedAt: string | null;
@@ -956,6 +966,7 @@ function CrmCard({
 }) {
   const meta = CRM_PROVIDER_LABELS[status.provider];
   const [orgUrl, setOrgUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -963,6 +974,11 @@ function CrmCard({
     setBusy(true);
     setLocalError(null);
     try {
+      if (meta.apiKey) {
+        await window.api.crm.connectWithKey(status.provider, apiKey.trim());
+        setApiKey("");
+        return;
+      }
       await window.api.crm.connect(
         status.provider,
         meta.requiresOrgUrl ? { orgUrl: orgUrl.trim() } : undefined,
@@ -988,7 +1004,7 @@ function CrmCard({
 
   const tone = status.connected ? "ok" : "muted";
   const canConnect =
-    !busy && (!meta.requiresOrgUrl || orgUrl.trim().length > 0);
+    !busy && (!meta.requiresOrgUrl || orgUrl.trim().length > 0) && (!meta.apiKey || apiKey.trim().length >= 8);
   const errorMessage = localError ?? status.lastError;
 
   return (
@@ -1032,6 +1048,19 @@ function CrmCard({
         </div>
       ) : (
         <p className="crm-card-helper">{meta.helper}</p>
+      )}
+
+      {meta.apiKey && !status.connected && (
+        <input
+          type="password"
+          className="crm-card-orginput"
+          placeholder="Schlüssel aus Close"
+          autoComplete="off"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          disabled={busy}
+          aria-label="Schlüssel aus Close"
+        />
       )}
 
       {meta.requiresOrgUrl && !status.connected && !meta.comingSoon && (

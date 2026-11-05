@@ -33,6 +33,7 @@ import {
   clearTokens,
 } from "./token-store";
 import { runConnectFlow, runRefreshFlow } from "./oauth-flow";
+import { closeLeadUrl, validateCloseKey } from "./close";
 
 /** Refresh ahead of expiry by this much so requests in flight don't
  *  trip a stale token. 60 s is plenty for any CRM round-trip. */
@@ -152,6 +153,27 @@ export class CrmManager extends EventEmitter {
     return promise;
   }
 
+  /**
+   * 2026-11-05 (C1): Verbindung ueber einen API-Schluessel (Close). Der
+   * Schluessel wird als accessToken ohne Ablauf und ohne Refresh abgelegt;
+   * `extra.auth = "apikey"` kennzeichnet die Zugangsart.
+   */
+  async connectWithApiKey(provider: CrmProvider, apiKey: string): Promise<void> {
+    const key = apiKey.trim();
+    if (!key) throw new Error("Bitte einen API-Schlüssel eingeben.");
+    if (provider !== "close") throw new Error(`${provider} wird nicht über einen API-Schlüssel verbunden.`);
+    const info = await validateCloseKey(key);
+    const tokens: CrmTokens = {
+      accessToken: key,
+      refreshToken: null,
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      extra: { auth: "apikey", ...(info.orgId ? { orgId: info.orgId } : {}), ...(info.email ? { email: info.email } : {}) },
+    };
+    await saveTokens(provider, info.account, tokens);
+    this.records.set(provider, { account: info.account, tokens, lastRefreshedAt: new Date().toISOString(), lastError: null });
+    this.emit("status", this.getStatus(provider));
+  }
+
   async disconnect(provider: CrmProvider): Promise<void> {
     await clearTokens(provider);
     this.records.delete(provider);
@@ -225,6 +247,8 @@ export class CrmManager extends EventEmitter {
         if (!org) return null;
         return `${org.replace(/\/$/, "")}/main.aspx?etn=account&pagetype=entityrecord&id=${safeId}`;
       }
+      case "close":
+        return closeLeadUrl(externalId);
     }
   }
 

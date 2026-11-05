@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-04
+Stand: 2026-11-05
 Anzahl Tools: 306
 
 ## Firmen (29)
@@ -758,7 +758,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. AKTUELL VERFÜGBAR: nur HubSpot. Salesforce und Microsoft Dynamics 365 sind als Optionen sichtbar, aber für Nutzer noch gesperrt ("Demnächst verfügbar"); der Tool-Call lehnt sie mit einer klaren Meldung ab. Nach erfolgreicher HubSpot-Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.
+Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. AKTUELL VERFÜGBAR: HubSpot (OAuth) und Close (API-Schlüssel, NUR in Einstellungen → CRM eintragbar, nie im Chat; dieser Aufruf verweist dorthin). Salesforce und Microsoft Dynamics 365 sind als Optionen sichtbar, aber für Nutzer noch gesperrt ("Demnächst verfügbar"); der Tool-Call lehnt sie mit einer klaren Meldung ab. Nach erfolgreicher Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.
 
 _Parameter:_ keine.
 
@@ -997,7 +997,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Read CRM connection status. Without `provider`, returns the status of all supported CRMs (Salesforce, HubSpot, Microsoft Dynamics 365). Includes connected account label and last refresh timestamp; never returns tokens.
+Read CRM connection status. Without `provider`, returns the status of all supported CRMs (HubSpot, Close, Salesforce, Microsoft Dynamics 365). Includes connected account label and last refresh timestamp; never returns tokens.
 
 _Parameter:_ keine.
 

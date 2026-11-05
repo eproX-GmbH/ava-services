@@ -8,12 +8,14 @@
 // could be desktop-direct but go through the gateway too for one
 // consistent flow).
 
-export type CrmProvider = "salesforce" | "hubspot" | "dynamics";
+export type CrmProvider = "salesforce" | "hubspot" | "dynamics" | "close";
 
 export const CRM_PROVIDERS: ReadonlyArray<CrmProvider> = [
   "salesforce",
   "hubspot",
   "dynamics",
+  // 2026-11-05 (docs/PLAN_CLOSE_MCP.md, C1): Close ueber API-Schluessel.
+  "close",
 ];
 
 /** Encrypted-at-rest token bundle. The desktop's safeStorage encrypts

@@ -15,6 +15,7 @@
 
 import type { CrmManager } from "./index";
 import type { CrmProvider } from "./types";
+import { fetchCloseLeads } from "./close";
 
 export interface CompanyForImport {
   name: string;
@@ -61,6 +62,8 @@ export async function fetchCompaniesFromCrm(
       throw new Error(
         "Microsoft-Dynamics-Import ist noch nicht implementiert. Bitte zunächst HubSpot verwenden.",
       );
+    case "close":
+      return fetchCloseLeads(accessToken, max);
   }
 }
 

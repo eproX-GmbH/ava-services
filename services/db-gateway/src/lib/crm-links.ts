@@ -10,7 +10,7 @@
 import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 
-export type CrmType = "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+export type CrmType = "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE";
 
 export type ConfirmedSource =
   | "EXACT_MATCH"
@@ -39,6 +39,8 @@ export function toCrmType(value: string): CrmType | null {
       return "SALESFORCE";
     case "dynamics":
       return "DYNAMICS";
+    case "close":
+      return "CLOSE";
     default:
       return null;
   }

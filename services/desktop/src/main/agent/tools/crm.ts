@@ -42,12 +42,13 @@ import {
   type HubspotObjectType,
 } from "../../crm/write-objects";
 
-const PROVIDERS: readonly CrmProvider[] = ["salesforce", "hubspot", "dynamics"];
+const PROVIDERS: readonly CrmProvider[] = ["salesforce", "hubspot", "dynamics", "close"];
 
 const PROVIDER_LABELS: Record<CrmProvider, string> = {
   salesforce: "Salesforce",
   hubspot: "HubSpot",
   dynamics: "Microsoft Dynamics 365",
+  close: "Close",
 };
 
 export interface CrmToolDeps {
@@ -61,7 +62,7 @@ export interface CrmToolDeps {
   gatewayUrl: string;
 }
 
-const CRM_LINK_TYPES = ["HUBSPOT", "SALESFORCE", "DYNAMICS"] as const;
+const CRM_LINK_TYPES = ["HUBSPOT", "SALESFORCE", "DYNAMICS", "CLOSE"] as const;
 type CrmLinkType = (typeof CRM_LINK_TYPES)[number];
 
 // v0.1.285 — Modul-Scope, weil buildIntrospectUpdate die Map im
@@ -113,7 +114,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const statusTool = defineTool({
     name: "crm_status",
     description:
-      "Read CRM connection status. Without `provider`, returns the status of all supported CRMs (Salesforce, HubSpot, Microsoft Dynamics 365). Includes connected account label and last refresh timestamp; never returns tokens.",
+      "Read CRM connection status. Without `provider`, returns the status of all supported CRMs (HubSpot, Close, Salesforce, Microsoft Dynamics 365). Includes connected account label and last refresh timestamp; never returns tokens.",
     parameters: {
       type: "object",
       properties: {
@@ -147,7 +148,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const connectTool = defineTool({
     name: "connect_crm",
     description:
-      "Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. AKTUELL VERFÜGBAR: nur HubSpot. Salesforce und Microsoft Dynamics 365 sind als Optionen sichtbar, aber für Nutzer noch gesperrt (\"Demnächst verfügbar\"); der Tool-Call lehnt sie mit einer klaren Meldung ab. Nach erfolgreicher HubSpot-Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.",
+      "Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. AKTUELL VERFÜGBAR: HubSpot (OAuth) und Close (API-Schlüssel, NUR in Einstellungen → CRM eintragbar, nie im Chat; dieser Aufruf verweist dorthin). Salesforce und Microsoft Dynamics 365 sind als Optionen sichtbar, aber für Nutzer noch gesperrt (\"Demnächst verfügbar\"); der Tool-Call lehnt sie mit einer klaren Meldung ab. Nach erfolgreicher Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.",
     parameters: {
       type: "object",
       properties: {
@@ -178,7 +179,14 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       // ist noch nicht registriert + getestet).
       if (provider === "salesforce" || provider === "dynamics") {
         throw new Error(
-          `${PROVIDER_LABELS[provider]} ist noch nicht freigeschaltet. Heute funktioniert nur HubSpot; ${PROVIDER_LABELS[provider]} folgt in den nächsten Wochen. Bitte den Nutzer kurz informieren und HubSpot als sofort verfügbare Alternative anbieten.`,
+          `${PROVIDER_LABELS[provider]} ist noch nicht freigeschaltet. Heute funktionieren HubSpot und Close; ${PROVIDER_LABELS[provider]} folgt in den nächsten Wochen. Bitte den Nutzer kurz informieren und HubSpot oder Close als sofort verfügbare Alternative anbieten.`,
+        );
+      }
+      if (provider === "close") {
+        const st = crm.getStatus("close");
+        if (st.connected) return st;
+        throw new Error(
+          "Close wird über einen persönlichen API-Schlüssel verbunden, nicht per Anmeldefenster. Bitte den Nutzer in Einstellungen → CRM → Close schicken (Schlüssel in Close unter Einstellungen → API-Schlüssel erzeugen und dort eintragen). Den Schlüssel NIE im Chat erfragen.",
         );
       }
       try {

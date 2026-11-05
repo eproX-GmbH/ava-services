@@ -417,6 +417,7 @@ enum CrmType {
   HUBSPOT
   SALESFORCE
   DYNAMICS
+  CLOSE
 }
 
 enum ConfirmedSource {

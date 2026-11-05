@@ -859,6 +859,11 @@ const api = {
       ipcRenderer.invoke("crm:connect", { provider, orgUrl: opts?.orgUrl }),
     disconnect: (provider: CrmProviderKind): Promise<CrmProviderStatus> =>
       ipcRenderer.invoke("crm:disconnect", provider),
+    /** 2026-11-05 (C1): Close ueber API-Schluessel aus den Einstellungen. */
+    connectWithKey: (provider: CrmProviderKind, apiKey: string): Promise<CrmProviderStatus> =>
+      ipcRenderer.invoke("crm:connectWithKey", { provider, apiKey }),
+    searchCloseLeads: (args: { query: string; limit?: number }): Promise<{ items: Array<{ id: string; name: string | null; domain: string | null; city: string | null }>; error?: string }> =>
+      ipcRenderer.invoke("crm:close:searchLeads", args),
     /**
      * v0.1.153 — Build the deep-link URL that opens an external record
      * in the provider's UI. Returns null when the provider isn't
@@ -920,7 +925,7 @@ const api = {
     /** C4 — create or replace a manual CompanyCrmLink. */
     linkManually: (args: {
       companyId: string;
-      crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+      crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE";
       crmExternalId: string;
       crmDisplayName?: string | null;
     }): Promise<{ ok: true } | { ok: false; error: string }> =>

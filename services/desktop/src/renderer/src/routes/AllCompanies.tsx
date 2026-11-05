@@ -316,7 +316,7 @@ export function AllCompanies() {
       gatewayFetch<{
         links: Record<
           string,
-          Array<{ crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS"; crmDisplayName: string | null }>
+          Array<{ crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS" | "CLOSE"; crmDisplayName: string | null }>
         >;
       }>(`/v1/companies/crm-links/batch`, {
         method: "POST",

@@ -522,7 +522,7 @@ export function buildImportTools(deps: {
       properties: {
         provider: {
           type: "string",
-          enum: ["hubspot", "salesforce", "dynamics"],
+          enum: ["hubspot", "close", "salesforce", "dynamics"],
           description: "Which CRM to import from. Must be connected first.",
         },
         transactionName: {
@@ -565,7 +565,7 @@ export function buildImportTools(deps: {
         provider: yup
           .string()
           .required()
-          .oneOf(["hubspot", "salesforce", "dynamics"]),
+          .oneOf(["hubspot", "close", "salesforce", "dynamics"]),
         transactionName: yup.string().optional(),
         isFuzzy: yup.boolean().optional(),
         maxCompanies: yup.number().integer().min(1).max(5000).optional(),
@@ -778,7 +778,7 @@ export function buildImportTools(deps: {
                 properties: {
                   type: {
                     type: "string",
-                    enum: ["hubspot", "salesforce", "dynamics"],
+                    enum: ["hubspot", "close", "salesforce", "dynamics"],
                   },
                   externalId: { type: "string" },
                   displayName: { type: "string" },
@@ -824,7 +824,7 @@ export function buildImportTools(deps: {
                     type: yup
                       .string()
                       .required()
-                      .oneOf(["hubspot", "salesforce", "dynamics"]),
+                      .oneOf(["hubspot", "close", "salesforce", "dynamics"]),
                     externalId: yup.string().required().min(1),
                     displayName: yup.string().optional(),
                   })
