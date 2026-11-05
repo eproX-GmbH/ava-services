@@ -22,9 +22,9 @@ const VORLAGEN: Array<{ id: string; name: string; url: string; zugang: Zugang; k
   {
     id: "compleadly",
     name: "CompLeadly",
-    url: "",
+    url: "https://mcp.complead.ly/user/mcp",
     zugang: "zugangscode",
-    hinweis: "LinkedIn-Sequenzen über dein CompLeadly-Konto. Adresse des Dienstes und persönlichen Zugangscode aus CompLeadly (Einstellungen) eintragen.",
+    hinweis: "LinkedIn-Sequenzen über dein CompLeadly-Konto. Zugangscode in CompLeadly unter Einstellungen → Eigene KI verbinden anlegen („Neuer Token“) und hier eintragen.",
   },
 ];
 
