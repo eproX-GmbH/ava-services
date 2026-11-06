@@ -97,10 +97,26 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           REPO="$RELEASE_REPO"
-          n=$(gh api "repos/$REPO/releases?per_page=100" --jq "[.[] | select(.tag_name==\"$TAG\")] | length")
+          # 2026-11-06: alle Seiten pruefen (234+ Releases) — sonst wird ein
+          # vorhandenes Release auf Seite 2 uebersehen und ein Duplikat angelegt.
+          n=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | wc -l | tr -d ' ')
           if [ "$n" = "0" ]; then
-            gh release create "$TAG" --draft --title "${TAG#v}" --notes "AVA Desktop ${TAG#v}" --repo "$REPO"
-            echo "Draft-Release fuer $TAG angelegt"
+            # Jedes Release bekommt einen eigenen Commit im Release-Repo
+            # (releases/<tag>.txt), damit created_at je Release verschieden ist:
+            # GitHub sortiert die Release-Seite und /releases/latest danach, und
+            # bei einem festen Commit standen alle Releases auf demselben Datum
+            # (Reihenfolge und "Latest" zufaellig, z. B. 0.1.683).
+            inhalt=$(printf '%s\n' "$TAG" | base64 | tr -d '\n')
+            sha=$(gh api -X PUT "repos/$REPO/contents/releases/$TAG.txt" \
+              -f message="Release $TAG" -f content="$inhalt" --jq '.commit.sha' 2>/dev/null || true)
+            if [ -n "$sha" ]; then
+              gh release create "$TAG" --draft --target "$sha" --title "${TAG#v}" --notes "AVA Desktop ${TAG#v}" --repo "$REPO"
+              echo "Draft-Release fuer $TAG angelegt (Commit $sha)"
+            else
+              echo "::warning::Konnte keinen Release-Commit anlegen — Release ohne eigenen Commit"
+              gh release create "$TAG" --draft --title "${TAG#v}" --notes "AVA Desktop ${TAG#v}" --repo "$REPO"
+              echo "Draft-Release fuer $TAG angelegt"
+            fi
           elif [ "$n" = "1" ]; then
             echo "Release fuer $TAG existiert bereits, wird wiederverwendet"
           else
