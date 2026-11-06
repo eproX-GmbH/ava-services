@@ -466,8 +466,12 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           REPO="$RELEASE_REPO"
-          eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
-            --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
+          # 2026-11-06: ALLE Seiten lesen. GitHub sortiert die Liste nach created_at,
+          # und das ist bei unseren Releases ueberall gleich (ein fester Commit im
+          # Release-Repo) — die erste Seite enthielt zufaellige 100 Releases, deren
+          # "hoechste" Version dann als Latest gesetzt wurde (z. B. 0.1.683).
+          eintrag=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | "\(.tag_name) \(.id)"' \
             | sort -V | tail -1)
           if [ -z "$eintrag" ]; then
             echo "Kein veroeffentlichtes Release gefunden — nichts zu tun"
@@ -813,8 +817,12 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           REPO="$RELEASE_REPO"
-          eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
-            --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
+          # 2026-11-06: ALLE Seiten lesen. GitHub sortiert die Liste nach created_at,
+          # und das ist bei unseren Releases ueberall gleich (ein fester Commit im
+          # Release-Repo) — die erste Seite enthielt zufaellige 100 Releases, deren
+          # "hoechste" Version dann als Latest gesetzt wurde (z. B. 0.1.683).
+          eintrag=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | "\(.tag_name) \(.id)"' \
             | sort -V | tail -1)
           if [ -z "$eintrag" ]; then
             echo "Kein veroeffentlichtes Release gefunden — nichts zu tun"
@@ -1141,8 +1149,12 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           REPO="$RELEASE_REPO"
-          eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
-            --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
+          # 2026-11-06: ALLE Seiten lesen. GitHub sortiert die Liste nach created_at,
+          # und das ist bei unseren Releases ueberall gleich (ein fester Commit im
+          # Release-Repo) — die erste Seite enthielt zufaellige 100 Releases, deren
+          # "hoechste" Version dann als Latest gesetzt wurde (z. B. 0.1.683).
+          eintrag=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | "\(.tag_name) \(.id)"' \
             | sort -V | tail -1)
           if [ -z "$eintrag" ]; then
             echo "Kein veroeffentlichtes Release gefunden — nichts zu tun"
