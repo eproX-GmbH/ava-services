@@ -8,11 +8,13 @@ import { defineTool } from "../define-tool";
 import type { GatewayClient } from "../gateway-client";
 import type { Tool } from "../types";
 
-interface Ereignis {
+export interface Ereignis {
   id: string;
   dienst: string;
   typ: string | null;
   nutzlast: unknown;
+  personId?: string | null;
+  companyId?: string | null;
   empfangenAt: string;
   gelesenAt: string | null;
 }
@@ -31,6 +33,8 @@ export function ereignisKurz(e: Ereignis): Record<string, unknown> {
     typ: e.typ,
     empfangen: e.empfangenAt,
     gelesen: Boolean(e.gelesenAt),
+    ...(e.companyId ? { companyId: e.companyId } : {}),
+    ...(e.personId ? { personId: e.personId } : {}),
     ...(feld("name") ? { name: feld("name") } : {}),
     ...(feld("company") ? { firma: feld("company") } : {}),
     ...(feld("position") ? { position: feld("position") } : {}),
@@ -48,7 +52,7 @@ export function buildDiensteTools(ctx: { gateway: GatewayClient }): Tool[] {
     category: "dienste",
     description:
       "Liest Ereignisse, die verbundene Dienste über ihren Rückkanal an AVA gemeldet haben (z. B. CompLeadly: Kontaktanfrage angenommen, Lead hat geantwortet, Nachricht gesendet). " +
-      "Neueste zuerst, je Ereignis Typ, Name, Firma, Position, LinkedIn-Adresse und Zeit; die Rohdaten stehen in `nutzlast`. " +
+      "Neueste zuerst, je Ereignis Typ, Name, Firma, Position, LinkedIn-Adresse und Zeit; companyId/personId, wenn die LinkedIn-Adresse einer Person im Bestand zugeordnet werden konnte (dann als [Name](company:<id>) verlinken); die Rohdaten stehen in `nutzlast`. " +
       "Ist für einen Dienst kein Rückkanal eingerichtet (kommt nichts an), den Stand über die Werkzeuge des Dienstes holen (mcp_<dienst>_…). " +
       "Mit gelesenMarkieren=true gelten die gelieferten Ereignisse danach als erledigt.",
     parameters: {

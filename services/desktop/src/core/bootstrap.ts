@@ -1692,7 +1692,12 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // Bestandssuche S3: Vektoren der Belegtabelle lokal rechnen (docs/PLAN_BESTANDSSUCHE.md).
   const suchblockEmbedder = new SuchblockEmbedder({ gateway: gatewayClient, ollamaStatus: () => ollama.getStatus(), signedIn: () => Boolean(auth.getStatus().signedIn) });
   // C4 (docs/PLAN_CLOSE_MCP.md): Ereignisse fremder Dienste (Rueckkanal) als Benachrichtigung.
-  const dienstEreignisse = new DienstEreignisseWaechter({ gateway: gatewayClient, signedIn: () => Boolean(auth.getStatus().signedIn), log: (m) => console.info(m) });
+  const dienstEreignisse = new DienstEreignisseWaechter({
+    gateway: gatewayClient,
+    signedIn: () => Boolean(auth.getStatus().signedIn),
+    log: (m) => console.info(m),
+    workflowEreignis: (payload) => void workflowService?.emitEvent("dienst.ereignis", payload),
+  });
   function broadcastFreshnessPrefsChanged(): void {
     const next = freshnessPrefs.get();
     windows().broadcast("freshness:prefs-changed", next);

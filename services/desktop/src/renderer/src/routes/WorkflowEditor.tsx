@@ -1252,6 +1252,8 @@ export function WorkflowEditor(): JSX.Element {
                     <option value="mail.inbound">Mail: eingehende Nachricht</option>
                     <option value="alert.created">Neue Meldung</option>
                     <option value="import.finished">Import abgeschlossen</option>
+                    <option value="linkedin.lead">LinkedIn: neuer Lead</option>
+                    <option value="dienst.ereignis">Verbundener Dienst meldet etwas</option>
                   </select>
                 </label>
               )}

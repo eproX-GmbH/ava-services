@@ -16,6 +16,7 @@ import { logger } from "../../lib/logger";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { requireScope } from "../../middleware/auth";
 import { empfaengerAnlegen, empfaengerListe, empfaengerLoeschen, empfangsUrl, ereignisAblegen, ereignisseGelesen, ereignisseLesen } from "../../lib/dienst-webhooks";
+import { bestandIds } from "./bestandssuche";
 
 const ErrorShape = z.object({ error: z.string() });
 const errorResponses = {
@@ -39,7 +40,7 @@ webhookEmpfangRouter.post("/v1/webhooks/ereignis/:token", async (c) => {
   } catch {
     nutzlast = { text: roh.slice(0, 10_000) };
   }
-  const r = await ereignisAblegen(getGatewayPool(), token, nutzlast);
+  const r = await ereignisAblegen(getGatewayPool(), token, nutzlast, bestandIds);
   if (!r) return c.json({ error: "unknown_token" }, 404);
   logger.info({ dienst: r.empfaenger.dienst, actorId: r.empfaenger.actorId, id: r.id }, "[dienst-webhooks] Ereignis angenommen");
   return c.json({ ok: true, id: r.id }, 200);
@@ -92,7 +93,7 @@ dienstWebhooksRouter.openapi(loeschenRoute, async (c) => {
   return c.json({ ok: true }, 200);
 });
 
-const EreignisShape = z.object({ id: z.string(), dienst: z.string(), typ: z.string().nullable(), nutzlast: z.unknown(), empfangenAt: z.string(), gelesenAt: z.string().nullable() });
+const EreignisShape = z.object({ id: z.string(), dienst: z.string(), typ: z.string().nullable(), nutzlast: z.unknown(), personId: z.string().nullable(), companyId: z.string().nullable(), empfangenAt: z.string(), gelesenAt: z.string().nullable() });
 
 const ereignisseRoute = createRoute({
   method: "get", path: "/dienste/ereignisse", tags: ["dienste"], summary: "Ereignisse fremder Dienste (neueste zuerst)",
@@ -103,7 +104,7 @@ dienstWebhooksRouter.openapi(ereignisseRoute, async (c) => {
   const a = actor(c);
   const q = c.req.valid("query");
   const l = await ereignisseLesen(getGatewayPool(), { actorId: a.actorId, dienst: q.dienst, seit: q.seit ? new Date(q.seit) : undefined, nurUngelesen: q.ungelesen === "1", limit: q.limit });
-  return c.json({ ereignisse: l.map((e) => ({ id: e.id, dienst: e.dienst, typ: e.typ, nutzlast: e.nutzlast, empfangenAt: e.empfangenAt.toISOString(), gelesenAt: e.gelesenAt ? e.gelesenAt.toISOString() : null })) }, 200);
+  return c.json({ ereignisse: l.map((e) => ({ id: e.id, dienst: e.dienst, typ: e.typ, nutzlast: e.nutzlast, personId: e.personId ?? null, companyId: e.companyId ?? null, empfangenAt: e.empfangenAt.toISOString(), gelesenAt: e.gelesenAt ? e.gelesenAt.toISOString() : null })) }, 200);
 });
 
 const gelesenRoute = createRoute({

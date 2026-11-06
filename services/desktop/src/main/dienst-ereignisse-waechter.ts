@@ -5,7 +5,7 @@
 // abrufbar.
 
 import type { GatewayClient } from "./agent/gateway-client";
-import { ereignisKurz } from "./agent/tools/dienste";
+import { ereignisKurz, type Ereignis } from "./agent/tools/dienste";
 import { notifier, windows } from "../core/platform";
 
 const TAKT_MS = 3 * 60_000;
@@ -31,7 +31,15 @@ export class DienstEreignisseWaechter {
   private timer: NodeJS.Timeout | null = null;
   private laeuft = false;
 
-  constructor(private readonly deps: { gateway: GatewayClient; signedIn: () => boolean; log?: (m: string) => void }) {}
+  constructor(
+    private readonly deps: {
+      gateway: GatewayClient;
+      signedIn: () => boolean;
+      log?: (m: string) => void;
+      /** Workflow-Ausloeser "dienst.ereignis" (ein Ereignis = ein Lauf). */
+      workflowEreignis?: (payload: Record<string, unknown>) => void;
+    },
+  ) {}
 
   start(): void {
     if (this.timer) return;
@@ -53,7 +61,7 @@ export class DienstEreignisseWaechter {
     if (this.laeuft || !this.deps.signedIn()) return;
     this.laeuft = true;
     try {
-      const r = await this.deps.gateway.request<{ ereignisse: Array<{ id: string; dienst: string; typ: string | null; nutzlast: unknown; empfangenAt: string; gelesenAt: string | null }> }>(
+      const r = await this.deps.gateway.request<{ ereignisse: Ereignis[] }>(
         "/v1/dienste/ereignisse",
         { query: { ungelesen: "1", limit: "20" } },
       );
@@ -66,6 +74,17 @@ export class DienstEreignisseWaechter {
         const wer = [erstes.name, erstes.firma].filter(Boolean).join(", ");
         const titel = `${dienstName(dienst)}: ${typText(es[0]!.typ)}${es.length > 1 ? ` (+${es.length - 1})` : ""}`;
         notifier().show({ title: titel, body: wer || "Neues Ereignis über den Rückkanal", silent: true, onClick: () => windows().focusMain() });
+      }
+      // Workflows: aelteste zuerst, damit Folgen in der richtigen Reihenfolge laufen.
+      if (this.deps.workflowEreignis) {
+        for (const e of [...liste].reverse()) {
+          const k = ereignisKurz(e);
+          try {
+            this.deps.workflowEreignis({ ...k, ereignisId: e.id, ...(k.firma ? { companyName: k.firma } : {}), nutzlast: e.nutzlast });
+          } catch {
+            /* ein fehlerhafter Workflow haelt die uebrigen nicht auf */
+          }
+        }
       }
       await this.deps.gateway.request("/v1/dienste/ereignisse/gelesen", { method: "POST", body: { ids: liste.map((e) => e.id) } }).catch(() => undefined);
       this.deps.log?.(`[dienst-ereignisse] ${liste.length} Ereignisse gemeldet`);

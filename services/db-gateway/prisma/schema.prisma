@@ -1444,6 +1444,10 @@ model DienstEreignis {
   dienst       String
   typ          String?
   nutzlast     Json
+  /// Zuordnung ueber die LinkedIn-Adresse (Person und Firma aus dem Bestand des Nutzers), sonst null.
+  personId     String?
+  companyId    String?
+  linkedinSlug String?
   empfangenAt  DateTime  @default(now()) @db.Timestamptz(6)
   gelesenAt    DateTime? @db.Timestamptz(6)
   empfaenger   WebhookEmpfaenger @relation(fields: [empfaengerId], references: [id], onDelete: Cascade)

@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-05
+Stand: 2026-11-06
 Anzahl Tools: 307
 
 ## Firmen (29)
@@ -1419,7 +1419,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/dienste.ts`
 
-Liest Ereignisse, die verbundene Dienste über ihren Rückkanal an AVA gemeldet haben (z. B. CompLeadly: Kontaktanfrage angenommen, Lead hat geantwortet, Nachricht gesendet). Neueste zuerst, je Ereignis Typ, Name, Firma, Position, LinkedIn-Adresse und Zeit; die Rohdaten stehen in `nutzlast`. Ist für einen Dienst kein Rückkanal eingerichtet (kommt nichts an), den Stand über die Werkzeuge des Dienstes holen (mcp_<dienst>_…). Mit gelesenMarkieren=true gelten die gelieferten Ereignisse danach als erledigt.
+Liest Ereignisse, die verbundene Dienste über ihren Rückkanal an AVA gemeldet haben (z. B. CompLeadly: Kontaktanfrage angenommen, Lead hat geantwortet, Nachricht gesendet). Neueste zuerst, je Ereignis Typ, Name, Firma, Position, LinkedIn-Adresse und Zeit; companyId/personId, wenn die LinkedIn-Adresse einer Person im Bestand zugeordnet werden konnte (dann als [Name](company:<id>) verlinken); die Rohdaten stehen in `nutzlast`. Ist für einen Dienst kein Rückkanal eingerichtet (kommt nichts an), den Stand über die Werkzeuge des Dienstes holen (mcp_<dienst>_…). Mit gelesenMarkieren=true gelten die gelieferten Ereignisse danach als erledigt.
 
 _Parameter:_
 - `dienst: string` — Nur dieser Dienst (Kurzname, z. B. compleadly)

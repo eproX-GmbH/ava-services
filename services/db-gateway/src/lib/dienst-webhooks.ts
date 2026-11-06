@@ -5,6 +5,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
+import { getProducerPool } from "./producer-pools";
 
 export interface Empfaenger {
   id: string;
@@ -22,8 +23,59 @@ export interface Ereignis {
   dienst: string;
   typ: string | null;
   nutzlast: unknown;
+  personId: string | null;
+  companyId: string | null;
   empfangenAt: Date;
   gelesenAt: Date | null;
+}
+
+/** LinkedIn-Kurzname aus einer Profiladresse ("https://www.linkedin.com/in/max-muster/" → "max-muster"). */
+export function linkedinSlug(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = /linkedin\.com\/in\/([^/?#\s]+)/i.exec(url);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!).toLowerCase().replace(/\/+$/, "") || null;
+  } catch {
+    return m[1]!.toLowerCase();
+  }
+}
+
+/** LinkedIn-Adresse aus einer beliebigen Nutzlast (CompLeadly: leadData.linkedinUrl). */
+export function linkedinAusNutzlast(n: unknown): string | null {
+  if (!n || typeof n !== "object") return null;
+  const o = n as Record<string, unknown>;
+  const lead = (o.leadData && typeof o.leadData === "object" ? o.leadData : o.lead && typeof o.lead === "object" ? o.lead : {}) as Record<string, unknown>;
+  for (const quelle of [lead, o]) {
+    for (const k of ["linkedinUrl", "linkedin_url", "linkedInUrl", "profileUrl", "profile_url", "linkedin"]) {
+      const v = quelle[k];
+      if (typeof v === "string" && /linkedin\.com\/in\//i.test(v)) return v;
+    }
+  }
+  return null;
+}
+
+/**
+ * Person und Firma zu einem LinkedIn-Kurznamen, nur innerhalb der Firmen des
+ * Bestands (keine Zuordnung zu fremden Firmen). Best-effort, null ohne Treffer.
+ */
+export async function personZuSlug(slug: string, bestand: string[]): Promise<{ personId: string; companyId: string } | null> {
+  if (!slug || bestand.length === 0) return null;
+  try {
+    const r = await getProducerPool("company-contact").query<{ personId: string; companyId: string }>(
+      `SELECT e."personId", e."companyId"
+         FROM "Employment" e
+         JOIN "Fact" f ON f."entityType" = 'PERSON' AND f."entityId" = e."personId" AND f.field = 'linkedinUrl' AND f.status = 'ACTIVE'
+        WHERE e."companyId" = ANY($1::text[])
+          AND lower(regexp_replace(f.value, '^.*linkedin\\.com/in/([^/?#]+).*$', '\\1')) = $2
+        ORDER BY e."isCurrent" DESC, e."lastSeen" DESC
+        LIMIT 1`,
+      [bestand, slug],
+    );
+    return r.rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const MAX_JE_NUTZER = 5000;
@@ -58,15 +110,23 @@ export async function empfaengerLoeschen(pool: Pool, actorId: string, id: string
 }
 
 /** Eingehendes Ereignis ablegen; liefert null, wenn das Token unbekannt ist. */
-export async function ereignisAblegen(pool: Pool, token: string, nutzlast: unknown): Promise<{ empfaenger: Empfaenger; id: string } | null> {
+export async function ereignisAblegen(
+  pool: Pool,
+  token: string,
+  nutzlast: unknown,
+  bestandVon?: (actorId: string) => Promise<string[]>,
+): Promise<{ empfaenger: Empfaenger; id: string } | null> {
   const e = await pool.query<Empfaenger>(`SELECT id, token, "tenantId", "actorId", dienst, "createdAt", "zuletztAt", anzahl FROM "WebhookEmpfaenger" WHERE token = $1`, [token]);
   const emp = e.rows[0];
   if (!emp) return null;
   const typ = typOf(nutzlast);
   const id = "de_" + randomBytes(8).toString("hex");
+  const slug = linkedinSlug(linkedinAusNutzlast(nutzlast));
+  const treffer = slug && bestandVon ? await personZuSlug(slug, await bestandVon(emp.actorId).catch(() => [])) : null;
   await pool.query(
-    `INSERT INTO "DienstEreignis" (id, "empfaengerId", "tenantId", "actorId", dienst, typ, nutzlast) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-    [id, emp.id, emp.tenantId, emp.actorId, emp.dienst, typ, JSON.stringify(nutzlast ?? null)],
+    `INSERT INTO "DienstEreignis" (id, "empfaengerId", "tenantId", "actorId", dienst, typ, nutzlast, "personId", "companyId", "linkedinSlug")
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)`,
+    [id, emp.id, emp.tenantId, emp.actorId, emp.dienst, typ, JSON.stringify(nutzlast ?? null), treffer?.personId ?? null, treffer?.companyId ?? null, slug],
   );
   await pool.query(`UPDATE "WebhookEmpfaenger" SET "zuletztAt" = NOW(), anzahl = anzahl + 1 WHERE id = $1`, [emp.id]);
   // Deckel je Nutzer: aelteste Ereignisse fallen weg.
@@ -102,7 +162,7 @@ export async function ereignisseLesen(pool: Pool, args: { actorId: string; diens
   if (args.nurUngelesen) bed.push(`"gelesenAt" IS NULL`);
   werte.push(args.limit);
   const r = await pool.query<Ereignis>(
-    `SELECT id, dienst, typ, nutzlast, "empfangenAt", "gelesenAt" FROM "DienstEreignis" WHERE ${bed.join(" AND ")} ORDER BY "empfangenAt" DESC LIMIT $${werte.length}`,
+    `SELECT id, dienst, typ, nutzlast, "personId", "companyId", "empfangenAt", "gelesenAt" FROM "DienstEreignis" WHERE ${bed.join(" AND ")} ORDER BY "empfangenAt" DESC LIMIT $${werte.length}`,
     werte,
   );
   return r.rows;
