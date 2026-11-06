@@ -242,16 +242,16 @@ async function neueStellen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
 /** Fokus-Themen, die seit `seit` erstmals als gefunden gelten (docs/PLAN_THEMEN.md T5).
  *  Erstsichtung bleibt beim Persist erhalten, deshalb meldet ein erneuter Lauf dasselbe
  *  Thema nicht noch einmal. Anders als bei Stellen zaehlt der erste Fund als Neuheit. */
-async function neueThemen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
+async function neueThemen(ids: string[], seit: Date, actorId: string): Promise<NeuheitItem[]> {
   const pool = getProducerPool("website");
   const r = await pool
     .query<{ companyId: string; schluessel: string; name: string; zitat: string | null; quelleUrl: string | null; ueberschrift: string | null; erstgesehenAt: Date }>(
       `SELECT "companyId", schluessel, name, zitat, "quelleUrl", ueberschrift, "erstgesehenAt"
          FROM "CompanyThema"
-        WHERE "companyId" = ANY($1::text[]) AND status = 'gefunden' AND "erstgesehenAt" > $2
+        WHERE "companyId" = ANY($1::text[]) AND "actorId" = $3 AND status = 'gefunden' AND "erstgesehenAt" > $2
         ORDER BY "companyId", "erstgesehenAt" DESC
         LIMIT 2000`,
-      [ids, seit],
+      [ids, seit, actorId],
     )
     .catch(() => ({ rows: [] as Array<{ companyId: string; schluessel: string; name: string; zitat: string | null; quelleUrl: string | null; ueberschrift: string | null; erstgesehenAt: Date }> }));
   const je = new Map<string, typeof r.rows>();
@@ -620,6 +620,8 @@ async function neueKunden(ids: string[], seit: Date): Promise<NeuheitItem[]> {
 
 alertsNeuheitenRouter.openapi(route, async (c) => {
   const { companyIds, since } = c.req.valid("json");
+  // Fokus-Themen sind je Nutzer (2026-11-06): nur eigene Erstfunde melden.
+  const actorIdThemen = ((c.get("auth") as { actorId?: string | null } | undefined)?.actorId) ?? "-ohne-nutzer-";
   const ids = Array.from(new Set(companyIds));
   const seit = fensterStart(since);
   const quellen = await Promise.allSettled([
@@ -650,7 +652,7 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
     kontaktAenderungen(ids, seit),
     neueKunden(ids, seit),
     neueStellen(ids, seit),
-    neueThemen(ids, seit),
+    neueThemen(ids, seit, actorIdThemen),
   ]);
   const items: NeuheitItem[] = [];
   const namen = ["profile-change", "publication", "contact", "customers", "job-postings", "thema-gefunden"];

@@ -164,3 +164,12 @@ Produkttexten erzeugen „unklar“-Hinweise; ob das stört, zeigt der Live-Betr
    trotzdem geteilt, weil er am Themenschlüssel hängt.
 2. Obergrenze fest: fünf aktive Themen, unabhängig vom Plan.
 3. Der Alarm „Thema neu gefunden“ ist standardmäßig an, wie die anderen Neuheiten.
+
+
+## Nachtrag 2026-11-06: Befunde je Nutzer
+
+Joyce: Themen-Befunde gehören dem Nutzer, dessen Themen geprüft wurden; sie dürfen nicht von Läufen anderer Nutzer überschrieben werden, und jeder sieht nur seine eigenen. Umsetzung:
+
+- `CompanyThema` hat `actorId`, Primärschlüssel (companyId, actorId, schluessel) (Schema-Anpassung im Gateway beim ersten Persist). Der Persist ersetzt nur die Zeilen des Nutzers aus `data.actorId`; der Website-Producer schickt `AVA_USER_ID` mit. Ältere Producer ohne actorId schreiben in den unsichtbaren Topf ''.
+- Alle Leser filtern auf den anfragenden Nutzer: Firmenseite und `company_fokus` (Website-Route), Neuheiten-Meldungen (Erstfund), Firmenliste mit Themenfilter, Bestandssuche (SuchBlock-Zeilen der Quelle thema tragen `actorId`, ref je Nutzer eindeutig), Vektoren für den lokalen Einbetter (fremde Themen gehen nie an einen Rechner). Die Pool-Suche lässt Themen ganz weg.
+- Altbestand (16 Befunde ohne Nutzer) ist unsichtbar und wird beim nächsten Lauf je Nutzer neu geschrieben; die bisherigen Themen-Zeilen in SuchBlock werden mit der Migration entfernt.

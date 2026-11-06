@@ -163,7 +163,7 @@ bestandssucheRouter.openapi(route, async (c) => {
   if (!pool && ids.length === 0) return c.json({ bereich: body.bereich, anzahl: 0, gesamtTreffer: 0, limit, bestand: 0, quellen, begriffe, firmen: [], semantik: semantikLeer }, 200);
 
   const suchQuellen = quellen.filter((q): q is SuchQuelle => (SUCH_QUELLEN as readonly string[]).includes(q));
-  const bloeckeSuchen = () => (pool ? suchbloeckePoolSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length) : suchbloeckeSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length));
+  const bloeckeSuchen = () => (pool ? suchbloeckePoolSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length) : suchbloeckeSuchen(ids, suchQuellen, begriffe, MAX_JE_QUELLE * suchQuellen.length, auth.actorId!));
   const [ausBloecken, ausAbschluessen] = await Promise.all([
     suchQuellen.length ? bloeckeSuchen().catch((err) => { console.warn("[bestandssuche] suchblock:", err instanceof Error ? err.message : err); return []; }) : Promise.resolve([]),
     quellen.includes("abschluss") ? abschlussAbfragen(ids, begriffe, pool ? "ausser" : "nur") : Promise.resolve([] as Treffer[]),
@@ -228,7 +228,7 @@ bestandssucheRouter.openapi(offenRoute, async (c) => {
   const auth = c.get("auth") as { actorId?: string | null } | undefined;
   if (!auth?.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
   const ids = await bestandIds(auth.actorId);
-  return c.json({ bloecke: await offeneEmbeddings(ids, c.req.valid("query").limit) }, 200);
+  return c.json({ bloecke: await offeneEmbeddings(ids, c.req.valid("query").limit, auth.actorId) }, 200);
 });
 
 const embeddingsRoute = createRoute({
@@ -241,7 +241,7 @@ bestandssucheRouter.openapi(embeddingsRoute, async (c) => {
   if (!auth?.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
   const body = c.req.valid("json");
   const ids = await bestandIds(auth.actorId);
-  return c.json({ geschrieben: await embeddingsSetzen(ids, body.modell, body.eintraege) }, 200);
+  return c.json({ geschrieben: await embeddingsSetzen(ids, body.modell, body.eintraege, auth.actorId) }, 200);
 });
 
 // ---- Betreiber: Altbestand nach SuchBlock uebernehmen (einmalig) ----

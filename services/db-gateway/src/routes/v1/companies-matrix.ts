@@ -152,7 +152,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
   let themaIds: string[] | null = null;
   if (thema) {
     const r = await getProducerPool("website")
-      .query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "CompanyThema" WHERE schluessel = $1 AND status = 'gefunden' LIMIT 5000`, [thema])
+      .query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "CompanyThema" WHERE schluessel = $1 AND "actorId" = $2 AND status = 'gefunden' LIMIT 5000`, [thema, actorIdFuerZustand || "-ohne-nutzer-"])
       .catch(() => ({ rows: [] as Array<{ companyId: string }> }));
     themaIds = r.rows.map((x) => x.companyId);
     if (themaIds.length === 0) return c.json({ pageNumber, pageSize, count: 0, companies: [] }, 200);

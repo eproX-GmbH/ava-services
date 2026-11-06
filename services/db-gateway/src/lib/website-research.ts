@@ -54,7 +54,7 @@ export type WebsiteRecherche = {
 
 const iso = (v: unknown): string | null => (v instanceof Date ? v.toISOString() : typeof v === "string" ? v : null);
 
-async function lese(pool: pg.Pool, companyId: string): Promise<Omit<WebsiteRecherche, "quelle">> {
+async function lese(pool: pg.Pool, companyId: string, actorId: string): Promise<Omit<WebsiteRecherche, "quelle">> {
   const jobs = await pool
     .query<Record<string, unknown>>(
       `SELECT id, title, location, "workingModel", description, requirements, technologies,
@@ -79,8 +79,8 @@ async function lese(pool: pg.Pool, companyId: string): Promise<Omit<WebsiteReche
   const themen = await pool
     .query<Record<string, unknown>>(
       `SELECT schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "erstgesehenAt", "updatedAt"
-         FROM "CompanyThema" WHERE "companyId" = $1 ORDER BY (status = 'gefunden') DESC, name`,
-      [companyId],
+         FROM "CompanyThema" WHERE "companyId" = $1 AND "actorId" = $2 ORDER BY (status = 'gefunden') DESC, name`,
+      [companyId, actorId],
     )
     .catch(() => ({ rows: [] as Record<string, unknown>[] }));
   const k = karriere.rows[0];
@@ -127,8 +127,9 @@ async function lese(pool: pg.Pool, companyId: string): Promise<Omit<WebsiteReche
   };
 }
 
-export async function ladeWebsiteRecherche(companyId: string, _logger: typeof basisLogger = basisLogger): Promise<WebsiteRecherche> {
-  const aktuell = await lese(getProducerPool("website"), companyId);
+/** actorId: Fokus-Themen sind je Nutzer — nur die eigenen Befunde (2026-11-06). */
+export async function ladeWebsiteRecherche(companyId: string, actorId: string, _logger: typeof basisLogger = basisLogger): Promise<WebsiteRecherche> {
+  const aktuell = await lese(getProducerPool("website"), companyId, actorId);
   const quelle = aktuell.jobPostings.length || aktuell.deepResearches.length || aktuell.karriere || aktuell.themen.length ? "website" : "leer";
   return { ...aktuell, quelle };
 }

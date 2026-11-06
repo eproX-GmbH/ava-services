@@ -1722,6 +1722,20 @@ async function ensureStellenSchema(client: { query: (q: string, p?: unknown[]) =
     "erstgesehenAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("companyId", schluessel))`);
+  // 2026-11-06 (Joyce): Befunde gehoeren dem Nutzer, dessen Themen geprueft
+  // wurden. Ein Lauf ueberschreibt nie fremde Befunde, gelesen wird nur der
+  // eigene Stand. Altbestand ohne Nutzer bleibt mit actorId '' unsichtbar und
+  // wird beim naechsten Lauf je Nutzer neu geschrieben.
+  await client.query(`ALTER TABLE "CompanyThema" ADD COLUMN IF NOT EXISTS "actorId" TEXT NOT NULL DEFAULT ''`);
+  await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+         WHERE c.relname = 'CompanyThema' AND i.indisprimary AND a.attname = 'actorId') THEN
+        ALTER TABLE "CompanyThema" DROP CONSTRAINT IF EXISTS "CompanyThema_pkey";
+        ALTER TABLE "CompanyThema" ADD PRIMARY KEY ("companyId", "actorId", schluessel);
+      END IF;
+    END $$`);
+  await client.query(`CREATE INDEX IF NOT EXISTS "CompanyThema_actor_idx" ON "CompanyThema" ("actorId", schluessel, status)`);
   stellenSchemaBereit = true;
 }
 
@@ -1783,22 +1797,26 @@ const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
       }
     }
 
+    // Themen gehoeren dem Nutzer, dessen Producer gelaufen ist (data.actorId,
+    // seit website-Producer 2026-11-06). Ohne actorId (aeltere Producer) landen
+    // sie im unsichtbaren Topf '' und ueberschreiben niemanden.
+    const themenActor = typeof (data as { actorId?: unknown }).actorId === "string" ? String((data as { actorId?: string }).actorId) : "";
     if (Array.isArray(result.themen)) {
-      // Erstsichtung je Thema bleibt erhalten (Alarm "neu gefunden"); sonst ersetzt der Lauf alles.
+      // Erstsichtung je Thema bleibt erhalten (Alarm "neu gefunden"); der Lauf ersetzt nur den Stand DIESES Nutzers.
       const vorher = await client.query<{ schluessel: string; status: string; erstgesehenAt: Date | null; createdAt: Date }>(
-        `SELECT schluessel, status, "erstgesehenAt", "createdAt" FROM "CompanyThema" WHERE "companyId" = $1`,
-        [companyId],
+        `SELECT schluessel, status, "erstgesehenAt", "createdAt" FROM "CompanyThema" WHERE "companyId" = $1 AND "actorId" = $2`,
+        [companyId, themenActor],
       );
       const erst = new Map(vorher.rows.map((r) => [r.schluessel, r.status === "gefunden" ? (r.erstgesehenAt ?? r.createdAt) : null]));
       const angelegt = new Map(vorher.rows.map((r) => [r.schluessel, r.createdAt]));
-      await client.query(`DELETE FROM "CompanyThema" WHERE "companyId" = $1`, [companyId]);
+      await client.query(`DELETE FROM "CompanyThema" WHERE "companyId" = $1 AND "actorId" = $2`, [companyId, themenActor]);
       for (const t of result.themen) {
         if (!t.schluessel || !t.name) continue;
         await client.query(
-          `INSERT INTO "CompanyThema" ("companyId", schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "erstgesehenAt", "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, NOW()), NOW())`,
+          `INSERT INTO "CompanyThema" ("companyId", "actorId", schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "erstgesehenAt", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()), NOW())`,
           [
-            companyId, t.schluessel, t.name, t.status, t.zitat ?? null, t.quelleUrl ?? null, t.ueberschrift ?? null, t.begruendung ?? null,
+            companyId, themenActor, t.schluessel, t.name, t.status, t.zitat ?? null, t.quelleUrl ?? null, t.ueberschrift ?? null, t.begruendung ?? null,
             t.status === "gefunden" ? (erst.get(t.schluessel) ?? new Date()) : null,
             angelegt.get(t.schluessel) ?? null,
           ],
@@ -1820,7 +1838,7 @@ const applyWebsiteResearch: ApplyFn = async (pool, event, log) => {
     // Bestandssuche S2 (docs/PLAN_BESTANDSSUCHE.md): Belege nach SuchBlock spiegeln, best-effort.
     const warn = (m: string) => log.warn({ companyId }, m);
     if (Array.isArray(result.jobPostings)) await suchbloeckeErsetzenLeise(companyId, "stelle", stellenBloecke(result.jobPostings), warn);
-    if (Array.isArray(result.themen)) await suchbloeckeErsetzenLeise(companyId, "thema", themenBloecke(result.themen.map((t) => ({ ...t, updatedAt: computedAt }))), warn);
+    if (Array.isArray(result.themen) && themenActor) await suchbloeckeErsetzenLeise(companyId, "thema", themenBloecke(result.themen.map((t) => ({ ...t, updatedAt: computedAt }))), warn, themenActor);
     if (result.karriere) await suchbloeckeErsetzenLeise(companyId, "karriere", karriereBloecke({ ...result.karriere, updatedAt: computedAt }), warn);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

@@ -211,6 +211,8 @@ app.post("/v1/tenants/me/instanzen/:id/aktualisieren", authMiddleware, async (c)
 // Modellkatalog für Vorgaben-Oberflächen ohne lokalen Katalog (Web-Konsole).
 app.get("/v1/modelle", authMiddleware, (c) => c.json({ items: MODELL_KATALOG }));
 
+// Vorgangsnamen aus der Datenbank ins Speicherabbild laden (lib/transaction-names.ts).
+void import("./lib/transaction-names").then((m) => m.vorladenTransaktionsnamen()).catch(() => undefined);
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "db-gateway listening");
 });

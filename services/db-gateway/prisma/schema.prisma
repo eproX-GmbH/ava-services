@@ -1414,6 +1414,8 @@ model SuchBlock {
   tsv       Unsupported("tsvector")?
   embedding Unsupported("real[]")?
   embeddingModell String?
+  /// Nur bei quelle thema: Nutzer, dem der Befund gehoert (Fokus-Themen sind je Nutzer).
+  actorId        String?
   updatedAt DateTime                 @default(now())
 
   @@unique([quelle, companyId, ref])
@@ -1466,4 +1468,11 @@ model NutzerAktivitaet {
   anfragen  Int      @default(0)
 
   @@index([zuletztAt(sort: Desc)], map: "NutzerAktivitaet_zuletzt_idx")
+}
+
+/// Vorgangsname, den der Nutzer beim Import vergeben hat (Gateway-Overlay ueber master-data).
+model TransaktionsName {
+  transactionId String   @id
+  name          String
+  updatedAt     DateTime @default(now()) @db.Timestamptz(6)
 }

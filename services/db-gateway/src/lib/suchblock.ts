@@ -35,28 +35,32 @@ function datum(v: Date | string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Belege einer Firma und Quelle ersetzen (Lauf-Semantik: der neue Stand gilt). */
-export async function suchbloeckeErsetzen(companyId: string, quelle: SuchQuelle, bloecke: SuchBlockEingang[], q: pg.Pool | pg.PoolClient = getGatewayPool()): Promise<number> {
+/** Belege einer Firma und Quelle ersetzen (Lauf-Semantik: der neue Stand gilt).
+ *  Mit actorId (Fokus-Themen) nur die Belege dieses Nutzers; ref wird dann je
+ *  Nutzer eindeutig gemacht, damit gleichnamige Themen sich nicht verdraengen. */
+export async function suchbloeckeErsetzen(companyId: string, quelle: SuchQuelle, bloecke: SuchBlockEingang[], q: pg.Pool | pg.PoolClient = getGatewayPool(), actorId: string | null = null): Promise<number> {
   const sauber = bloecke
     .map((b) => ({ ...b, ref: (b.ref ?? "").trim().slice(0, 500), titel: (b.titel ?? "").replace(/\s+/g, " ").trim().slice(0, 300), text: (b.text ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_TEXT) }))
     .filter((b) => b.ref && b.text.length >= 3)
-    .slice(0, MAX_JE_FIRMA_QUELLE);
-  await q.query(`DELETE FROM "SuchBlock" WHERE "companyId" = $1 AND quelle = $2`, [companyId, quelle]);
+    .slice(0, MAX_JE_FIRMA_QUELLE)
+    .map((b) => (actorId ? { ...b, ref: `${actorId}:${b.ref}`.slice(0, 500) } : b));
+  if (actorId) await q.query(`DELETE FROM "SuchBlock" WHERE "companyId" = $1 AND quelle = $2 AND "actorId" = $3`, [companyId, quelle, actorId]);
+  else await q.query(`DELETE FROM "SuchBlock" WHERE "companyId" = $1 AND quelle = $2 AND "actorId" IS NULL`, [companyId, quelle]);
   for (const b of sauber) {
     await q.query(
-      `INSERT INTO "SuchBlock" (id, "companyId", quelle, ref, titel, text, "quelleUrl", datum, "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-       ON CONFLICT (quelle, "companyId", ref) DO UPDATE SET titel = EXCLUDED.titel, text = EXCLUDED.text, "quelleUrl" = EXCLUDED."quelleUrl", datum = EXCLUDED.datum, "updatedAt" = NOW()`,
-      [id(companyId, quelle, b.ref), companyId, quelle, b.ref, b.titel, b.text, b.quelleUrl ?? null, datum(b.datum)],
+      `INSERT INTO "SuchBlock" (id, "companyId", quelle, ref, titel, text, "quelleUrl", datum, "actorId", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       ON CONFLICT (quelle, "companyId", ref) DO UPDATE SET titel = EXCLUDED.titel, text = EXCLUDED.text, "quelleUrl" = EXCLUDED."quelleUrl", datum = EXCLUDED.datum, "actorId" = EXCLUDED."actorId", "updatedAt" = NOW()`,
+      [id(companyId, quelle, b.ref), companyId, quelle, b.ref, b.titel, b.text, b.quelleUrl ?? null, datum(b.datum), actorId],
     );
   }
   return sauber.length;
 }
 
 /** Wie suchbloeckeErsetzen, aber schluckt Fehler (Persist-Haken). */
-export async function suchbloeckeErsetzenLeise(companyId: string, quelle: SuchQuelle, bloecke: SuchBlockEingang[], warn: (m: string) => void = (m) => console.warn(m)): Promise<void> {
+export async function suchbloeckeErsetzenLeise(companyId: string, quelle: SuchQuelle, bloecke: SuchBlockEingang[], warn: (m: string) => void = (m) => console.warn(m), actorId: string | null = null): Promise<void> {
   try {
-    await suchbloeckeErsetzen(companyId, quelle, bloecke);
+    await suchbloeckeErsetzen(companyId, quelle, bloecke, getGatewayPool(), actorId);
   } catch (err) {
     warn(`[suchblock] ${quelle} ${companyId}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -104,17 +108,18 @@ export function tsqueryAusdruck(anzahl: number, offset: number): string {
   return Array.from({ length: anzahl }, (_, i) => `websearch_to_tsquery('german', $${offset + i})`).join(" || ");
 }
 
-export async function suchbloeckeSuchen(companyIds: string[], quellen: SuchQuelle[], begriffe: string[], maxZeilen: number): Promise<SuchTreffer[]> {
+export async function suchbloeckeSuchen(companyIds: string[], quellen: SuchQuelle[], begriffe: string[], maxZeilen: number, actorId: string): Promise<SuchTreffer[]> {
   if (companyIds.length === 0 || quellen.length === 0 || begriffe.length === 0) return [];
-  const q = tsqueryAusdruck(begriffe.length, 4);
+  const q = tsqueryAusdruck(begriffe.length, 5);
   const r = await getGatewayPool().query<SuchTreffer>(
     `SELECT "companyId", quelle, titel, "quelleUrl" AS url, to_char(datum, 'YYYY-MM-DD') AS datum, embedding,
             ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
             ts_rank_cd(tsv, ${q}) AS rang
      FROM "SuchBlock"
      WHERE "companyId" = ANY($1::text[]) AND quelle = ANY($2::text[]) AND tsv @@ (${q})
+       AND (quelle <> 'thema' OR "actorId" = $4)
      ORDER BY rang DESC LIMIT $3`,
-    [companyIds, quellen, maxZeilen, ...begriffe],
+    [companyIds, quellen, maxZeilen, actorId, ...begriffe],
   );
   return r.rows.map((x) => ({ ...x, rang: Number(x.rang) || 0, auszug: (x.auszug ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }));
 }
@@ -128,7 +133,7 @@ export async function suchbloeckePoolSuchen(ausgeschlossen: string[], quellen: S
             ts_headline('german', text, ${q}, ${HEADLINE}) AS auszug,
             ts_rank_cd(tsv, ${q}) AS rang
      FROM "SuchBlock"
-     WHERE NOT ("companyId" = ANY($1::text[])) AND quelle = ANY($2::text[]) AND tsv @@ (${q})
+     WHERE NOT ("companyId" = ANY($1::text[])) AND quelle = ANY($2::text[]) AND quelle <> 'thema' AND tsv @@ (${q})
      ORDER BY rang DESC LIMIT $3`,
     [ausgeschlossen, quellen, maxZeilen, ...begriffe],
   );
@@ -171,9 +176,14 @@ export async function suchblockBackfill(log: (m: string) => void): Promise<void>
       alleFirmen.add(cid);
     }
     // Themen
-    for (const cid of await firmenIds(web, `SELECT DISTINCT "companyId" FROM "CompanyThema"`)) {
-      const r = await web.query(`SELECT schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "updatedAt" FROM "CompanyThema" WHERE "companyId" = $1`, [cid]);
-      stand.thema += await suchbloeckeErsetzen(cid, "thema", themenBloecke(r.rows));
+    // Themen je Nutzer (seit 2026-11-06); Altbestand ohne Nutzer ('') bleibt draussen.
+    const themenPaare = await web
+      .query<{ companyId: string; actorId: string }>(`SELECT DISTINCT "companyId", "actorId" FROM "CompanyThema" WHERE "actorId" <> ''`)
+      .catch(() => ({ rows: [] as Array<{ companyId: string; actorId: string }> }));
+    await getGatewayPool().query(`DELETE FROM "SuchBlock" WHERE quelle = 'thema' AND "actorId" IS NULL`).catch(() => undefined);
+    for (const { companyId: cid, actorId } of themenPaare.rows) {
+      const r = await web.query(`SELECT schluessel, name, status, zitat, "quelleUrl", ueberschrift, begruendung, "updatedAt" FROM "CompanyThema" WHERE "companyId" = $1 AND "actorId" = $2`, [cid, actorId]);
+      stand.thema += await suchbloeckeErsetzen(cid, "thema", themenBloecke(r.rows), getGatewayPool(), actorId);
       alleFirmen.add(cid);
     }
     // Referenzen (Gateway-DB)
@@ -234,22 +244,25 @@ export function fusioniere<T extends { rang: number; embedding?: number[] | null
 }
 
 /** Bloecke der genannten Firmen ohne Vektor (fuer den lokalen Einbetter des Desktops). */
-export async function offeneEmbeddings(companyIds: string[], limit: number): Promise<Array<{ id: string; titel: string; text: string }>> {
+export async function offeneEmbeddings(companyIds: string[], limit: number, actorId: string): Promise<Array<{ id: string; titel: string; text: string }>> {
   if (companyIds.length === 0) return [];
+  // Fokus-Themen fremder Nutzer gehen nie an diesen Rechner.
   const r = await getGatewayPool().query<{ id: string; titel: string; text: string }>(
-    `SELECT id, titel, left(text, 4000) AS text FROM "SuchBlock" WHERE "companyId" = ANY($1::text[]) AND embedding IS NULL ORDER BY "updatedAt" DESC LIMIT $2`,
-    [companyIds, limit],
+    `SELECT id, titel, left(text, 4000) AS text FROM "SuchBlock"
+      WHERE "companyId" = ANY($1::text[]) AND embedding IS NULL AND (quelle <> 'thema' OR "actorId" = $3)
+      ORDER BY "updatedAt" DESC LIMIT $2`,
+    [companyIds, limit, actorId],
   );
   return r.rows;
 }
 
 /** Vektoren eintragen; nur Zeilen der genannten Firmen. Liefert die Zahl der geschriebenen Zeilen. */
-export async function embeddingsSetzen(companyIds: string[], modell: string, eintraege: Array<{ id: string; embedding: number[] }>): Promise<number> {
+export async function embeddingsSetzen(companyIds: string[], modell: string, eintraege: Array<{ id: string; embedding: number[] }>, actorId: string): Promise<number> {
   if (companyIds.length === 0 || eintraege.length === 0) return 0;
   let n = 0;
   const pool = getGatewayPool();
   for (const e of eintraege) {
-    const r = await pool.query(`UPDATE "SuchBlock" SET embedding = $3::real[], "embeddingModell" = $4 WHERE id = $1 AND "companyId" = ANY($2::text[])`, [e.id, companyIds, e.embedding, modell]);
+    const r = await pool.query(`UPDATE "SuchBlock" SET embedding = $3::real[], "embeddingModell" = $4 WHERE id = $1 AND "companyId" = ANY($2::text[]) AND (quelle <> 'thema' OR "actorId" = $5)`, [e.id, companyIds, e.embedding, modell, actorId]);
     n += r.rowCount ?? 0;
   }
   return n;
