@@ -55,7 +55,7 @@ import { faehigkeitenText, verfuegbareFaehigkeiten } from "../main/suggestions/f
 import { pruefeModellstufe } from "../main/workflows/modellstufe";
 import { EmailMusterDienst } from "../main/contacts/email-muster/dienst";
 import { streamToText as hintergrundUrteil } from "../main/link-monitor/llm";
-import { handleSignedIn as accountSpaceSignedIn, listAccounts, spaceDirFor, readIdentity } from "../main/account-space";
+import { handleSignedIn as accountSpaceSignedIn, listAccounts, spaceDirFor, readIdentity, getSharedDir, raeumeKontoKopien } from "../main/account-space";
 import { join } from "node:path";
 import { markHeartbeatSuspend, quitStep, traceStep, writeLineSync } from "../main/file-logger";
 import { Auth, type AuthStatus } from "../main/auth";
@@ -2325,8 +2325,13 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // docs/ANALYSE_CHROME_PROZESSE.md L5). Erst nachsehen, ob schon eine Fassung
   // da ist; das ist billig und sagt sofort Bescheid. Das Laden selbst laeuft
   // danach im Hintergrund weiter, damit der Start nie darauf wartet.
+  // 2026-11-06 (Joyce): EINE Fassung je Geraet (shared/), nicht je Konto. Die
+  // alten Konto-Kopien werden im Hintergrund entfernt.
+  void raeumeKontoKopien("chrome-for-testing").then((n) => {
+    if (n > 0) writeLineSync("INFO ", `[browser] ${n} alte Konto-Kopien von Chrome for Testing entfernt`);
+  });
   eigenerBrowser = new ChromeForTesting(
-    join(paths().get("userData"), "chrome-for-testing"),
+    getSharedDir("chrome-for-testing"),
     (zeile) => writeLineSync("INFO ", zeile),
     (stand) => {
       windows().broadcast("browser:stand", stand);
@@ -2356,7 +2361,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
         /* best-effort */
       }
     },
-    60 * 60 * 1000,
+    // 2026-11-06 (Joyce): alle 5 Minuten statt stuendlich — ein verwaister
+    // Browser lebt so hoechstens fuenf Minuten; `ps` je Takt ist billig.
+    5 * 60 * 1000,
   ).unref();
 
   // v0.1.55 — clear `com.apple.quarantine` from this bundle. This

@@ -65,7 +65,9 @@ interface Registry {
 }
 
 const PENDING = "_pending";
-const SHARED_DIRS = ["ollama-managed", "whisper"] as const;
+// 2026-11-06 (Joyce): Chrome for Testing geraeteweit statt je Konto — vorher hielt
+// jedes Konto eine eigene Kopie (je rund 380 MB) in einer anderen Fassung.
+const SHARED_DIRS = ["ollama-managed", "whisper", "chrome-for-testing"] as const;
 const MIGRATION_MARKER = ".accounts-migrated";
 /** Eigene Dateien/Verzeichnisse im Basis-userData, die NICHT verschoben werden. */
 const BASE_OWN = new Set(["accounts", "shared", "accounts.json", MIGRATION_MARKER]);
@@ -419,4 +421,26 @@ export function consumeForceLoginPrompt(): boolean {
     /* ignore */
   }
   return true;
+}
+
+/**
+ * Alte Konto-Kopien eines geraeteweiten Verzeichnisses entfernen (z. B.
+ * chrome-for-testing je Konto aus Fassungen vor 2026-11-06). Best-effort.
+ */
+export async function raeumeKontoKopien(name: (typeof SHARED_DIRS)[number]): Promise<number> {
+  const { rm, readdir } = await import("node:fs/promises");
+  const basis = getBaseUserData();
+  let n = 0;
+  let konten: string[] = [];
+  try {
+    konten = await readdir(join(basis, "accounts"));
+  } catch {
+    return 0;
+  }
+  for (const k of konten) {
+    const ziel = join(basis, "accounts", k, name);
+    if (!existsSync(ziel)) continue;
+    await rm(ziel, { recursive: true, force: true }).then(() => { n += 1; }).catch(() => undefined);
+  }
+  return n;
 }
