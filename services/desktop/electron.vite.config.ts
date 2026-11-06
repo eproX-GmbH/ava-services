@@ -1,4 +1,14 @@
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import { createRequire } from "node:module";
+
+// 2026-11-06 (v0.1.939): Das MCP-SDK samt Pruefbibliothek ajv wird in das
+// Hauptbuendel gebacken statt zur Laufzeit aus node_modules geladen. Grund:
+// electron-builder packte unter node-linker=hoisted die gehoistete ajv 6
+// (ohne uri-js) statt der vom SDK gebrauchten ajv 8 — Startabsturz "Cannot
+// find module 'uri-js'" in v0.1.935-938. Gebuendelt entscheidet Rollup zur
+// Bauzeit ueber die Fassung, nicht der Paketierer.
+const BUENDELN = /^(@modelcontextprotocol\/sdk|ajv|ajv-formats)(\/|$)/;
+const buendelRequire = createRequire(import.meta.url);
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "node:path";
@@ -32,7 +42,30 @@ export default defineConfig({
     // the bundle in production, and externalizing keeps native modules
     // (better-sqlite3, onnxruntime-node, …) working without rollup-side
     // shims.
-    plugins: [externalizeDepsPlugin()],
+    // 2026-11-06 (v0.1.939): Das MCP-SDK samt seiner Pruefbibliothek wird in
+    // das Hauptbuendel gebacken statt zur Laufzeit aus node_modules geladen.
+    // Grund: electron-builder packte unter node-linker=hoisted die
+    // gehoistete ajv 6 (ohne uri-js) statt der vom SDK gebrauchten ajv 8 —
+    // Startabsturz "Cannot find module 'uri-js'" in v0.1.935-938. Gebuendelt
+    // entscheidet Rollup zur Bauzeit ueber die Fassung, nicht der Paketierer.
+    plugins: [
+      // Unterpfade wie "ajv/dist/runtime/uri" (aus ajv-generiertem Code) auf
+      // Dateipfade aufloesen, BEVOR externalizeDepsPlugin sie als extern
+      // markieren kann — so landen sie mit im Buendel.
+      {
+        name: "ava-sdk-unterpfade-buendeln",
+        enforce: "pre" as const,
+        resolveId(id: string) {
+          if (!BUENDELN.test(id)) return null;
+          try {
+            return { id: buendelRequire.resolve(id), external: false };
+          } catch {
+            return null;
+          }
+        },
+      },
+      externalizeDepsPlugin({ exclude: ["@modelcontextprotocol/sdk", "ajv", "ajv-formats"] }),
+    ],
     // Bake the GitHub PAT into the main bundle at build time so
     // electron-updater can fetch the (private) repo's release feed.
     // Source: SUBMODULES_PAT secret in CI (or the GH_TOKEN env locally).
