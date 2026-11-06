@@ -1,3 +1,4 @@
+import { argumenteAbbilden, rolleAufloesen, type AufgeloesteRolle } from "./rollen";
 // W1 — WorkflowService: Fassade fuer Store, Engine, Zeitplan-Trigger,
 // Ereignis-Trigger (W4-Haken), Freigaben und Katalog. Eine Instanz je App.
 
@@ -241,19 +242,61 @@ export class WorkflowService {
 
   // ---- W8 — Vorlagen -------------------------------------------------------------
 
-  templates(): Array<{ id: string; name: string; description: string; scope: "company" | "none"; trigger: string; verfuegbar: boolean; fehlendeTools: string[]; requires?: string }> {
+  templates(): Array<{ id: string; name: string; description: string; scope: "company" | "none"; trigger: string; verfuegbar: boolean; fehlendeTools: string[]; fehlendeDienste: string[]; requires?: string }> {
+    const alle = this.deps.registry.list();
     return WORKFLOW_TEMPLATES.map((t) => {
       const fehlende = t.tools.filter((n) => !this.toolExists(n));
-      return { id: t.id, name: t.name, description: t.description, scope: t.scope, trigger: t.trigger.kind, verfuegbar: fehlende.length === 0, fehlendeTools: fehlende, requires: t.requires };
+      const fehlendeDienste = [...new Set(Object.entries(t.rollen ?? {}).filter(([name, r]) => !rolleAufloesen(name, r, alle).tool).map(([, r]) => r.dienstName))];
+      return { id: t.id, name: t.name, description: t.description, scope: t.scope, trigger: t.trigger.kind, verfuegbar: fehlende.length === 0 && fehlendeDienste.length === 0, fehlendeTools: fehlende, fehlendeDienste, requires: t.requires };
     });
   }
 
-  /** Vorlage anlegen; benoetigte Sub-Vorlage wird mit angelegt (oder wiederverwendet). */
-  createFromTemplate(templateId: string): { workflow: WorkflowDefinition; problems: ValidationProblem[]; angelegt: string[] } {
+  /** Rollen einer Vorlage aufloesen; ungeloeste mit den Werkzeugen des Dienstes als Auswahl. */
+  templateRollen(templateId: string, vorgaben: Record<string, string> = {}): AufgeloesteRolle[] {
     const t = WORKFLOW_TEMPLATES.find((x) => x.id === templateId);
-    if (!t) throw new Error("Vorlage nicht gefunden.");
-    const fehlende = t.tools.filter((n) => !this.toolExists(n));
+    if (!t?.rollen) return [];
+    const alle = this.deps.registry.list();
+    return Object.entries(t.rollen).map(([name, r]) => rolleAufloesen(name, r, alle, vorgaben[name]));
+  }
+
+  /** Vorlage anlegen; benoetigte Sub-Vorlage wird mit angelegt (oder wiederverwendet). */
+  createFromTemplate(templateId: string, werkzeuge: Record<string, string> = {}): { workflow: WorkflowDefinition; problems: ValidationProblem[]; angelegt: string[]; hinweise: string[] } {
+    const t0 = WORKFLOW_TEMPLATES.find((x) => x.id === templateId);
+    if (!t0) throw new Error("Vorlage nicht gefunden.");
+    const fehlende = t0.tools.filter((n) => !this.toolExists(n));
     if (fehlende.length > 0) throw new Error(`Vorlage braucht Tools, die nicht verfuegbar sind: ${fehlende.join(", ")}`);
+    // C5: Rollen gegen die verbundenen Dienste aufloesen, Argumente abbilden.
+    const hinweise: string[] = [];
+    let t = t0;
+    if (t0.rollen) {
+      const aufgeloest = this.templateRollen(templateId, werkzeuge);
+      const offen = aufgeloest.filter((r) => !r.tool);
+      if (offen.length > 0) {
+        const text = offen
+          .map((r) => {
+            const def = t0.rollen![r.rolle]!;
+            return r.kandidaten.length === 0
+              ? `${def.dienstName} ist nicht verbunden (Einstellungen → Verbindungen → Weitere Dienste)`
+              : `${def.dienstName}: kein Werkzeug fuer „${def.zweck}“ erkannt — bitte eines waehlen (werkzeuge.${r.rolle}): ${r.kandidaten.slice(0, 15).map((k) => k.name).join(", ")}`;
+          })
+          .join("; ");
+        throw new Error(`Vorlage braucht Werkzeuge verbundener Dienste: ${text}`);
+      }
+      const jeRolle = new Map(aufgeloest.map((r) => [r.rolle, r.tool!]));
+      t = {
+        ...t0,
+        nodes: t0.nodes.map((n) => {
+          const tool = typeof n.parameters?.tool === "string" ? (n.parameters.tool as string) : "";
+          if (!tool.startsWith("@rolle:")) return n;
+          const echt = jeRolle.get(tool.slice("@rolle:".length));
+          const werkzeug = echt ? this.deps.registry.get(echt) : undefined;
+          if (!echt || !werkzeug) return n;
+          const abgebildet = argumenteAbbilden((n.parameters.args ?? {}) as Record<string, unknown>, werkzeug);
+          if (abgebildet.offenePflichtfelder.length > 0) hinweise.push(`Schritt „${n.name}“ (${echt}): Pflichtfelder ohne Wert — ${abgebildet.offenePflichtfelder.join(", ")}; bitte im Editor ergaenzen.`);
+          return { ...n, parameters: { ...n.parameters, tool: echt, args: abgebildet.args } };
+        }),
+      };
+    }
     const angelegt: string[] = [];
     let subId: string | undefined;
     if (t.requires) {
@@ -270,7 +313,7 @@ export class WorkflowService {
     }
     const r = this.save(templateToDefinition(t, subId), { createdBy: "user" });
     angelegt.push(r.workflow.name);
-    return { ...r, angelegt };
+    return { ...r, angelegt, hinweise };
   }
 
   // ---- W7 — Teilen mit der Organisation ----------------------------------------

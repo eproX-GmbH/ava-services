@@ -605,9 +605,11 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     name: "workflow_templates",
     summary: "Fertige Workflow-Vorlagen auflisten und anlegen (z. B. Radar-Import mit Telegram-Bericht).",
     category: "workflow workflows vorlagen beispiele anlegen",
-    description: "Ohne templateId: listet Vorlagen mit Verfuegbarkeit. Mit templateId: legt die Vorlage (und eine benoetigte Sub-Vorlage) als eigene Workflows an — Trigger manuell, Schreib-Schritte nicht freigegeben. Fragt vor dem Anlegen nach.",
-    parameters: { type: "object", properties: { templateId: { type: "string" } } },
-    schema: yup.object({ templateId: yup.string().trim().optional() }).noUnknown(true),
+    description:
+      "Ohne templateId: listet Vorlagen mit Verfuegbarkeit (fehlendeDienste = noch zu verbindende Dienste wie Close oder CompLeadly). Mit templateId: legt die Vorlage (und eine benoetigte Sub-Vorlage) als eigene Workflows an — Schreib-Schritte nicht freigegeben. Fragt vor dem Anlegen nach. " +
+      "Vorlagen mit Werkzeugen verbundener Dienste loesen deren Werkzeuge selbst auf; meldet der Aufruf, dass kein Werkzeug erkannt wurde, das passende aus der genannten Liste waehlen und mit werkzeuge: { <rolle>: '<mcp_…>' } erneut aufrufen. Hinweise zu offenen Pflichtfeldern dem Nutzer nennen.",
+    parameters: { type: "object", properties: { templateId: { type: "string" }, werkzeuge: { type: "object", additionalProperties: { type: "string" }, description: "Optional: Rolle → Werkzeugname (mcp_<dienst>_<werkzeug>), wenn die automatische Zuordnung nicht greift" } } },
+    schema: yup.object({ templateId: yup.string().trim().optional(), werkzeuge: freiesObjekt().optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.angelegt ? `angelegt: ${r.angelegt.join(", ")}` : `${r.vorlagen?.length ?? 0} Vorlagen`),
     run: async (args, c) => {
       if (!args.templateId) return { vorlagen: svc().templates(), hinweis: "Vorlagen sind Startpunkte: Filter-Bedingungen (z. B. Score-Filter mit >= $vars.mindestScore) per workflow_update nodePatches an den Wunsch anpassen — fuer „unter 90“ die condition auf {{ ($json.matchScore ?? 0) < 90 && !$json.bereitsInAva }} setzen." };
@@ -616,8 +618,8 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       const value = await c.ui.confirmAction({ kind: "additive", prompt: `Vorlage „${t.name}“ als Workflow anlegen?${t.requires ? " (legt auch die Sub-Vorlage an)" : ""}`, confirmValue: "ja", options: [{ value: "ja", label: "Anlegen" }, { value: "nein", label: "Abbrechen" }] }, c.signal);
       if (value !== "ja") return { ...userDeclined() };
       try {
-        const r = svc().createFromTemplate(t.id);
-        return { angelegt: r.angelegt, workflow: kompakt(r.workflow), problems: r.problems };
+        const r = svc().createFromTemplate(t.id, (args.werkzeuge ?? {}) as Record<string, string>);
+        return { angelegt: r.angelegt, workflow: kompakt(r.workflow), problems: r.problems, ...(r.hinweise.length ? { hinweise: r.hinweise } : {}) };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
       }

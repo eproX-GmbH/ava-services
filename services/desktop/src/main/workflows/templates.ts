@@ -1,3 +1,4 @@
+import type { WerkzeugRolle } from "./rollen";
 // W8 — Vorlagen: fertige Workflows zum Sofort-Anlegen (Onboarding). Sie
 // nutzen nur Tools, die es gibt; Schreib-Schritte sind NICHT freigegeben,
 // Trigger stehen auf manuell — der Nutzer entscheidet bewusst.
@@ -18,6 +19,14 @@ export interface WorkflowTemplate {
   settings?: Partial<WorkflowSettings>;
   /** Vorlage, die zuerst angelegt werden muss (Sub-Workflow). */
   requires?: string;
+  /**
+   * Werkzeuge verbundener Dienste (MCP), beim Anlegen aufgeloest. Ein Node
+   * nutzt sie mit parameters.tool = "@rolle:<name>" und semantischen
+   * Argumenten "@leadId", "@text", … (workflows/rollen.ts).
+   */
+  rollen?: Record<string, WerkzeugRolle>;
+  /** Variablen der Vorlage (Startwerte im Editor). */
+  variables?: WorkflowDefinition["variables"];
 }
 
 const kette = (names: string[]): WorkflowConnections => {
@@ -168,6 +177,91 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     ],
     connections: kette(["Start", "HubSpot-Company suchen", "Nur eindeutige Treffer", "Zusammenfassung", "Notiz anlegen"]),
   },
+  // docs/PLAN_CLOSE_MCP.md C5 — LinkedIn-Ansprache ueber CompLeadly mit Rueckmeldung nach Close.
+  // Nur Werkzeuge der verbundenen Dienste (Rollen), keine Logik je Kunde.
+  {
+    id: "linkedin-ansprache-compleadly",
+    name: "LinkedIn-Ansprache über CompLeadly",
+    description:
+      "Für eine Firma: AVA holt die Kontakte mit LinkedIn-Profil, du gibst frei, welche an CompLeadly gehen, und AVA legt sie dort in deine Zielgruppe. Die Ansprache selbst (Kontaktanfrage, Nachfassen) läuft in CompLeadly und wird dort freigegeben. Braucht CompLeadly unter Einstellungen → Verbindungen → Weitere Dienste.",
+    tools: ["company_contacts"],
+    rollen: {
+      outreachProfil: { dienstName: "CompLeadly", dienst: /complead/i, muster: /(import|add|insert|create|upsert).*(profile|lead|contact)|(profile|lead|contact).*(import|add|insert|create|upsert)/i, zweck: "LinkedIn-Profil in eine Zielgruppe übernehmen" },
+    },
+    variables: { zielgruppe: { label: "Zielgruppe in CompLeadly", type: "string", value: "AVA" } },
+    scope: "company",
+    trigger: { kind: "manual" },
+    nodes: [
+      { name: "Start", type: "trigger", parameters: {} },
+      { name: "Kontakte holen", type: "tool", mode: "allItems", parameters: { tool: "company_contacts", args: { companyId: "{{ $company.companyId }}" } } },
+      { name: "Mit LinkedIn-Profil", type: "filter", parameters: { condition: "{{ !!$json.linkedin }}" } },
+      { name: "Freigabe", type: "human", parameters: { prompt: "{{ $input.count }} Kontakte von {{ $company.name }} an CompLeadly übergeben?", previewFields: ["name", "rolle", "linkedin"] } },
+      {
+        name: "An CompLeadly",
+        type: "tool",
+        mode: "perItem",
+        parameters: {
+          tool: "@rolle:outreachProfil",
+          args: {
+            "@linkedinUrl": "{{ [$json.linkedin].flat()[0] }}",
+            "@name": "{{ $json.name }}",
+            "@firma": "{{ $company.name }}",
+            "@position": "{{ $json.rolle ?? '' }}",
+            "@zielgruppe": "{{ $vars.zielgruppe }}",
+          },
+        },
+      },
+    ],
+    connections: kette(["Start", "Kontakte holen", "Mit LinkedIn-Profil", "Freigabe", "An CompLeadly"]),
+  },
+  {
+    id: "compleadly-rueckmeldung-close",
+    name: "CompLeadly-Rückmeldung als Notiz in Close",
+    description:
+      "Ereignis-Workflow: Meldet CompLeadly etwas über den Rückkanal (Kontaktanfrage angenommen, Nachricht gesendet, Lead hat geantwortet) und kennt AVA die Person in deinem Bestand, schreibt AVA eine Notiz an den verknüpften Lead in Close. Hat der Lead geantwortet, legt AVA zusätzlich eine Aufgabe zum Nachfassen an. Braucht Close und CompLeadly unter Einstellungen → Verbindungen → Weitere Dienste und den CompLeadly-Rückkanal.",
+    tools: ["crm_list_links_for_company"],
+    rollen: {
+      crmNotiz: { dienstName: "Close", dienst: /^close/i, namen: ["create_note"], muster: /note/i, zweck: "Notiz an einem Lead anlegen" },
+      crmAufgabe: { dienstName: "Close", dienst: /^close/i, namen: ["create_task"], muster: /task/i, zweck: "Aufgabe an einem Lead anlegen" },
+    },
+    scope: "company",
+    trigger: { kind: "event", event: "dienst.ereignis", filter: { dienst: "compleadly" } },
+    nodes: [
+      { name: "Start", type: "trigger", parameters: {} },
+      { name: "Close-Verknüpfung", type: "tool", mode: "allItems", parameters: { tool: "crm_list_links_for_company", args: { companyId: "{{ $company.companyId }}" } } },
+      { name: "Close-Lead", type: "transform", parameters: { fields: { closeLeadId: "{{ ($json.links ?? []).filter(l => l.crmType === 'CLOSE').map(l => l.crmExternalId)[0] ?? '' }}" } } },
+      { name: "Nur mit Close-Lead", type: "filter", parameters: { condition: "{{ !!$json.closeLeadId }}" } },
+      {
+        name: "Notiz in Close",
+        type: "tool",
+        mode: "perItem",
+        parameters: {
+          tool: "@rolle:crmNotiz",
+          args: {
+            "@leadId": "{{ $json.closeLeadId }}",
+            "@text": "LinkedIn über CompLeadly: {{ $('Start').first().json.typ ?? 'Ereignis' }} · {{ $('Start').first().json.name ?? '' }}{{ $('Start').first().json.position ? ' (' + $('Start').first().json.position + ')' : '' }} {{ $('Start').first().json.linkedin ?? '' }}",
+          },
+        },
+      },
+      { name: "Hat geantwortet?", type: "if", parameters: { condition: "{{ ['lead_replied', 'leadreplied', 'replied', 'reply', 'lead replied'].includes(String($('Start').first().json.typ ?? '').toLowerCase()) }}" } },
+      {
+        name: "Aufgabe in Close",
+        type: "tool",
+        mode: "perItem",
+        parameters: {
+          tool: "@rolle:crmAufgabe",
+          args: {
+            "@leadId": "{{ $('Close-Lead').first().json.closeLeadId }}",
+            "@text": "Antwort auf LinkedIn von {{ $('Start').first().json.name ?? 'Kontakt' }} prüfen und nachfassen",
+          },
+        },
+      },
+    ],
+    connections: {
+      ...kette(["Start", "Close-Verknüpfung", "Close-Lead", "Nur mit Close-Lead", "Notiz in Close", "Hat geantwortet?"]),
+      "Hat geantwortet?": { main: [[{ node: "Aufgabe in Close", index: 0 }], []] },
+    },
+  },
 ];
 
 export function templateToDefinition(t: WorkflowTemplate, subWorkflowId?: string): Pick<WorkflowDefinition, "name" | "description" | "nodes" | "connections" | "trigger" | "variables" | "settings" | "origin"> {
@@ -182,7 +276,7 @@ export function templateToDefinition(t: WorkflowTemplate, subWorkflowId?: string
     description: t.description,
     nodes,
     connections: t.connections,
-    variables: t.id === "radar-import-bericht" ? { mindestScore: { label: "Mindest-Score", type: "number", value: 80 } } : {},
+    variables: t.variables ?? (t.id === "radar-import-bericht" ? { mindestScore: { label: "Mindest-Score", type: "number", value: 80 } } : {}),
     settings: { ...DEFAULT_WORKFLOW_SETTINGS, scope: t.scope, ...(t.settings ?? {}) },
     origin: { kind: "assistant" },
     trigger: t.trigger,

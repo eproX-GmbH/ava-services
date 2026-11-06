@@ -3057,10 +3057,11 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Ohne templateId: listet Vorlagen mit Verfuegbarkeit. Mit templateId: legt die Vorlage (und eine benoetigte Sub-Vorlage) als eigene Workflows an — Trigger manuell, Schreib-Schritte nicht freigegeben. Fragt vor dem Anlegen nach.
+Ohne templateId: listet Vorlagen mit Verfuegbarkeit (fehlendeDienste = noch zu verbindende Dienste wie Close oder CompLeadly). Mit templateId: legt die Vorlage (und eine benoetigte Sub-Vorlage) als eigene Workflows an — Schreib-Schritte nicht freigegeben. Fragt vor dem Anlegen nach. Vorlagen mit Werkzeugen verbundener Dienste loesen deren Werkzeuge selbst auf; meldet der Aufruf, dass kein Werkzeug erkannt wurde, das passende aus der genannten Liste waehlen und mit werkzeuge: { <rolle>: '<mcp_…>' } erneut aufrufen. Hinweise zu offenen Pflichtfeldern dem Nutzer nennen.
 
 _Parameter:_
 - `templateId: string`
+- `werkzeuge: object` — Optional: Rolle → Werkzeugname (mcp_<dienst>_<werkzeug>), wenn die automatische Zuordnung nicht greift
 
 ### `workflow_update`
 
