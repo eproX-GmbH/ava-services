@@ -1,3 +1,4 @@
+import { paths } from "../../core/platform";
 // Gateway HTTP client used by agent tools.
 //
 // Why a thin wrapper instead of letting each tool call fetch directly:
@@ -79,6 +80,17 @@ export interface RequestOptions {
   attachUserLlm?: boolean;
 }
 
+let appVersionCache: string | null = null;
+function appVersion(): string {
+  if (appVersionCache) return appVersionCache;
+  try {
+    appVersionCache = paths().version();
+  } catch {
+    appVersionCache = "0";
+  }
+  return appVersionCache ?? "0";
+}
+
 export class GatewayClient {
   private readonly baseUrl: string;
   private readonly getAccessToken: () => Promise<string | null>;
@@ -127,6 +139,9 @@ export class GatewayClient {
       body = JSON.stringify(opts.body);
     }
     if (opts.idempotencyKey) headers["idempotency-key"] = opts.idempotencyKey;
+    // Betreiber-Konsole „Aktive Nutzer“ (2026-11-06): Geraet und Version je Anfrage.
+    headers["x-ava-client"] = `desktop-${process.platform}`;
+    headers["x-ava-version"] = appVersion();
 
     if (opts.attachUserLlm && this.getUserLlm) {
       const llm = await this.getUserLlm().catch(() => null);

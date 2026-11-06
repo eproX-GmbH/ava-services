@@ -10,6 +10,7 @@ import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { getGatewayPool } from "../lib/producer-pools";
 import { resolveTenantByMembership, tenantKind } from "../lib/membership-cache";
+import { vermerkeAktivitaet } from "../lib/nutzer-aktivitaet";
 
 const fallbackGeloggt = new Set<string>();
 
@@ -228,6 +229,18 @@ export const authMiddleware = createMiddleware(async (c, next) => {
       logger.info({ actorId: payload.sub, tenant_fallback: "sub" }, "tenantId aus sub abgeleitet (kein tenant_id-Claim)");
     }
     c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles: [...roles] });
+    // Betreiber-Konsole „Aktive Nutzer“: letzte Anfrage je Nutzer vermerken (gedrosselt, nie blockierend).
+    try {
+      vermerkeAktivitaet(getGatewayPool(), {
+        actorId: payload.sub,
+        tenantId: tenantId ?? null,
+        userAgent: c.req.header("user-agent") ?? null,
+        client: c.req.header("x-ava-client") ?? null,
+        version: c.req.header("x-ava-version") ?? null,
+      });
+    } catch {
+      /* Aktivitaet ist Beiwerk */
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
     // Surface a useful `message` field too so the desktop's GatewayError

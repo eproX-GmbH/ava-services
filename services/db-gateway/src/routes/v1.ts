@@ -23,6 +23,7 @@ import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
 import { vorabanalyseRouter } from "./v1/vorabanalyse";
 import { stammdatenRouter } from "./v1/stammdaten";
+import { betreiberNutzerRouter } from "./v1/betreiber-nutzer";
 import { linkedinLeadsRouter } from "./v1/linkedin-leads";
 import { billingRouter } from "./v1/billing";
 import { seatBillingRouter } from "./v1/seat-billing";
@@ -108,6 +109,7 @@ v1.route("/", transactionsRouter);
 v1.route("/", vorabanalyseRouter);
 // Stammdatenpflege (Betreiber, 2026-10-18).
 v1.route("/", stammdatenRouter);
+v1.route("/", betreiberNutzerRouter);
 v1.route("/", linkedinLeadsRouter);
 
 // §5.1 Excel import (W1).

@@ -1450,3 +1450,16 @@ model DienstEreignis {
 
   @@index([actorId, empfangenAt(sort: Desc)], map: "DienstEreignis_actor_empfangen_idx")
 }
+
+/// Betreiber-Konsole: letzte angemeldete Anfrage je Nutzer (Geraet, Version); aktiv = letzte 15 Minuten.
+model NutzerAktivitaet {
+  actorId   String   @id
+  tenantId  String?
+  geraet    String
+  version   String?
+  zuletztAt DateTime @default(now()) @db.Timestamptz(6)
+  erstesAt  DateTime @default(now()) @db.Timestamptz(6)
+  anfragen  Int      @default(0)
+
+  @@index([zuletztAt(sort: Desc)], map: "NutzerAktivitaet_zuletzt_idx")
+}
