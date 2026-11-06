@@ -18,6 +18,9 @@ export interface AktivitaetEingang {
   version: string | null;
 }
 
+/** Rueckfall fuer Anfragen ohne Kennung aus Node (Hintergrunddienste der App). */
+export const GERAET_SCHWACH = "Desktop";
+
 /** "Desktop (macOS)", "Desktop (Windows)", "Server", "App (Browser)", "MCP (Claude)" … aus Kopfzeilen ableiten. */
 export function geraetAus(client: string | null, userAgent: string | null): string {
   const c = (client ?? "").trim().toLowerCase();
@@ -36,7 +39,9 @@ export function geraetAus(client: string | null, userAgent: string | null): stri
   if (/claude/i.test(ua)) return "MCP (Claude)";
   if (/chatgpt|openai/i.test(ua)) return "MCP (ChatGPT)";
   if (/Mozilla/i.test(ua)) return "App (Browser)";
-  if (/node|undici/i.test(ua)) return "Dienst";
+  // Node ohne x-ava-client: lokale Verarbeitungsdienste der Desktop-App (oder
+  // eine App vor v0.1.940). Schwache Erkennung, ueberschreibt kein bekanntes Geraet.
+  if (/node|undici/i.test(ua)) return GERAET_SCHWACH;
   return ua ? ua.slice(0, 40) : "unbekannt";
 }
 
@@ -52,9 +57,9 @@ export function vermerkeAktivitaet(pool: Pool, e: AktivitaetEingang): void {
     .query(
       `INSERT INTO "NutzerAktivitaet" ("actorId", "tenantId", geraet, version, "zuletztAt", anfragen, "erstesAt")
        VALUES ($1, $2, $3, $4, NOW(), 1, NOW())
-       ON CONFLICT ("actorId") DO UPDATE SET "tenantId" = COALESCE(EXCLUDED."tenantId", "NutzerAktivitaet"."tenantId"), geraet = EXCLUDED.geraet,
+       ON CONFLICT ("actorId") DO UPDATE SET "tenantId" = COALESCE(EXCLUDED."tenantId", "NutzerAktivitaet"."tenantId"), geraet = CASE WHEN EXCLUDED.geraet = $5 AND "NutzerAktivitaet".geraet LIKE 'Desktop (%' THEN "NutzerAktivitaet".geraet ELSE EXCLUDED.geraet END,
          version = COALESCE(EXCLUDED.version, "NutzerAktivitaet".version), "zuletztAt" = NOW(), anfragen = "NutzerAktivitaet".anfragen + 1`,
-      [e.actorId, e.tenantId, geraet, version],
+      [e.actorId, e.tenantId, geraet, version, GERAET_SCHWACH],
     )
     .catch(() => undefined);
 }
@@ -102,7 +107,7 @@ export async function aktiveNutzerListe(pool: Pool, q: { seite: number; groesse:
       email: r.email,
       name: r.name,
       organisation: r.organisation,
-      geraet: r.geraet,
+      geraet: r.geraet === "Dienst" ? GERAET_SCHWACH : r.geraet,
       version: r.version,
       zuletztAt: r.zuletztAt.toISOString(),
       erstesAt: r.erstesAt.toISOString(),
