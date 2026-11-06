@@ -12,6 +12,14 @@ export interface UsageCounts {
   outputTokens: number;
   cacheReadTokens: number;
   model: string | null;
+  /** OpenAI-Responses: Zahl der Websuchen (output[].type === "web_search_call");
+   *  werden je Aufruf berechnet, nicht ueber Tokens (2026-11-06). */
+  webSearchCalls?: number;
+}
+
+function websuchenIn(o: Record<string, unknown> | undefined): number {
+  const out = o?.["output"];
+  return Array.isArray(out) ? out.filter((x) => x && typeof x === "object" && (x as { type?: unknown }).type === "web_search_call").length : 0;
 }
 
 function num(v: unknown): number {
@@ -48,7 +56,8 @@ export function parseUsageFromJson(text: string): UsageCounts | null {
     const o = JSON.parse(text) as Record<string, unknown>;
     const u = fromObject(o);
     if (!u) return null;
-    return { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0, cacheReadTokens: u.cacheReadTokens ?? 0, model: u.model ?? null };
+    const suchen = websuchenIn(o);
+    return { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0, cacheReadTokens: u.cacheReadTokens ?? 0, model: u.model ?? null, ...(suchen > 0 ? { webSearchCalls: suchen } : {}) };
   } catch {
     return null;
   }
@@ -59,6 +68,10 @@ export function parseUsageFromJson(text: string): UsageCounts | null {
 export function parseUsageFromSse(text: string): UsageCounts | null {
   const out: UsageCounts = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, model: null };
   let gefunden = false;
+  // Websuchen: abgeschlossene Suchaufrufe je item_id; response.completed liefert
+  // zusaetzlich die ganze output-Liste (Maximum zaehlt, keine Doppelzaehlung).
+  const suchIds = new Set<string>();
+  let suchenAusAbschluss = 0;
   for (const line of text.split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
     const payload = line.slice(5).trim();
@@ -89,8 +102,13 @@ export function parseUsageFromSse(text: string): UsageCounts | null {
       }
       continue;
     }
+    if (type === "response.web_search_call.completed") {
+      const id = typeof o["item_id"] === "string" ? (o["item_id"] as string) : `n${suchIds.size}`;
+      suchIds.add(id);
+    }
     // OpenAI-Responses-API: response.completed traegt response.usage
     const resp = o["response"] as Record<string, unknown> | undefined;
+    if (resp) suchenAusAbschluss = Math.max(suchenAusAbschluss, websuchenIn(resp));
     const u = fromObject(o) ?? (resp ? fromObject(resp) : null);
     if (u && (u.inputTokens || u.outputTokens)) {
       out.inputTokens = u.inputTokens ?? out.inputTokens;
@@ -102,6 +120,8 @@ export function parseUsageFromSse(text: string): UsageCounts | null {
       out.model = u.model;
     }
   }
+  const suchen = Math.max(suchIds.size, suchenAusAbschluss);
+  if (suchen > 0) out.webSearchCalls = suchen;
   return gefunden ? out : null;
 }
 

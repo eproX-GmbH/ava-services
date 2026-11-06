@@ -436,7 +436,13 @@ async function recordUsage(
   const input = e.usage?.inputTokens ?? 0;
   const output = e.usage?.outputTokens ?? 0;
   const cache = e.usage?.cacheReadTokens ?? 0;
-  const cost = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind === "betreiber" ? "openai" : e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
+  const tokenKosten = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind === "betreiber" ? "openai" : e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
+  // 2026-11-06: Websuchen (OpenAI web_search) kosten je Aufruf, nicht ueber Tokens —
+  // bei der Recherche (Stellen, Expansion) der groesste Einzelposten. Gleicher Satz wie
+  // lib/betreiber-llm.ts betreiberWebsuche (OPENAI_WEBSUCHE_USD, Standard 0,01 USD).
+  const suchen = e.usage?.webSearchCalls ?? 0;
+  const suchKosten = suchen > 0 && e.kind !== "apify" ? Math.round(suchen * Number(process.env.OPENAI_WEBSUCHE_USD ?? "0.01") * 1e6) : 0;
+  const cost = tokenKosten == null ? (suchKosten > 0 ? suchKosten : null) : tokenKosten + suchKosten;
   const id = `lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   try {
     await pool.query(

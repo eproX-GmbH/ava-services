@@ -26,10 +26,12 @@ export function stufenPreise(): Record<Stufe, { preisCents: number; direktkosten
   return {
     // Z11 (2026-10-13): Preis je Firma im Bestand und Monat. Direktkosten je
     // Monat = Erstverarbeitung auf 12 Monate umgelegt plus Auffrischung
-    // (Website 30 Tage, Kontakte 90 Tage, Betreiber-Modell): ≈ 5 / 25 / 31 ct.
-    klein: { preisCents: cents(process.env.STUFE_PREIS_KLEIN_CENTS, 50), direktkostenCents: cents(process.env.STUFE_KOSTEN_KLEIN_CENTS, 5) },
-    mittel: { preisCents: cents(process.env.STUFE_PREIS_MITTEL_CENTS, 100), direktkostenCents: cents(process.env.STUFE_KOSTEN_MITTEL_CENTS, 25) },
-    gross: { preisCents: cents(process.env.STUFE_PREIS_GROSS_CENTS, 150), direktkostenCents: cents(process.env.STUFE_KOSTEN_GROSS_CENTS, 31) },
+    // (Website 14 Tage, Kontakte 90 Tage, Betreiber-Modell). 2026-11-06: plus
+    // Websuche der Recherche (einmalig und bei jeder Website-Auffrischung), Werte
+    // aus lib/kalkulation.ts direktJeStufe(): ≈ 11 / 31 / 37 ct (vorher 5 / 25 / 31).
+    klein: { preisCents: cents(process.env.STUFE_PREIS_KLEIN_CENTS, 50), direktkostenCents: cents(process.env.STUFE_KOSTEN_KLEIN_CENTS, 11) },
+    mittel: { preisCents: cents(process.env.STUFE_PREIS_MITTEL_CENTS, 100), direktkostenCents: cents(process.env.STUFE_KOSTEN_MITTEL_CENTS, 31) },
+    gross: { preisCents: cents(process.env.STUFE_PREIS_GROSS_CENTS, 150), direktkostenCents: cents(process.env.STUFE_KOSTEN_GROSS_CENTS, 37) },
   };
 }
 
