@@ -21,6 +21,8 @@ import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { kontextMessen, kontextProtokollieren } from "./kontext-messung";
 import { wissensIndex } from "../wissen";
+import { MarkierungsFilter, aktionenAufloesen, kartenAusErgebnis, markierungEntfernen, type AusgefuehrteAktion } from "../wissen/aktionen";
+import { zielAufloesen } from "./tools/app-oeffnen";
 import { embedQueries } from "./tools/publications";
 import { isUserDeclined } from "./define-tool";
 import { welcomeMessage, isWelcomeTrigger } from "./welcome";
@@ -1113,6 +1115,10 @@ export class AgentOrchestrator extends EventEmitter {
     // auditWriteClaim eine Audit-Warnung (agent.claim.unverified).
     let writesExecuted = 0;
     const turnToolNamen: string[] = [];
+    // L4: Karten, die tool_search in dieser Anfrage geliefert hat, und von AVA
+    // selbst ausgefuehrte Kartenaktionen (die bekommen keinen Knopf mehr).
+    const turnKarten = new Set<string>();
+    const turnAusgefuehrt: AusgefuehrteAktion[] = [];
 
     // v0.1.346 — last system message built in the loop, reused for the
     // graceful wrap-up turn if the step budget is reached.
@@ -1259,6 +1265,7 @@ export class AgentOrchestrator extends EventEmitter {
         const assistantId = randomUUID();
         let assistantContent = "";
         let collectedToolCalls: LlmStreamToolCall[] | undefined;
+        const markierung = new MarkierungsFilter();
 
         // v0.1.186 — tool-slimming. Skill-bound when a skill is
         // active; curated research default otherwise. Slash-nudged
@@ -1289,13 +1296,16 @@ export class AgentOrchestrator extends EventEmitter {
           }
           if (frame.contentDelta && frame.contentDelta.length > 0) {
             assistantContent += frame.contentDelta;
-            this.emitFrame({
-              kind: "token",
-              requestId,
-              conversationId: conversation.id,
-              messageId: assistantId,
-              delta: frame.contentDelta,
-            });
+            const sichtbar = markierung.push(frame.contentDelta);
+            if (sichtbar) {
+              this.emitFrame({
+                kind: "token",
+                requestId,
+                conversationId: conversation.id,
+                messageId: assistantId,
+                delta: sichtbar,
+              });
+            }
           }
           if (frame.toolCalls && frame.toolCalls.length > 0) {
             collectedToolCalls = frame.toolCalls;
@@ -1323,6 +1333,10 @@ export class AgentOrchestrator extends EventEmitter {
         }
 
         kontextProtokollieren(messung);
+        const restText = markierung.flush();
+        if (restText) this.emitFrame({ kind: "token", requestId, conversationId: conversation.id, messageId: assistantId, delta: restText });
+        const markiert = markierungEntfernen(assistantContent);
+        assistantContent = markiert.text;
 
         // Persist whatever the assistant produced this step (content +
         // optional tool_calls) so subsequent /api/chat calls have the full
@@ -1330,6 +1344,7 @@ export class AgentOrchestrator extends EventEmitter {
         const toolCalls = collectedToolCalls
           ? this.normaliseToolCalls(collectedToolCalls)
           : undefined;
+        const knoepfe = !toolCalls || toolCalls.length === 0 ? this.kartenKnoepfe(conversation, markiert.ids, turnKarten, turnAusgefuehrt) : [];
         const assistantMessage: AgentMessage = {
           id: assistantId,
           role: "assistant",
@@ -1337,6 +1352,7 @@ export class AgentOrchestrator extends EventEmitter {
           toolCalls,
           createdAt: Date.now(),
           ...(!toolCalls || toolCalls.length === 0 ? { usage: turnUsageSnapshot() } : {}),
+          ...(knoepfe.length ? { aktionen: knoepfe } : {}),
         };
         this.appendMessage(conversation, assistantMessage);
 
@@ -1349,6 +1365,7 @@ export class AgentOrchestrator extends EventEmitter {
             conversationId: conversation.id,
             messageId: assistantId,
             usage: assistantMessage.usage,
+            ...(knoepfe.length ? { aktionen: knoepfe } : {}),
           });
           if (!signal.aborted) this.nachTurn(conversation, requestId, assistantId, assistantContent, turnToolNamen);
           return;
@@ -1474,6 +1491,8 @@ export class AgentOrchestrator extends EventEmitter {
           if (!result.ok) sigState.failures += 1;
           if (result.ok && isWriteTool(call.name)) writesExecuted++;
           turnToolNamen.push(call.name);
+          if (result.ok && call.name === "tool_search") for (const id of kartenAusErgebnis(result.content)) turnKarten.add(id);
+          if (result.ok && (call.name === "app_oeffnen" || call.name === "zugang_anfordern")) turnAusgefuehrt.push({ name: call.name, args: (call.args ?? {}) as Record<string, unknown> });
           toolCallSignatures.set(callSignature, sigState);
           // v0.1.375 — Ablehnung merken, damit ein erneuter Aufruf desselben
           // Tools in diesem Turn oben hart abgefangen wird.
@@ -1554,6 +1573,7 @@ export class AgentOrchestrator extends EventEmitter {
       // Wand.
       const wrapUpId = randomUUID();
       let wrapUpContent = "";
+      const wrapUpMarkierung = new MarkierungsFilter();
       const wrapUpNudge: AgentMessage = {
         id: "__wrapup__",
         role: "user",
@@ -1577,13 +1597,16 @@ export class AgentOrchestrator extends EventEmitter {
         if (frame.errorMessage) throw new Error(frame.errorMessage);
         if (frame.contentDelta && frame.contentDelta.length > 0) {
           wrapUpContent += frame.contentDelta;
-          this.emitFrame({
-            kind: "token",
-            requestId,
-            conversationId: conversation.id,
-            messageId: wrapUpId,
-            delta: frame.contentDelta,
-          });
+          const sichtbar = wrapUpMarkierung.push(frame.contentDelta);
+          if (sichtbar) {
+            this.emitFrame({
+              kind: "token",
+              requestId,
+              conversationId: conversation.id,
+              messageId: wrapUpId,
+              delta: sichtbar,
+            });
+          }
         }
         if (frame.usage) turnUsageAddieren(frame.usage);
         if (frame.usage && this.onUsage) {
@@ -1600,6 +1623,11 @@ export class AgentOrchestrator extends EventEmitter {
           }
         }
       }
+      const wrapUpRest = wrapUpMarkierung.flush();
+      if (wrapUpRest) this.emitFrame({ kind: "token", requestId, conversationId: conversation.id, messageId: wrapUpId, delta: wrapUpRest });
+      const wrapUpMarkiert = markierungEntfernen(wrapUpContent);
+      wrapUpContent = wrapUpMarkiert.text;
+      const wrapUpKnoepfe = this.kartenKnoepfe(conversation, wrapUpMarkiert.ids, turnKarten, turnAusgefuehrt);
       // Sicherheitsnetz: hat das Modell nichts geliefert, eine
       // verständliche Standard-Antwort senden (statt Leer-Bubble).
       if (!wrapUpContent.trim()) {
@@ -1623,6 +1651,7 @@ export class AgentOrchestrator extends EventEmitter {
         content: wrapUpContent,
         createdAt: Date.now(),
         usage: wrapUpUsage,
+        ...(wrapUpKnoepfe.length ? { aktionen: wrapUpKnoepfe } : {}),
       });
       this.auditWriteClaim(conversation, wrapUpContent, writesExecuted);
       this.emitFrame({
@@ -1631,6 +1660,7 @@ export class AgentOrchestrator extends EventEmitter {
         conversationId: conversation.id,
         messageId: wrapUpId,
         usage: wrapUpUsage,
+        ...(wrapUpKnoepfe.length ? { aktionen: wrapUpKnoepfe } : {}),
       });
       if (!signal.aborted) this.nachTurn(conversation, requestId, wrapUpId, wrapUpContent, turnToolNamen);
       return;
@@ -1705,6 +1735,27 @@ export class AgentOrchestrator extends EventEmitter {
    * Push a message into the in-memory conversation AND mirror it to disk.
    * Centralised so we don't forget the append on a future code path.
    */
+  /** L4: Knoepfe der markierten Loesungskarten; nur in der Desktop-App. */
+  private kartenKnoepfe(convo: Conversation, ids: string[], geliefert: Set<string>, ausgefuehrt: AusgefuehrteAktion[]): import("../../shared/types").AgentKartenAktion[] {
+    if (ids.length === 0 || convo.autonomousMode === true || convo.id.startsWith("telegram-")) return [];
+    try {
+      const karten = wissensIndex(embedQueries).karten;
+      return aktionenAufloesen({
+        ids,
+        geliefert,
+        karten: (id) => karten.find((k) => k.id === id),
+        ausgefuehrt,
+        pfadFuer: (ziel, dienst) => {
+          const z = zielAufloesen(ziel, dienst ? { dienst } : {});
+          return "pfad" in z ? z.pfad : null;
+        },
+      });
+    } catch (err) {
+      console.warn("[wissen] Knöpfe nicht aufgelöst:", err);
+      return [];
+    }
+  }
+
   private appendMessage(convo: Conversation, message: AgentMessage): void {
     convo.messages.push(message);
     this.memory?.append(convo.id, message);

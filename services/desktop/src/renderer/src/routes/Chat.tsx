@@ -1,6 +1,7 @@
 import { useFeature } from "../store/policy";
 import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
 import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
+import { KartenKnoepfe } from "../components/chat/KartenKnoepfe";
 import { schrittText } from "../components/chat/schritt-text";
 import { ZugangKarte } from "../components/chat/ZugangKarte";
 import type { Chip, StartseitenChips } from "../../../shared/nutzerstand-types";
@@ -130,6 +131,8 @@ interface UiMessage {
   quelle?: "sprache" | "aufgabe" | "app";
   /** Verbrauch der ganzen Anfrage, an der letzten Antwort (dauerhaft). */
   usage?: import("../../../shared/types").AgentTurnUsage;
+  /** L4: Knoepfe der Loesungskarte unter der Antwort (dauerhaft). */
+  aktionen?: import("../../../shared/types").AgentKartenAktion[];
   pending?: boolean;
   /** Inline tool-action row. When set, the message is rendered as a
    *  timeline step instead of a chat bubble. */
@@ -402,7 +405,7 @@ export function Chat() {
       if (m.role === "assistant") {
         // If the assistant emitted any text content, render it as a bubble.
         if (m.content && m.content.trim().length > 0) {
-          out.push({ id: m.id, role: "assistant", content: m.content, ...(m.usage ? { usage: m.usage } : {}) });
+          out.push({ id: m.id, role: "assistant", content: m.content, ...(m.usage ? { usage: m.usage } : {}), ...(m.aktionen?.length ? { aktionen: m.aktionen } : {}) });
         }
         for (const tc of m.toolCalls ?? []) {
           // ask_user_choice was a transient prompt — skip on replay.
@@ -788,7 +791,7 @@ export function Chat() {
       } else if (frame.kind === "done") {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === frame.messageId ? { ...m, pending: false, ...(frame.usage ? { usage: frame.usage } : {}) } : m,
+            m.id === frame.messageId ? { ...m, pending: false, ...(frame.usage ? { usage: frame.usage } : {}), ...(frame.aktionen?.length ? { aktionen: frame.aktionen } : {}) } : m,
           ),
         );
         setLaufUsage(null);
@@ -1513,6 +1516,24 @@ export function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmpty, messages.length]);
 
+  /** L4: Kartenvorschlag als ganz normale Nachricht (Nutzersprache, kein Kontextsatz). */
+  async function sendKartenAuftrag(text: string) {
+    const id = conversationIdRef.current;
+    if (!id || thinking) return;
+    setError(null);
+    setTurnChips(null);
+    setMessages((prev) => [...prev, { id: `u-${Date.now().toString(36)}`, role: "user", content: text }]);
+    setThinking(true);
+    try {
+      const { requestId } = await window.api.agent.send({ conversationId: id, message: text });
+      activeRequestIdRef.current = requestId;
+      void refreshConversations();
+    } catch (err) {
+      setThinking(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function sendAuftrag(chip: Chip, ort: "startseite" | "gespraech") {
     const id = conversationIdRef.current;
     if (!id || thinking) return;
@@ -2134,6 +2155,9 @@ export function Chat() {
                     )}
                     {m.role === "assistant" && !m.pending && m.content.includes("nächste Schritte vorbereitet") && startChips && (
                       <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "gespraech")} onDismiss={chipAblehnen} kompakt />
+                    )}
+                    {m.role === "assistant" && !m.pending && m.aktionen && m.aktionen.length > 0 && (
+                      <KartenKnoepfe aktionen={m.aktionen} onOeffnen={(pfad) => navigate(pfad)} onAuftrag={(t) => void sendKartenAuftrag(t)} gesperrt={thinking} />
                     )}
                     {m.role === "assistant" && !m.pending && turnChips?.messageId === m.id && (
                       <VorschlagChips chips={turnChips.chips} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt titel="Nächster Schritt?" />

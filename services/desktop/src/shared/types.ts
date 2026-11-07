@@ -781,6 +781,21 @@ export interface AgentMessage {
   quelle?: "sprache" | "aufgabe" | "app";
   /** Verbrauch der ganzen Anfrage (alle Schritte), an der letzten Antwort. */
   usage?: AgentTurnUsage;
+  /** L4: Knoepfe der Loesungskarte, aus der die Antwort stammt (dauerhaft). */
+  aktionen?: AgentKartenAktion[];
+}
+
+/** L4 (Loesungskarten): ein Knopf unter der Antwort, im Hauptprozess aufgeloest. */
+export interface AgentKartenAktion {
+  art: "app_oeffnen" | "zugang_anfordern" | "chat_vorschlag";
+  label: string;
+  /** app_oeffnen: Pfad in der App. */
+  pfad?: string;
+  /** chat_vorschlag: Auftrag, der als Nachricht an AVA geht. */
+  auftrag?: string;
+  /** zugang_anfordern: Name des Dienstes und ggf. Vorlage (close, compleadly). */
+  dienst?: string;
+  vorlage?: string;
 }
 
 /** Verbrauch einer Anfrage ueber alle Modellschritte (2026-09-25). */
@@ -951,7 +966,7 @@ export type AgentStreamFrame =
    *  unter der Assistenten-Nachricht messageId; verschwinden beim naechsten Turn. */
   | { kind: "suggestions"; requestId: string; conversationId: string; messageId: string; chips: import("./nutzerstand-types").Chip[] }
   | { kind: "usage"; requestId: string; conversationId: string; usage: AgentTurnUsage }
-  | { kind: "done"; requestId: string; conversationId: string; messageId: string; usage?: AgentTurnUsage };
+  | { kind: "done"; requestId: string; conversationId: string; messageId: string; usage?: AgentTurnUsage; aktionen?: AgentKartenAktion[] };
 
 /** Renderer → main. Resolves a pending `choice-request`. */
 export interface AgentChoiceAnswer {
