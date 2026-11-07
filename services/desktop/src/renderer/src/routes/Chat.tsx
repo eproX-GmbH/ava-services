@@ -2,6 +2,7 @@ import { useFeature } from "../store/policy";
 import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
 import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
 import { schrittText } from "../components/chat/schritt-text";
+import { ZugangKarte } from "../components/chat/ZugangKarte";
 import type { Chip, StartseitenChips } from "../../../shared/nutzerstand-types";
 import {
   Fragment,
@@ -159,6 +160,12 @@ interface UiMessage {
     prompt: string;
     rows: AgentMatchRow[];
     answeredValue?: string;
+  };
+  /** L6 — sichere Zugangskarte; Antwort (ohne Zugangsdaten) als JSON. */
+  zugangPrompt?: {
+    choiceId: string;
+    anfrage: import("../../../shared/dienst-vorlagen").ZugangAnfrage;
+    ergebnis?: import("../../../shared/dienst-vorlagen").ZugangErgebnis;
   };
 }
 
@@ -492,6 +499,8 @@ export function Chat() {
                 options: p.options,
               },
             });
+          } else if (p.kind === "zugang-request") {
+            replayed.push({ id: `zg-${p.choiceId}`, role: "tool", content: "", zugangPrompt: { choiceId: p.choiceId, anfrage: p.anfrage } });
           } else if (p.kind === "match-request") {
             replayed.push({
               id: `mt-${p.choiceId}`,
@@ -874,6 +883,8 @@ export function Chat() {
             },
           },
         ]);
+      } else if (frame.kind === "zugang-request") {
+        setMessages((prev) => [...prev, { id: `zg-${frame.choiceId}`, role: "tool", content: "", zugangPrompt: { choiceId: frame.choiceId, anfrage: frame.anfrage } }]);
       } else if (frame.kind === "match-request") {
         setMessages((prev) => [
           ...prev,
@@ -2037,6 +2048,20 @@ export function Chat() {
                     key={m.id}
                     prompt={m.textPrompt}
                     onSubmit={(v) => handleSubmitText(m.textPrompt!.choiceId, v)}
+                  />
+                );
+              }
+              if (m.zugangPrompt) {
+                const zp = m.zugangPrompt;
+                return (
+                  <ZugangKarte
+                    key={m.id}
+                    anfrage={zp.anfrage}
+                    ergebnis={zp.ergebnis}
+                    onFertig={(e) => {
+                      setMessages((prev) => prev.map((x) => (x.zugangPrompt?.choiceId === zp.choiceId ? { ...x, zugangPrompt: { ...zp, ergebnis: e } } : x)));
+                      void window.api.agent.answerChoice({ choiceId: zp.choiceId, value: JSON.stringify(e) });
+                    }}
                   />
                 );
               }

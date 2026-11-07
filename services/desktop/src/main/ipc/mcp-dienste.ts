@@ -3,21 +3,30 @@
 
 import { ipcMain } from "electron";
 import type { McpDienste } from "../mcp-client";
-import type { DienstArt, McpZugangArt } from "../mcp-client/store";
+import type { McpHinzufuegen } from "../mcp-client";
+import { DIENST_ZUGANG_ARTEN, type DienstZugangArt } from "../../shared/dienst-vorlagen";
+
+const text = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
 export function registerMcpDiensteIpc(deps: { mcpDienste: McpDienste }): void {
   const { mcpDienste } = deps;
   ipcMain.handle("mcp-dienste:liste", () => mcpDienste.liste());
   ipcMain.handle(
     "mcp-dienste:hinzufuegen",
-    (_e, args: { name: string; url: string; art?: DienstArt; zugang: McpZugangArt; zugangscode?: string; kopfzeilen?: Record<string, string> }) =>
+    (_e, args: Partial<McpHinzufuegen> | undefined) =>
       mcpDienste.hinzufuegen({
         name: String(args?.name ?? ""),
         url: String(args?.url ?? ""),
         art: args?.art === "a2a" ? "a2a" : "mcp",
-        zugang: args?.zugang === "zugangscode" || args?.zugang === "kopfzeilen" ? args.zugang : "keine",
-        ...(typeof args?.zugangscode === "string" ? { zugangscode: args.zugangscode } : {}),
+        zugang: DIENST_ZUGANG_ARTEN.includes(args?.zugang as DienstZugangArt) ? (args!.zugang as DienstZugangArt) : "keine",
+        zugangscode: text(args?.zugangscode),
         ...(args?.kopfzeilen && typeof args.kopfzeilen === "object" ? { kopfzeilen: args.kopfzeilen } : {}),
+        benutzer: text(args?.benutzer),
+        passwort: text(args?.passwort),
+        clientId: text(args?.clientId),
+        clientSecret: text(args?.clientSecret),
+        tokenAdresse: text(args?.tokenAdresse),
+        scope: text(args?.scope),
       }),
   );
   ipcMain.handle("mcp-dienste:pruefen", (_e, id: string) => mcpDienste.pruefen(String(id)));

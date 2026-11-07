@@ -939,6 +939,8 @@ export type AgentStreamFrame =
       prompt: string;
       rows: AgentMatchRow[];
     }
+  /** L6 (docs/PLAN_LOESUNGSKARTEN.md): sichere Zugangskarte; Antwort ueber answerChoice als JSON (ZugangErgebnis), nie mit Zugangsdaten. */
+  | { kind: "zugang-request"; requestId: string; conversationId: string; choiceId: string; anfrage: import("./dienst-vorlagen").ZugangAnfrage }
   | { kind: "navigate"; requestId: string; conversationId: string; path: string }
   | { kind: "error"; requestId: string; conversationId: string; message: string }
   /** v0.1.578 — Nutzer-Nachricht, die NICHT aus dem App-Chat kam (Telegram,
@@ -994,6 +996,13 @@ export type AgentPendingPrompt =
       choiceId: string;
       prompt: string;
       rows: AgentMatchRow[];
+    }
+  | {
+      kind: "zugang-request";
+      conversationId: string;
+      requestId: string;
+      choiceId: string;
+      anfrage: import("./dienst-vorlagen").ZugangAnfrage;
     };
 
 // ---- Provider switch (Phase 8.j + 8.k) -------------------------------------

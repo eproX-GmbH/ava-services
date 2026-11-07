@@ -53,6 +53,10 @@ export interface PendingChoice {
         kind: "match-request";
         prompt: string;
         rows: AgentMatchRow[];
+      }
+    | {
+        kind: "zugang-request";
+        anfrage: import("../../shared/dienst-vorlagen").ZugangAnfrage;
       };
 }
 
@@ -389,6 +393,45 @@ export class UiBridge {
         prompt,
         rows,
       });
+    });
+  }
+
+  /**
+   * L6 (docs/PLAN_LOESUNGSKARTEN.md): sichere Zugangskarte im Chat. Die Karte
+   * legt den Dienst selbst ueber die Einstellungs-Schnittstelle an; zurueck
+   * kommt nur das Ergebnis (verbunden, Name, Anzahl Funktionen), nie ein
+   * Zugangswert. Ohne Oberflaeche (Triage, Telegram) gibt es die Karte nicht.
+   */
+  async askZugang(anfrage: import("../../shared/dienst-vorlagen").ZugangAnfrage, signal: AbortSignal): Promise<string> {
+    if (this.autonomousMode) throw new Error("Zugangsdaten lassen sich nur in der Desktop-App eingeben.");
+    const choiceId = randomUUID();
+    return new Promise<string>((resolve, reject) => {
+      const onAbort = () => {
+        const entry = this.deps.pending.get(choiceId);
+        if (entry) {
+          this.deps.pending.delete(choiceId);
+          entry.reject(new Error("aborted"));
+        }
+      };
+      if (signal.aborted) {
+        reject(new Error("aborted"));
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.deps.pending.set(choiceId, {
+        requestId: this.requestId,
+        conversationId: this.conversationId,
+        prompt: { kind: "zugang-request", anfrage },
+        resolve: (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        reject: (err) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(err);
+        },
+      });
+      this.deps.emit({ kind: "zugang-request", requestId: this.requestId, conversationId: this.conversationId, choiceId, anfrage });
     });
   }
 

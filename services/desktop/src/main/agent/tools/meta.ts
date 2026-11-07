@@ -272,6 +272,8 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   "ask_user_text",
   // L1 (docs/PLAN_LOESUNGSKARTEN.md): Seite der App oeffnen statt Klickpfade diktieren.
   "app_oeffnen",
+  // L6: Zugang sicher im Chat erfassen (Lösungskarten verweisen darauf).
+  "zugang_anfordern",
   // v0.1.284 — Self-Correction-Feedback-Loop. Soll in jedem Kontext
   // aufrufbar sein, damit der Agent es nicht "vergisst", wenn ein Skill
   // mit allowed-tools-Liste aktiv ist.

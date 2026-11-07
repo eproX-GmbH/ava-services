@@ -8,7 +8,7 @@ import { EventEmitter } from "node:events";
 import type { ToolRegistry } from "../agent/tool-registry";
 import { featureEnabled, onOrgPolicyChange } from "../org-policy";
 import { setzeWerkzeugArt } from "../workflows/catalog";
-import { McpVerbindung, fehlerText, kopfzeilenAus } from "./client";
+import { McpVerbindung, fehlerText, zugangsKopfzeilen } from "./client";
 import { agentenkarteLaden, auftragSenden, auftragStatus } from "./a2a";
 import { entferneDienst, ladeDienste, neueId, slugAus, speichereDienst, type DienstArt, type McpDienst, type McpGeheimnisse, type McpZugangArt } from "./store";
 import { baueAgentWerkzeuge, baueWerkzeuge } from "./werkzeuge";
@@ -31,6 +31,33 @@ interface Laufend {
 
 function artVon(d: McpDienst): DienstArt {
   return d.art === "a2a" ? "a2a" : "mcp";
+}
+
+/** Eingabe fuer einen neuen Dienst (Einstellungen oder Zugangskarte im Chat). */
+export interface McpHinzufuegen {
+  name: string;
+  url: string;
+  art?: DienstArt;
+  zugang: McpZugangArt;
+  zugangscode?: string;
+  kopfzeilen?: Record<string, string>;
+  benutzer?: string;
+  passwort?: string;
+  clientId?: string;
+  clientSecret?: string;
+  tokenAdresse?: string;
+  scope?: string;
+}
+
+function pruefeTokenAdresse(a: string | undefined): string {
+  let u: URL;
+  try {
+    u = new URL((a ?? "").trim());
+  } catch {
+    throw new Error("Die Adresse für die Anmeldung ist keine gültige Internetadresse.");
+  }
+  if (u.protocol !== "https:" && !/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) throw new Error("Die Adresse für die Anmeldung muss mit https beginnen.");
+  return u.toString();
 }
 
 export class McpDienste extends EventEmitter {
@@ -71,7 +98,7 @@ export class McpDienste extends EventEmitter {
   }
 
   /** Neuen Dienst anlegen: verbinden, Werkzeuge lesen, speichern. Wirft bei Fehlern (nichts gespeichert). */
-  async hinzufuegen(args: { name: string; url: string; art?: DienstArt; zugang: McpZugangArt; zugangscode?: string; kopfzeilen?: Record<string, string> }): Promise<McpDienstAnzeige> {
+  async hinzufuegen(args: McpHinzufuegen): Promise<McpDienstAnzeige> {
     if (!featureEnabled("mcp.dienste")) throw new Error("Deine Organisation hat weitere Dienste abgeschaltet.");
     const name = args.name.trim();
     const url = args.url.trim();
@@ -92,6 +119,7 @@ export class McpDienste extends EventEmitter {
       url: u.toString(),
       zugang: args.zugang,
       kopfzeilenNamen: args.zugang === "kopfzeilen" ? Object.keys(args.kopfzeilen ?? {}).filter(Boolean) : [],
+      ...(args.zugang === "client" ? { tokenAdresse: pruefeTokenAdresse(args.tokenAdresse), ...(args.scope?.trim() ? { scope: args.scope.trim().slice(0, 500) } : {}) } : {}),
       erstelltAm: new Date().toISOString(),
       zuletztVerbunden: null,
       werkzeuge: 0,
@@ -100,7 +128,11 @@ export class McpDienste extends EventEmitter {
     const geheimnisse: McpGeheimnisse = {
       ...(args.zugang === "zugangscode" && args.zugangscode ? { zugangscode: args.zugangscode.trim() } : {}),
       ...(args.zugang === "kopfzeilen" && args.kopfzeilen ? { kopfzeilen: Object.fromEntries(Object.entries(args.kopfzeilen).filter(([k, v]) => k.trim() && v.trim()).map(([k, v]) => [k.trim(), v.trim()])) } : {}),
+      ...(args.zugang === "anmeldung" ? { benutzer: (args.benutzer ?? "").trim(), passwort: args.passwort ?? "" } : {}),
+      ...(args.zugang === "client" ? { clientId: (args.clientId ?? "").trim(), clientSecret: (args.clientSecret ?? "").trim() } : {}),
     };
+    if (args.zugang === "anmeldung" && (!geheimnisse.benutzer || !geheimnisse.passwort)) throw new Error("Bitte Benutzername und Passwort angeben.");
+    if (args.zugang === "client" && (!geheimnisse.clientId || !geheimnisse.clientSecret)) throw new Error("Bitte Client-ID und Client-Secret angeben.");
     const l: Laufend = { dienst, geheimnisse, verbindung: null, agentVerbunden: false, werkzeugNamen: [] };
     await this.verbinde(l, { werfen: true });
     await speichereDienst(l.dienst, geheimnisse);
@@ -169,13 +201,12 @@ export class McpDienste extends EventEmitter {
   /** A2A: Agentenkarte laden, zwei Werkzeuge registrieren; keine stehende Verbindung. */
   private async verbindeAgent(l: Laufend, opts: { werfen?: boolean } = {}): Promise<void> {
     try {
-      const headers = kopfzeilenAus(l.dienst, l.geheimnisse);
-      const karte = await agentenkarteLaden(l.dienst.url, headers);
+      const karte = await agentenkarteLaden(l.dienst.url, await zugangsKopfzeilen(l.dienst, l.geheimnisse));
       const gebaut = baueAgentWerkzeuge(
         l.dienst,
         karte,
-        (text, signal) => this.mitFehlermeldung(l, () => auftragSenden(karte, headers, text, { signal })),
-        (taskId, signal) => this.mitFehlermeldung(l, () => auftragStatus(karte, headers, taskId, signal)),
+        (text, signal) => this.mitFehlermeldung(l, async () => auftragSenden(karte, await zugangsKopfzeilen(l.dienst, l.geheimnisse), text, { signal })),
+        (taskId, signal) => this.mitFehlermeldung(l, async () => auftragStatus(karte, await zugangsKopfzeilen(l.dienst, l.geheimnisse), taskId, signal)),
       );
       for (const n of l.werkzeugNamen) this.deps.registry.unregister(n);
       l.werkzeugNamen = [];

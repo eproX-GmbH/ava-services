@@ -6,6 +6,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import * as yup from "yup";
 import type { McpDienst, McpGeheimnisse } from "./store";
 
 export interface McpWerkzeugBeschreibung {
@@ -25,12 +26,53 @@ export interface McpAufrufErgebnis {
 const VERBINDUNGS_ZEITLIMIT_MS = 20_000;
 const AUFRUF_ZEITLIMIT_MS = 120_000;
 
-export function kopfzeilenAus(dienst: McpDienst, g: McpGeheimnisse): Record<string, string> {
+/**
+ * Kopfzeilen fuer den Zugang. Bei "client" (OAuth 2.0 Client Credentials) wird
+ * ein Token geholt und bis kurz vor Ablauf wiederverwendet; deshalb asynchron
+ * und je Anfrage aufgerufen (siehe fetch-Huelle in verbinden()).
+ */
+export async function zugangsKopfzeilen(dienst: McpDienst, g: McpGeheimnisse): Promise<Record<string, string>> {
   const h: Record<string, string> = {};
   if (dienst.zugang === "zugangscode" && g.zugangscode) h["authorization"] = `Bearer ${g.zugangscode}`;
   if (dienst.zugang === "kopfzeilen" && g.kopfzeilen) for (const [k, v] of Object.entries(g.kopfzeilen)) if (k && v) h[k] = v;
+  if (dienst.zugang === "anmeldung" && g.benutzer && g.passwort) h["authorization"] = `Basic ${Buffer.from(`${g.benutzer}:${g.passwort}`, "utf8").toString("base64")}`;
+  if (dienst.zugang === "client") h["authorization"] = `Bearer ${await clientToken(dienst, g)}`;
   return h;
 }
+
+const tokenCache = new Map<string, { token: string; bis: number }>();
+
+/** OAuth 2.0 Client Credentials (RFC 6749 4.4): erst client_secret_post, bei 400/401 client_secret_basic. */
+async function clientToken(dienst: McpDienst, g: McpGeheimnisse): Promise<string> {
+  const schluessel = `${dienst.id}:${g.clientId ?? ""}`;
+  const c = tokenCache.get(schluessel);
+  if (c && c.bis > Date.now() + 60_000) return c.token;
+  if (!dienst.tokenAdresse || !g.clientId || !g.clientSecret) throw new Error("Zugang unvollständig: Adresse für die Anmeldung, Client-ID oder Client-Secret fehlt.");
+  const basis = new URLSearchParams({ grant_type: "client_credentials", ...(dienst.scope ? { scope: dienst.scope } : {}) });
+  const versuche: Array<{ body: URLSearchParams; headers: Record<string, string> }> = [
+    { body: new URLSearchParams({ ...Object.fromEntries(basis), client_id: g.clientId, client_secret: g.clientSecret }), headers: {} },
+    { body: basis, headers: { authorization: `Basic ${Buffer.from(`${encodeURIComponent(g.clientId)}:${encodeURIComponent(g.clientSecret)}`).toString("base64")}` } },
+  ];
+  let letzter = "";
+  for (const v of versuche) {
+    const r = await fetch(dienst.tokenAdresse, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", ...v.headers },
+      body: v.body.toString(),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (r.ok) {
+      const j = tokenAntwort.validateSync(await r.json());
+      tokenCache.set(schluessel, { token: j.access_token, bis: Date.now() + (j.expires_in ?? 3600) * 1000 });
+      return j.access_token;
+    }
+    letzter = `${r.status}`;
+    if (r.status !== 400 && r.status !== 401) break;
+  }
+  throw new Error(`Anmeldung beim Dienst abgelehnt (${letzter}). Zugang abgelaufen oder ungültig: Client-ID, Client-Secret oder Scopes prüfen.`);
+}
+
+const tokenAntwort = yup.object({ access_token: yup.string().min(8).required(), expires_in: yup.number().positive().optional() });
 
 export class McpVerbindung {
   private client: Client | null = null;
@@ -44,11 +86,16 @@ export class McpVerbindung {
 
   async verbinden(): Promise<void> {
     const url = new URL(this.dienst.url);
-    const headers = kopfzeilenAus(this.dienst, this.geheimnisse);
-    const requestInit: RequestInit = { headers };
+    // Zugang je Anfrage frisch: Client-Credentials-Token laufen ab, die Huelle holt sie neu.
+    const mitZugang = async (u: string | URL, init?: RequestInit): Promise<Response> => {
+      const zugang = await zugangsKopfzeilen(this.dienst, this.geheimnisse);
+      const h = new Headers(init?.headers);
+      for (const [k, v] of Object.entries(zugang)) h.set(k, v);
+      return fetch(u, { ...init, headers: h });
+    };
     const versuche: Array<{ art: "http" | "sse"; baue: () => StreamableHTTPClientTransport | SSEClientTransport }> = [
-      { art: "http", baue: () => new StreamableHTTPClientTransport(url, { requestInit }) },
-      { art: "sse", baue: () => new SSEClientTransport(url, { requestInit, eventSourceInit: { fetch: (u, init) => fetch(u, { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), ...headers } }) } }) },
+      { art: "http", baue: () => new StreamableHTTPClientTransport(url, { fetch: mitZugang }) },
+      { art: "sse", baue: () => new SSEClientTransport(url, { fetch: mitZugang, eventSourceInit: { fetch: mitZugang } }) },
     ];
     let letzterFehler: unknown = null;
     for (const v of versuche) {

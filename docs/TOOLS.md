@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-07
-Anzahl Tools: 308
+Anzahl Tools: 309
 
 ## Firmen (29)
 
@@ -1922,7 +1922,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/meta.ts`
 
-Search the full tool catalogue by keyword. Returns the top matches with a short summary per tool. Use this when you need a capability (e.g. "Notion update", "LinkedIn scrape", "voice transcribe") that isn't in your current tool list. After picking results, call `tool_load` with their names to bring them into your context — they'll be available starting NEXT turn. Already-loaded tools are excluded from the result so you don't waste a load on something already present. Query is case-insensitive, multi-word, scored highest on name then summary then full description.
+Search the full tool catalogue AND AVA's knowledge cards. `wissen` (if present) holds up to 3 solution cards: what AVA can do for that request and how, in user language, plus `aktionen` (e.g. app_oeffnen with ziel/dienst) you can execute directly when the user wants it. Answer from the card in your own words, never quote tool names to the user. Pass the user's request in their own words as query for best knowledge hits. Returns the top tool matches with a short summary per tool. Use this when you need a capability (e.g. "Notion update", "LinkedIn scrape", "voice transcribe") that isn't in your current tool list. After picking results, call `tool_load` with their names to bring them into your context — they'll be available starting NEXT turn. Already-loaded tools are excluded from the result so you don't waste a load on something already present. Query is case-insensitive, multi-word, scored highest on name then summary then full description.
 
 _Parameter:_ keine.
 
@@ -3089,3 +3089,13 @@ _Parameter:_
 - `nodePatches: array`
 - `name: string`
 - `description: string`
+
+## zugang (1)
+
+### `zugang_anfordern`
+
+_Datei:_ `services/desktop/src/main/agent/tools/zugang.ts`
+
+Erfasst den Zugang zu einem Dienst sicher im Chat und verbindet ihn: Der Nutzer sieht eine Eingabekarte, die Werte gehen direkt in den verschlüsselten Speicher, du bekommst nur zurück, ob die Verbindung steht und wie viele Funktionen der Dienst bietet. Nutze es, wenn der Nutzer einen Dienst verbinden will („verbinde dich mit CompLeadly“) oder einen Zugang erneuern muss. Für Close und CompLeadly ist alles vorbelegt (`dienst`), für andere Dienste gib `url` und, falls bekannt, `zugang` an: zugangscode = Schlüssel/Token, kopfzeilen = eigene Kopfzeilen, anmeldung = Benutzername und Passwort, client = OAuth Client-ID/Secret mit Token-Adresse, keine = ohne Zugang. Frage Zugangsdaten NIE im Chat ab und wiederhole sie nie. Nur in der Desktop-App; sonst kommt ein Hinweis zurück, dann `app_oeffnen` bzw. den Weg nennen.
+
+_Parameter:_ keine.

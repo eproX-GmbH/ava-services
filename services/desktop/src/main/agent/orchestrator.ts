@@ -481,6 +481,8 @@ export class AgentOrchestrator extends EventEmitter {
           prompt: entry.prompt.prompt,
           rows: entry.prompt.rows,
         });
+      } else if (entry.prompt.kind === "zugang-request") {
+        out.push({ kind: "zugang-request", conversationId: entry.conversationId, requestId: entry.requestId, choiceId, anfrage: entry.prompt.anfrage });
       } else {
         out.push({
           kind: "text-request",

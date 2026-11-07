@@ -28,6 +28,7 @@ import { buildSprachmodusTools } from "./sprachmodus";
 import { buildTransactionTools } from "./transactions";
 import { buildUiTools } from "./ui";
 import { buildAppOeffnenTools } from "./app-oeffnen";
+import { buildZugangTools } from "./zugang";
 import { buildSettingsTools } from "./settings";
 import type { FesteAnhaenge } from "../../mail-entwurf/feste-anhaenge";
 import { buildMemoryTools } from "./memory";
@@ -268,6 +269,7 @@ export function buildReadOnlyRegistry(deps: {
   // evaluation_*: Bewertungs-Producer abgeklemmt 2026-10-12 (docs/PLAN_BEWERTUNG_ABKLEMMEN.md).
   for (const t of buildUiTools()) registry.register(t);
   for (const t of buildAppOeffnenTools()) registry.register(t);
+  for (const t of buildZugangTools()) registry.register(t);
   // v0.1.427 — PB3: Lazy-RAG-Suche ueber Jahresabschluss-Bloecke.
   for (const t of buildPublicationTools({
     gateway: deps.gateway,

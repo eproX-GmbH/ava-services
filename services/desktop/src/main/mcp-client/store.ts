@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { credentials, paths } from "../../core/platform";
 
-export type McpZugangArt = "keine" | "zugangscode" | "kopfzeilen";
+export type McpZugangArt = import("../../shared/dienst-vorlagen").DienstZugangArt;
 /** Werkzeugdienst (MCP) oder Agent (A2A). */
 export type DienstArt = "mcp" | "a2a";
 
@@ -25,6 +25,9 @@ export interface McpDienst {
   zugang: McpZugangArt;
   /** Nur die Namen der Kopfzeilen (Werte verschluesselt). */
   kopfzeilenNamen: string[];
+  /** Nur bei zugang "client": Token-Adresse und Scopes (nicht geheim). */
+  tokenAdresse?: string;
+  scope?: string;
   erstelltAm: string;
   zuletztVerbunden: string | null;
   werkzeuge: number;
@@ -34,6 +37,12 @@ export interface McpDienst {
 export interface McpGeheimnisse {
   zugangscode?: string;
   kopfzeilen?: Record<string, string>;
+  /** zugang "anmeldung" */
+  benutzer?: string;
+  passwort?: string;
+  /** zugang "client" */
+  clientId?: string;
+  clientSecret?: string;
 }
 
 interface Eintrag extends McpDienst {
@@ -74,7 +83,7 @@ function entschluessele(e: Eintrag): McpGeheimnisse {
 }
 
 function verschluessele(g: McpGeheimnisse): string | undefined {
-  const leer = !g.zugangscode && (!g.kopfzeilen || Object.keys(g.kopfzeilen).length === 0);
+  const leer = !g.zugangscode && !g.passwort && !g.clientSecret && (!g.kopfzeilen || Object.keys(g.kopfzeilen).length === 0);
   if (leer) return undefined;
   if (!credentials().isEncryptionAvailable()) throw new Error("Der Schlüsselbund dieses Rechners ist nicht verfügbar; Zugangsdaten lassen sich nicht sicher speichern.");
   return credentials().encryptString(JSON.stringify(g)).toString("base64");
