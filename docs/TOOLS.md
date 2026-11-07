@@ -1193,7 +1193,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/app-oeffnen.ts`
 
-Öffnet für den Nutzer direkt die passende Seite der App, statt ihm einen Klickpfad zu beschreiben. Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. ziel=firma braucht `companyId`. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.
+Öffnet für den Nutzer direkt die passende Seite der App, statt ihm einen Klickpfad zu beschreiben. Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. ziel=firma braucht `companyId`, ziel=vorgang `vorgangId`. firmenliste = Meine Firmen, firmensuche = Suche über alle Firmen im Register. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.
 
 _Parameter:_ keine.
 

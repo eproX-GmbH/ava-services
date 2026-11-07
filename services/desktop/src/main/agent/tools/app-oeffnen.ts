@@ -6,6 +6,7 @@
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
+import { featureEnabled } from "../../org-policy";
 
 interface Ziel {
   pfad: string;
@@ -14,8 +15,9 @@ interface Ziel {
 
 const ZIELE: Record<string, Ziel> = {
   chat: { pfad: "/chat", text: "Chat" },
-  firmenliste: { pfad: "/companies", text: "deine Firmenliste" },
-  alle_firmen: { pfad: "/alle-firmen", text: "die Suche über alle Firmen" },
+  firmenliste: { pfad: "/alle-firmen", text: "deine Firmenliste (Meine Firmen)" },
+  firmensuche: { pfad: "/companies", text: "die Firmensuche" },
+  importieren: { pfad: "/ingest", text: "den Import" },
   radar: { pfad: "/radar", text: "das Firmen-Radar" },
   meldungen: { pfad: "/alerts", text: "deine Meldungen" },
   workflows: { pfad: "/workflows", text: "die Workflows" },
@@ -34,6 +36,7 @@ const ZIELE: Record<string, Ziel> = {
   profil: { pfad: "/settings/konto#profile-section", text: "Einstellungen → Konto → Profil" },
   themen: { pfad: "/settings/recherche#themen-section", text: "Einstellungen → Recherche → Fokus-Themen" },
   meldungen_einstellen: { pfad: "/settings/meldungen#alerts-section", text: "Einstellungen → Meldungen" },
+  stammdaten_mitpflegen: { pfad: "/settings/recherche#mithelfen-section", text: "Einstellungen → Recherche → Stammdaten mitpflegen" },
   chat_anzeige: { pfad: "/settings/meldungen#vorschlaege-section", text: "Einstellungen → Meldungen → Vorschläge im Chat" },
 };
 
@@ -49,25 +52,27 @@ export function buildAppOeffnenTools(): Tool[] {
       "Öffnet für den Nutzer direkt die passende Seite der App, statt ihm einen Klickpfad zu beschreiben. " +
       "Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) " +
       "oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. " +
-      "ziel=firma braucht `companyId`. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. " +
+      "ziel=firma braucht `companyId`, ziel=vorgang `vorgangId`. firmenliste = Meine Firmen, firmensuche = Suche über alle Firmen im Register. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. " +
       "Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.",
     parameters: {
       type: "object",
       properties: {
-        ziel: { type: "string", enum: ["firma", ...Object.keys(ZIELE)], description: "Welche Seite" },
+        ziel: { type: "string", enum: ["firma", "vorgang", ...Object.keys(ZIELE)], description: "Welche Seite" },
         companyId: { type: "string", description: "Nur bei ziel=firma" },
+        vorgangId: { type: "string", description: "Nur bei ziel=vorgang (Id einer laufenden oder erledigten Aufgabe, z. B. eines Imports)" },
         dienst: { type: "string", description: "Nur bei ziel=dienst_verbinden: Name des Dienstes" },
       },
       required: ["ziel"],
     },
     schema: yup.object({
-      ziel: yup.string().oneOf(["firma", ...Object.keys(ZIELE)]).required(),
+      ziel: yup.string().oneOf(["firma", "vorgang", ...Object.keys(ZIELE)]).required(),
       companyId: yup.string().trim().max(120).optional(),
+      vorgangId: yup.string().trim().max(120).optional(),
       dienst: yup.string().trim().max(60).optional(),
     }),
     run: async (args, ctx) => {
       if (ctx.autonomousMode || (ctx.conversationId ?? "").startsWith("telegram-")) {
-        const z = args.ziel === "firma" ? null : ZIELE[args.ziel];
+        const z = ZIELE[args.ziel] ?? null;
         return { geoeffnet: false, hinweis: `Hier gibt es keine App-Oberfläche. Nenne den Weg in der Desktop-App${z ? `: ${z.text}` : ""}.` };
       }
       let pfad: string;
@@ -76,7 +81,12 @@ export function buildAppOeffnenTools(): Tool[] {
         if (!args.companyId) return { geoeffnet: false, error: "companyId fehlt" };
         pfad = `/companies/${encodeURIComponent(args.companyId)}`;
         text = "die Firmenseite";
+      } else if (args.ziel === "vorgang") {
+        if (!args.vorgangId) return { geoeffnet: false, error: "vorgangId fehlt" };
+        pfad = `/transactions/${encodeURIComponent(args.vorgangId)}`;
+        text = "die Aufgabe";
       } else {
+        if (args.ziel === "stammdaten_mitpflegen" && !featureEnabled("stammdaten.mithelfen")) return { geoeffnet: false, hinweis: "Deine Organisation hat das Mitpflegen der Stammdaten abgeschaltet." };
         const z = ZIELE[args.ziel]!;
         pfad = z.pfad;
         text = z.text;
