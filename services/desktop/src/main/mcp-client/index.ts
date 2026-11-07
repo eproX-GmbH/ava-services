@@ -110,17 +110,21 @@ export class McpDienste extends EventEmitter {
       throw new Error("Die Adresse ist keine gültige Internetadresse.");
     }
     if (u.protocol !== "https:" && !/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) throw new Error("Nur https-Adressen sind erlaubt.");
-    const vergeben = new Set([...this.laufend.values()].map((l) => l.dienst.slug));
+    const art: DienstArt = args.art === "a2a" ? "a2a" : "mcp";
+    // Gleiche Adresse und Art = Zugang erneuern: Eintrag (id, slug, Werkzeugnamen)
+    // bleibt, Zugang und Stand werden ersetzt. Kein Doppel-Eintrag.
+    const bisher = [...this.laufend.values()].find((l) => artVon(l.dienst) === art && l.dienst.url === u.toString()) ?? null;
+    const vergeben = new Set([...this.laufend.values()].filter((l) => l !== bisher).map((l) => l.dienst.slug));
     const dienst: McpDienst = {
-      id: neueId(),
-      art: args.art === "a2a" ? "a2a" : "mcp",
+      id: bisher?.dienst.id ?? neueId(),
+      art,
       name,
-      slug: slugAus(name, vergeben),
+      slug: bisher?.dienst.slug ?? slugAus(name, vergeben),
       url: u.toString(),
       zugang: args.zugang,
       kopfzeilenNamen: args.zugang === "kopfzeilen" ? Object.keys(args.kopfzeilen ?? {}).filter(Boolean) : [],
       ...(args.zugang === "client" ? { tokenAdresse: pruefeTokenAdresse(args.tokenAdresse), ...(args.scope?.trim() ? { scope: args.scope.trim().slice(0, 500) } : {}) } : {}),
-      erstelltAm: new Date().toISOString(),
+      erstelltAm: bisher?.dienst.erstelltAm ?? new Date().toISOString(),
       zuletztVerbunden: null,
       werkzeuge: 0,
       fehler: null,
@@ -134,7 +138,15 @@ export class McpDienste extends EventEmitter {
     if (args.zugang === "anmeldung" && (!geheimnisse.benutzer || !geheimnisse.passwort)) throw new Error("Bitte Benutzername und Passwort angeben.");
     if (args.zugang === "client" && (!geheimnisse.clientId || !geheimnisse.clientSecret)) throw new Error("Bitte Client-ID und Client-Secret angeben.");
     const l: Laufend = { dienst, geheimnisse, verbindung: null, agentVerbunden: false, werkzeugNamen: [] };
-    await this.verbinde(l, { werfen: true });
+    // Alte Verbindung erst trennen (gleiche Werkzeugnamen); scheitert der neue
+    // Zugang, laeuft der alte Eintrag unveraendert weiter.
+    if (bisher) await this.trenne(bisher);
+    try {
+      await this.verbinde(l, { werfen: true });
+    } catch (err) {
+      if (bisher) void this.verbinde(bisher).catch(() => undefined);
+      throw err;
+    }
     await speichereDienst(l.dienst, geheimnisse);
     this.laufend.set(dienst.id, l);
     this.emit("aenderung", this.liste());

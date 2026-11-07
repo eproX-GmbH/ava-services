@@ -704,6 +704,13 @@ function formatMessage(
   // Inhalt der Fence: <mime> · <relPath> · <filename>. Reihenfolge
   // matched message.images[idx], damit parseTranscript stabil
   // rekonstruieren kann.
+  // L4 — Knoepfe der Loesungskarte als JSON-Fence (eine Zeile).
+  if (m.aktionen && m.aktionen.length > 0) {
+    lines.push("");
+    lines.push("```karten-aktionen");
+    lines.push(JSON.stringify(m.aktionen));
+    lines.push("```");
+  }
   if (imageRefs.length > 0) {
     lines.push("");
     for (const ref of imageRefs) {
@@ -769,6 +776,7 @@ function parseTranscript(
     content: string[];
     calls: AgentMessage["toolCalls"];
     images: AgentMessageImage[];
+    aktionen?: AgentMessage["aktionen"];
   } | null = null;
 
   const flush = (): void => {
@@ -782,6 +790,7 @@ function parseTranscript(
       ...(cur.header.toolCallId ? { toolCallId: cur.header.toolCallId } : {}),
       ...(cur.calls && cur.calls.length > 0 ? { toolCalls: cur.calls } : {}),
       ...(cur.images.length > 0 ? { images: cur.images } : {}),
+      ...(cur.aktionen && cur.aktionen.length > 0 ? { aktionen: cur.aktionen } : {}),
     });
     cur = null;
   };
@@ -836,6 +845,22 @@ function parseTranscript(
       // Zeilen (mime, path, filename). Wenn ein Resolver verfügbar
       // ist, base64-laden + an Message anhängen; sonst still skippen
       // (z. B. im Search-Pfad ohne Image-Read).
+      if (line.trim() === "```karten-aktionen") {
+        i++;
+        const body: string[] = [];
+        while (i < lines.length && lines[i] !== "```") {
+          body.push(lines[i] ?? "");
+          i++;
+        }
+        if (i < lines.length) i++;
+        try {
+          const a = JSON.parse(body.join("\n")) as unknown;
+          if (Array.isArray(a)) cur.aktionen = a.filter((x): x is NonNullable<AgentMessage["aktionen"]>[number] => !!x && typeof x === "object" && typeof (x as { art?: unknown }).art === "string" && typeof (x as { label?: unknown }).label === "string").slice(0, 4);
+        } catch {
+          // kaputter Block: ohne Knoepfe weiter
+        }
+        continue;
+      }
       if (line.trim() === "```image-attachment") {
         i++;
         const body: string[] = [];

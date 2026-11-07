@@ -241,20 +241,34 @@ Session; L3 kann parallel das Format festzurren, damit L2 direkt im Zielformat s
 - Offen aus L1: Werkzeugfehler in Nutzersprache übersetzen (heute nur über die
   Ton-Regel), Betreiber-Standard „an“ (offene Frage 1).
 
-- **L3 gebaut (2026-11-07, noch nicht released).** Karten unter
+- **L3 live mit v0.1.944 (2026-11-07).** Karten unter
   `services/desktop/src/main/wissen/karten/<ast>/<id>.md` (Format: `karten/README.md`,
   Leser `wissen/format.ts` mit yup), per Vite-Glob im Hauptbündel. Suche `wissen/suche.ts`:
   BM25 über Titel ×3, Fragen/Schlagworte ×2, Lösung ×1 mit deutscher Normalisierung,
   Nachsortierung über embeddinggemma (Titel + Fragen, Rangfusion, reiner Vektortreffer
-  erst ab Kosinus 0,45). `tool_search` liefert `wissen` (bis 3 Karten samt Aktionen);
+  erst ab Kosinus 0,55). `tool_search` liefert `wissen` (bis 3 Karten samt Aktionen);
   Entscheidung 2 umgesetzt ohne neuen Namen. Prüfsatz `wissen/pruefsatz.json`,
   `pnpm test:wissen` (bzw. `scripts/test-wissen.mts [--vektoren]`).
-- **L6 gebaut (2026-11-07, noch nicht released).** Kern-Werkzeug `zugang_anfordern`
+- **L6 live mit v0.1.944 (2026-11-07).** Kern-Werkzeug `zugang_anfordern`
   zeigt die Karte „<Dienst> verbinden“ im Chat (Frame `zugang-request`, Antwort ohne
   Zugangswerte über answerChoice). Gemeinsames Formular `components/ZugangFormular.tsx`
   für Chat und Einstellungen. Neue Zugangsarten: `anmeldung` (HTTP Basic) und `client`
   (OAuth 2.0 Client Credentials, erst client_secret_post, dann client_secret_basic,
   Token-Cache bis kurz vor Ablauf, je Anfrage frisch über eine fetch-Hülle).
+  Seit L4: Gleiche Adresse und Art ersetzt den bestehenden Eintrag (Zugang erneuern, gleiche
+  Werkzeugnamen); scheitert der neue Zugang, läuft der alte weiter (Befund L2-Session).
+- **L4 gebaut (2026-11-07, noch nicht released).** Antwortet AVA aus einer Karte, schreibt
+  sie als letzte Zeile `[Karte: <id>]` (Regel in der Beschreibung von `tool_search`, nicht
+  im Prompt). Der Hauptprozess hält die Markierung im Token-Strom zurück
+  (`wissen/aktionen.ts`, MarkierungsFilter) und nimmt sie aus dem gespeicherten Text, sie
+  erreicht also weder Chat, Telegram, App noch den Verlauf fürs Modell. Knöpfe nur von
+  Karten, die `tool_search` in dieser Anfrage geliefert hat; was AVA selbst schon
+  ausgeführt hat (`app_oeffnen` mit demselben Ziel, `zugang_anfordern`), bekommt keinen
+  Knopf; höchstens 4. Aufgelöst im Hauptprozess (Pfad über `zielAufloesen`, Org-Freigabe
+  geprüft), gespeichert als Block `karten-aktionen` an der Antwort, kommt im `done`-Frame.
+  Oberfläche `components/chat/KartenKnoepfe.tsx` in der Optik von „Nächster Schritt“:
+  Öffnen springt direkt, Zugang zeigt die sichere Zugangskarte ohne Modellaufruf, Vorschlag
+  geht als normale Nachricht an AVA. Nicht auf Telegram und im autonomen Modus.
 - Nebenbei: Weitere Dienste haben die Sprungmarke `weitere-dienste-section` (kollidierte
   mit „Dienste auf diesem Rechner“), Menüpunkt unter Verbindungen.
 

@@ -74,6 +74,31 @@ const ZIELE: Record<string, Ziel> = {
 /** Vorlagen der Dienste-Seite (DiensteSection.tsx); andere Namen fuellen nur das Namensfeld. */
 const DIENST_VORLAGEN = new Set(["close", "compleadly"]);
 
+/** Ziel → Pfad in der App (auch fuer Knoepfe der Loesungskarten, L4). */
+export function zielAufloesen(
+  ziel: string,
+  opts: { companyId?: string; vorgangId?: string; dienst?: string } = {},
+): { pfad: string; text: string } | { hinweis: string; fehler?: boolean } {
+  if (ziel === "firma") {
+    if (!opts.companyId) return { hinweis: "companyId fehlt", fehler: true };
+    return { pfad: `/companies/${encodeURIComponent(opts.companyId)}`, text: "die Firmenseite" };
+  }
+  if (ziel === "vorgang") {
+    if (!opts.vorgangId) return { hinweis: "vorgangId fehlt", fehler: true };
+    return { pfad: `/transactions/${encodeURIComponent(opts.vorgangId)}`, text: "die Aufgabe" };
+  }
+  const z = ZIELE[ziel];
+  if (!z) return { hinweis: `unbekanntes Ziel ${ziel}`, fehler: true };
+  if (z.feature && !featureEnabled(z.feature)) return { hinweis: "Diese Funktion hat deine Organisation abgeschaltet. Sag das in einem Satz, ohne den Weg zu beschreiben." };
+  let pfad = z.pfad;
+  if (ziel === "dienst_verbinden" && opts.dienst) {
+    const slug = opts.dienst.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const q = DIENST_VORLAGEN.has(slug) ? `vorlage=${slug}` : `name=${encodeURIComponent(opts.dienst)}`;
+    pfad = `/settings/verbindungen?${q}#weitere-dienste-section`;
+  }
+  return { pfad, text: z.text };
+}
+
 export function buildAppOeffnenTools(): Tool[] {
   const oeffnen = defineTool({
     name: "app_oeffnen",
@@ -106,28 +131,9 @@ export function buildAppOeffnenTools(): Tool[] {
         const z = ZIELE[args.ziel] ?? null;
         return { geoeffnet: false, hinweis: `Hier gibt es keine App-Oberfläche. Nenne den Weg in der Desktop-App${z ? `: ${z.text}` : ""}.` };
       }
-      let pfad: string;
-      let text: string;
-      if (args.ziel === "firma") {
-        if (!args.companyId) return { geoeffnet: false, error: "companyId fehlt" };
-        pfad = `/companies/${encodeURIComponent(args.companyId)}`;
-        text = "die Firmenseite";
-      } else if (args.ziel === "vorgang") {
-        if (!args.vorgangId) return { geoeffnet: false, error: "vorgangId fehlt" };
-        pfad = `/transactions/${encodeURIComponent(args.vorgangId)}`;
-        text = "die Aufgabe";
-      } else {
-        const fz = ZIELE[args.ziel]!.feature;
-        if (fz && !featureEnabled(fz)) return { geoeffnet: false, hinweis: "Diese Funktion hat deine Organisation abgeschaltet. Sag das in einem Satz, ohne den Weg zu beschreiben." };
-        const z = ZIELE[args.ziel]!;
-        pfad = z.pfad;
-        text = z.text;
-        if (args.ziel === "dienst_verbinden" && args.dienst) {
-          const slug = args.dienst.toLowerCase().replace(/[^a-z0-9]+/g, "");
-          const q = DIENST_VORLAGEN.has(slug) ? `vorlage=${slug}` : `name=${encodeURIComponent(args.dienst)}`;
-          pfad = `/settings/verbindungen?${q}#weitere-dienste-section`;
-        }
-      }
+      const z = zielAufloesen(args.ziel, args);
+      if ("hinweis" in z) return { geoeffnet: false, ...(z.fehler ? { error: z.hinweis } : { hinweis: z.hinweis }) };
+      const { pfad, text } = z;
       ctx.ui.navigate(pfad);
       return { geoeffnet: true, seite: text };
     },
