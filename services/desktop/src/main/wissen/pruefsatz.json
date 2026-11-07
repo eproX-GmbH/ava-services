@@ -1,7 +1,1089 @@
 [
-  { "frage": "verbinde dich mit compleadly", "erwartet": "dienst-verbinden" },
-  { "frage": "verbinde dich mit dem servioce", "erwartet": "dienst-verbinden" },
-  { "frage": "wie kriege ich hubspot angebunden", "erwartet": "crm-verbinden" },
-  { "frage": "ich will sehen welche tools du benutzt", "erwartet": "arbeitsschritte-anzeigen" },
-  { "frage": "ich hab eine excel mit kunden, wie bekomm ich die rein", "erwartet": "firmen-importieren" }
+  {
+    "frage": "verbinde dich mit compleadly",
+    "erwartet": "dienst-verbinden"
+  },
+  {
+    "frage": "verbinde dich mit dem servioce",
+    "erwartet": "dienst-verbinden"
+  },
+  {
+    "frage": "wie kriege ich hubspot angebunden",
+    "erwartet": [
+      "crm-verbinden",
+      "hubspot-verbinden"
+    ]
+  },
+  {
+    "frage": "ich will sehen welche tools du benutzt",
+    "erwartet": "arbeitsschritte-anzeigen"
+  },
+  {
+    "frage": "ich hab eine excel mit kunden, wie bekomm ich die rein",
+    "erwartet": "firmen-importieren"
+  },
+  {
+    "frage": "Kannst du mir kurz sagen, was AVA eigentlich ist?",
+    "erwartet": "was-ist-ava"
+  },
+  {
+    "frage": "Gibt es AVA auch für meinen Windows-Laptop?",
+    "erwartet": "ava-installieren"
+  },
+  {
+    "frage": "Wie bekomme ich ein neues Update von AVA?",
+    "erwartet": "ava-installieren"
+  },
+  {
+    "frage": "Ich will mich neu registrieren, wo geht das?",
+    "erwartet": "anmelden-registrieren"
+  },
+  {
+    "frage": "Was passiert beim ersten Start alles?",
+    "erwartet": "einrichtungsassistent"
+  },
+  {
+    "frage": "Mein Chef hat mir einen Link zur Organisation geschickt, was mache ich damit?",
+    "erwartet": "organisation-beitreten"
+  },
+  {
+    "frage": "Brauche ich als Einzelkämpfer wirklich eine Organisation?",
+    "erwartet": "organisation-anlegen"
+  },
+  {
+    "frage": "Ich bin frisch dabei, womit sollte ich loslegen?",
+    "erwartet": "erste-schritte-start"
+  },
+  {
+    "frage": "Was finde ich unter dem Menüpunkt Firmen?",
+    "erwartet": "app-rundgang"
+  },
+  {
+    "frage": "Ich hab keine Mail zur Bestätigung bekommen, ist das schlimm?",
+    "erwartet": "email-bestaetigung"
+  },
+  {
+    "frage": "Ich arbeite jetzt im Vertrieb für Medizintechnik, pass das bitte an",
+    "erwartet": "profil-pflegen"
+  },
+  {
+    "frage": "Deine Antworten sind mir zu lang",
+    "erwartet": "antwort-ton"
+  },
+  {
+    "frage": "Was hast du dir alles über mich gespeichert?",
+    "erwartet": "chat-gedaechtnis"
+  },
+  {
+    "frage": "Wie hole ich meine Kollegin ins Team?",
+    "erwartet": "mitglieder-einladen"
+  },
+  {
+    "frage": "Ein Mitarbeiter ist ausgeschieden, wie werfe ich ihn raus?",
+    "erwartet": "mitglieder-verwalten"
+  },
+  {
+    "frage": "Kann ich Telegram für alle in der Firma sperren?",
+    "erwartet": "funktionen-vorgaben"
+  },
+  {
+    "frage": "Wir wollen einen gemeinsamen OpenAI-Schlüssel für alle hinterlegen",
+    "erwartet": "org-schluessel-limits"
+  },
+  {
+    "frage": "Ich habe eine zweite E-Mail-Adresse mit eigenem AVA-Konto, wie nutze ich beide?",
+    "erwartet": "konto-wechseln"
+  },
+  {
+    "frage": "Wie entziehe ich Claude den Zugriff auf AVA?",
+    "erwartet": "verbundene-apps"
+  },
+  {
+    "frage": "Ich will alles von diesem Rechner löschen und neu anfangen",
+    "erwartet": [
+      "konto-loeschen",
+      "eigene-daten-loeschen"
+    ]
+  },
+  {
+    "frage": "In welchem Tarif bin ich gerade?",
+    "erwartet": "plan-ansehen"
+  },
+  {
+    "frage": "Wie viele Firmen bekomme ich gratis?",
+    "erwartet": "free-plan"
+  },
+  {
+    "frage": "Ich möchte auf einen höheren Plan gehen",
+    "erwartet": "plan-wechseln"
+  },
+  {
+    "frage": "Warum kostet die eine Firma mehr als die andere?",
+    "erwartet": "firmen-kosten-stufen"
+  },
+  {
+    "frage": "Mein Import bleibt gelb und es passiert nichts",
+    "erwartet": "kontingent-erreicht"
+  },
+  {
+    "frage": "Ich will höchstens 100 Euro im Monat ausgeben",
+    "erwartet": "ausgabenlimit"
+  },
+  {
+    "frage": "Kann ich eine Firma vorübergehend deaktivieren, damit sie nichts kostet?",
+    "erwartet": "firma-ruhen-aktivieren"
+  },
+  {
+    "frage": "Wo bekomme ich die Rechnung vom letzten Monat?",
+    "erwartet": "rechnungen-zahlungsmittel"
+  },
+  {
+    "frage": "Ich möchte mein Abo beenden",
+    "erwartet": "abo-kuendigen"
+  },
+  {
+    "frage": "Kann unsere Firma die Lizenzen für alle zahlen?",
+    "erwartet": "organisation-zahlt"
+  },
+  {
+    "frage": "Werden meine Daten in der Cloud gespeichert?",
+    "erwartet": "daten-lokal-oder-server"
+  },
+  {
+    "frage": "Liest Anthropic mit, wenn ich meinen Schlüssel nutze?",
+    "erwartet": "ki-anbieter-daten"
+  },
+  {
+    "frage": "Kann mein Admin sehen, was ich dich frage?",
+    "erwartet": "chats-mitlesen"
+  },
+  {
+    "frage": "Ein Kontakt fragt, woher wir seine Telefonnummer haben",
+    "erwartet": "kontakt-herkunftsnachweis"
+  },
+  {
+    "frage": "Muss ich angeschriebene Leute über die Datenerhebung informieren?",
+    "erwartet": "kontakt-art14-hinweis"
+  },
+  {
+    "frage": "Frau Schmidt will nicht mehr bei uns gespeichert sein",
+    "erwartet": "person-loeschen"
+  },
+  {
+    "frage": "Nach wie vielen Tagen löscht AVA alte Ansprechpartner?",
+    "erwartet": "personen-aufbewahrung"
+  },
+  {
+    "frage": "Wie werde ich einen alten Chatverlauf los?",
+    "erwartet": "eigene-daten-loeschen"
+  },
+  {
+    "frage": "Wo sehe ich, was AVA letzte Nacht gemacht hat?",
+    "erwartet": "verlauf-ansehen"
+  },
+  {
+    "frage": "Geht beim Fehlermelden auch ein Screenshot mit raus?",
+    "erwartet": "problem-melden-daten"
+  },
+  {
+    "frage": "Ich hab eine Tabelle mit Messekontakten, wie bekomme ich die rein?",
+    "erwartet": [
+      "excel-liste-importieren",
+      "firmen-importieren"
+    ]
+  },
+  {
+    "frage": "Wieso sehe ich bei der Firma keine Ansprechpartner?",
+    "erwartet": [
+      "daten-fehlen-bei-firma",
+      "reiter-fehlt-auf-firmenseite"
+    ]
+  },
+  {
+    "frage": "Die Homepage bei Meier Bau ist von einer ganz anderen Firma",
+    "erwartet": "falsche-website"
+  },
+  {
+    "frage": "Ich finde die Bäckerei Schulz nirgends",
+    "erwartet": [
+      "firma-nicht-gefunden",
+      "firma-ohne-registereintrag"
+    ]
+  },
+  {
+    "frage": "Wie lange muss ich warten, bis meine 300 Firmen durch sind?",
+    "erwartet": [
+      "verarbeitung-dauer",
+      "import-haengt"
+    ]
+  },
+  {
+    "frage": "Ich will eine Firma nicht mehr in meiner Liste haben",
+    "erwartet": "firma-entfernen"
+  },
+  {
+    "frage": "Habt ihr auch Unternehmen aus Wien?",
+    "erwartet": [
+      "firmen-oesterreich",
+      "laender-uebersicht"
+    ]
+  },
+  {
+    "frage": "Gibt es für die Schweizer AG eine Bilanz?",
+    "erwartet": [
+      "firmen-schweiz",
+      "jahresabschluss-lesen"
+    ]
+  },
+  {
+    "frage": "Wer hält die Anteile an der Hettich GmbH?",
+    "erwartet": "gesellschafter"
+  },
+  {
+    "frage": "Welche meiner Firmen haben Bosch als Referenz auf der Website?",
+    "erwartet": "wer-nennt-als-kunden"
+  },
+  {
+    "frage": "Wer ist bei der Schmitz AG für den Einkauf zuständig?",
+    "erwartet": "kontakte-einer-firma"
+  },
+  {
+    "frage": "Kommt Herr Krause aus LinkedIn oder hast du den von der Homepage?",
+    "erwartet": "kontakt-herkunft"
+  },
+  {
+    "frage": "Ein Interessent will wissen, welche Daten wir über ihn haben und woher",
+    "erwartet": [
+      "kontakt-herkunft",
+      "kontakt-art14-hinweis",
+      "kontakt-herkunftsnachweis"
+    ]
+  },
+  {
+    "frage": "Ich will Frau Yilmaz anschreiben, was muss ich datenschutzmäßig beachten?",
+    "erwartet": "kontakt-art14-hinweis"
+  },
+  {
+    "frage": "Herr Becker hat per Mail verlangt, dass wir ihn aus allem rausnehmen",
+    "erwartet": "person-loeschen"
+  },
+  {
+    "frage": "Bei der Firma stehen lauter Leute aus dem Support, keine Entscheider",
+    "erwartet": "kontakte-passen-nicht"
+  },
+  {
+    "frage": "Thomas und Thomas Wagner sind doch derselbe, mach da einen draus",
+    "erwartet": "dubletten-zusammenfuehren"
+  },
+  {
+    "frage": "Woher weißt du, dass die Adresse vorname.nachname stimmt?",
+    "erwartet": [
+      "email-adressen-ableiten",
+      "email-status-verstehen"
+    ]
+  },
+  {
+    "frage": "Die Mail an j.koch kam zurück, richtig ist jan.koch@koch-bau.de",
+    "erwartet": "email-adresse-korrigieren"
+  },
+  {
+    "frage": "Wir brauchen die Adresse für Eingangsrechnungen bei Firma Lenz",
+    "erwartet": "funktionsadresse-pruefen"
+  },
+  {
+    "frage": "Mach mir eine Übersicht, wer bei Hansa Logistik mitentscheidet",
+    "erwartet": "buying-center-anlegen"
+  },
+  {
+    "frage": "Die Einkaufsleiterin mag uns nicht, trag das bitte ein",
+    "erwartet": "buying-center-pflegen"
+  },
+  {
+    "frage": "Mein Chef soll die Power Map zu Hansa sehen können",
+    "erwartet": "buying-center-teilen"
+  },
+  {
+    "frage": "Woher kommt die Anzeige heiß bei der Firma?",
+    "erwartet": "naehe-vorrang"
+  },
+  {
+    "frage": "Ich will nicht, dass AVA protokolliert, was ich mir ansehe",
+    "erwartet": "naehe-vorrang"
+  },
+  {
+    "frage": "Kümmert sich schon ein Kollege um die Brandt GmbH?",
+    "erwartet": "gerade-thema"
+  },
+  {
+    "frage": "Unsere Zielkunden sind Kliniken im Rheinland mit über 200 Betten",
+    "erwartet": "icp-festlegen"
+  },
+  {
+    "frage": "Kannst du aus quikk.de und drei Kundenseiten unsere Zielgruppe ableiten?",
+    "erwartet": "icp-aus-website"
+  },
+  {
+    "frage": "Wir haben unsere Persona schon in einem PDF, nimm das",
+    "erwartet": "icp-aus-dokument"
+  },
+  {
+    "frage": "Bitte Zürich als weiteren Standort ins Profil",
+    "erwartet": "icp-anpassen"
+  },
+  {
+    "frage": "Gibt es rund um Bielefeld IT-Dienstleister, die wir noch nicht kennen?",
+    "erwartet": "radar-scan"
+  },
+  {
+    "frage": "Was heißt Score 82 bei dem Kandidaten?",
+    "erwartet": "radar-kandidaten-verstehen"
+  },
+  {
+    "frage": "Die drei Firmen oben im Radar will ich haben, den Rest verwerfen",
+    "erwartet": "radar-uebernehmen-verwerfen"
+  },
+  {
+    "frage": "Kann der Radar jede Woche von allein suchen?",
+    "erwartet": "radar-automatik"
+  },
+  {
+    "frage": "Seit Tagen kommen im Radar keine neuen Firmen dazu",
+    "erwartet": "radar-startet-nicht"
+  },
+  {
+    "frage": "Wer passt aus meiner Liste am ehesten zu uns?",
+    "erwartet": "icp-bestandsabgleich"
+  },
+  {
+    "frage": "Hier ist eine Vergabe der Stadt Kassel, welche meiner Firmen kämen in Frage?",
+    "erwartet": "ausschreibung-abgleich"
+  },
+  {
+    "frage": "Ich will bei jeder Firma wissen, ob sie Dienstwagen anbietet",
+    "erwartet": "fokus-themen-anlegen"
+  },
+  {
+    "frage": "Was kam bei der Firma Ott zum Thema Altersvorsorge raus?",
+    "erwartet": "fokus-themen-ergebnisse"
+  },
+  {
+    "frage": "Stellt die Weber GmbH gerade Ingenieure ein?",
+    "erwartet": "stellenanzeigen-firma"
+  },
+  {
+    "frage": "Baut die Firma ein neues Werk?",
+    "erwartet": "recherche-ausschreibungen"
+  },
+  {
+    "frage": "Welche meiner Kunden setzen auf Microsoft Dynamics?",
+    "erwartet": "bestand-suchen"
+  },
+  {
+    "frage": "Und welche Firmen gibt es sonst noch mit Dynamics, auch ohne dass ich sie habe?",
+    "erwartet": "bestand-suchen-ausserhalb"
+  },
+  {
+    "frage": "Was steht auf weber.de/karriere?",
+    "erwartet": "seite-lesen"
+  },
+  {
+    "frage": "Meld dich, wenn bei meinen Firmen ein neuer Jahresabschluss erscheint",
+    "erwartet": "beobachtung-anlegen"
+  },
+  {
+    "frage": "Mach den Shop von Hornbach-Preisen alle 30 Minuten zum Beobachten",
+    "erwartet": "link-ueberwachung-anlegen"
+  },
+  {
+    "frage": "Die Überwachung meldet immer nur Fehler, die Seite blockt wohl",
+    "erwartet": "link-ueberwachung-bot-schutz"
+  },
+  {
+    "frage": "Was bedeutet Register-Jobs auf diesem Rechner abarbeiten?",
+    "erwartet": "stammdaten-mithelfen"
+  },
+  {
+    "frage": "ich will ava an complead.ly anschließen",
+    "erwartet": [
+      "compleadly-verbinden",
+      "dienst-verbinden"
+    ]
+  },
+  {
+    "frage": "wie kommt mein close crm in ava rein",
+    "erwartet": [
+      "close-verbinden",
+      "crm-verbinden"
+    ]
+  },
+  {
+    "frage": "muss ich mich für hubspot im browser anmelden",
+    "erwartet": "hubspot-verbinden"
+  },
+  {
+    "frage": "trag das meeting von gestern bei hubspot ein",
+    "erwartet": "hubspot-nutzen"
+  },
+  {
+    "frage": "gibt es eine salesforce integration",
+    "erwartet": "salesforce-dynamics"
+  },
+  {
+    "frage": "obsidian vault mit ava koppeln",
+    "erwartet": "obsidian-verbinden"
+  },
+  {
+    "frage": "compleadly meldet nichts zurück, webhook fehlt",
+    "erwartet": "compleadly-rueckmeldungen"
+  },
+  {
+    "frage": "mein zugangscode bei compleadly ist abgelaufen",
+    "erwartet": "dienst-zugang-abgelaufen"
+  },
+  {
+    "frage": "ava in chatgpt einbinden",
+    "erwartet": "ava-in-claude-chatgpt"
+  },
+  {
+    "frage": "hubspot verbindung wieder entfernen",
+    "erwartet": "verbindung-trennen"
+  },
+  {
+    "frage": "kann ava ein eigenes postfach bekommen",
+    "erwartet": "mail-postfach-einrichten"
+  },
+  {
+    "frage": "der kunde hat geschrieben aber ava hat nichts gemacht",
+    "erwartet": "mail-reagiert-nicht"
+  },
+  {
+    "frage": "präsentation immer an die erstansprache hängen",
+    "erwartet": "mail-feste-anhaenge"
+  },
+  {
+    "frage": "jeden freitag eine mail ans team schicken",
+    "erwartet": "mail-wiederkehrend"
+  },
+  {
+    "frage": "kollegen von kunde.de automatisch antworten lassen",
+    "erwartet": "mail-auto-antwort"
+  },
+  {
+    "frage": "postfach alle fünf minuten abrufen",
+    "erwartet": "mail-abruf-und-verlauf"
+  },
+  {
+    "frage": "entwürfe in meinem ionos postfach ablegen",
+    "erwartet": "mail-entwurfs-postfach"
+  },
+  {
+    "frage": "entwurf soll in outlook aufgehen statt gmail",
+    "erwartet": "mail-entwurf-oeffnen"
+  },
+  {
+    "frage": "wie bekomme ich ava in telegram",
+    "erwartet": "telegram-einrichten"
+  },
+  {
+    "frage": "telegram nur bei insolvenzen benachrichtigen",
+    "erwartet": "telegram-meldungen"
+  },
+  {
+    "frage": "ich will per sprachnachricht mit ava reden",
+    "erwartet": "telegram-sprachnachrichten"
+  },
+  {
+    "frage": "auf telegram vorlesen statt schreiben",
+    "erwartet": "telegram-sprachantwort"
+  },
+  {
+    "frage": "visitenkarte fotografieren und an ava schicken",
+    "erwartet": "telegram-bilder"
+  },
+  {
+    "frage": "workflow per handy freigeben",
+    "erwartet": "telegram-freigaben"
+  },
+  {
+    "frage": "bot läuft auf server und laptop gleichzeitig",
+    "erwartet": "telegram-mehrere-avas"
+  },
+  {
+    "frage": "telegram bot schweigt",
+    "erwartet": "telegram-antwortet-nicht"
+  },
+  {
+    "frage": "crm änderung über telegram bestätigen",
+    "erwartet": "telegram-rueckfragen"
+  },
+  {
+    "frage": "Wie kriege ich meinen LinkedIn-Account in AVA rein?",
+    "erwartet": "linkedin-verbinden"
+  },
+  {
+    "frage": "Oben steht, LinkedIn sei nicht verbunden, was muss ich tun?",
+    "erwartet": "linkedin-sitzung-erneuern"
+  },
+  {
+    "frage": "Ist es gefährlich für mein LinkedIn-Profil, wenn du mitliest?",
+    "erwartet": "linkedin-konto-risiko"
+  },
+  {
+    "frage": "Kannst du dem Typen eine Vernetzungsanfrage schicken?",
+    "erwartet": "linkedin-schreibt-nicht"
+  },
+  {
+    "frage": "Wer von meinen Zielkunden hat auf LinkedIn was Neues gepostet?",
+    "erwartet": "linkedin-signale-ansehen"
+  },
+  {
+    "frage": "Der LinkedIn-Scan hängt, kannst du den stoppen?",
+    "erwartet": "linkedin-durchlaeufe"
+  },
+  {
+    "frage": "Ich will den Ansprechpartner Max Weber bei LinkedIn im Auge behalten",
+    "erwartet": "linkedin-personen-watchlist"
+  },
+  {
+    "frage": "Mein Kollege hat einen Beitrag gepostet, kannst du schauen, wer da kommentiert?",
+    "erwartet": [
+      "linkedin-beobachtete-posts",
+      "linkedin-leads"
+    ]
+  },
+  {
+    "frage": "Bei dem übernommenen Lead ist keine Person an der Firma",
+    "erwartet": "linkedin-lead-kontakt-fehlt"
+  },
+  {
+    "frage": "Wie teuer ist es, Personen auf LinkedIn zu beobachten?",
+    "erwartet": "linkedin-kosten-limit"
+  },
+  {
+    "frage": "Lösch bitte alles, was du von LinkedIn gespeichert hast",
+    "erwartet": "linkedin-daten-loeschen"
+  },
+  {
+    "frage": "Ich sehe den Punkt Signale in der Navigation gar nicht",
+    "erwartet": "linkedin-bereich-fehlt"
+  },
+  {
+    "frage": "Gibt es was Neues seit gestern?",
+    "erwartet": "meldungen-ansehen"
+  },
+  {
+    "frage": "Mach die Glocke leer",
+    "erwartet": "meldungen-aufraeumen"
+  },
+  {
+    "frage": "Kannst du nur noch einmal pro Stunde nachschauen?",
+    "erwartet": "meldungen-haeufigkeit"
+  },
+  {
+    "frage": "Ich will kein Pop-up mehr auf dem Laptop bei jeder Kleinigkeit",
+    "erwartet": [
+      "meldungen-benachrichtigung-rechner",
+      "meldungen-zu-viele"
+    ]
+  },
+  {
+    "frage": "Bitte keine Störungen nach Feierabend",
+    "erwartet": "meldungen-ruhezeiten"
+  },
+  {
+    "frage": "Wie bekomme ich die Alerts auf mein Smartphone?",
+    "erwartet": "meldungen-kanaele"
+  },
+  {
+    "frage": "Warum hast du mir zu der neuen Geschäftsführerin bei Müller nichts gesagt?",
+    "erwartet": [
+      "meldungen-kommen-keine",
+      "meldungen-wie-ava-entscheidet"
+    ]
+  },
+  {
+    "frage": "Du hast gemeldet, dass Herr Schulz neuer Vertriebsleiter ist, das stimmt aber nicht",
+    "erwartet": "meldungen-falschmeldung"
+  },
+  {
+    "frage": "Im Verlauf steht nur nichts zu bewerten, läuft da überhaupt was?",
+    "erwartet": "meldungen-keine-fundstellen"
+  },
+  {
+    "frage": "Merkst du es, wenn einer meiner Kunden pleitegeht?",
+    "erwartet": "meldung-firmenstatus"
+  },
+  {
+    "frage": "Was ist diese Meldung mit 4 Funden bei mehreren Firmen?",
+    "erwartet": "meldungen-tageszusammenfassung"
+  },
+  {
+    "frage": "Die Chips mit nächsten Schritten unter deinen Antworten will ich nicht",
+    "erwartet": "vorschlaege-im-chat"
+  },
+  {
+    "frage": "Mit welchem Modell fahre ich am besten?",
+    "erwartet": "ki-modell-waehlen"
+  },
+  {
+    "frage": "Warum darf ich keinen Workflow im Chat bauen, es heißt Stufe S nötig",
+    "erwartet": "ki-qualitaetsstufen"
+  },
+  {
+    "frage": "Nimm ab jetzt Mistral Large",
+    "erwartet": "ki-anbieter-wechseln"
+  },
+  {
+    "frage": "Wo kommt mein Google AI Studio Key rein?",
+    "erwartet": "ki-schluessel-hinterlegen"
+  },
+  {
+    "frage": "Ich hab ChatGPT Pro, brauch ich dann noch einen API Key?",
+    "erwartet": "ki-chatgpt-abo-verbinden"
+  },
+  {
+    "frage": "Mein ChatGPT Business Konto wird nicht freigegeben",
+    "erwartet": "ki-chatgpt-abo-probleme"
+  },
+  {
+    "frage": "Wir dürfen nur unsere Azure Instanz verwenden",
+    "erwartet": "ki-azure-openai"
+  },
+  {
+    "frage": "Geht AVA auch komplett lokal mit Llama?",
+    "erwartet": "ki-lokales-modell"
+  },
+  {
+    "frage": "Das lokale Gemma Modell stürzt dauernd ab",
+    "erwartet": "ki-lokale-ki-reparieren"
+  },
+  {
+    "frage": "Kann ich fürs Radar was Billigeres nehmen als im Chat?",
+    "erwartet": "ki-hintergrund-modell"
+  },
+  {
+    "frage": "Begrenz mich auf 500k am Tag",
+    "erwartet": "ki-tageslimit"
+  },
+  {
+    "frage": "Zeig mir meine KI-Kosten vom letzten Monat",
+    "erwartet": "ki-verbrauch-ansehen"
+  },
+  {
+    "frage": "Warum ist bei mir alles grau und vorgegeben in den KI Einstellungen?",
+    "erwartet": "ki-organisation-vorgaben"
+  },
+  {
+    "frage": "Unser Firmen-Budget für KI ist leer",
+    "erwartet": "ki-organisation-budget"
+  },
+  {
+    "frage": "Anthropic sagt rate limit exceeded",
+    "erwartet": "ki-limit-und-guthaben"
+  },
+  {
+    "frage": "Es kommt nur ein Fehler, Authentifizierung, was nun?",
+    "erwartet": "ki-modell-antwortet-nicht"
+  },
+  {
+    "frage": "Ich möchte lieber reden als schreiben",
+    "erwartet": "ki-sprachmodus"
+  },
+  {
+    "frage": "Kann AVA eine weibliche ruhigere Stimme haben?",
+    "erwartet": "ki-sprachmodus-einstellen"
+  },
+  {
+    "frage": "Im Sprachmodus hört mich AVA nicht, Mikrofon geht nicht",
+    "erwartet": "ki-sprachmodus-fehler"
+  },
+  {
+    "frage": "Wie kann ich ins Mikro sprechen statt tippen im Chat?",
+    "erwartet": [
+      "ki-diktat",
+      "ki-sprachmodus"
+    ]
+  },
+  {
+    "frage": "Was kann ich hier eigentlich alles machen?",
+    "erwartet": "chat-grundlagen"
+  },
+  {
+    "frage": "Lies mal den Geschäftsbericht im Anhang und sag mir die Mitarbeiterzahl",
+    "erwartet": "chat-dateien-lesen"
+  },
+  {
+    "frage": "Mein PDF ist eingescannt, du findest keinen Text",
+    "erwartet": "chat-scan-pdf"
+  },
+  {
+    "frage": "Ich schick dir ein Foto vom Messestand",
+    "erwartet": "chat-bilder"
+  },
+  {
+    "frage": "Mach mir eine Grafik mit den Mitarbeiterzahlen",
+    "erwartet": "chat-diagramme"
+  },
+  {
+    "frage": "Behalte im Kopf, dass ich nur DACH betreue",
+    "erwartet": [
+      "chat-gedaechtnis",
+      "profil-pflegen"
+    ]
+  },
+  {
+    "frage": "Ich suche das Gespräch über die Messe in Hannover",
+    "erwartet": "chat-verlauf"
+  },
+  {
+    "frage": "Der Chat ist schon ewig lang, sollte ich neu anfangen?",
+    "erwartet": "chat-lange-gespraeche"
+  },
+  {
+    "frage": "Meldest du dich, wenn die 50 Firmen durch sind?",
+    "erwartet": "chat-hintergrundaufgaben"
+  },
+  {
+    "frage": "Du sollst nicht bei jeder Notiz fragen",
+    "erwartet": [
+      "chat-autonomie-modus",
+      "chat-rueckfragen"
+    ]
+  },
+  {
+    "frage": "Was bedeuten die Kacheln mit Los unter deiner Antwort?",
+    "erwartet": "vorschlaege-im-chat"
+  },
+  {
+    "frage": "Mach mir mal die Meldungen auf",
+    "erwartet": [
+      "chat-seiten-oeffnen",
+      "meldungen-ansehen"
+    ]
+  },
+  {
+    "frage": "Ich bin Key Account Manager für Automotive",
+    "erwartet": "profil-pflegen"
+  },
+  {
+    "frage": "Formulier das bitte förmlich mit Sie",
+    "erwartet": "chat-texte-an-dritte"
+  },
+  {
+    "frage": "Hast du dir die Umsatzzahl ausgedacht?",
+    "erwartet": "chat-keine-erfundenen-fakten"
+  },
+  {
+    "frage": "wie automatisiere ich, dass jeden freitag ein bericht zu meinen top firmen kommt",
+    "erwartet": "workflow-zeitplan"
+  },
+  {
+    "frage": "ich will dir einen ablauf nicht jedes mal neu erklären müssen",
+    "erwartet": [
+      "workflow-aus-chat-speichern",
+      "skill-anlegen"
+    ]
+  },
+  {
+    "frage": "mein workflow wartet seit gestern, wie geht der weiter",
+    "erwartet": "workflow-freigaben"
+  },
+  {
+    "frage": "kann ich einen workflow ausprobieren ohne dass mails rausgehen",
+    "erwartet": "workflow-testen"
+  },
+  {
+    "frage": "warum ist mein workflow heute nacht nicht gelaufen",
+    "erwartet": [
+      "workflow-ohne-laufende-app",
+      "workflow-laeufe-pruefen"
+    ]
+  },
+  {
+    "frage": "wenn ein import fertig ist soll automatisch eine notiz in hubspot landen",
+    "erwartet": [
+      "workflow-ereignis-ausloeser",
+      "workflow-vorlagen"
+    ]
+  },
+  {
+    "frage": "eine kollegin hat einen workflow freigegeben, wo finde ich den",
+    "erwartet": "workflow-teilen"
+  },
+  {
+    "frage": "erinner mich nächsten dienstag an das angebot für müller",
+    "erwartet": "erinnerung-anlegen"
+  },
+  {
+    "frage": "der importierte skill wird ignoriert",
+    "erwartet": "skill-freigeben-importieren"
+  },
+  {
+    "frage": "warum darf ich nur einen workflow haben",
+    "erwartet": "workflow-anlegen-blockiert"
+  },
+  {
+    "frage": "geht ava auch auf meinem android handy",
+    "erwartet": [
+      "ava-app-im-browser",
+      "ava-app-installieren"
+    ]
+  },
+  {
+    "frage": "die app zeigt offline obwohl mein mac an ist",
+    "erwartet": "ava-app-offline"
+  },
+  {
+    "frage": "ich bekomme auf dem iphone keine push nachrichten von ava",
+    "erwartet": "ava-app-mitteilungen"
+  },
+  {
+    "frage": "ich habe einen neuen laptop bekommen, wie nehme ich alles mit",
+    "erwartet": "ava-umzug"
+  },
+  {
+    "frage": "wo ändere ich das ki modell wenn ich nur die app im browser nutze",
+    "erwartet": "ava-app-einstellungen"
+  },
+  {
+    "frage": "kann ich dir unterwegs ein foto von einer visitenkarte schicken",
+    "erwartet": "ava-app-chat-funktionen"
+  },
+  {
+    "frage": "seit ich den server habe kommen keine telegram nachrichten mehr an",
+    "erwartet": "ava-instanzen-ueberblick"
+  },
+  {
+    "frage": "ava soll weiterarbeiten wenn mein rechner nachts aus ist",
+    "erwartet": [
+      "ava-server-instanz",
+      "workflow-ohne-laufende-app"
+    ]
+  },
+  {
+    "frage": "in der app antwortet die ava vom server statt die vom laptop",
+    "erwartet": "ava-app-welche-ava"
+  },
+  {
+    "frage": "kann ich unterwegs die kennzahlen einer firma nachschauen",
+    "erwartet": "ava-app-firmen-leads"
+  },
+  {
+    "frage": "wem schicke ich einen fehler",
+    "erwartet": "problem-melden"
+  },
+  {
+    "frage": "ist meine ava auf dem neuesten stand",
+    "erwartet": "updates"
+  },
+  {
+    "frage": "ava belegt bei mir 30 gb",
+    "erwartet": "speicherplatz"
+  },
+  {
+    "frage": "mein laptop wird seit dem import richtig heiß",
+    "erwartet": [
+      "rechner-ausgelastet",
+      "verarbeitung-pausieren"
+    ]
+  },
+  {
+    "frage": "die firma ist seit gestern nur halb aufbereitet",
+    "erwartet": "verarbeitung-haengt"
+  },
+  {
+    "frage": "im task manager laufen lauter chrome prozesse",
+    "erwartet": "hintergrund-browser"
+  },
+  {
+    "frage": "der chat dreht sich nur und es kommt keine antwort",
+    "erwartet": "ava-antwortet-nicht"
+  },
+  {
+    "frage": "oben steht das unternehmensregister ist weg",
+    "erwartet": "quelle-nicht-erreichbar"
+  },
+  {
+    "frage": "ich will ava komplett neu aufsetzen",
+    "erwartet": "zuruecksetzen"
+  },
+  {
+    "frage": "smartscreen blockiert das setup von ava",
+    "erwartet": "installation-windows-mac"
+  },
+  {
+    "frage": "wo sehe ich ob der dienst für profile läuft",
+    "erwartet": "dienste-auf-diesem-rechner"
+  },
+  {
+    "frage": "kannst du CompLeadly anbinden, ich hab da einen account",
+    "erwartet": [
+      "compleadly-verbinden",
+      "dienst-verbinden"
+    ]
+  },
+  {
+    "frage": "wie richte ich Telegram ein",
+    "erwartet": "telegram-einrichten"
+  },
+  {
+    "frage": "was kannst du für meine Firmenliste tun",
+    "erwartet": [
+      "was-kannst-du",
+      "meine-firmen-liste"
+    ]
+  },
+  {
+    "frage": "welche meiner firmen bieten bAV an",
+    "erwartet": "bestand-suchen"
+  },
+  {
+    "frage": "wir haben fünf firmen gesucht, die wurden gefunden aber nicht bearbeitet",
+    "erwartet": [
+      "verarbeitung-haengt",
+      "import-haengt",
+      "daten-fehlen-bei-firma"
+    ]
+  },
+  {
+    "frage": "in den stellenanzeigen stehen nur sachen wie mittlere reife, das bringt mir nichts",
+    "erwartet": "stellenanzeigen-firma"
+  },
+  {
+    "frage": "meine firmen werden nach 30 tagen nicht neu verarbeitet",
+    "erwartet": [
+      "daten-aktualitaet",
+      "firma-neu-verarbeiten"
+    ]
+  },
+  {
+    "frage": "der heartbeat zeigt keine geprüften kandidaten",
+    "erwartet": [
+      "meldungen-kommen-keine",
+      "meldungen-wie-ava-entscheidet"
+    ]
+  },
+  {
+    "frage": "sollte da nicht auch die quelle verlinkt sein",
+    "erwartet": [
+      "meldungen-quelle",
+      "kontakt-herkunft",
+      "chat-keine-erfundenen-fakten"
+    ]
+  },
+  {
+    "frage": "der lead ist übernommen, aber der kontakt fehlt",
+    "erwartet": "linkedin-lead-kontakt-fehlt"
+  },
+  {
+    "frage": "die einrichtung bleibt nach continue with chatgpt hängen",
+    "erwartet": [
+      "ki-chatgpt-abo-probleme",
+      "einrichtungsassistent"
+    ]
+  },
+  {
+    "frage": "wir arbeiten mit close crm, geht das",
+    "erwartet": [
+      "close-verbinden",
+      "crm-verbinden"
+    ]
+  },
+  {
+    "frage": "kann AVA über CompLeadly LinkedIn-Nachrichten verschicken",
+    "erwartet": [
+      "compleadly-nutzen",
+      "linkedin-schreibt-nicht"
+    ]
+  },
+  {
+    "frage": "öffne mir die einstellungen für das modell",
+    "erwartet": [
+      "ki-modell-waehlen",
+      "chat-seiten-oeffnen"
+    ]
+  },
+  {
+    "frage": "ich will ava nur über den chat bedienen, geht das",
+    "erwartet": [
+      "chat-grundlagen",
+      "chat-seiten-oeffnen"
+    ]
+  },
+  {
+    "frage": "was kostet mich eine firma",
+    "erwartet": "firmen-kosten-stufen"
+  },
+  {
+    "frage": "kann ich mein chatgpt plus nutzen statt api key",
+    "erwartet": "ki-chatgpt-abo-verbinden"
+  },
+  {
+    "frage": "wo liegen meine daten, in der cloud?",
+    "erwartet": "daten-lokal-oder-server"
+  },
+  {
+    "frage": "ich hab nur ein handy dabei, wie rede ich mit ava",
+    "erwartet": [
+      "ava-app-im-browser",
+      "telegram-chatten"
+    ]
+  },
+  {
+    "frage": "copilot soll auf ava zugreifen",
+    "erwartet": "ava-in-copilot"
+  },
+  {
+    "frage": "ich will ava in claude nutzen",
+    "erwartet": "ava-in-claude-chatgpt"
+  },
+  {
+    "frage": "lade die excel mit 200 firmen hoch",
+    "erwartet": [
+      "excel-liste-importieren",
+      "firmen-importieren"
+    ]
+  },
+  {
+    "frage": "wer sind die entscheider bei der firma",
+    "erwartet": [
+      "buying-center-anlegen",
+      "kontakte-einer-firma"
+    ]
+  },
+  {
+    "frage": "such mir ähnliche firmen wie meine besten kunden",
+    "erwartet": [
+      "radar-scan",
+      "icp-aus-website",
+      "icp-bestandsabgleich"
+    ]
+  },
+  {
+    "frage": "mein api schlüssel funktioniert nicht mehr",
+    "erwartet": [
+      "ki-modell-antwortet-nicht",
+      "ki-schluessel-hinterlegen",
+      "dienst-zugang-abgelaufen"
+    ]
+  },
+  {
+    "frage": "kann ich salesforce anbinden",
+    "erwartet": "salesforce-dynamics"
+  },
+  {
+    "frage": "wie melde ich einen fehler",
+    "erwartet": "problem-melden"
+  },
+  {
+    "frage": "warum sind die arbeitsschritte weg im chat",
+    "erwartet": "arbeitsschritte-anzeigen"
+  },
+  {
+    "frage": "schreib eine mail an den geschäftsführer und leg sie in meine entwürfe",
+    "erwartet": [
+      "mail-entwurfs-postfach",
+      "mail-entwurf-oeffnen"
+    ]
+  }
 ]
