@@ -11,6 +11,8 @@ import { featureEnabled } from "../../org-policy";
 interface Ziel {
   pfad: string;
   text: string;
+  /** Organisationsfreigabe, ohne die es die Seite nicht gibt. */
+  feature?: import("../../../shared/types").OrgFeatureKey;
 }
 
 const ZIELE: Record<string, Ziel> = {
@@ -20,15 +22,44 @@ const ZIELE: Record<string, Ziel> = {
   importieren: { pfad: "/ingest", text: "den Import" },
   radar: { pfad: "/radar", text: "das Firmen-Radar" },
   meldungen: { pfad: "/alerts", text: "deine Meldungen" },
-  workflows: { pfad: "/workflows", text: "die Workflows" },
+  workflows: { pfad: "/workflows", text: "die Workflows", feature: "workflows" },
+  workflow_laeufe: { pfad: "/workflows/laeufe", text: "die Läufe deiner Workflows", feature: "workflows" },
+  icp: { pfad: "/icp-assistent", text: "den Assistenten für dein Idealkundenprofil" },
+  status: { pfad: "/whoami", text: "die Statusseite" },
+  gerade_thema: { pfad: "/thema", text: "„Gerade Thema“", feature: "relevanz" },
+  geteilte_buying_center: { pfad: "/buying-center/geteilt", text: "die geteilten Buying Center", feature: "buyingcenter" },
   aufgaben: { pfad: "/transactions", text: "die laufenden Aufgaben" },
   linkedin: { pfad: "/linkedin", text: "den LinkedIn-Bereich" },
   posteingang: { pfad: "/inbox", text: "den Posteingang" },
   dienst_verbinden: { pfad: "/settings/verbindungen#weitere-dienste-section", text: "Einstellungen → Verbindungen → Weitere Dienste" },
   crm_verbinden: { pfad: "/settings/verbindungen#crm-connections", text: "Einstellungen → Verbindungen → CRM" },
   linkedin_verbinden: { pfad: "/settings/verbindungen#linkedin-section", text: "Einstellungen → Verbindungen → LinkedIn" },
-  mail_verbinden: { pfad: "/settings/verbindungen#mail-section", text: "Einstellungen → Verbindungen → E-Mail" },
-  telegram_verbinden: { pfad: "/settings/verbindungen#telegram-section", text: "Einstellungen → Verbindungen → Telegram" },
+  mail_verbinden: { pfad: "/settings/verbindungen#mail-section", text: "Einstellungen → Verbindungen → E-Mail", feature: "mail" },
+  mail_entwuerfe: { pfad: "/settings/verbindungen#mail-entwurf-section", text: "Einstellungen → Verbindungen → Mail-Entwürfe" },
+  telegram_verbinden: { pfad: "/settings/verbindungen#telegram-section", text: "Einstellungen → Verbindungen → Telegram", feature: "telegram" },
+  notizen: { pfad: "/settings/verbindungen#wissensquellen-section", text: "Einstellungen → Verbindungen → Notizen" },
+  linkedin_kalibrierung: { pfad: "/settings/verbindungen#signal-kalibrierung", text: "Einstellungen → Verbindungen → LinkedIn-Kalibrierung", feature: "linkedin.beobachter" },
+  linkedin_bildanalyse: { pfad: "/settings/verbindungen#linkedin-image-analysis", text: "Einstellungen → Verbindungen → LinkedIn" },
+  verbundene_apps: { pfad: "/settings/konto#verbindungen", text: "Einstellungen → Konto → Verbundene Apps" },
+  organisation: { pfad: "/settings/konto#organisation", text: "Einstellungen → Konto → Organisation" },
+  deine_avas: { pfad: "/settings/konto#instanzen", text: "Einstellungen → Konto → Deine AVAs" },
+  langzeitgedaechtnis: { pfad: "/settings/konto#general-memory", text: "Einstellungen → Konto → Langzeitgedächtnis" },
+  lokale_modelle: { pfad: "/settings/ki#installed-models", text: "Einstellungen → KI & Kosten → Modelle auf diesem Rechner" },
+  verbrauch_limit: { pfad: "/settings/ki#verbrauch-limit", text: "Einstellungen → KI & Kosten → Verbrauch" },
+  sprachmodus: { pfad: "/settings/ki#sprachmodus-section", text: "Einstellungen → KI & Kosten → Mit AVA sprechen", feature: "sprachmodus" },
+  spracherkennung: { pfad: "/settings/ki#voice-settings", text: "Einstellungen → KI & Kosten → Spracherkennung" },
+  beobachtungen: { pfad: "/settings/recherche#watches-section", text: "Einstellungen → Recherche → Beobachtungen" },
+  link_ueberwachung: { pfad: "/settings/recherche#link-monitor-section", text: "Einstellungen → Recherche → Link-Überwachung" },
+  email_adressen: { pfad: "/settings/recherche#email-muster-section", text: "Einstellungen → Recherche → E-Mail-Adressen" },
+  naehe_vorrang: { pfad: "/settings/meldungen#relevanz-section", text: "Einstellungen → Meldungen → Nähe & Vorrang", feature: "relevanz" },
+  skills: { pfad: "/settings/erweitert#skills-list", text: "Einstellungen → Erweitert → Skills" },
+  wiederkehrende_aufgaben: { pfad: "/settings/erweitert#scheduler-section", text: "Einstellungen → Erweitert → Wiederkehrende Aufgaben", feature: "mail" },
+  verlauf: { pfad: "/settings/erweitert#audit-trail", text: "Einstellungen → Erweitert → Verlauf" },
+  updates: { pfad: "/settings/erweitert#updates", text: "Einstellungen → Erweitert → Updates" },
+  speicherplatz: { pfad: "/settings/erweitert#storage", text: "Einstellungen → Erweitert → Speicherplatz" },
+  diagnose: { pfad: "/settings/erweitert#diagnose", text: "Einstellungen → Erweitert → Diagnose" },
+  dienste_rechner: { pfad: "/settings/erweitert#dienste-section", text: "Einstellungen → Erweitert → Dienste auf diesem Rechner" },
+  zuruecksetzen: { pfad: "/settings/erweitert#danger-zone", text: "Einstellungen → Erweitert → Zurücksetzen" },
   modell: { pfad: "/settings/ki#provider-section", text: "Einstellungen → KI & Kosten → Anbieter & Modell" },
   chatgpt_abo: { pfad: "/settings/ki#chatgpt-abo", text: "Einstellungen → KI & Kosten → ChatGPT-Abo" },
   verbrauch: { pfad: "/settings/ki#verbrauch-section", text: "Einstellungen → KI & Kosten → Verbrauch" },
@@ -36,7 +67,7 @@ const ZIELE: Record<string, Ziel> = {
   profil: { pfad: "/settings/konto#profile-section", text: "Einstellungen → Konto → Profil" },
   themen: { pfad: "/settings/recherche#themen-section", text: "Einstellungen → Recherche → Fokus-Themen" },
   meldungen_einstellen: { pfad: "/settings/meldungen#alerts-section", text: "Einstellungen → Meldungen" },
-  stammdaten_mitpflegen: { pfad: "/settings/recherche#mithelfen-section", text: "Einstellungen → Recherche → Stammdaten mitpflegen" },
+  stammdaten_mitpflegen: { pfad: "/settings/recherche#mithelfen-section", text: "Einstellungen → Recherche → Stammdaten mitpflegen", feature: "stammdaten.mithelfen" },
   chat_anzeige: { pfad: "/settings/meldungen#vorschlaege-section", text: "Einstellungen → Meldungen → Vorschläge im Chat" },
 };
 
@@ -86,7 +117,8 @@ export function buildAppOeffnenTools(): Tool[] {
         pfad = `/transactions/${encodeURIComponent(args.vorgangId)}`;
         text = "die Aufgabe";
       } else {
-        if (args.ziel === "stammdaten_mitpflegen" && !featureEnabled("stammdaten.mithelfen")) return { geoeffnet: false, hinweis: "Deine Organisation hat das Mitpflegen der Stammdaten abgeschaltet." };
+        const fz = ZIELE[args.ziel]!.feature;
+        if (fz && !featureEnabled(fz)) return { geoeffnet: false, hinweis: "Diese Funktion hat deine Organisation abgeschaltet. Sag das in einem Satz, ohne den Weg zu beschreiben." };
         const z = ZIELE[args.ziel]!;
         pfad = z.pfad;
         text = z.text;
