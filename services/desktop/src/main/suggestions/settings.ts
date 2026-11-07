@@ -8,9 +8,11 @@ import { join } from "node:path";
 export interface VorschlaegeSettings {
   startseite: boolean;
   gespraech: boolean;
+  /** L1 (docs/PLAN_LOESUNGSKARTEN.md): einzelne Arbeitsschritte und Verbrauch im Chat zeigen (Standard aus). */
+  arbeitsschritte: boolean;
 }
 
-const DEFAULT: VorschlaegeSettings = { startseite: true, gespraech: true };
+const DEFAULT: VorschlaegeSettings = { startseite: true, gespraech: true, arbeitsschritte: false };
 
 export class VorschlaegeSettingsStore {
   private readonly path: string;
@@ -24,7 +26,7 @@ export class VorschlaegeSettingsStore {
     if (this.cache) return this.cache;
     try {
       const raw = existsSync(this.path) ? (JSON.parse(readFileSync(this.path, "utf8")) as Partial<VorschlaegeSettings>) : {};
-      this.cache = { startseite: raw.startseite !== false, gespraech: raw.gespraech !== false };
+      this.cache = { startseite: raw.startseite !== false, gespraech: raw.gespraech !== false, arbeitsschritte: raw.arbeitsschritte === true };
     } catch {
       this.cache = { ...DEFAULT };
     }

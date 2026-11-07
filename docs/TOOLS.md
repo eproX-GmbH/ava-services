@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-06
-Anzahl Tools: 307
+Stand: 2026-11-07
+Anzahl Tools: 308
 
 ## Firmen (29)
 
@@ -1184,6 +1184,16 @@ _Parameter:_
 _Datei:_ `services/desktop/src/main/agent/tools/account.ts`
 
 Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle, Mitgliederzahl, ob die Tenant-ID aus dem Token-Claim oder dem Kompatibilitaets-Fallback stammt) und die weiteren Konten, die auf diesem Geraet bekannt sind. Read-only. Kontowechsel und 'Anderes Konto hinzufuegen' laufen ueber das Konto-Menue in der Kopfzeile, weil AVA dafuer neu startet.
+
+_Parameter:_ keine.
+
+## app-oeffnen (1)
+
+### `app_oeffnen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/app-oeffnen.ts`
+
+Öffnet für den Nutzer direkt die passende Seite der App, statt ihm einen Klickpfad zu beschreiben. Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. ziel=firma braucht `companyId`. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.
 
 _Parameter:_ keine.
 
@@ -2863,11 +2873,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/vorschlaege.ts`
 
-Liest oder aendert, ob AVA naechste Schritte vorschlaegt: startseite = Chips auf der leeren Chat-Seite und unter der Willkommensnachricht, gespraech = Chips nach einer Antwort, wenn sich ein naechster Schritt anbietet. Ohne Argumente: aktuelle Werte. Schaltet die Organisation Vorschlaege ab, gilt das vorrangig.
+Liest oder aendert, ob AVA naechste Schritte vorschlaegt: startseite = Chips auf der leeren Chat-Seite und unter der Willkommensnachricht, gespraech = Chips nach einer Antwort, wenn sich ein naechster Schritt anbietet. Ohne Argumente: aktuelle Werte. Schaltet die Organisation Vorschlaege ab, gilt das vorrangig. arbeitsschritte = einzelne Arbeitsschritte und Verbrauch je Antwort im Chat zeigen (Standard aus: nur 'Denkt nach').
 
 _Parameter:_
 - `startseite: boolean`
 - `gespraech: boolean`
+- `arbeitsschritte: boolean`
 
 ### `vorschlaege_status`
 

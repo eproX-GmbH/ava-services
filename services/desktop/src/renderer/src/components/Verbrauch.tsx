@@ -42,20 +42,21 @@ export function VerbrauchZeile({ usage }: { usage: AgentTurnUsage }) {
 }
 
 /** Live-Zeile waehrend eine Anfrage laeuft. */
-export function LaufStatus({ start, usage, laufend, text }: { start: number; usage: AgentTurnUsage | null; laufend: number; text: string }) {
+export function LaufStatus({ start, usage, laufend, text, schlicht }: { start: number; usage: AgentTurnUsage | null; laufend: number; text: string; schlicht?: boolean }) {
   const [jetzt, setJetzt] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setJetzt(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-  const teile = [
+  // L1: schlicht = nur, was gerade passiert, ohne Zeit, Verbrauch und Werkzeugzahl.
+  const teile = schlicht ? [text] : [
     dauerText(jetzt - start),
     usage ? `${zahl.format(tokensGesamt(usage))} Tokens` : null,
     laufend > 0 ? `${laufend} ${laufend === 1 ? "laufendes Werkzeug" : "laufende Werkzeuge"}` : null,
     text,
   ].filter(Boolean);
   return (
-    <div className="lauf-status" role="status" aria-live="polite" title={usage ? titel(usage) : undefined}>
+    <div className="lauf-status" role="status" aria-live="polite" title={usage && !schlicht ? titel(usage) : undefined}>
       <span className="lauf-status__stern" aria-hidden="true" />
       <span>{teile.join(" · ")}</span>
     </div>

@@ -3,6 +3,7 @@
 // einmal hinein und werden nie wieder angezeigt.
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import type { McpDienstAnzeige } from "../../../../shared/types";
 import { gatewayFetch } from "../../api/gateway";
 
@@ -59,6 +60,19 @@ export function DiensteSection() {
     setZugangscode("");
     setKopfzeilen(v.kopfzeilen ? v.kopfzeilen.map((k) => ({ name: k.name, wert: k.wert ?? "" })) : [{ name: "", wert: "" }]);
   };
+
+  // AVA oeffnet die Seite aus dem Chat mit ?vorlage=<id> oder ?name=<Dienst>
+  // (Werkzeug app_oeffnen): Formular gleich offen und vorbelegt.
+  const [suche] = useSearchParams();
+  useEffect(() => {
+    const v = suche.get("vorlage");
+    const n = suche.get("name");
+    if (!v && !n) return;
+    setOffen(true);
+    if (v && VORLAGEN.some((x) => x.id === v)) vorlageWaehlen(v);
+    else if (n) setName(n.slice(0, 60));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suche]);
 
   const zuruecksetzen = () => {
     setOffen(false);

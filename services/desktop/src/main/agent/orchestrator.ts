@@ -19,6 +19,7 @@ import { selectToolsForTurn } from "./tool-selection";
 import { buildMetaTools, ALWAYS_ON_CORE_TOOL_NAMES } from "./tools/meta";
 import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
+import { kontextMessen, kontextProtokollieren } from "./kontext-messung";
 import { isUserDeclined } from "./define-tool";
 import { welcomeMessage, isWelcomeTrigger } from "./welcome";
 import type { AgentMessageImage } from "../../shared/types";
@@ -1271,6 +1272,8 @@ export class AgentOrchestrator extends EventEmitter {
                 extraToolNames: slashNudgedTool ? [slashNudgedTool] : undefined,
               })
             : undefined;
+        // L0: Kontext je Schritt vermessen; echte Tokens kommen mit dem done-Frame.
+        const messung = kontextMessen({ schritt: step, system: systemMessage.content, tools: turnTools, verlauf: messages.slice(1) });
         for await (const frame of provider.streamChat({
           messages,
           tools: turnTools,
@@ -1295,7 +1298,10 @@ export class AgentOrchestrator extends EventEmitter {
           // v0.1.210 — Usage einer fertigen Turn (kommt nur auf done-Frame).
           // Fire-and-forget — schluckt Fehler intern, der Chat-Loop läuft
           // weiter, egal ob der Store gerade aufnimmt oder nicht.
-          if (frame.usage) turnUsageAddieren(frame.usage);
+          if (frame.usage) {
+            turnUsageAddieren(frame.usage);
+            messung.echt = { input: frame.usage.inputTokens ?? 0, cache: frame.usage.cacheReadTokens ?? 0 };
+          }
           if (frame.usage && this.onUsage) {
             try {
               const status = provider.getStatus();
@@ -1310,6 +1316,8 @@ export class AgentOrchestrator extends EventEmitter {
             }
           }
         }
+
+        kontextProtokollieren(messung);
 
         // Persist whatever the assistant produced this step (content +
         // optional tool_calls) so subsequent /api/chat calls have the full

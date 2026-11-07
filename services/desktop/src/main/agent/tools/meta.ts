@@ -254,6 +254,8 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // UI primitives — needed by half the workflows; trivially small.
   "ask_user_choice",
   "ask_user_text",
+  // L1 (docs/PLAN_LOESUNGSKARTEN.md): Seite der App oeffnen statt Klickpfade diktieren.
+  "app_oeffnen",
   // v0.1.284 — Self-Correction-Feedback-Loop. Soll in jedem Kontext
   // aufrufbar sein, damit der Agent es nicht "vergisst", wenn ein Skill
   // mit allowed-tools-Liste aktiv ist.

@@ -1,6 +1,7 @@
 import { useFeature } from "../store/policy";
 import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
 import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
+import { schrittText } from "../components/chat/schritt-text";
 import type { Chip, StartseitenChips } from "../../../shared/nutzerstand-types";
 import {
   Fragment,
@@ -233,6 +234,19 @@ export function Chat() {
   // Beim erneuten Oeffnen eines Chats ist alles zu.
   const [aufgeklappteLaeufe, setAufgeklappteLaeufe] = useState<Set<string>>(() => new Set());
   const zugLaeuft = thinking || messages.some((m) => m.pending || m.activity?.status === "running");
+  // L1 (docs/PLAN_LOESUNGSKARTEN.md): Arbeitsschritte und Verbrauch nur auf
+  // Wunsch (Einstellungen → Meldungen → Vorschläge im Chat); sonst "Denkt nach".
+  const [technisch, setTechnisch] = useState(false);
+  useEffect(() => {
+    const laden = () => void window.api.suggestions.getSettings().then((s) => setTechnisch(s.arbeitsschritte === true)).catch(() => undefined);
+    laden();
+    window.addEventListener("ava:chat-anzeige", laden);
+    return () => window.removeEventListener("ava:chat-anzeige", laden);
+  }, []);
+  useEffect(() => {
+    if (zugLaeuft) return;
+    void window.api.suggestions.getSettings().then((s) => setTechnisch(s.arbeitsschritte === true)).catch(() => undefined);
+  }, [zugLaeuft]);
   const logEintraege = useMemo(() => gruppiereLaeufe(messages), [messages]);
   const letzterLaufId = useMemo(() => {
     const laeufe = logEintraege.filter((e) => e.lauf);
@@ -1990,6 +2004,7 @@ export function Chat() {
                   <Fragment key={eintrag.id}>
                   <AktivitaetenLauf
                     schritte={eintrag.lauf}
+                    technisch={technisch}
                     offen={aktiv || aufgeklappteLaeufe.has(eintrag.id)}
                     umschaltbar={!aktiv}
                     onToggle={() =>
@@ -2099,7 +2114,7 @@ export function Chat() {
                       <VorschlagChips chips={turnChips.chips} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt titel="Nächster Schritt?" />
                     )}
                     {m.pending && <span className="chat-cursor">▍</span>}
-                    {m.role === "assistant" && !m.pending && m.usage && <VerbrauchZeile usage={m.usage} />}
+                    {technisch && m.role === "assistant" && !m.pending && m.usage && <VerbrauchZeile usage={m.usage} />}
                   </div>
                 </div>
               );
@@ -2110,7 +2125,17 @@ export function Chat() {
                 start={laufStart}
                 usage={laufUsage}
                 laufend={messages.filter((m) => m.activity?.status === "running").length}
-                text={thinking ? "Denkt nach …" : "Arbeitet …"}
+                schlicht={!technisch}
+                text={
+                  technisch
+                    ? thinking ? "Denkt nach …" : "Arbeitet …"
+                    : (() => {
+                        const akt = messages.filter((m) => m.activity);
+                        const jetzt = [...akt].reverse().find((m) => m.activity!.status === "running") ?? akt[akt.length - 1];
+                        const was = schrittText(jetzt?.activity?.toolName);
+                        return was ? `Denkt nach · ${was} …` : "Denkt nach …";
+                      })()
+                }
               />
             ) : (
               thinking && <ThinkingRow />
@@ -2821,9 +2846,26 @@ function AktivitaetenLauf(props: {
   schritte: UiMessage[];
   offen: boolean;
   umschaltbar: boolean;
+  technisch: boolean;
   onToggle: () => void;
 }) {
   const { schritte, offen, umschaltbar } = props;
+  // L1: Ohne "Arbeitsschritte anzeigen" laeuft die Arbeit unsichtbar (unten
+  // steht "Denkt nach · …"); danach bleibt eine leise, aufklappbare Zeile.
+  if (!props.technisch) {
+    if (!umschaltbar) return null;
+    if (!offen) {
+      return (
+        <div className="activity activity-lauf activity-lauf--schlicht">
+          <div className="activity-body">
+            <button type="button" className="activity-lauf__zeile" onClick={props.onToggle} aria-expanded={false}>
+              Nachgedacht <span aria-hidden="true">›</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+  }
   const werkzeuge = new Set(schritte.map((s) => s.activity!.toolName)).size;
   const fehler = schritte.filter((s) => s.activity!.status === "error").length;
   const zeile =

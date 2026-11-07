@@ -1823,8 +1823,8 @@ const api = {
       ipcRenderer.invoke("suggestions:faehigkeiten"),
     startseite: (opts?: { frisch?: boolean }): Promise<import("../shared/nutzerstand-types").StartseitenChips> => ipcRenderer.invoke("suggestions:startseite", opts ?? {}),
     ablehnen: (chip: { titel: string; gruppe: string }): Promise<{ abgelehnt: number }> => ipcRenderer.invoke("suggestions:ablehnen", chip),
-    getSettings: (): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> => ipcRenderer.invoke("suggestions:getSettings"),
-    setSettings: (patch: { startseite?: boolean; gespraech?: boolean }): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> =>
+    getSettings: (): Promise<{ startseite: boolean; gespraech: boolean; arbeitsschritte: boolean; orgErlaubt: boolean }> => ipcRenderer.invoke("suggestions:getSettings"),
+    setSettings: (patch: { startseite?: boolean; gespraech?: boolean; arbeitsschritte?: boolean }): Promise<{ startseite: boolean; gespraech: boolean; arbeitsschritte: boolean; orgErlaubt: boolean }> =>
       ipcRenderer.invoke("suggestions:setSettings", patch),
   },
   // Website-Themen (docs/PLAN_THEMEN.md).

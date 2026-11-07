@@ -2,12 +2,16 @@
 import { useEffect, useState } from "react";
 
 export function VorschlaegeSection() {
-  const [s, setS] = useState<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean } | null>(null);
+  const [s, setS] = useState<{ startseite: boolean; gespraech: boolean; arbeitsschritte: boolean; orgErlaubt: boolean } | null>(null);
   useEffect(() => {
     void window.api.suggestions.getSettings().then(setS);
   }, []);
   if (!s) return null;
-  const setze = (patch: { startseite?: boolean; gespraech?: boolean }) => void window.api.suggestions.setSettings(patch).then(setS);
+  const setze = (patch: { startseite?: boolean; gespraech?: boolean; arbeitsschritte?: boolean }) =>
+    void window.api.suggestions.setSettings(patch).then((n) => {
+      setS(n);
+      window.dispatchEvent(new CustomEvent("ava:chat-anzeige"));
+    });
   return (
     <section className="provider-section alerts-prefs" id="vorschlaege-section">
       <h3>Vorschläge im Chat</h3>
@@ -27,6 +31,17 @@ export function VorschlaegeSection() {
         <label className="alerts-prefs__check">
           <input type="checkbox" checked={s.gespraech} disabled={!s.orgErlaubt} onChange={(e) => setze({ gespraech: e.target.checked })} />
           <span>Im Gespräch nach einer Antwort</span>
+        </label>
+      </div>
+      <h4 className="vs-anzeige__titel">Anzeige im Chat</h4>
+      <p className="muted small">
+        Während AVA arbeitet, steht im Chat nur „Denkt nach“ mit dem, was gerade passiert. Wer jeden einzelnen Arbeitsschritt und den
+        Verbrauch je Antwort sehen will, schaltet das hier ein.
+      </p>
+      <div className="alerts-prefs__row">
+        <label className="alerts-prefs__check">
+          <input type="checkbox" checked={s.arbeitsschritte} onChange={(e) => setze({ arbeitsschritte: e.target.checked })} />
+          <span>Arbeitsschritte und Verbrauch anzeigen</span>
         </label>
       </div>
     </section>

@@ -34,28 +34,33 @@ export function buildVorschlaegeTools(deps: { get: () => NutzerstandService | nu
   // v0.1.650 (V5) — Self-Service-Regel: jede Einstellung hat ein Tool mit Bestaetigung.
   const config = defineTool({
     name: "vorschlaege_config",
-    summary: "Vorschlaege im Chat ein-/ausschalten: auf der Startseite und/oder im Gespraech (mit Bestaetigung).",
-    category: "vorschlaege einstellung startseite gespraech naechste schritte chips",
+    summary: "Vorschläge im Chat und Anzeige der Arbeitsschritte/des Verbrauchs ein-/ausschalten (mit Bestätigung).",
+    category: "vorschlaege einstellung startseite gespraech naechste schritte chips anzeige arbeitsschritte verbrauch denkt nach",
     description:
       "Liest oder aendert, ob AVA naechste Schritte vorschlaegt: startseite = Chips auf der leeren Chat-Seite und unter der Willkommensnachricht, " +
       "gespraech = Chips nach einer Antwort, wenn sich ein naechster Schritt anbietet. Ohne Argumente: aktuelle Werte. Schaltet die Organisation " +
-      "Vorschlaege ab, gilt das vorrangig.",
-    parameters: { type: "object", properties: { startseite: { type: "boolean" }, gespraech: { type: "boolean" } } },
-    schema: yup.object({ startseite: yup.boolean().optional(), gespraech: yup.boolean().optional() }).noUnknown(true),
+      "Vorschlaege ab, gilt das vorrangig. arbeitsschritte = einzelne Arbeitsschritte und Verbrauch je Antwort im Chat zeigen (Standard aus: nur 'Denkt nach').",
+    parameters: { type: "object", properties: { startseite: { type: "boolean" }, gespraech: { type: "boolean" }, arbeitsschritte: { type: "boolean" } } },
+    schema: yup.object({ startseite: yup.boolean().optional(), gespraech: yup.boolean().optional(), arbeitsschritte: yup.boolean().optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error ? r.error : r.geaendert ? "Vorschlaege-Einstellung geaendert" : "Vorschlaege-Einstellung gelesen"),
     run: async (args, c) => {
       const store = deps.settings();
       if (!store) return { error: "Einstellungen noch nicht initialisiert." };
-      if (args.startseite === undefined && args.gespraech === undefined) return { geaendert: false, ...store.get() };
+      if (args.startseite === undefined && args.gespraech === undefined && args.arbeitsschritte === undefined) return { geaendert: false, ...store.get() };
       const teile: string[] = [];
       if (args.startseite !== undefined) teile.push(`Startseite → ${args.startseite ? "an" : "aus"}`);
-      if (args.gespraech !== undefined) teile.push(`Gespraech → ${args.gespraech ? "an" : "aus"}`);
+      if (args.gespraech !== undefined) teile.push(`Gespräch → ${args.gespraech ? "an" : "aus"}`);
+      if (args.arbeitsschritte !== undefined) teile.push(`Arbeitsschritte anzeigen → ${args.arbeitsschritte ? "an" : "aus"}`);
       const value = await c.ui.confirmAction(
-        { kind: "additive", prompt: `Vorschlaege aendern: ${teile.join(", ")}?`, confirmValue: "ja", options: [{ value: "ja", label: "Ändern" }, { value: "nein", label: "Abbrechen" }] },
+        { kind: "additive", prompt: `Chat-Einstellung ändern: ${teile.join(", ")}?`, confirmValue: "ja", options: [{ value: "ja", label: "Ändern" }, { value: "nein", label: "Abbrechen" }] },
         c.signal,
       );
       if (value !== "ja") return { geaendert: false, abgebrochen: true };
-      const next = store.set({ ...(args.startseite !== undefined ? { startseite: args.startseite } : {}), ...(args.gespraech !== undefined ? { gespraech: args.gespraech } : {}) });
+      const next = store.set({
+        ...(args.startseite !== undefined ? { startseite: args.startseite } : {}),
+        ...(args.gespraech !== undefined ? { gespraech: args.gespraech } : {}),
+        ...(args.arbeitsschritte !== undefined ? { arbeitsschritte: args.arbeitsschritte } : {}),
+      });
       return { geaendert: true, ...next };
     },
   });

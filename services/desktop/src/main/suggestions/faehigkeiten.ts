@@ -51,7 +51,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "profil", text: "Eigenes Nutzerprofil (Rolle, Branchen, Regionen) pflegen", tools: ["profile_*"] },
   { id: "aktualitaet", text: "Aktualitaet der Firmendaten: Auffrischen, Firmen priorisieren", tools: ["freshness_*"] },
   { id: "chatverlauf", text: "Fruehere Gespraeche auflisten, laden, loeschen", tools: ["chat_history_*"] },
-  { id: "navigation", text: "Seiten der App oeffnen, Rueckfragen stellen, Hinweise anzeigen", tools: ["navigate", "notify", "ask_user_choice", "ask_user_text"] },
+  { id: "navigation", text: "Seiten der App oeffnen, Rueckfragen stellen, Hinweise anzeigen", tools: ["navigate", "app_oeffnen", "notify", "ask_user_choice", "ask_user_text"] },
   { id: "lokales_modell", text: "Lokales KI-Modell (Ollama) laden, Status, neu starten", tools: ["ollama_*"] },
   { id: "sprache", text: "Spracheingabe: Whisper-Modell installieren", tools: ["voice_*"] },
   // ---- Verwaltung: nie auf der Startseite ----

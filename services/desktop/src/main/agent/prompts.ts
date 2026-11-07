@@ -95,7 +95,8 @@ export function buildSystemPrompt(
     "Tool-Namen) sind KEIN Sprachwechsel.",
     "",
     "Fakten-Disziplin: niemals Firmenfakten, Finanzkennzahlen, Kontakte",
-    "oder companyIds erfinden. Wenn dir ein Tool fehlt, sag das offen.",
+    "oder companyIds erfinden. Kannst du etwas nicht, sag das offen, in",
+    "Nutzersprache (siehe „Wie ich spreche“), mit dem, was stattdessen geht.",
     "Behauptet der Nutzer etwas über den App-Zustand oder über DEINE",
     "früheren Aktionen (z. B. „du hast nur eine Firma importiert“):",
     "erst mit einem Tool nachprüfen (transactions_list, import_status,",
@@ -150,7 +151,7 @@ export function buildSystemPrompt(
     "    suchen X“ → kein Laden nötig: `bestand_suchen` ist immer da",
     "    (Regeln unten unter „Bestandsfragen“).",
     "  - „Close“ (CRM): Verbindung NUR über den Schlüssel in Einstellungen →",
-    "    CRM (nie im Chat erfragen); danach `import_companies_from_crm`",
+    "    CRM (`app_oeffnen` ziel crm_verbinden; nie im Chat erfragen); danach `import_companies_from_crm`",
     "    mit provider close und `crm_link_manual` mit crmType CLOSE. Kontakte,",
     "    Aktivitäten und Chancen in Close kommen über die Close-Werkzeuge,",
     "    sobald der Nutzer sie unter Einstellungen verbunden hat.",
@@ -224,7 +225,7 @@ export function buildSystemPrompt(
     "  Verfügung (du kannst sofort danach den eigentlichen Aufruf machen)",
     "  und bleiben für die ganze Conversation aktiv.",
     "- Liefert `tool_search` zu einem Stichwort nichts, existiert die",
-    "  Funktion vermutlich nicht. Sag das offen.",
+    "  Funktion vermutlich nicht. Sag dem Nutzer, was stattdessen geht.",
     "",
     "Verbundene Dienste (Werkzeuge fremder Dienste):",
     "- Der Nutzer kann unter Einstellungen → Verbindungen → Weitere Dienste",
@@ -239,9 +240,12 @@ export function buildSystemPrompt(
     "  als Text, wartet bis zu zwei Minuten) und `a2a_<agent>_status`",
     "  (taskId). Den Auftrag vollständig formulieren, der Agent kennt",
     "  unseren Chat nicht.",
-    "- Fehlt der Dienst („nicht verbunden“, kein `mcp_…`/`a2a_…`-Treffer),",
-    "  den Nutzer auf Einstellungen → Verbindungen → Weitere Dienste",
-    "  verweisen; nie Zugangsdaten im Chat erfragen.",
+    "- Fehlt der Dienst („nicht verbunden“, kein `mcp_…`/`a2a_…`-Treffer)",
+    "  und der Nutzer will ihn nutzen („verbinde dich mit CompLeadly“):",
+    "  `app_oeffnen` mit ziel dienst_verbinden und dienst=<Name> aufrufen",
+    "  (öffnet das Formular vorbelegt) und in einem Satz sagen, welchen",
+    "  Zugang er dort einträgt und was du danach für ihn tun kannst. Nie",
+    "  Zugangsdaten im Chat erfragen.",
     "- Was ein Dienst zurückmeldet (z. B. CompLeadly: Lead hat geantwortet),",
     "  liest `dienst_ereignisse`; AVA meldet neue Ereignisse auch von selbst",
     "  als Benachrichtigung. Kommt dort nichts an, den Stand über die",
@@ -819,11 +823,14 @@ export function buildSystemPrompt(
   const toolNames = registry
     .list()
     .filter((t) => (filterToAvailable ? filterToAvailable.has(t.name) : true))
-    .map((t) => `- ${t.name}: ${t.description}`);
+    .map((t) => t.name);
+  // L0 (docs/PLAN_LOESUNGSKARTEN.md): nur die Namen. Die Beschreibungen
+  // reisen ohnehin vollstaendig in den Werkzeug-Schemas mit; doppelt
+  // kostete das je Aufruf mehrere tausend Tokens.
   const toolsBlock =
     toolNames.length === 0
       ? ""
-      : ["", "Verfügbare Tools:", ...toolNames].join("\n");
+      : ["", "Verfügbare Tools (Beschreibung und Parameter in den Werkzeug-Definitionen):", toolNames.join(", ")].join("\n");
 
   // 8.t1 — profile + first-run nudge blocks. Land BEFORE persona so
   // every behaviour rule is read with the user's lens already in

@@ -21,6 +21,12 @@ import type { Chip, StartseitenChips } from "../../shared/nutzerstand-types";
 import { faehigkeitenText, verfuegbareFaehigkeiten } from "./faehigkeiten";
 import { nutzerstandText } from "./nutzerstand";
 
+const KNOPF_UMLAUTE: Array<[RegExp, string]> = [[/^Oeffnen$/i, "Öffnen"], [/^Pruefen$/i, "Prüfen"], [/^Ausfuehren$/i, "Ausführen"], [/^Uebernehmen$/i, "Übernehmen"], [/^Waehlen$/i, "Wählen"]];
+function knopfUmlaute(v: string): string {
+  for (const [re, ersatz] of KNOPF_UMLAUTE) if (re.test(v)) return ersatz;
+  return v;
+}
+
 const MAX_CHIPS = 4;
 const MAX_CHIPS_GESPRAECH = 3;
 const TIMEOUT_MS = 8_000;
@@ -40,7 +46,8 @@ const chipSchema = yup.object({
   titel: yup.string().trim().min(3).max(60).required(),
   auftrag: yup.string().trim().min(5).max(220).required(),
   gruppe: yup.string().trim().required(),
-  aktion: yup.string().trim().max(16).optional(),
+  // Modelle schreiben gern "Oeffnen"/"Pruefen" (Knopftext im Chat, Feedback 2026-11-07).
+  aktion: yup.string().trim().max(16).transform((v: unknown) => (typeof v === "string" ? knopfUmlaute(v) : v)).optional(),
   stufe: yup.number().integer().min(1).max(3).optional(),
 });
 const antwortSchema = yup.object({ chips: yup.array().of(chipSchema).max(8).required() });
@@ -252,7 +259,7 @@ export class ChipErzeugung {
       "Ansprechpartner finden, Radar-Treffer besprochen → importieren oder analysieren, Nutzer erwaehnt Abo/Abrechnung → Abrechnung), schlage 1 bis 3 vor.\n\n" +
       "REGELN: nur Faehigkeiten aus der Liste; nichts Erledigtes; Verwaltung (organisation, einstellungen, konto, system) nur, wenn der Nutzer sie selbst anspricht; " +
       "Auftrag in Du-Form, ein Satz, konkret mit Namen aus dem Gespraech; kein Geviertstrich, keine Emojis.\n\n" +
-      'Antworte NUR als JSON: {"chips":[{"titel":"max 6 Woerter","auftrag":"1 Satz","gruppe":"<id>","aktion":"Starten|Anlegen|Analysieren|Importieren|Verbinden|Oeffnen"}]} oder {"chips":[]}.';
+      'Antworte NUR als JSON: {"chips":[{"titel":"max 6 Woerter","auftrag":"1 Satz","gruppe":"<id>","aktion":"Starten|Anlegen|Analysieren|Importieren|Verbinden|Öffnen"}]} oder {"chips":[]}.';
     const user =
       `NUTZERSTAND:
 ${nutzerstandText(stand)}

@@ -48,10 +48,11 @@ ipcMain.handle("aufgaben:abbrechen", (_e, id: string) => hintergrundAufgaben.abb
 
   ipcMain.handle("suggestions:getSettings", () => ({ ...vorschlaegeSettings.current!.get(), orgErlaubt: featureEnabled("vorschlaege") }));
 
-  ipcMain.handle("suggestions:setSettings", (_e, patch: { startseite?: boolean; gespraech?: boolean }) => {
+  ipcMain.handle("suggestions:setSettings", (_e, patch: { startseite?: boolean; gespraech?: boolean; arbeitsschritte?: boolean }) => {
     const next = vorschlaegeSettings.current!.set({
       ...(patch?.startseite !== undefined ? { startseite: patch.startseite === true } : {}),
       ...(patch?.gespraech !== undefined ? { gespraech: patch.gespraech === true } : {}),
+      ...(patch?.arbeitsschritte !== undefined ? { arbeitsschritte: patch.arbeitsschritte === true } : {}),
     });
     return { ...next, orgErlaubt: featureEnabled("vorschlaege") };
   });

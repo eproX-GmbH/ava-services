@@ -9428,3 +9428,8 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .dienste-rueckkanal .link-button { font-size: 12px; }
 .dienste-rueckkanal__stand { color: var(--muted); }
 .dienste-rueckkanal__hinweis { flex-basis: 100%; color: var(--muted); font-size: 11.5px; }
+.vs-anzeige__titel { margin: 20px 0 4px; font-size: 14px; font-weight: 600; }
+/* L1: schlichte Zeile nach der Arbeit, ohne Zeitstrahl und Haken. */
+.activity-lauf--schlicht { grid-template-columns: 1fr; padding: 0; }
+.activity-lauf--schlicht::before { display: none; }
+.activity-lauf--schlicht .activity-lauf__zeile { font-size: 12px; }
