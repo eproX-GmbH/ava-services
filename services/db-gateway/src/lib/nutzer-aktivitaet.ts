@@ -47,6 +47,8 @@ export function geraetAus(client: string | null, userAgent: string | null): stri
   // Node ohne x-ava-client: lokale Verarbeitungsdienste der Desktop-App (oder
   // eine App vor v0.1.940). Schwache Erkennung, ueberschreibt kein bekanntes Geraet.
   if (/node|undici/i.test(ua)) return GERAET_SCHWACH;
+  // Ohne Kopfzeilen kommen v. a. interne Aufrufe (Token-Pruefung der
+  // Relais-Verbindung, MCP-Weiterleitung): ueberschreiben nie ein Geraet.
   return ua ? ua.slice(0, 40) : "unbekannt";
 }
 
@@ -63,7 +65,7 @@ export function vermerkeAktivitaet(pool: Pool, e: AktivitaetEingang): void {
     .query(
       `INSERT INTO "NutzerAktivitaet" ("actorId", "tenantId", geraet, version, "zuletztAt", anfragen, "erstesAt")
        VALUES ($1, $2, $3, $4, NOW(), 1, NOW())
-       ON CONFLICT ("actorId") DO UPDATE SET "tenantId" = COALESCE(EXCLUDED."tenantId", "NutzerAktivitaet"."tenantId"), geraet = CASE WHEN EXCLUDED.geraet = $5 AND "NutzerAktivitaet".geraet LIKE 'Desktop (%' THEN "NutzerAktivitaet".geraet ELSE EXCLUDED.geraet END,
+       ON CONFLICT ("actorId") DO UPDATE SET "tenantId" = COALESCE(EXCLUDED."tenantId", "NutzerAktivitaet"."tenantId"), geraet = CASE WHEN EXCLUDED.geraet = 'unbekannt' OR (EXCLUDED.geraet = $5 AND "NutzerAktivitaet".geraet LIKE 'Desktop (%') THEN "NutzerAktivitaet".geraet ELSE EXCLUDED.geraet END,
          version = COALESCE(EXCLUDED.version, "NutzerAktivitaet".version), "zuletztAt" = NOW(), anfragen = "NutzerAktivitaet".anfragen + 1`,
       [e.actorId, e.tenantId, geraet, version, GERAET_SCHWACH],
     )
