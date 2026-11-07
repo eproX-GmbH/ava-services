@@ -10,7 +10,7 @@ fragen:
   - was heißt die sanduhr im radar
 schlagworte: [radar, kandidaten, mini-profil, score, match, icp-match, begründung, heiß, warum passt sie, bewertung, sanduhr]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir die heißesten Radar-Kandidaten mit Begründung.", label: "Heiße Kandidaten" }
+  - { art: chat_vorschlag, ziel: "Zeig mir die heißesten Radar-Kandidaten mit Begründung.", label: "Heiße Kandidaten zeigen" }
   - { art: app_oeffnen, ziel: radar, label: "Radar öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07

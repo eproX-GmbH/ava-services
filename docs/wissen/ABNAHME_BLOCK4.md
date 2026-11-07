@@ -1,13 +1,11 @@
 # Abnahme Block 4: Verbindungen, Mail, Telegram
 
-Stand 2026-11-07, Code v0.1.944. 50 Karten. Je Karte: Titel, Beispielfragen, Knöpfe, Text so, wie AVA ihn liest.
+Stand 2026-11-07. Je Karte: Titel, Beispielfragen, Knöpfe (erscheinen unter AVAs Antwort), Text so, wie AVA ihn liest.
 Rückmeldung am einfachsten im Chat: „ok“ für den ganzen Ast oder je Karte die id mit dem, was falsch ist.
-
-Zuerst die sieben Karten zum auslösenden Fall (Patrick/Alessandro), dann der Rest je Ast.
 
 ## verbindungen (26 Karten)
 
-**Auslösender Fall zuerst:**
+**Bereits abgenommen:**
 
 ### CompLeadly mit AVA verbinden
 `compleadly-verbinden` · gilt für: [desktop] · Knöpfe: CompLeadly verbinden (Eingabekarte), Weitere Dienste öffnen (öffnet Seite)
@@ -34,7 +32,7 @@ Für die Ansprache je Firma gibt es die Workflow-Vorlage „LinkedIn-Ansprache �
 Was in CompLeadly etwas anlegt oder ändert, bestätigst du vorher. Workflows gibt es, wenn deine Organisation sie freigeschaltet hat. Ist CompLeadly noch nicht verbunden, öffne ich dir die Seite dafür.
 
 ### Rückmeldungen aus CompLeadly in AVA bekommen (Lead hat geantwortet)
-`compleadly-rueckmeldungen` · gilt für: [desktop] · Knöpfe: Letzte Ereignisse (Chat-Vorschlag), Rückkanal einrichten (öffnet Seite)
+`compleadly-rueckmeldungen` · gilt für: [desktop] · Knöpfe: Letzte Ereignisse zeigen (Chat-Vorschlag), Rückkanal einrichten (öffnet Seite)
 
 > Fragen: sagst du mir wenn ein lead in compleadly antwortet · compleadly webhook einrichten · rückkanal für compleadly · hat jemand auf meine linkedin nachricht geantwortet · compleadly antworten als notiz nach close
 
@@ -93,7 +91,7 @@ Wichtig: Ich schreibe nichts in deine Microsoft-Systeme und lege dort keine Lead
 
 ---
 
-**Übrige Karten im Ast:**
+**Offen:**
 
 ### Einen fremden KI-Agenten an AVA anbinden
 `agent-verbinden` · gilt für: [desktop] · Knöpfe: Agent verbinden (öffnet Seite)
@@ -175,13 +173,13 @@ So geht es: Ich zeige dir hier im Chat eine sichere Eingabekarte, für CompLeadl
 Sobald die Verbindung steht, sag mir einfach, was ich tun soll. Aktionen, die etwas im Dienst ändern, bestätigst du vorher. Läuft ein Zugang ab, siehst du es oben in der App.
 
 ### Zugang zu einem verbundenen Dienst abgelaufen oder abgelehnt
-`dienst-zugang-abgelaufen` · gilt für: [desktop] · Knöpfe: Weitere Dienste öffnen (öffnet Seite)
+`dienst-zugang-abgelaufen` · gilt für: [desktop] · Knöpfe: CompLeadly neu verbinden (Eingabekarte), Close neu verbinden (Eingabekarte), Weitere Dienste öffnen (öffnet Seite)
 
 > Fragen: compleadly zugang abgelaufen · der dienst lehnt den zugang ab · zugang erneuern · close geht plötzlich nicht mehr · dienst meldet 401
 
 Lehnt ein Dienst deinen Zugang ab, siehst du oben in der App einen Hinweis mit dem Namen des Dienstes, und an seiner Karte unter Einstellungen → Verbindungen → Weitere Dienste steht der Fehler. Seine Funktionen stehen mir dann nicht zur Verfügung, ich versuche es auch nicht weiter.
 
-So erneuerst du den Zugang: Leg beim Anbieter einen neuen Zugangscode oder Schlüssel an. Dann entfernst du den Dienst an seiner Karte mit „Entfernen“ und verbindest ihn neu, bei CompLeadly und Close wieder mit der Vorlage oder über die sichere Eingabekarte hier im Chat. Erst entfernen, sonst steht der Dienst danach doppelt in der Liste. Den Zugang an der bestehenden Karte zu ändern geht nicht.
+So erneuerst du den Zugang: Leg beim Anbieter einen neuen Zugangscode oder Schlüssel an und trag ihn einfach neu ein, bei CompLeadly und Close über die sichere Eingabekarte hier im Chat, sonst unter Weitere Dienste mit „Dienst verbinden“ und derselben Adresse. Der bisherige Eintrag wird dabei ersetzt, entfernen musst du nichts. Klappt der neue Zugang nicht, bleibt der alte Eintrag, wie er war.
 
 Steht an der Karte nur „nicht verbunden“ ohne Zugangsfehler, war der Dienst kurz nicht erreichbar. Dann reicht „Neu verbinden“ an der Karte.
 
@@ -211,7 +209,7 @@ Bevor etwas in HubSpot geschrieben wird, siehst du alles in einer Übersicht und
 Voraussetzung ist ein verbundenes HubSpot. Ist die Firma bei mir noch nicht vollständig aufbereitet, sage ich dir das und hole es nach.
 
 ### Was AVA in HubSpot lesen, anlegen und verknüpfen kann
-`hubspot-nutzen` · gilt für: alle Kanäle · Knöpfe: Offene Aufgaben (Chat-Vorschlag)
+`hubspot-nutzen` · gilt für: alle Kanäle · Knöpfe: Offene Aufgaben zeigen (Chat-Vorschlag)
 
 > Fragen: was kannst du in hubspot machen · welche deals hat die firma in hubspot · leg einen kontakt in hubspot an · trag den anruf in hubspot ein · erstell mir eine aufgabe in hubspot
 
@@ -310,7 +308,7 @@ HubSpot, Close, Notion, Obsidian und Telegram trenne ich auf deinen Wunsch selbs
 Die bei mir gespeicherten Zugangsdaten werden beim Trennen gelöscht. Beim Anbieter selbst, etwa den Zugangscode in CompLeadly oder die Integration in Notion, löschst du sie dort.
 
 ### Was kann ich alles mit AVA verbinden?
-`verbindungen-ueberblick` · gilt für: [desktop] · Knöpfe: Verbindungen öffnen (öffnet Seite), Verbundene Apps (öffnet Seite)
+`verbindungen-ueberblick` · gilt für: [desktop] · Knöpfe: Verbindungen öffnen (öffnet Seite), Verbundene Apps öffnen (öffnet Seite)
 
 > Fragen: was kann ich alles mit ava verbinden · welche integrationen gibt es · mit welchen programmen arbeitest du zusammen · kannst du dich mit meinen anderen apps verbinden · which tools can you connect to
 
@@ -341,7 +339,7 @@ Beim Bearbeiten einer Mail lese ich standardmäßig die zehn vorherigen Nachrich
 Beides stelle ich im Chat für dich um, sag mir einfach die Werte. In den Einstellungen gibt es dafür keinen eigenen Regler. Ich zeige dir auch, wann zuletzt abgerufen wurde und ob es einen Fehler gab.
 
 ### AVA soll auf Mails bestimmter Absender selbst antworten
-`mail-auto-antwort` · gilt für: [desktop] · Knöpfe: Mail-Einstellungen (öffnet Seite)
+`mail-auto-antwort` · gilt für: [desktop] · Knöpfe: Mail-Einstellungen öffnen (öffnet Seite)
 
 > Fragen: antworte automatisch auf mails von meinem kunden · vertrauenswürdige absender hinzufügen · wie schalte ich die auto antwort ein · nur mails von firma x sollst du beantworten · mail allowlist pflegen
 
@@ -387,7 +385,7 @@ Schreib zu jeder Datei kurz, wofür sie ist, etwa „Firmenprofil für Erstkonta
 Anhänge reisen nicht auf jedem Weg mit: Outlook, das Entwurfs-Postfach und der Outlook-Entwurf als Datei nehmen sie mit, einfache Mail-Programme und Webmail nicht. Dann bietet dir der Entwurf an, die Anhänge im Ordner zu zeigen oder die Mail mit Anhängen als Datei zu öffnen.
 
 ### Den Posteingang von AVA ansehen (Mail-Triage)
-`mail-posteingang` · gilt für: [desktop] · Knöpfe: Posteingang öffnen (öffnet Seite), Ungelesene Mails (Chat-Vorschlag)
+`mail-posteingang` · gilt für: [desktop] · Knöpfe: Posteingang öffnen (öffnet Seite), Ungelesene Mails zeigen (Chat-Vorschlag)
 
 > Fragen: wo sehe ich die mails von ava · mail triage öffnen · welche mails sind neu gekommen · posteingang anzeigen · zeig mir die ungelesenen mails
 
@@ -427,7 +425,7 @@ Sag mir, um welche Mail es geht, dann sehe ich nach, warum ich sie nicht bearbei
 Je nach Grund nehme ich den Absender auf oder sage dir, was du umstellen musst.
 
 ### Mails über AVA beantworten, weiterleiten oder verschicken
-`mail-senden-antworten` · gilt für: alle Kanäle · Knöpfe: Neueste Mails (Chat-Vorschlag)
+`mail-senden-antworten` · gilt für: alle Kanäle · Knöpfe: Neueste Mails zeigen (Chat-Vorschlag)
 
 > Fragen: antworte auf die mail von herrn müller · leite die mail an meine kollegin weiter · schick die datei per mail · verschick eine mail an den kunden · mail mit anhang weiterleiten
 
@@ -438,7 +436,7 @@ Versendet wird von meiner Adresse, nicht von deiner. Dafür muss „AVA darf Mai
 Soll die Mail von deiner eigenen Adresse kommen, schreibe ich dir einen Entwurf, den du mit einem Klick in deinem Mail-Programm öffnest.
 
 ### Eine Mail regelmäßig automatisch verschicken lassen
-`mail-wiederkehrend` · gilt für: alle Kanäle · Knöpfe: Geplante Aufgaben (Chat-Vorschlag), Wiederkehrende öffnen (öffnet Seite)
+`mail-wiederkehrend` · gilt für: alle Kanäle · Knöpfe: Geplante Mails zeigen (Chat-Vorschlag), Wiederkehrende öffnen (öffnet Seite)
 
 > Fragen: schick jeden morgen eine statusmail an mein team · wiederkehrende mail einrichten · jede stunde eine mail an · stopp die mail schleife · welche mails hast du geplant
 

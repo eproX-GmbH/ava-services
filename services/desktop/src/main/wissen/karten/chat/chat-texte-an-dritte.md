@@ -9,7 +9,7 @@ fragen:
   - siez den kunden
 schlagworte: [förmlich, formell, höflich, formulieren, du, sie, anrede, siezen, duzen, ansprache, mail, text, englisch, english, sprache, kunden, interessenten, tonfall]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Schreib eine kurze Erstansprache auf Englisch in Sie-Form.", label: "Englische Ansprache" }
+  - { art: chat_vorschlag, ziel: "Schreib eine kurze Erstansprache auf Englisch in Sie-Form.", label: "Englisch ansprechen" }
 stand: 2026-11-07
 ---
 Dich spreche ich immer mit Du an. Schreibe ich einen Text an andere, etwa eine Mail an einen Interessenten, frage ich einmal je Empfänger, ob Du oder Sie passt, wenn weder unser Gespräch noch der CRM-Eintrag einen Hinweis gibt. Die Antwort merke ich mir für dieses Gespräch. Sag es mir gern gleich mit dazu, etwa „in Sie-Form“.

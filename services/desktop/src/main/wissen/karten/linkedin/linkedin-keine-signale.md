@@ -10,7 +10,7 @@ fragen:
 schlagworte: [linkedin, keine signale, leer, 0 beiträge, übersprungen, ki-modell, fehler, letzte läufe, screenshots, sitzung, diagnose]
 aktionen:
   - { art: chat_vorschlag, ziel: "Prüf, warum der LinkedIn-Beobachter keine Signale liefert", label: "Status prüfen" }
-  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen" }
+  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

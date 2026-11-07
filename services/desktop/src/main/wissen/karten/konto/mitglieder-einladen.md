@@ -10,7 +10,7 @@ fragen:
   - invite team member
 schlagworte: [einladen, einladung, einladungslink, mitglieder, team, beitrittsanfrage, freigeben, aufnehmen, ablehnen, admin, invite, kollege, kollegin, hinzufügen, dazuholen]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir die offenen Beitrittsanfragen meiner Organisation.", label: "Offene Anfragen" }
+  - { art: chat_vorschlag, ziel: "Zeig mir die offenen Beitrittsanfragen meiner Organisation.", label: "Offene Anfragen zeigen" }
 stand: 2026-11-07
 ---
 Als Owner oder Admin findest du den Einladungslink in der AVA Konsole (admin.ava.bi) auf der Übersicht unter „Mitarbeitende einladen“. Ich kann ihn dir auch hier im Chat nennen. Wer den Link öffnet und sich anmeldet oder ein Konto anlegt, stellt eine Beitrittsanfrage. Der Link funktioniert auch im Einrichtungsassistenten der Desktop-App.

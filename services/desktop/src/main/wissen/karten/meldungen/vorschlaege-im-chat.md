@@ -14,7 +14,7 @@ fragen:
   - feste vorschläge was heißt das
 schlagworte: [vorschläge, chips, nächste schritte, startseite, gespräch, ausblenden, wegklicken, chat, einstellungen, organisation, kacheln, knöpfe, los, unter der antwort, vorschlags-chips, nächster schritt, empfehlungen]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Schalte die Vorschläge nach meinen Antworten aus", label: "Vorschläge aus" }
+  - { art: chat_vorschlag, ziel: "Schalte die Vorschläge nach meinen Antworten aus", label: "Vorschläge ausschalten" }
   - { art: app_oeffnen, ziel: chat_anzeige, label: "Vorschläge einstellen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07

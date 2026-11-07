@@ -10,7 +10,7 @@ fragen:
   - ki anbieter dsgvo
 schlagworte: [ki, anbieter, openai, anthropic, google, mistral, chatgpt, lokal, ollama, datenschutz, training, api key, azure, organisationsschlüssel, prompt-audit, mitlesen, liest mit]
 aktionen:
-  - { art: app_oeffnen, ziel: modell, label: "Anbieter & Modell" }
+  - { art: app_oeffnen, ziel: modell, label: "Anbieter & Modell öffnen" }
 stand: 2026-11-07
 ---
 Für den Chat hängt das davon ab, womit ich denke:

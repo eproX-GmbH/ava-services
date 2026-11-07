@@ -10,7 +10,7 @@ fragen:
   - cancel subscription
 schlagworte: [kündigen, kündigung, abo, abonnement, free, downgrade, zyklusende, kundenportal, stripe, cancel, abo beenden, beenden, vertrag beenden]
 aktionen:
-  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung" }
+  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

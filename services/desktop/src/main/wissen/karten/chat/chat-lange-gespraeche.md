@@ -10,7 +10,7 @@ fragen:
   - context window voll
 schlagworte: [neues gespräch, neue konversation, lang, kontext, kontextfenster, context, langsam, kosten, verlauf, vergessen, thema wechseln]
 aktionen:
-  - { art: app_oeffnen, ziel: chat, label: "Zum Chat" }
+  - { art: app_oeffnen, ziel: chat, label: "Chat öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

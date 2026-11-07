@@ -10,7 +10,7 @@ fragen:
   - invoice download
 schlagworte: [rechnung, rechnungen, monatsrechnung, letzter monat, beleg, zahlungsmittel, kreditkarte, zahlung, stripe, kundenportal, invoice, offen, fehlgeschlagen, pausiert, abonnement verwalten]
 aktionen:
-  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung" }
+  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

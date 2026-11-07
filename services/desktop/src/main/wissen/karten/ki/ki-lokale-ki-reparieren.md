@@ -11,7 +11,7 @@ fragen:
 schlagworte: [ollama, lokal, neu starten, restart, reparieren, absturz, internal server error, hängt, löschen, speicherplatz, pflichtmodell, embeddinggemma, version]
 aktionen:
   - { art: chat_vorschlag, ziel: "Starte die lokale KI neu.", label: "Lokale KI neu starten" }
-  - { art: chat_vorschlag, ziel: "Zeig mir den Stand der lokalen KI und welche Modelle installiert sind.", label: "Stand der lokalen KI" }
+  - { art: chat_vorschlag, ziel: "Zeig mir den Stand der lokalen KI und welche Modelle installiert sind.", label: "Lokale KI prüfen" }
   - { art: app_oeffnen, ziel: lokale_modelle, label: "Lokale KI öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07

@@ -10,7 +10,7 @@ fragen:
   - hubspot notiz zur firma
 schlagworte: [hubspot, crm, kontakte, firmen, deals, notizen, aufgaben, tasks, aktivitäten, anruf, meeting, e-mail, verknüpfen, associations, owner, zuständige]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir meine offenen Aufgaben in HubSpot.", label: "Offene Aufgaben" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine offenen Aufgaben in HubSpot.", label: "Offene Aufgaben zeigen" }
 stand: 2026-11-07
 ---
 Mit verbundenem HubSpot kann ich:

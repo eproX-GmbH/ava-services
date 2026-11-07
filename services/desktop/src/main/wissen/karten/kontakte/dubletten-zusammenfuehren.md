@@ -11,7 +11,7 @@ fragen:
 schlagworte: [dubletten, doppelt, duplikat, zusammenführen, merge, rückgängig, rücknahme, personen abgleich, ki-urteil, derselbe, dieselbe, gleiche person, zusammenlegen]
 aktionen:
   - { art: chat_vorschlag, ziel: "Prüf die Kontakte dieser Firma auf Dubletten.", label: "Dubletten prüfen" }
-  - { art: chat_vorschlag, ziel: "Zeig mir, welche Kontakte dieser Firma zusammengeführt wurden.", label: "Zusammenführungen" }
+  - { art: chat_vorschlag, ziel: "Zeig mir, welche Kontakte dieser Firma zusammengeführt wurden.", label: "Zusammenführungen zeigen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

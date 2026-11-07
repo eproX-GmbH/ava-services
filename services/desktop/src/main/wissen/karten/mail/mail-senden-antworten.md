@@ -9,7 +9,7 @@ fragen:
   - mail mit anhang weiterleiten
 schlagworte: [mail, senden, antworten, weiterleiten, anhang, datei, archivieren, gelesen, bestätigung, absender]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir die neuesten Mails in meinem Postfach.", label: "Neueste Mails" }
+  - { art: chat_vorschlag, ziel: "Zeig mir die neuesten Mails in meinem Postfach.", label: "Neueste Mails zeigen" }
 stand: 2026-11-07
 ---
 Aus meinem Postfach kann ich für dich Mails lesen, beantworten, weiterleiten, neue Mails schreiben, als gelesen markieren und archivieren. Dateien, die du in den Chat ziehst, hänge ich auf Wunsch an. Beim Weiterleiten kann ich auch die Anhänge der Originalmail mitschicken.

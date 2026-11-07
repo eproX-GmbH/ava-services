@@ -10,7 +10,7 @@ fragen:
   - workflow runs log
 schlagworte: [workflow, lauf, läufe, historie, protokoll, fehler, fehlgeschlagen, wiederholen, abbrechen, status, ergebnis, runs]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Wie sind meine Workflows zuletzt gelaufen?", label: "Letzte Läufe" }
+  - { art: chat_vorschlag, ziel: "Wie sind meine Workflows zuletzt gelaufen?", label: "Letzte Läufe zeigen" }
   - { art: app_oeffnen, ziel: workflows, label: "Workflows öffnen" }
   - { art: app_oeffnen, ziel: workflow_laeufe, label: "Läufe öffnen" }
 stand: 2026-11-07

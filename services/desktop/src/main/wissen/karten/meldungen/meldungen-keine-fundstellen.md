@@ -9,7 +9,7 @@ fragen:
   - lauf übersprungen
 schlagworte: [fundstellen, keine neuen fundstellen, 0 kandidaten, prüflauf, heartbeat, rückstand, übersprungen, warten, bewertet, verlauf]
 aktionen:
-  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Letzte Prüfläufe" }
+  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Letzte Prüfläufe ansehen" }
   - { art: chat_vorschlag, ziel: "Prüf jetzt, ob es neue Meldungen gibt", label: "Jetzt prüfen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07

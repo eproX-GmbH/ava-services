@@ -10,7 +10,7 @@ fragen:
   - was heißt offene kandidaten höchstens
 schlagworte: [radar, startet nicht, keine neuen, deckel, offene kandidaten, limit, aktivität, status, hängt, icp unvollständig, bereits bekannt]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Was macht der Radar gerade?", label: "Radar-Stand" }
+  - { art: chat_vorschlag, ziel: "Was macht der Radar gerade?", label: "Radar-Stand abfragen" }
   - { art: app_oeffnen, ziel: radar, label: "Radar öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07

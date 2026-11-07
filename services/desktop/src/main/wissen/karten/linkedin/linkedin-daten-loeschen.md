@@ -11,7 +11,7 @@ fragen:
 schlagworte: [linkedin, ausschalten, deaktivieren, löschen, notschalter, kill-switch, einwilligung, widerrufen, trennen, dsgvo, daten]
 aktionen:
   - { art: chat_vorschlag, ziel: "Schalte den LinkedIn-Beobachter aus", label: "Beobachter ausschalten" }
-  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen" }
+  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

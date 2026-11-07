@@ -9,7 +9,7 @@ fragen:
   - mail allowlist pflegen
 schlagworte: [auto-antwort, automatisch antworten, vertrauenswürdige absender, allowlist, whitelist, trusted, triage, domain, "*@kunde.de", autonom]
 aktionen:
-  - { art: app_oeffnen, ziel: mail_verbinden, label: "Mail-Einstellungen" }
+  - { art: app_oeffnen, ziel: mail_verbinden, label: "Mail-Einstellungen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

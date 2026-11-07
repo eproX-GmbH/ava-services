@@ -15,7 +15,7 @@ fragen:
 schlagworte: [linkedin, kosten, preis, monatslimit, limit, verbrauch, budget, apify, items, abrechnung, watchlist, posts, leads, beobachtung, nach verbrauch]
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie viel hat die LinkedIn-Beobachtung diesen Monat gekostet?", label: "Verbrauch ansehen" }
-  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung" }
+  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung öffnen" }
 stand: 2026-11-07
 ---
 Personen-Watchlist und beobachtete Posts holen ihre Daten über den LinkedIn-Datendienst Apify, den AVA bereitstellt. Kosten entstehen je abgefragtem Item und vor allem je Person, die ich einer Firma zuordne. Steuern kannst du das mit „Items je Person“ in der Watchlist und „Auflösungen je Lauf“ bei den beobachteten Posts, außerdem über täglich oder wöchentlich. Der LinkedIn-Beobachter für deinen eigenen Feed nutzt diesen Dienst nicht.

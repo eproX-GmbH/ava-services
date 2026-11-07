@@ -9,7 +9,7 @@ fragen:
   - why did i get this alert
 schlagworte: [meldenswert, alarmwürdig, bewertung, kriterien, profil, icp, idealkunde, aktualität, wichtigkeit, dringend, nähe, tageszusammenfassung, heartbeat]
 aktionen:
-  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Letzte Prüfläufe" }
+  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Letzte Prüfläufe ansehen" }
   - { art: app_oeffnen, ziel: profil, label: "Profil pflegen" }
 stand: 2026-11-07
 ---

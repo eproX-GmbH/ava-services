@@ -9,7 +9,7 @@ fragen:
   - kann ich eine gbr in ava anlegen
 schlagworte: [ohne registereintrag, einzelunternehmen, einzelunternehmer, freiberufler, gbr, praxis, website, google eintrag, places, firma anlegen]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Nimm eine Firma ohne Handelsregistereintrag über ihre Website auf.", label: "Firma ohne Register" }
+  - { art: chat_vorschlag, ziel: "Nimm eine Firma ohne Handelsregistereintrag über ihre Website auf.", label: "Firma ohne Register aufnehmen" }
 stand: 2026-11-07
 ---
 Auch Firmen ohne Registereintrag kann ich aufnehmen, etwa Einzelunternehmer, Praxen oder eine GbR. Voraussetzung ist eine eigene, erreichbare Website mit echtem Inhalt. Social-Media-Seiten, Linksammlungen, Branchenverzeichnisse, Unterseiten von Website-Baukästen oder geparkte Domains zählen nicht.

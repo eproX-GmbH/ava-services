@@ -9,7 +9,7 @@ fragen:
   - warme leads aus linkedin
 schlagworte: [linkedin, leads, lead, übernehmen, ignorieren, kontakt, anlass, kommentar, reaktion, kollegen, ansprache, warm]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir meine offenen LinkedIn-Leads mit Kommentar", label: "Offene Leads" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine offenen LinkedIn-Leads mit Kommentar", label: "Offene Leads zeigen" }
   - { art: app_oeffnen, ziel: linkedin, label: "Leads öffnen" }
 stand: 2026-11-07
 ---

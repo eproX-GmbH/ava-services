@@ -10,7 +10,7 @@ fragen:
 schlagworte: [posteingang, mail-triage, triage, inbox, ungelesen, trusted, bekannt, unbekannt, archiviert, filter, im chat öffnen, archivieren]
 aktionen:
   - { art: app_oeffnen, ziel: posteingang, label: "Posteingang öffnen" }
-  - { art: chat_vorschlag, ziel: "Zeig mir meine ungelesenen Mails.", label: "Ungelesene Mails" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine ungelesenen Mails.", label: "Ungelesene Mails zeigen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

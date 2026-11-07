@@ -9,7 +9,7 @@ fragen:
   - weniger alerts bitte
 schlagworte: [zu viele, weniger, ruhiger, spam, benachrichtigungen, wichtigkeit, schwelle, ruhezeiten, telegram, ruhend, linkedin, nähe, tageszusammenfassung]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Benachrichtige mich nur noch bei dringenden Meldungen", label: "Nur Dringendes" }
+  - { art: chat_vorschlag, ziel: "Benachrichtige mich nur noch bei dringenden Meldungen", label: "Nur Dringendes melden" }
   - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Meldungen einstellen" }
 stand: 2026-11-07
 ---

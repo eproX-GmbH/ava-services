@@ -10,7 +10,7 @@ fragen:
   - was heißt freigabe offen
 schlagworte: [workflow, freigabe, freigaben, approval, human in the loop, genehmigen, ablehnen, telegram, mail, obergrenze, vollmacht, schreibend]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir die offenen Workflow-Freigaben.", label: "Offene Freigaben" }
+  - { art: chat_vorschlag, ziel: "Zeig mir die offenen Workflow-Freigaben.", label: "Offene Freigaben zeigen" }
   - { art: app_oeffnen, ziel: workflows, label: "Workflows öffnen" }
 stand: 2026-11-07
 ---

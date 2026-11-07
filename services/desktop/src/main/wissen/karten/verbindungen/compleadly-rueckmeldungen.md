@@ -9,7 +9,7 @@ fragen:
   - compleadly antworten als notiz nach close
 schlagworte: [compleadly, rückkanal, webhook, ereignisse, lead hat geantwortet, kontaktanfrage angenommen, benachrichtigung, close, notiz, aufgabe, premium]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Was hat CompLeadly zuletzt an AVA gemeldet?", label: "Letzte Ereignisse" }
+  - { art: chat_vorschlag, ziel: "Was hat CompLeadly zuletzt an AVA gemeldet?", label: "Letzte Ereignisse zeigen" }
   - { art: app_oeffnen, ziel: dienst_verbinden, label: "Rückkanal einrichten" }
 gilt_fuer: [desktop]
 stand: 2026-11-07

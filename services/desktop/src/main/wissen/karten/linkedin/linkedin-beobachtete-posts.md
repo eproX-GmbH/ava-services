@@ -9,7 +9,7 @@ fragen:
   - wie oft prüfst du die posts
 schlagworte: [linkedin, post, beitrag, beobachtete posts, personen-radar, reaktionen, kommentare, engagement, automatik, auflösungen, apify]
 aktionen:
-  - { art: app_oeffnen, ziel: linkedin, label: "Beobachtete Posts" }
+  - { art: app_oeffnen, ziel: linkedin, label: "Beobachtete Posts öffnen" }
   - { art: chat_vorschlag, ziel: "Welche LinkedIn-Posts beobachtest du für mich?", label: "Posts anzeigen" }
 stand: 2026-11-07
 ---

@@ -10,7 +10,7 @@ fragen:
 schlagworte: [firmenstatus, insolvenz, insolvenzantrag, löschung, gelöscht, liquidation, abwicklung, gesellschafterwechsel, gesellschafter, verflechtungen, handelsregister, dringend, pleite, pleitegeht, zahlungsunfähig]
 aktionen:
   - { art: app_oeffnen, ziel: meldungen, label: "Meldungen öffnen" }
-  - { art: chat_vorschlag, ziel: "Zeig mir meine Meldungen zum Firmenstatus", label: "Statusmeldungen" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine Meldungen zum Firmenstatus", label: "Statusmeldungen zeigen" }
 stand: 2026-11-07
 ---
 Den Registerstatus deiner aktiven Firmen prüfe ich alle sechs Stunden. Ändert er sich, melde ich es genau einmal:

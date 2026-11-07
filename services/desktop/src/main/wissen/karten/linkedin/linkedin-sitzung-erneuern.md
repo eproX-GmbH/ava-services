@@ -10,7 +10,7 @@ fragen:
 schlagworte: [linkedin, sitzung, abgelaufen, login, anmeldung, erneuern, cookies, nicht verbunden, banner, trennen]
 aktionen:
   - { art: chat_vorschlag, ziel: "Verbinde mein LinkedIn neu", label: "Neu anmelden" }
-  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen" }
+  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

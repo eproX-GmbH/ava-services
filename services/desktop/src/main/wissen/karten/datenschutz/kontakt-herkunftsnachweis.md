@@ -10,7 +10,7 @@ fragen:
   - person will wissen woher wir ihre daten haben
 schlagworte: [herkunft, herkunftsnachweis, quelle, beleg, auskunft, art. 15, auskunftsersuchen, dsgvo, kontakt, person, datenschutz]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Erstelle mir den Herkunftsnachweis für einen Ansprechpartner als Bericht.", label: "Herkunftsnachweis" }
+  - { art: chat_vorschlag, ziel: "Erstelle mir den Herkunftsnachweis für einen Ansprechpartner als Bericht.", label: "Herkunft nachweisen" }
 stand: 2026-11-07
 ---
 Jede Angabe zu einer Person trägt bei AVA ihre Herkunft: aus welcher Quelle sie stammt, ein Beleg-Link, der Zeitpunkt und welche Organisation sie erhoben hat. Fragt dich jemand, woher du seine Daten hast, erstelle ich dir den Herkunftsnachweis als druckfertigen Bericht. Sag mir einfach, um welche Person bei welcher Firma es geht.

@@ -11,7 +11,7 @@ fragen:
 schlagworte: [plan, tarif, abo, abrechnung, kosten, kontingent, free, pro, max, ultra, enterprise, preis, monat, verbrauch]
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie sieht meine Abrechnung gerade aus?", label: "Abrechnung prüfen" }
-  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung" }
+  - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung öffnen" }
 stand: 2026-11-07
 ---
 Frag mich einfach, ich sehe für dich nach: welchen Plan du hast, wie viele Firmen in diesem Monat im Bestand zählen und in welcher Stufe, was bisher angefallen ist und was noch frei ist. Ich sage dir auch, ob du selbst zahlst oder deine Organisation.

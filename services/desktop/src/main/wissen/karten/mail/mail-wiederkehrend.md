@@ -9,7 +9,7 @@ fragen:
   - welche mails hast du geplant
 schlagworte: [wiederkehrend, zeitplan, mail-schleife, schleife, intervall, wiederkehrende aufgaben, scheduler, stoppen, pausieren, abbrechen]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir meine geplanten Mail-Aufgaben.", label: "Geplante Aufgaben" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine geplanten Mail-Aufgaben.", label: "Geplante Mails zeigen" }
   - { art: app_oeffnen, ziel: wiederkehrende_aufgaben, label: "Wiederkehrende öffnen" }
 stand: 2026-11-07
 ---

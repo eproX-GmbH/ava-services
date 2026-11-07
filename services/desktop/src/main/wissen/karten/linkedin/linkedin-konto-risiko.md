@@ -9,7 +9,7 @@ fragen:
   - linkedin hat mich gedrosselt
 schlagworte: [linkedin, sperre, sperrrisiko, risiko, nutzungsbedingungen, drosselung, konto, vorsichtsmodus, dsgvo, limits, scraping, gefährlich, mitlesen, sicher]
 aktionen:
-  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen" }
+  - { art: app_oeffnen, ziel: linkedin_verbinden, label: "LinkedIn-Einstellungen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

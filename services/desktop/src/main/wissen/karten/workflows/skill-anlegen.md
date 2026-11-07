@@ -11,7 +11,7 @@ fragen:
 schlagworte: [skill, skills, slash, slash-befehl, befehl, anleitung, vorlage, prompt, routine, persona, skill.md, allowed-tools]
 aktionen:
   - { art: chat_vorschlag, ziel: "Leg aus dem, was ich dir gerade erklärt habe, einen Skill an.", label: "Skill anlegen" }
-  - { art: chat_vorschlag, ziel: "Welche Skills habe ich und wofür sind sie?", label: "Meine Skills" }
+  - { art: chat_vorschlag, ziel: "Welche Skills habe ich und wofür sind sie?", label: "Meine Skills zeigen" }
   - { art: app_oeffnen, ziel: skills, label: "Skills öffnen" }
 stand: 2026-11-07
 ---

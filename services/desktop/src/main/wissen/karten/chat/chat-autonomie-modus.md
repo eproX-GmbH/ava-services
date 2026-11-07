@@ -9,7 +9,7 @@ fragen:
   - autonomie modus ändern
 schlagworte: [autonomie, autonomie-modus, manuell, halb-auto, voll-auto, bestätigung, rückfrage, selbstständig, automatisch, audit, telegram, mail, nicht fragen, ständig fragen, nachfragen, bestätigen]
 aktionen:
-  - { art: app_oeffnen, ziel: chat, label: "Zum Eingabefeld" }
+  - { art: app_oeffnen, ziel: chat, label: "Zum Eingabefeld springen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

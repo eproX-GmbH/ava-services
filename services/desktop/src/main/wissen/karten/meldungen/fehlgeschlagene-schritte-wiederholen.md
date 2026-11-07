@@ -10,7 +10,7 @@ fragen:
 schlagworte: [wiederholen, erneut versuchen, fehlgeschlagen, auto-retry, verarbeitung, schritt, automatisch, fehler, neustart]
 aktionen:
   - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Einstellung öffnen" }
-  - { art: app_oeffnen, ziel: aufgaben, label: "Laufende Aufgaben" }
+  - { art: app_oeffnen, ziel: aufgaben, label: "Laufende Aufgaben öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

@@ -9,7 +9,7 @@ fragen:
   - geteilten workflow zurückziehen
 schlagworte: [workflow, teilen, organisation, team, kollegen, übernehmen, kopie, zurückziehen, share, adopt]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Welche Workflows hat meine Organisation geteilt?", label: "Geteilte Workflows" }
+  - { art: chat_vorschlag, ziel: "Welche Workflows hat meine Organisation geteilt?", label: "Geteilte Workflows zeigen" }
   - { art: app_oeffnen, ziel: workflows, label: "Workflows öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07

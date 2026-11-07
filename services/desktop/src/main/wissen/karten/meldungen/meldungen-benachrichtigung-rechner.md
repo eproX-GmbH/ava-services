@@ -9,8 +9,8 @@ fragen:
   - benachrichtigen ab wichtig
 schlagworte: [benachrichtigung, push, mitteilung, rechner, desktop, macos, windows, wichtigkeit, schwelle, dringend, wichtig, alle, pop-up, popup, laptop]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Schalte Benachrichtigungen auf diesem Rechner ein, aber nur für dringende Meldungen", label: "Nur Dringendes" }
-  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Benachrichtigungen" }
+  - { art: chat_vorschlag, ziel: "Schalte Benachrichtigungen auf diesem Rechner ein, aber nur für dringende Meldungen", label: "Nur Dringendes melden" }
+  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Benachrichtigungen einstellen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

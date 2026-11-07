@@ -11,7 +11,7 @@ fragen:
 schlagworte: [hintergrundaufgabe, aufgabe, fortschritt, import, verarbeitung, fertig, melden, benachrichtigung, abgebrochen, vorgang, warten, meldest du dich, wenn fertig, durch sind]
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie weit sind meine laufenden Verarbeitungen?", label: "Stand zeigen" }
-  - { art: app_oeffnen, ziel: aufgaben, label: "Laufende Aufgaben" }
+  - { art: app_oeffnen, ziel: aufgaben, label: "Laufende Aufgaben öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

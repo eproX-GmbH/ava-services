@@ -9,7 +9,7 @@ fragen:
   - freigabe wieder entziehen
 schlagworte: [buying center, teilen, freigeben, freigabe, kollegen, organisation, geteilte buying center, nur ansehen, eigentümer]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Gib das Buying Center dieser Firma einem Kollegen zum Ansehen frei.", label: "Freigeben" }
+  - { art: chat_vorschlag, ziel: "Gib das Buying Center dieser Firma einem Kollegen zum Ansehen frei.", label: "Buying Center freigeben" }
   - { art: chat_vorschlag, ziel: "Welche Buying Center haben Kollegen mit mir geteilt?", label: "Geteilte zeigen" }
   - { art: app_oeffnen, ziel: geteilte_buying_center, label: "Geteilte öffnen" }
 gilt_fuer: [alle]

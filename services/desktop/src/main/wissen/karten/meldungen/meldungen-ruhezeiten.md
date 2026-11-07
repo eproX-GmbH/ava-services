@@ -9,8 +9,8 @@ fragen:
   - quiet hours
 schlagworte: [ruhezeiten, nachts, abends, wochenende, stumm, nicht stören, quiet hours, dringend, telegram, push]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Stell die Ruhezeiten auf 20 bis 8 Uhr", label: "Ruhezeit 20 bis 8" }
-  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Ruhezeiten" }
+  - { art: chat_vorschlag, ziel: "Stell die Ruhezeiten auf 20 bis 8 Uhr", label: "Ruhezeit 20 bis 8 Uhr setzen" }
+  - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Ruhezeiten einstellen" }
 stand: 2026-11-07
 ---
 In den Ruhezeiten halte ich Mitteilungen auf dem Rechner und in der AVA-App zurück, auf Telegram, wenn dort „Ruhezeiten auch für Telegram beachten“ an ist. Die Meldungen selbst gehen nicht verloren, du findest sie danach in der Liste.

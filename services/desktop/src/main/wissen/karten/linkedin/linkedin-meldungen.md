@@ -9,7 +9,7 @@ fragen:
   - watchlist meldung
 schlagworte: [linkedin, meldung, signal, stärke, tageszusammenfassung, funde, watchlist, leads, telegram, glocke, nähe]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir meine LinkedIn-Meldungen der letzten Woche", label: "LinkedIn-Meldungen" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine LinkedIn-Meldungen der letzten Woche", label: "LinkedIn-Meldungen zeigen" }
   - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Meldungen einstellen" }
 stand: 2026-11-07
 ---

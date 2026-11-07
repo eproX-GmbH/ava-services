@@ -10,7 +10,7 @@ fragen:
   - radar automatik ausschalten
 schlagworte: [radar, automatik, täglich, wöchentlich, intervall, zeitplan, meldung, heiße treffer, sofortige mini-profil-verarbeitung, jetzt komplett laufen lassen]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Schalte die Radar-Automatik auf täglich ein.", label: "Automatik täglich" }
+  - { art: chat_vorschlag, ziel: "Schalte die Radar-Automatik auf täglich ein.", label: "Radar täglich laufen lassen" }
   - { art: app_oeffnen, ziel: radar, label: "Radar öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07

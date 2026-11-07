@@ -10,7 +10,7 @@ fragen:
 schlagworte: [integrationen, integration, verbindungen, anbinden, schnittstelle, crm, hubspot, close, compleadly, notion, obsidian, telegram, mail, imap, linkedin, mcp, a2a, claude, chatgpt, copilot, tool]
 aktionen:
   - { art: app_oeffnen, ziel: crm_verbinden, label: "Verbindungen öffnen" }
-  - { art: app_oeffnen, ziel: verbundene_apps, label: "Verbundene Apps" }
+  - { art: app_oeffnen, ziel: verbundene_apps, label: "Verbundene Apps öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

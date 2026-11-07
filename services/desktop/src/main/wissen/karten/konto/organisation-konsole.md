@@ -9,7 +9,7 @@ fragen:
   - wie komme ich in den admin bereich
 schlagworte: [organisation, konsole, admin.ava.bi, admin, owner, rolle, mitglied, verwaltung, web-konsole, tenant, mandant]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir meine Organisation und meine Rolle.", label: "Meine Organisation" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine Organisation und meine Rolle.", label: "Meine Organisation zeigen" }
   - { art: app_oeffnen, ziel: organisation, label: "Organisation öffnen" }
 stand: 2026-11-07
 ---

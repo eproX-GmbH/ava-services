@@ -10,7 +10,7 @@ fragen:
 schlagworte: [sprachmodus, stimme, marin, coral, sage, shimmer, ruhezustand, ruhezeit, stille, signalton, hey ava, aktivierungswort, wake word, whisper]
 aktionen:
   - { art: chat_vorschlag, ziel: "Zeig mir die Einstellungen des Sprachmodus.", label: "Einstellungen zeigen" }
-  - { art: chat_vorschlag, ziel: "Stell die Ruhezeit im Sprachmodus auf 60 Sekunden.", label: "Ruhezeit 60 Sekunden" }
+  - { art: chat_vorschlag, ziel: "Stell die Ruhezeit im Sprachmodus auf 60 Sekunden.", label: "Ruhezeit auf 60 Sekunden setzen" }
   - { art: app_oeffnen, ziel: sprachmodus, label: "Sprachmodus einstellen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07

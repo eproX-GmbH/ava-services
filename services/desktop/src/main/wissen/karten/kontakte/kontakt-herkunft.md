@@ -10,7 +10,7 @@ fragen:
   - was bedeutet die prozentzahl am kontakt
 schlagworte: [herkunft, quelle, beleg, herkunftsnachweis, dsgvo, art 15, auskunft, linkedin, firmenwebsite, websuche, datenschutzerklärung, zuverlässigkeit, konfidenz, provenance]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir den Herkunftsnachweis für diesen Kontakt.", label: "Herkunftsnachweis" }
+  - { art: chat_vorschlag, ziel: "Zeig mir den Herkunftsnachweis für diesen Kontakt.", label: "Herkunft nachweisen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

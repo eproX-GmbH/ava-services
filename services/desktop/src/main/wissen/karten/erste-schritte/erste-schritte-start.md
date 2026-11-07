@@ -12,7 +12,7 @@ schlagworte: [erste schritte, start, anfangen, onboarding, icp, idealkundenprofi
 aktionen:
   - { art: chat_vorschlag, ziel: "Lass uns mein Idealkundenprofil festlegen. Ich nenne dir meine Website und die Websites meiner besten Kunden.", label: "Idealkunden festlegen" }
   - { art: chat_vorschlag, ziel: "Ich möchte eine Excel-Liste mit Firmen importieren.", label: "Firmen importieren" }
-  - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil" }
+  - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil öffnen" }
 stand: 2026-11-07
 ---
 Drei Schritte bringen dir am schnellsten etwas:

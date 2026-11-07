@@ -9,7 +9,7 @@ fragen:
   - was für alerts gibt es
 schlagworte: [meldungsarten, publikation, jahresabschluss, profiländerung, stammdaten, kontakt-wechsel, ansprechpartner, firmenstatus, insolvenz, gesellschafterwechsel, kunden, stellenanzeigen, radar, linkedin, link-änderung, fokus, beobachtungen, workflow]
 aktionen:
-  - { art: chat_vorschlag, ziel: "Zeig mir meine Meldungen der letzten 7 Tage nach Art sortiert", label: "Meldungen nach Art" }
+  - { art: chat_vorschlag, ziel: "Zeig mir meine Meldungen der letzten 7 Tage nach Art sortiert", label: "Meldungen nach Art zeigen" }
 stand: 2026-11-07
 ---
 Ich melde mich, wenn sich bei deinen aktiven Firmen etwas tut, das für dich im Vertrieb zählt:
