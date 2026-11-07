@@ -113,7 +113,7 @@ export function DiensteSection() {
   const vorlageInfo = VORLAGEN.find((x) => x.id === vorlage);
 
   return (
-    <section className="provider-section" id="dienste-section">
+    <section className="provider-section" id="weitere-dienste-section">
       <h3>Weitere Dienste</h3>
       <p className="muted">
         Dienste mit eigener Werkzeugschnittstelle, zum Beispiel Close oder CompLeadly, und fremde Agenten, denen AVA Aufträge

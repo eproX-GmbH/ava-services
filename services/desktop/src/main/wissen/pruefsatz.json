@@ -1,0 +1,7 @@
+[
+  { "frage": "verbinde dich mit compleadly", "erwartet": "dienst-verbinden" },
+  { "frage": "verbinde dich mit dem servioce", "erwartet": "dienst-verbinden" },
+  { "frage": "wie kriege ich hubspot angebunden", "erwartet": "crm-verbinden" },
+  { "frage": "ich will sehen welche tools du benutzt", "erwartet": "arbeitsschritte-anzeigen" },
+  { "frage": "ich hab eine excel mit kunden, wie bekomm ich die rein", "erwartet": "firmen-importieren" }
+]

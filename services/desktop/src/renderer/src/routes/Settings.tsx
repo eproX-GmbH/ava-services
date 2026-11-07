@@ -182,6 +182,7 @@ const ANCHOR_FEATURE: Record<string, import("../../../shared/types").OrgFeatureK
   "mithelfen-section": "stammdaten.mithelfen",
   "relevanz-section": "relevanz",
   "sprachmodus-section": "sprachmodus",
+  "weitere-dienste-section": "mcp.dienste",
 };
 /** v0.1.561 — Sprungmarken, die unter Anbieter-Sperre keinen Inhalt haben. */
 const ANCHOR_HIDDEN_UNDER_LOCK = new Set(["installed-models"]);
@@ -222,6 +223,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "mail-section", label: "E-Mail" },
     { anchor: "telegram-section", label: "Telegram" },
     { anchor: "wissensquellen-section", label: "Notizen" },
+    { anchor: "weitere-dienste-section", label: "Weitere Dienste" },
   ],
   meldungen: [
     { anchor: "alerts-section", label: "Meldungen & Ruhezeiten" },

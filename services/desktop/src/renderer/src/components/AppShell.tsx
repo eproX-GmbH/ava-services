@@ -285,7 +285,7 @@ function ConnectionHealthBanner() {
           fixLabel: /abgelaufen|abgelehnt|401|403/i.test(d.fehler) ? "Zugang erneuern" : "Neu verbinden",
           fix: () =>
             /abgelaufen|abgelehnt|401|403/i.test(d.fehler ?? "")
-              ? Promise.resolve(navigate("/settings/verbindungen#dienste-section"))
+              ? Promise.resolve(navigate("/settings/verbindungen#weitere-dienste-section"))
               : window.api.mcpDienste.pruefen(d.id),
         });
       }

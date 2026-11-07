@@ -55,6 +55,8 @@ export interface MetaToolDeps {
    *  meta-tool.run(). This works because the orchestrator handles one
    *  input at a time per instance. */
   currentLoadState: () => ConversationToolLoadState;
+  /** L3 (docs/PLAN_LOESUNGSKARTEN.md): Loesungskarten, die tool_search mitliefert. */
+  wissen?: () => import("../../wissen/suche").WissensIndex | null;
 }
 
 /**
@@ -101,10 +103,10 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
   const toolSearch = defineTool({
     name: "tool_search",
     summary:
-      "Find tools by keyword. ALWAYS call this when you need a capability that isn't already in your visible tool list.",
+      "Find tools AND knowledge (how AVA does something, how to set something up). ALWAYS call this when you need a capability that isn't in your visible tool list, and for every how/can/set-up question before saying something is not possible.",
     category: "meta",
     description:
-      "Search the full tool catalogue by keyword. Returns the top matches with a short summary per tool. Use this when you need a capability (e.g. \"Notion update\", \"LinkedIn scrape\", \"voice transcribe\") that isn't in your current tool list. After picking results, call `tool_load` with their names to bring them into your context — they'll be available starting NEXT turn. Already-loaded tools are excluded from the result so you don't waste a load on something already present. Query is case-insensitive, multi-word, scored highest on name then summary then full description.",
+      "Search the full tool catalogue AND AVA's knowledge cards. `wissen` (if present) holds up to 3 solution cards: what AVA can do for that request and how, in user language, plus `aktionen` (e.g. app_oeffnen with ziel/dienst) you can execute directly when the user wants it. Answer from the card in your own words, never quote tool names to the user. Pass the user's request in their own words as query for best knowledge hits. Returns the top tool matches with a short summary per tool. Use this when you need a capability (e.g. \"Notion update\", \"LinkedIn scrape\", \"voice transcribe\") that isn't in your current tool list. After picking results, call `tool_load` with their names to bring them into your context — they'll be available starting NEXT turn. Already-loaded tools are excluded from the result so you don't waste a load on something already present. Query is case-insensitive, multi-word, scored highest on name then summary then full description.",
     parameters: {
       type: "object",
       properties: {
@@ -129,7 +131,19 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
         .required("query fehlt — was suchst du? (z. B. 'notion update')"),
       limit: yup.number().integer().min(1).max(20).optional(),
     }),
-    run: async (args) => {
+    run: async (args, ctx) => {
+      const kanal = (ctx.conversationId ?? "").startsWith("telegram-") ? ("telegram" as const) : ("desktop" as const);
+      const wissenIndex = deps.wissen?.() ?? null;
+      const wissen = wissenIndex
+        ? (await wissenIndex.suchen(args.query, { limit: 3, kanal }).catch(() => [])).map((t) => ({
+            karte: t.karte.id,
+            titel: t.karte.titel,
+            loesung: t.karte.loesung,
+            ...(t.karte.aktionen.length ? { aktionen: t.karte.aktionen } : {}),
+            relevanz: t.relevanz,
+          }))
+        : [];
+      const mitWissen = <T extends Record<string, unknown>>(r: T): T & { wissen?: typeof wissen } => (wissen.length ? { wissen, ...r } : r);
       const queryWords = args.query
         .toLowerCase()
         .split(/\s+/)
@@ -153,6 +167,7 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
       // If nothing matched, return a helpful hint instead of an empty
       // list — saves the model from a confused "what now" cycle.
       if (hits.length === 0) {
+        if (wissen.length) return { wissen, hits: [] };
         return {
           hits: [],
           hint:
@@ -168,7 +183,7 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
       // restlichen 4 Recherche-Tools.
       const bundle = detectBundle(hits, args.query);
       if (bundle) {
-        return {
+        return mitWissen({
           hits,
           suggestedBundle: bundle,
           bundleHint:
@@ -176,13 +191,14 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
             `tool_load([${bundle.tools.map((t) => `"${t}"`).join(", ")}]) ` +
             `für den vollen ${bundle.label}-Bundle. Das spart Roundtrips ` +
             `und ermöglicht den parallelen Fan-Out.`,
-        };
+        });
       }
-      return { hits };
+      return mitWissen({ hits });
     },
     preview: (r) => {
       const hits = (r.hits as Array<unknown>) ?? [];
-      return `${hits.length} Tool-Treffer`;
+      const w = ((r as { wissen?: unknown[] }).wissen)?.length ?? 0;
+      return `${hits.length} Tool-Treffer${w ? `, ${w} Lösungskarten` : ""}`;
     },
   });
 

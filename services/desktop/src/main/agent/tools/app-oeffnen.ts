@@ -22,7 +22,7 @@ const ZIELE: Record<string, Ziel> = {
   aufgaben: { pfad: "/transactions", text: "die laufenden Aufgaben" },
   linkedin: { pfad: "/linkedin", text: "den LinkedIn-Bereich" },
   posteingang: { pfad: "/inbox", text: "den Posteingang" },
-  dienst_verbinden: { pfad: "/settings/verbindungen#dienste-section", text: "Einstellungen → Verbindungen → Weitere Dienste" },
+  dienst_verbinden: { pfad: "/settings/verbindungen#weitere-dienste-section", text: "Einstellungen → Verbindungen → Weitere Dienste" },
   crm_verbinden: { pfad: "/settings/verbindungen#crm-connections", text: "Einstellungen → Verbindungen → CRM" },
   linkedin_verbinden: { pfad: "/settings/verbindungen#linkedin-section", text: "Einstellungen → Verbindungen → LinkedIn" },
   mail_verbinden: { pfad: "/settings/verbindungen#mail-section", text: "Einstellungen → Verbindungen → E-Mail" },
@@ -83,7 +83,7 @@ export function buildAppOeffnenTools(): Tool[] {
         if (args.ziel === "dienst_verbinden" && args.dienst) {
           const slug = args.dienst.toLowerCase().replace(/[^a-z0-9]+/g, "");
           const q = DIENST_VORLAGEN.has(slug) ? `vorlage=${slug}` : `name=${encodeURIComponent(args.dienst)}`;
-          pfad = `/settings/verbindungen?${q}#dienste-section`;
+          pfad = `/settings/verbindungen?${q}#weitere-dienste-section`;
         }
       }
       ctx.ui.navigate(pfad);

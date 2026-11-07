@@ -20,6 +20,8 @@ import { buildMetaTools, ALWAYS_ON_CORE_TOOL_NAMES } from "./tools/meta";
 import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { kontextMessen, kontextProtokollieren } from "./kontext-messung";
+import { wissensIndex } from "../wissen";
+import { embedQueries } from "./tools/publications";
 import { isUserDeclined } from "./define-tool";
 import { welcomeMessage, isWelcomeTrigger } from "./welcome";
 import type { AgentMessageImage } from "../../shared/types";
@@ -309,6 +311,7 @@ export class AgentOrchestrator extends EventEmitter {
       registry: this.registry,
       coreToolNames: ALWAYS_ON_CORE_TOOL_NAMES,
       currentLoadState: () => this.currentLoadState(),
+      wissen: () => wissensIndex(embedQueries),
     })) {
       this.registry.register(t);
     }
