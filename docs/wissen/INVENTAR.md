@@ -52,7 +52,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 3 | kontakte | 18 | offen |
 | 3 | radar | 13 | offen |
 | 3 | recherche | 12 | offen |
-| 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | offen |
+| 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | teilweise: 7 Karten zum auslösenden Fall abgenommen 2026-11-07 (compleadly-verbinden, compleadly-nutzen, compleadly-rueckmeldungen, close-verbinden, close-nutzen, salesforce-dynamics, ava-in-copilot); 19 offen |
 | 4 | mail | 10 | offen |
 | 4 | telegram | 14 | offen |
 | 5 | linkedin | 17 | offen |
