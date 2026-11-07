@@ -30,7 +30,7 @@ export function tokens(text: string): string[] {
 
 function stamm(w: string): string {
   if (w.length <= 4) return w;
-  for (const s of ["ungen", "ung", "en", "er", "es", "e", "n", "s"]) {
+  for (const s of ["ierungen", "ierung", "ungen", "ieren", "iert", "erer", "eres", "ung", "en", "er", "es", "e", "n", "s"]) {
     if (w.endsWith(s) && w.length - s.length >= 4) return w.slice(0, -s.length);
   }
   return w;
@@ -133,7 +133,7 @@ export class WissensIndex {
     const kandidaten = new Set([...bmRang.keys(), ...kosRang.keys()]);
     const wertung = [...kandidaten].map((i) => ({
       i,
-      rrf: (bmRang.has(i) ? 1 / (RRF_K + bmRang.get(i)!) : 0) + (kosRang.has(i) ? 1 / (RRF_K + kosRang.get(i)!) : 0),
+      rrf: (bmRang.has(i) ? 1 / (RRF_K + bmRang.get(i)!) : 0) + (kosRang.has(i) ? VEKTOR_GEWICHT / (RRF_K + kosRang.get(i)!) : 0),
     }));
     wertung.sort((a, b) => b.rrf - a.rrf);
     const top = wertung.slice(0, limit);
@@ -148,7 +148,12 @@ export class WissensIndex {
 }
 
 /** Unterhalb davon gilt ein reiner Vektortreffer (ohne gemeinsames Wort) als Rauschen. */
-const KOSINUS_MIN = 0.45;
+// Messung 2026-11-07 (291 Karten): Pruefsatz 239 Fragen Volltext 233, mit
+// Vektoren 228; zurueckgehaltener Satz mit 25 frei formulierten Fragen Volltext
+// 21/25, mit Vektoren 24/25. Vektoren also voll gewichten, nur reine
+// Vektortreffer ohne gemeinsames Wort erst ab 0,55 zulassen.
+const KOSINUS_MIN = 0.55;
+const VEKTOR_GEWICHT = 1;
 
 function rangVon(ids: number[], wert: (i: number) => number): Map<number, number> {
   const sortiert = [...ids].sort((a, b) => wert(b) - wert(a));

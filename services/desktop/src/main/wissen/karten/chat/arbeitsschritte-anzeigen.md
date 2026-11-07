@@ -7,7 +7,7 @@ fragen:
   - wie viele Tokens hat das verbraucht
   - wo sehe ich den Verbrauch je Antwort
   - Denkt nach ausschalten
-schlagworte: [arbeitsschritte, schritte, werkzeuge, tools, verbrauch, tokens, anzeige, denkt nach, nachgedacht]
+schlagworte: [arbeitsschritte, schritte, werkzeuge, tools, verbrauch, tokens, anzeige, denkt nach, nachgedacht, arbeitsschritte weg, schritte fehlen, details]
 aktionen:
   - { art: app_oeffnen, ziel: chat_anzeige, label: "Anzeige einstellen" }
 gilt_fuer: [desktop]

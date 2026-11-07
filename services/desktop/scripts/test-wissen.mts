@@ -10,7 +10,10 @@ import * as S0 from "../src/main/wissen/suche.ts";
 const F = ((F0 as any).kartenLesen ? F0 : (F0 as any).default) as typeof import("../src/main/wissen/format.ts");
 const S = ((S0 as any).WissensIndex ? S0 : (S0 as any).default) as typeof import("../src/main/wissen/suche.ts");
 
-const basis = new URL("../src/main/wissen/", import.meta.url).pathname;
+// --basis <dir>: anderes Verzeichnis mit karten/ und pruefsatz.json (z. B. Stand einer anderen Session).
+const bi = process.argv.indexOf("--basis");
+const basis = bi > 0 && process.argv[bi + 1] ? process.argv[bi + 1]!.replace(/\/?$/, "/") : new URL("../src/main/wissen/", import.meta.url).pathname;
+const satzDatei = process.argv.includes("--satz") ? process.argv[process.argv.indexOf("--satz") + 1]! : "pruefsatz.json";
 const kartenDir = join(basis, "karten");
 const dateien: Array<{ pfad: string; text: string }> = [];
 const lauf = (d: string): void => {
@@ -35,7 +38,7 @@ const einbetten = mitVektoren
   : undefined;
 const index = new S.WissensIndex(karten, einbetten);
 
-const satz = JSON.parse(readFileSync(join(basis, "pruefsatz.json"), "utf8")) as Array<{ frage: string; erwartet: string | string[] }>;
+const satz = JSON.parse(readFileSync(join(basis, satzDatei), "utf8")) as Array<{ frage: string; erwartet: string | string[] }>;
 const ids = new Set(karten.map((k) => k.id));
 let treffer = 0;
 for (const p of satz) {
