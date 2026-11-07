@@ -11,6 +11,7 @@ fragen:
 schlagworte: [beobachtungen, watches, liste, pausieren, aktivieren, löschen, grenze, 20, treffer, meldungen]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche Beobachtungen hast du gerade für mich aktiv?", label: "Beobachtungen zeigen" }
+  - { art: app_oeffnen, ziel: beobachtungen, label: "Beobachtungen öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

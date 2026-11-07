@@ -8,6 +8,8 @@ fragen:
   - einrichtungsseite server
   - ava in der cloud
 schlagworte: [server, server-instanz, cloud, rund um die uhr, 24/7, headless, einrichtungsseite, setup, link, telegram, mail, umzug]
+aktionen:
+  - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 stand: 2026-11-07
 ---
 AVA gibt es auch als Server ohne Oberfläche. Er läuft rund um die Uhr, auch wenn dein Rechner aus ist. Du bedienst ihn über die AVA-App unter app.ava.bi, über Telegram oder, falls deine Organisation das erlaubt, aus Claude und ChatGPT; der Server gehört zu deinem Konto, nur du meldest dich dort an. Ob eine solche AVA für dich eingerichtet werden kann, klärst du mit dem AVA-Team.

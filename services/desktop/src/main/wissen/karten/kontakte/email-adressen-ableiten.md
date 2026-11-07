@@ -12,6 +12,7 @@ schlagworte: [email, e-mail-adressen, ableitung, adressmuster, muster, smtp, mai
 aktionen:
   - { art: chat_vorschlag, ziel: "Welches E-Mail-Muster erkennst du bei dieser Firma?", label: "Muster ansehen" }
   - { art: chat_vorschlag, ziel: "Zeig mir die Einstellungen der E-Mail-Ableitung.", label: "Einstellungen zeigen" }
+  - { art: app_oeffnen, ziel: email_adressen, label: "E-Mail-Adressen öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

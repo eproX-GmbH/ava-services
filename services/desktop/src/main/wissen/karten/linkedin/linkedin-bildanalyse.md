@@ -11,6 +11,7 @@ schlagworte: [linkedin, bildanalyse, bilder, fotos, lokal, cloud, ki-anbieter, d
 aktionen:
   - { art: app_oeffnen, ziel: linkedin_verbinden, label: "Bildanalyse einstellen" }
   - { art: app_oeffnen, ziel: modell, label: "Modell wählen" }
+  - { art: app_oeffnen, ziel: linkedin_bildanalyse, label: "Bildanalyse öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

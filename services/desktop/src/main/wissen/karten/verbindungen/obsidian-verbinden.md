@@ -10,6 +10,7 @@ fragen:
 schlagworte: [obsidian, vault, local rest api, plugin, coddingtonbear, api key, schlüssel, port 27123, 127.0.0.1, markdown, notizen, tags]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche Notizen liegen in meinem Obsidian?", label: "Notizen zeigen" }
+  - { art: app_oeffnen, ziel: notizen, label: "Obsidian verbinden" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

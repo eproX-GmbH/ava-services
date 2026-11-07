@@ -11,6 +11,7 @@ fragen:
 schlagworte: [update, updates, aktualisieren, version, neue version, installieren, neustart, download, auto-update, release, neuester stand, aktuell]
 aktionen:
   - { art: chat_vorschlag, ziel: "Gibt es ein Update für AVA?", label: "Nach Update suchen" }
+  - { art: app_oeffnen, ziel: updates, label: "Updates öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

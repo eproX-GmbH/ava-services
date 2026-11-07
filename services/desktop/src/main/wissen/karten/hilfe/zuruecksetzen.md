@@ -10,6 +10,8 @@ fragen:
   - lokale daten löschen
   - reset ava
 schlagworte: [zurücksetzen, reset, löschen, neu anfangen, werkseinstellungen, danger zone, daten löschen, chats löschen, integrationen]
+aktionen:
+  - { art: app_oeffnen, ziel: zuruecksetzen, label: "Zurücksetzen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

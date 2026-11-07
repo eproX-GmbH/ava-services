@@ -12,6 +12,7 @@ schlagworte: [skill, skills, slash, slash-befehl, befehl, anleitung, vorlage, pr
 aktionen:
   - { art: chat_vorschlag, ziel: "Leg aus dem, was ich dir gerade erklärt habe, einen Skill an.", label: "Skill anlegen" }
   - { art: chat_vorschlag, ziel: "Welche Skills habe ich und wofür sind sie?", label: "Meine Skills" }
+  - { art: app_oeffnen, ziel: skills, label: "Skills öffnen" }
 stand: 2026-11-07
 ---
 Ein Skill ist eine eigene Anleitung für mich: zum Beispiel wie du Erstansprachen formuliert haben willst oder wie ich einen Qualifizierungsbogen ausfülle. Ich wende ihn von selbst an, wenn deine Anfrage zur Beschreibung passt, oder du rufst ihn gezielt auf, indem du im Chat einen Schrägstrich und den Namen tippst. Schon beim Schrägstrich erscheint eine Liste deiner Skills.

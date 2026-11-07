@@ -15,6 +15,7 @@ fragen:
 schlagworte: [umzug, übertragen, migration, neuer rechner, laptop, server, desktop, hierher holen, dorthin senden, sicherung, backup, wechseln, instanz, instanzen, deine avas, telegram, radar, claude, chatgpt, server-instanz]
 aktionen:
   - { art: chat_vorschlag, ziel: "Hol den kompletten Stand meiner anderen AVA hierher.", label: "Umzug starten" }
+  - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 stand: 2026-11-07
 ---
 Mit dem Umzug überträgst du alles, was AVA auf einem Gerät hält, auf ein anderes deines Kontos: Gedächtnis, Chats, Profil, Idealkundenprofil, Radar, Meldungen, Workflows, Skills, Mail-Speicher, Verlauf und deine Schlüssel. So wechselst du jederzeit zwischen Rechner und Server oder ziehst auf einen neuen Laptop um.

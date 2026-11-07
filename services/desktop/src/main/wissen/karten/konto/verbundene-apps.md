@@ -8,6 +8,8 @@ fragen:
   - wo sind die verbundenen apps
   - revoke access
 schlagworte: [verbundene apps, claude, chatgpt, claude code, connector, mcp, mcp.ava.bi, oauth, zugriff, trennen, widerrufen]
+aktionen:
+  - { art: app_oeffnen, ziel: verbundene_apps, label: "Verbundene Apps öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

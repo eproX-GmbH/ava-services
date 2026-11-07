@@ -11,6 +11,7 @@ fragen:
 schlagworte: [browser, chrome, chrome for testing, hintergrund, headless, prozess, aktivitätsanzeige, task-manager, download, sicherheit, firewall]
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie steht es um den Browser der Hintergrundverarbeitung?", label: "Browser prüfen" }
+  - { art: app_oeffnen, ziel: dienste_rechner, label: "Dienste öffnen" }
 stand: 2026-11-07
 ---
 Für Handelsregister, Firmen-Websites und Publikationen liest AVA Seiten mit einem eigenen Browser, unsichtbar im Hintergrund. Dafür lädt AVA einmalig eine eigene Fassung von Chrome for Testing, rund 160 MB. Deshalb siehst du in der Aktivitätsanzeige oder im Task-Manager Chrome-Prozesse, auch wenn dein Chrome geschlossen ist.

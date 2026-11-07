@@ -15,6 +15,7 @@ fragen:
 schlagworte: [arbeitgeberwechsel, jobwechsel, linkedin, profil-prüfung, kontakt-auffrischung, gewechselt, gesperrt, linkedin-datendienst, dienste auf diesem rechner, profil, profilprüfung, kontakte, ansprechpartner, wechsel, apify, auffrischung, statistik]
 aktionen:
   - { art: app_oeffnen, ziel: meldungen, label: "Meldungen öffnen" }
+  - { art: app_oeffnen, ziel: dienste_rechner, label: "Prüfstand ansehen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

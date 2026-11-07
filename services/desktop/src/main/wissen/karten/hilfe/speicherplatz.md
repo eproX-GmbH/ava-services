@@ -10,6 +10,7 @@ fragen:
 schlagworte: [speicherplatz, speicher, festplatte, disk, platz, modelle, sprachmodelle, ollama, cache, löschen, aufräumen, gb]
 aktionen:
   - { art: app_oeffnen, ziel: modell, label: "Modelle ansehen" }
+  - { art: app_oeffnen, ziel: speicherplatz, label: "Speicherplatz öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

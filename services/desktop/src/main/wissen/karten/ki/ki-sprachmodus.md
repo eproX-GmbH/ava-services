@@ -12,6 +12,7 @@ schlagworte: [sprachmodus, sprechen, stimme, voice, realtime, gpt live, openai, 
 aktionen:
   - { art: chat_vorschlag, ziel: "Schalte den Sprachmodus ein.", label: "Sprachmodus einschalten" }
   - { art: app_oeffnen, ziel: modell, label: "OpenAI-Schlüssel eintragen" }
+  - { art: app_oeffnen, ziel: sprachmodus, label: "Sprachmodus öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

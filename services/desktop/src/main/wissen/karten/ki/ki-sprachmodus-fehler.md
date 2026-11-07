@@ -10,6 +10,7 @@ fragen:
 schlagworte: [sprachmodus, fehler, mikrofon, verweigert, kein mikrofon, verbindung, webrtc, proxy, firewall, schlüssel, kontingent, erneut verbinden]
 aktionen:
   - { art: app_oeffnen, ziel: modell, label: "OpenAI-Schlüssel prüfen" }
+  - { art: app_oeffnen, ziel: sprachmodus, label: "Sprachmodus öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

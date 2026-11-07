@@ -11,6 +11,7 @@ fragen:
 schlagworte: [diktat, diktieren, spracheingabe, spracherkennung, mikrofon, whisper, sprachmodell, lokal, transkription, speech to text]
 aktionen:
   - { art: chat_vorschlag, ziel: "Richte die Spracherkennung für das Diktat ein.", label: "Spracherkennung einrichten" }
+  - { art: app_oeffnen, ziel: spracherkennung, label: "Spracherkennung öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

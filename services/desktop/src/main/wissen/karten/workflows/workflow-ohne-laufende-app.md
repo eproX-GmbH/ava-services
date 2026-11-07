@@ -10,6 +10,7 @@ fragen:
 schlagworte: [workflow, zeitplan, geschlossen, beendet, ruhezustand, nachts, server, server-instanz, rund um die uhr, nachholen, verpasst]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche meiner AVAs läuft gerade und wo laufen meine Workflows?", label: "Meine AVAs prüfen" }
+  - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 stand: 2026-11-07
 ---
 Workflows, Zeitpläne und Ereignis-Auslöser laufen dort, wo AVA gerade läuft. Ist die Desktop-App beendet oder schläft der Rechner, passiert nichts, und versäumte Läufe hole ich danach nicht nach.

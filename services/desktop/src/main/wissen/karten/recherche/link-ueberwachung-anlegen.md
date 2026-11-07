@@ -11,6 +11,7 @@ fragen:
 schlagworte: [link-überwachung, link monitor, url, webseite, überwachen, änderung, preise, produkte, stellen, linkedin, frequenz, intervall, benachrichtigung, push]
 aktionen:
   - { art: chat_vorschlag, ziel: "Überwache diese Seite täglich auf Änderungen.", label: "Seite überwachen" }
+  - { art: app_oeffnen, ziel: link_ueberwachung, label: "Link-Überwachung öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

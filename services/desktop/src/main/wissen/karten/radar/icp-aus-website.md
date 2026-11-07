@@ -10,6 +10,7 @@ fragen:
 schlagworte: [icp, idealkundenprofil, website, kunden-websites, assistent, entwurf, impressum, radius, analyse, ähnliche firmen, wie meine kunden, beste kunden, zwillinge]
 aktionen:
   - { art: chat_vorschlag, ziel: "Erstelle mein Idealkundenprofil aus meiner Website.", label: "Aus Website erstellen" }
+  - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

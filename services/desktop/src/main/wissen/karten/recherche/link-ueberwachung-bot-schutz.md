@@ -11,6 +11,7 @@ fragen:
 schlagworte: [link-überwachung, bot-schutz, cloudflare, captcha, sicherheitsprüfung, fehler, timeout, screenshot, bildschirmfoto, verlauf, intervall]
 aktionen:
   - { art: chat_vorschlag, ziel: "Prüf meine Link-Überwachung jetzt und sag mir, ob die Seite geladen hat.", label: "Jetzt prüfen" }
+  - { art: app_oeffnen, ziel: link_ueberwachung, label: "Link-Überwachung öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

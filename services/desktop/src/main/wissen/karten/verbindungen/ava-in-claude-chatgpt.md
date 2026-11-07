@@ -10,6 +10,7 @@ fragen:
 schlagworte: [claude, chatgpt, claude code, claude desktop, claude.ai, connector, custom connector, mcp, mcp.ava.bi, mcp server, oauth, verbundene apps, server-url]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche meiner AVAs beantwortet gerade Anfragen aus Claude und ChatGPT?", label: "Bereitschaft prüfen" }
+  - { art: app_oeffnen, ziel: verbundene_apps, label: "Verbundene Apps öffnen" }
 stand: 2026-11-07
 ---
 Du kannst mich auch aus Claude, ChatGPT oder Claude Code heraus nutzen: Firmen suchen und lesen, Meldungen abrufen, Importe und Recherchen anstoßen. Jede App sieht dabei nur deine Daten.

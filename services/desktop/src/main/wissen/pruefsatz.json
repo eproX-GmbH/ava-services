@@ -1085,5 +1085,16 @@
       "mail-entwurfs-postfach",
       "mail-entwurf-oeffnen"
     ]
+  },
+  {
+    "frage": "kann ich meine meldungen auch über whatsapp bekommen",
+    "erwartet": [
+      "whatsapp-und-andere-messenger",
+      "meldungen-kanaele"
+    ]
+  },
+  {
+    "frage": "wir nutzen slack im team, kannst du da posten",
+    "erwartet": "whatsapp-und-andere-messenger"
   }
 ]

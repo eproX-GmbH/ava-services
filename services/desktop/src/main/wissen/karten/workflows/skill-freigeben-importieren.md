@@ -11,6 +11,7 @@ fragen:
 schlagworte: [skill, skills, vertrauen, freigabe, trust, importieren, exportieren, zip, skill.md, ordner, geändert, hash]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche Skills warten noch auf meine Freigabe?", label: "Freigaben prüfen" }
+  - { art: app_oeffnen, ziel: skills, label: "Skills öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

@@ -10,6 +10,7 @@ fragen:
 schlagworte: [beobachtung, beobachtungen, watch, watches, standing watch, regel, rubrik, kriterium, täglich, wöchentlich, monatlich, meldungen, geschäftsführerwechsel, meld dich wenn, bescheid geben, jahresabschluss erscheint]
 aktionen:
   - { art: chat_vorschlag, ziel: "Beobachte wöchentlich Geschäftsführungswechsel bei meinen wichtigsten Firmen.", label: "Beobachtung anlegen" }
+  - { art: app_oeffnen, ziel: beobachtungen, label: "Beobachtungen öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

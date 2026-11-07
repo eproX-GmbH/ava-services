@@ -12,6 +12,7 @@ schlagworte: [icp, idealkundenprofil, zielgruppe, zielkunden, ideal customer pro
 aktionen:
   - { art: chat_vorschlag, ziel: "Hilf mir, mein Idealkundenprofil festzulegen.", label: "ICP festlegen" }
   - { art: app_oeffnen, ziel: radar, label: "Radar öffnen" }
+  - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

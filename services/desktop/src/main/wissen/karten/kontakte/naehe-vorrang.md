@@ -13,6 +13,7 @@ schlagworte: [nähe, vorrang, relevanz, wärme, heiß, warm, kalt, signale, trac
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie nah bin ich an dieser Firma dran und warum?", label: "Nähe erklären" }
   - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Einstellungen öffnen" }
+  - { art: app_oeffnen, ziel: naehe_vorrang, label: "Nähe & Vorrang öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

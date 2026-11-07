@@ -12,6 +12,7 @@ schlagworte: [lokal, ollama, offline, llm, qwen, gemma, llama, ram, arbeitsspeic
 aktionen:
   - { art: app_oeffnen, ziel: modell, label: "Lokales Modell wählen" }
   - { art: chat_vorschlag, ziel: "Lade das lokale Modell Qwen 3 8B herunter.", label: "Qwen 3 8B laden" }
+  - { art: app_oeffnen, ziel: lokale_modelle, label: "Lokale Modelle" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

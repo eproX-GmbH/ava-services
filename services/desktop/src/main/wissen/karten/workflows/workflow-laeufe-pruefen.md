@@ -12,6 +12,7 @@ schlagworte: [workflow, lauf, läufe, historie, protokoll, fehler, fehlgeschlage
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie sind meine Workflows zuletzt gelaufen?", label: "Letzte Läufe" }
   - { art: app_oeffnen, ziel: workflows, label: "Workflows öffnen" }
+  - { art: app_oeffnen, ziel: workflow_laeufe, label: "Läufe öffnen" }
 stand: 2026-11-07
 ---
 Ich kann dir sagen, wann ein Workflow zuletzt lief, wie es ausging und an welchem Schritt es gehakt hat. Frag einfach.

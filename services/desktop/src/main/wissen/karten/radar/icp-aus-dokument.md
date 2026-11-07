@@ -10,6 +10,7 @@ fragen:
 schlagworte: [icp, idealkundenprofil, dokument, pdf, word, docx, confluence, markdown, übernehmen, import]
 aktionen:
   - { art: chat_vorschlag, ziel: "Ich lade dir unser bestehendes Idealkundenprofil hoch, übernimm es bitte.", label: "Dokument übernehmen" }
+  - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

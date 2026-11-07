@@ -12,6 +12,7 @@ schlagworte: [instanz, instanzen, deine avas, desktop, server, gerät, rechner, 
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche meiner AVAs laufen gerade und was macht jede davon?", label: "Meine AVAs zeigen" }
   - { art: app_oeffnen, ziel: profil, label: "Konto öffnen" }
+  - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 stand: 2026-11-07
 ---
 AVA kann auf deinem Rechner laufen, auf mehreren Rechnern oder auf einem Server. Ich kann dir jederzeit sagen, welche deiner AVAs gerade verbunden ist und was sie übernimmt.

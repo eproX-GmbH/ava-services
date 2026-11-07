@@ -14,6 +14,7 @@ fragen:
 schlagworte: [gedächtnis, langzeitgedächtnis, merken, erinnern, vergessen, memory, remember, vorlieben, präferenz, löschen, gemerkt, gespeichert, über mich, wissen, präferenzen, was weißt du über mich]
 aktionen:
   - { art: chat_vorschlag, ziel: "Was hast du dir über mich gemerkt?", label: "Gemerktes zeigen" }
+  - { art: app_oeffnen, ziel: langzeitgedaechtnis, label: "Gedächtnis öffnen" }
 stand: 2026-11-07
 ---
 Sag einfach „Merk dir, dass …“, dann behalte ich das über alle Gespräche hinweg, zum Beispiel deine Vorlieben, wiederkehrende Firmen oder laufende Aufgaben. Stabile Vorlieben merke ich mir auch von selbst, etwa wenn du immer kurze Antworten willst. Was ich mir gemerkt habe, habe ich in jedem neuen Gespräch präsent.

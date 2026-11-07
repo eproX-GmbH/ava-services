@@ -10,6 +10,7 @@ fragen:
 schlagworte: [dienste, verarbeitung, status, lokal, rechner, datenbank, website, profil, kontakte, publikationen, stammdaten, strukturierte inhalte, producer, warteschlange, wartend]
 aktionen:
   - { art: chat_vorschlag, ziel: "Prüf bitte, ob die Verarbeitung auf meinem Rechner richtig läuft.", label: "Verarbeitung prüfen" }
+  - { art: app_oeffnen, ziel: dienste_rechner, label: "Dienste öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

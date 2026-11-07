@@ -8,6 +8,8 @@ fragen:
   - kann ich in der app meinen schlüssel eintragen
   - server einstellungen öffnen
 schlagworte: [app, einstellungen, settings, server, einrichtungsseite, setup, link, desktop, konsole, admin.ava.bi, telegram, modell, schlüssel]
+aktionen:
+  - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 gilt_fuer: [app]
 stand: 2026-11-07
 ---

@@ -12,6 +12,7 @@ schlagworte: [limit, tageslimit, obergrenze, token, tokens, textbausteine, verbr
 aktionen:
   - { art: chat_vorschlag, ziel: "Setz mir eine Tages-Obergrenze von 200.000 Textbausteinen.", label: "Obergrenze setzen" }
   - { art: app_oeffnen, ziel: verbrauch, label: "Verbrauch öffnen" }
+  - { art: app_oeffnen, ziel: verbrauch_limit, label: "Tageslimit öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

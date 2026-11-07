@@ -9,6 +9,8 @@ fragen:
   - kann ich meine daten exportieren
   - datenauskunft über mich
 schlagworte: [löschen, chats, chatverlauf, gedächtnis, profil, verlauf, export, json, daten, zurücksetzen, dsgvo, auskunft]
+aktionen:
+  - { art: app_oeffnen, ziel: langzeitgedaechtnis, label: "Gedächtnis öffnen" }
 stand: 2026-11-07
 ---
 Deine eigenen Daten löschst du gezielt:

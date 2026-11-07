@@ -8,6 +8,8 @@ fragen:
   - notion integration token einrichten
   - du findest meine notion seite nicht
 schlagworte: [notion, integration, internal integration, integration token, ntn_, secret_, connections, workspace, datenbank, zugangscode, token, freigeben]
+aktionen:
+  - { art: app_oeffnen, ziel: notizen, label: "Notion verbinden" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

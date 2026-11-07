@@ -11,6 +11,7 @@ fragen:
 schlagworte: [excel, xlsx, xls, csv, tsv, tabelle, datei, hochladen, upload, import, importieren, leadliste, spalten, vorgang]
 aktionen:
   - { art: chat_vorschlag, ziel: "Ich möchte eine Excel-Liste mit Firmen importieren.", label: "Liste importieren" }
+  - { art: app_oeffnen, ziel: importieren, label: "Excel hochladen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

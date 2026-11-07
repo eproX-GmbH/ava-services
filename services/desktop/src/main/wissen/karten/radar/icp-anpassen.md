@@ -11,6 +11,7 @@ fragen:
 schlagworte: [icp, idealkundenprofil, ändern, bearbeiten, branchen, orte, umkreis, radius, ausschlüsse, länder, landeskürzel]
 aktionen:
   - { art: chat_vorschlag, ziel: "Zeig mir mein aktuelles Idealkundenprofil.", label: "ICP anzeigen" }
+  - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

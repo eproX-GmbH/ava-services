@@ -11,6 +11,7 @@ fragen:
 schlagworte: [link-überwachung, liste, jetzt prüfen, pause, fortsetzen, bearbeiten, löschen, frequenz, letzte änderung, fünf aktiv]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche Links überwachst du gerade?", label: "Überwachungen zeigen" }
+  - { art: app_oeffnen, ziel: link_ueberwachung, label: "Link-Überwachung öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

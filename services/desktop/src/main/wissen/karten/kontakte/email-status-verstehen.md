@@ -11,6 +11,7 @@ fragen:
 schlagworte: [verifiziert, unbestätigt, unverifiziert, offen, abgelehnt, catch-all, email status, abgeleitet, schreibweisen, baseline]
 aktionen:
   - { art: chat_vorschlag, ziel: "Ist die E-Mail-Adresse dieses Kontakts verifiziert?", label: "Adresse prüfen" }
+  - { art: app_oeffnen, ziel: email_adressen, label: "E-Mail-Adressen öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

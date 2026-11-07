@@ -10,6 +10,7 @@ fragen:
 schlagworte: [wiederkehrende aufgaben, geplant, jobs, scheduler, zeitplan, pausieren, stoppen, mail-schleife, erinnerung, auto-stop]
 aktionen:
   - { art: chat_vorschlag, ziel: "Was hast du gerade alles geplant oder laufen?", label: "Geplantes zeigen" }
+  - { art: app_oeffnen, ziel: wiederkehrende_aufgaben, label: "Wiederkehrende öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

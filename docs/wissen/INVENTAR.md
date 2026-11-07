@@ -1,7 +1,7 @@
 # Wissensinventar AVA (Nutzersicht)
 
 Stand 2026-11-07. Grundlage für die Lösungskarten (docs/PLAN_LOESUNGSKARTEN.md, Schritt L2).
-Lesestand Code: main 65164b47. Status der Karten: **Entwurf, wartet auf Abnahme durch Joyce**
+Lesestand Code: main a4c38708. Status der Karten: **Entwurf, wartet auf Abnahme durch Joyce**
 (je Themenast, Tabelle in §2). Erst nach dem OK gelten Karten als ausgeliefert; bis dahin liegen sie
 nur auf dem Branch `claude/wonderful-bell-d6f985`, nicht auf main.
 
@@ -54,7 +54,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 3 | recherche | 12 | offen |
 | 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | offen |
 | 4 | mail | 10 | offen |
-| 4 | telegram | 13 | offen |
+| 4 | telegram | 14 | offen |
 | 5 | linkedin | 17 | offen |
 | 5 | meldungen | 17 | offen |
 | 6 | ki | 20 | offen |
@@ -62,16 +62,16 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 7 | workflows | 17 | offen |
 | 7 | app | 11 | offen |
 | 7 | hilfe | 14 | offen |
-| | **gesamt** | **291** | |
+| | **gesamt** | **292** | |
 
 Inventar: rund 700 Einträge, davon 628 geprüft, 33 unklar, 14 veraltet, 11 nur für Betreiber.
 
 Prüfung (2026-11-07):
 
-- Format und Textregeln: alle 291 Karten fehlerfrei (Leser `format.ts`, dazu eine Prüfung auf verbotene Wörter
+- Format und Textregeln: alle 292 Karten fehlerfrei (Leser `format.ts`, dazu eine Prüfung auf verbotene Wörter
   wie Tool/Werkzeug/MCP/Token, Geviertstriche, Plan-Verweise, gültige `app_oeffnen`-Ziele).
-- Prüfsatz: 239 Fragen (5 der Hauptsession, 205 aus der Erfassung, 29 frisch aus Supportfällen und Feedback; der frische Satz liegt vollständig mit 30 Fragen in docs/wissen/pruefsatz-frisch.json).
-  Treffer unter den ersten drei: **97 % nur Volltext, 95 % mit Vektoren**.
+- Prüfsatz: 241 Fragen (5 der Hauptsession, 207 aus der Erfassung, 29 frisch aus Supportfällen und Feedback; der frische Satz liegt vollständig mit 30 Fragen in docs/wissen/pruefsatz-frisch.json).
+  Treffer unter den ersten drei: **98 % nur Volltext, 95 % mit Vektoren**; frischer Satz 29/30 in beiden Fällen (nach der Anpassung der Suche durch die Hauptsession). Einen eigenen blinden Satz von 25 Fragen hält die Hauptsession zurück (21/25 Volltext, 24/25 Vektoren).
 - Ehrlich dazu: Die Schlagworte habe ich an den Fehlgriffen des Satzes nachgeschärft (Synonyme wie „pleite“, „Pop-up“,
   „Vernetzungsanfrage“). Der frische Satz aus Supportfällen lag VOR dem Nachschärfen bei 26/30 (Volltext) und 25/30
   (Vektoren). Das ist der ehrlichere Wert für unbekannte Fragen.
@@ -192,16 +192,16 @@ d = verbindungen/mail/telegram, e = linkedin/meldungen, f = ki/chat, g = workflo
 - B11. Workflows auf einer Server-AVA: nur im Chat anlegen, Freigaben per Telegram, verbindlich? (g-1)
 - B12. Meldungen: Schalter je Meldungsart, Rückmeldung „verwerfen“ in die Bewertung? (e-6, e-7)
 
-## 7. Fehlende Ziele zum Öffnen von Seiten
+## 7. Ziele zum Öffnen von Seiten
 
-An die Hauptsession gemeldet (2026-11-07), damit Karten-Aktionen dorthin führen können. Bis dahin tragen diese
-Karten keinen Öffnen-Knopf, sondern nennen den Weg in Worten: Verlauf, Deine AVAs, Dienste auf diesem Rechner,
-Zurücksetzen, Verbundene Apps, Langzeitgedächtnis, Wiederkehrende Aufgaben, Updates, Nähe & Vorrang,
-Spracherkennung, Sprachmodus, lokale Modelle, Tages-Obergrenze, Skills, Problem melden, Diagnose, Speicherplatz,
-Notizen (Notion/Obsidian), Mail-Entwürfe, Beobachtungen, Link-Überwachung, E-Mail-Adressen, ICP,
-LinkedIn-Kalibrierung, Bildanalyse, Organisation, Status, Chatverlauf, Workflow-Läufe, geteilte Buying Center,
-„Gerade Thema“. Bereits ergänzt von der Hauptsession: firmenliste/firmensuche (vorher vertauscht), importieren,
-stammdaten_mitpflegen, vorgang; „Weitere Dienste“ hat jetzt eine eigene Sprungmarke.
+Alle in der Erfassung vermissten Ziele hat die Hauptsession ergänzt (main a4c38708): Verlauf, Deine AVAs, Dienste auf
+diesem Rechner, Zurücksetzen, Verbundene Apps, Langzeitgedächtnis, Wiederkehrende Aufgaben, Updates, Nähe & Vorrang,
+Spracherkennung, Sprachmodus, lokale Modelle, Tages-Obergrenze, Skills, Diagnose, Speicherplatz, Notizen,
+Mail-Entwürfe, Beobachtungen, Link-Überwachung, E-Mail-Adressen, ICP, LinkedIn-Kalibrierung, Bildanalyse,
+Organisation, Status, Workflow-Läufe, geteilte Buying Center, „Gerade Thema“, dazu firmenliste/firmensuche (vorher
+vertauscht), importieren, stammdaten_mitpflegen, vorgang. 55 Karten tragen danach einen passenden Öffnen-Knopf.
+Kein eigenes Ziel gibt es für „Problem melden“ und den Chatverlauf (keine eigene Seite); diese Karten nennen den Weg
+in Worten.
 
 ## 8. Befunde in der App (Auswahl, vollständig in FRAGEN_UND_BEFUNDE.md)
 

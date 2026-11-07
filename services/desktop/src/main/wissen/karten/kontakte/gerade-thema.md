@@ -10,6 +10,7 @@ fragen:
 schlagworte: [gerade thema, team, organisation, kollegen, relevanz, warm, anzahl, überschneidung, wer arbeitet an, kollege, kümmert sich, wer betreut, zuständig]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche Firmen sind in meiner Organisation gerade Thema?", label: "Gerade Thema" }
+  - { art: app_oeffnen, ziel: gerade_thema, label: "Gerade Thema öffnen" }
 gilt_fuer: [alle]
 stand: 2026-11-07
 ---

@@ -11,6 +11,7 @@ schlagworte: [linkedin, kalibrierung, feedback, daumen, bewertung, signalstärke
 aktionen:
   - { art: app_oeffnen, ziel: linkedin, label: "Signale bewerten" }
   - { art: app_oeffnen, ziel: linkedin_verbinden, label: "Kalibrierung ansehen" }
+  - { art: app_oeffnen, ziel: linkedin_kalibrierung, label: "Kalibrierung öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

@@ -13,6 +13,8 @@ fragen:
   - wo sehe ich den verlauf
   - nachvollziehen was ava im hintergrund macht
 schlagworte: [verlauf, audit, audit-trail, protokoll, aktionen, historie, nachvollziehen, crm, import, anmeldung, kosten, filter, export, json, log]
+aktionen:
+  - { art: app_oeffnen, ziel: verlauf, label: "Verlauf öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

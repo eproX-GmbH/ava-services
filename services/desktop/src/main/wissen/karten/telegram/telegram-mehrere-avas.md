@@ -10,6 +10,7 @@ fragen:
 schlagworte: [telegram, instanz, instanzen, server, desktop, mehrere, bot, 409, konflikt, abholer, deine avas, umzug, zweiter bot]
 aktionen:
   - { art: chat_vorschlag, ziel: "Welche meiner AVAs übernimmt gerade Telegram?", label: "AVAs prüfen" }
+  - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 stand: 2026-11-07
 ---
 Telegram erlaubt je Bot nur eine Stelle, die die Nachrichten abholt. Läuft AVA bei dir auf dem Rechner und auf einem Server, braucht jede AVA ihren eigenen Bot. Hängt derselbe Bot an zwei AVAs, kommen deine Nachrichten nur bei einer an.

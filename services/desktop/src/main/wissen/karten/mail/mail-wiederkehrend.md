@@ -10,6 +10,7 @@ fragen:
 schlagworte: [wiederkehrend, zeitplan, mail-schleife, schleife, intervall, wiederkehrende aufgaben, scheduler, stoppen, pausieren, abbrechen]
 aktionen:
   - { art: chat_vorschlag, ziel: "Zeig mir meine geplanten Mail-Aufgaben.", label: "Geplante Aufgaben" }
+  - { art: app_oeffnen, ziel: wiederkehrende_aufgaben, label: "Wiederkehrende öffnen" }
 stand: 2026-11-07
 ---
 Ich kann eine Mail in festen Abständen verschicken, zum Beispiel einen Status an dein Team. Sag mir Empfänger, Betreff, Text und Abstand, ich zeige dir alles, und du bestätigst. Dabei gilt:

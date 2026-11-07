@@ -10,6 +10,7 @@ fragen:
 schlagworte: [entwurfs-postfach, entwürfe-ordner, entwürfe, drafts, imap, ionos, strato, gmx, web.de, telekom, t-online, gmail, icloud, app-passwort, anhänge, microsoft 365, entwurf ablegen, leg sie in meine entwürfe]
 aktionen:
   - { art: app_oeffnen, ziel: mail_verbinden, label: "Entwurfs-Postfach einrichten" }
+  - { art: app_oeffnen, ziel: mail_entwuerfe, label: "Entwürfe einstellen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

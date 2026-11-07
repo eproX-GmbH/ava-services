@@ -10,6 +10,7 @@ fragen:
 schlagworte: [diagnose, protokoll, log, logs, logdatei, support, finder, explorer, ordner, selbstkorrektur, hinweise]
 aktionen:
   - { art: chat_vorschlag, ziel: "Melde das Problem mit den Protokollen an das AVA-Team.", label: "Problem melden" }
+  - { art: app_oeffnen, ziel: diagnose, label: "Diagnose öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

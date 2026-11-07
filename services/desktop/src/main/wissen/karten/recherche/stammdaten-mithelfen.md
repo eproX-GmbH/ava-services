@@ -11,6 +11,7 @@ fragen:
 schlagworte: [stammdaten, mitpflegen, mithelfen, handelsregister, register-jobs, hintergrund, akkubetrieb, netzbetrieb, nur handelsregister, queue]
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie steht es um das Mithelfen bei den Stammdaten auf diesem Rechner?", label: "Stand zeigen" }
+  - { art: app_oeffnen, ziel: stammdaten_mitpflegen, label: "Mitpflegen öffnen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---

@@ -12,6 +12,7 @@ schlagworte: [verarbeitung, hängt, steht, import, vorgang, fehlgeschlagen, neu 
 aktionen:
   - { art: chat_vorschlag, ziel: "Prüf, warum meine Firma nicht fertig verarbeitet wird, und stoß fehlende Schritte neu an.", label: "Verarbeitung prüfen" }
   - { art: app_oeffnen, ziel: aufgaben, label: "Vorgänge öffnen" }
+  - { art: app_oeffnen, ziel: dienste_rechner, label: "Dienste prüfen" }
 stand: 2026-11-07
 ---
 Sag mir, um welche Firma oder welchen Import es geht. Ich sehe nach, welche Schritte fertig sind, welche fehlen oder fehlgeschlagen sind, und stoße die fehlenden direkt neu an. Du musst dafür nichts einstellen.
