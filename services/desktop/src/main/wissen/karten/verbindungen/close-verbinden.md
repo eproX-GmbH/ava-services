@@ -9,15 +9,14 @@ fragen:
   - warum gibt es close zweimal in den einstellungen
 schlagworte: [close, close crm, close.com, api key, schlüssel, crm, mcp, leads, import, verknüpfen, kopfzeilen, close-api-key, oauth]
 aktionen:
+  - { art: zugang_anfordern, dienst: close, label: "Close verbinden" }
   - { art: app_oeffnen, ziel: crm_verbinden, label: "Close als CRM verbinden" }
-  - { art: app_oeffnen, ziel: dienst_verbinden, dienst: close, label: "Close-Funktionen verbinden" }
-  - { art: zugang_anfordern, dienst: close, label: "Close-Schlüssel eintragen" }
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Close verbindest du an zwei Stellen, jeweils mit demselben persönlichen Schlüssel aus Close. Den erzeugst du in Close in den Einstellungen bei den Entwickler-Einstellungen (API-Schlüssel).
+Close verbindest du an zwei Stellen, jeweils mit demselben persönlichen Schlüssel. Den erzeugst du in Close unter Einstellungen → Entwickler (API-Schlüssel).
 
-1. Einstellungen → Verbindungen → CRM, Karte Close: Schlüssel eintragen und „Verbinden“ klicken. Damit übernehme ich Leads aus Close als Firmen und verknüpfe deine AVA-Firmen mit dem passenden Lead.
-2. Einstellungen → Verbindungen → Weitere Dienste, Vorlage Close: den Schlüssel in die Kopfzeile „Close-API-Key“ eintragen. Damit arbeite ich mit Kontakten, Aktivitäten, Chancen und Aufgaben in Close.
+1. Für die Arbeit in Close (Kontakte, Aktivitäten, Chancen, Aufgaben) zeige ich dir hier im Chat eine sichere Eingabekarte „Close verbinden“. Du trägst den Schlüssel ins Feld „Close-API-Key“ ein und klickst auf „Verbinden“. Er geht direkt in den geschützten Speicher dieses Rechners, ich bekomme ihn nicht zu sehen.
+2. Damit ich Leads aus Close als Firmen übernehme und deine AVA-Firmen mit dem passenden Lead verknüpfe, trägst du den Schlüssel zusätzlich unter Einstellungen → Verbindungen → CRM an der Karte Close ein.
 
-Den Schlüssel trägst du nur dort ein, nie im Chat. Eine Anmeldung bei Close über ein Anmeldefenster statt Schlüssel gibt es noch nicht. Sag mir, was du vorhast, dann öffne ich dir die passende Seite.
+Schick den Schlüssel bitte nie als normale Nachricht. Eine Anmeldung bei Close über ein Anmeldefenster statt Schlüssel gibt es noch nicht. Die Eingabekarte gibt es nur in der Desktop-App und wenn deine Organisation „Weitere Dienste“ erlaubt.

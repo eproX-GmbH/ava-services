@@ -16,6 +16,6 @@ stand: 2026-11-07
 ---
 Lehnt ein Dienst deinen Zugang ab, siehst du oben in der App einen Hinweis mit dem Namen des Dienstes, und an seiner Karte unter Einstellungen → Verbindungen → Weitere Dienste steht der Fehler. Seine Funktionen stehen mir dann nicht zur Verfügung, ich versuche es auch nicht weiter.
 
-So erneuerst du den Zugang: Klick im Hinweis auf „Zugang erneuern“, das führt dich zur richtigen Stelle. Leg beim Anbieter einen neuen Zugangscode oder Schlüssel an. Dann entfernst du den Dienst mit „Entfernen“ und verbindest ihn neu, bei CompLeadly und Close wieder mit der Vorlage. Den Zugang an der bestehenden Karte zu ändern geht nicht.
+So erneuerst du den Zugang: Leg beim Anbieter einen neuen Zugangscode oder Schlüssel an. Dann entfernst du den Dienst an seiner Karte mit „Entfernen“ und verbindest ihn neu, bei CompLeadly und Close wieder mit der Vorlage oder über die sichere Eingabekarte hier im Chat. Erst entfernen, sonst steht der Dienst danach doppelt in der Liste. Den Zugang an der bestehenden Karte zu ändern geht nicht.
 
 Steht an der Karte nur „nicht verbunden“ ohne Zugangsfehler, war der Dienst kurz nicht erreichbar. Dann reicht „Neu verbinden“ an der Karte.
