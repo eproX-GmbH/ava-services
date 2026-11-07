@@ -3,6 +3,10 @@
 // x-ava-client) und die App-Version (x-ava-version). Hoechstens einmal je Minute
 // und Nutzer geschrieben, damit die Tabelle nicht jede Anfrage traegt.
 // "Aktiv" heisst wie bei den Desktop-Helfern: Anfrage in den letzten 15 Minuten.
+// "anfragen" zaehlt damit Minuten mit Aktivitaet, nicht einzelne Anfragen.
+// Die Durchreicher von Konsole und PWA melden sich per x-ava-client
+// ("konsole" / "app"); die Konsole zaehlt nicht als Nutzung (2026-11-07: wer
+// die Nutzerseite oeffnet, stand sonst selbst als "aktiv · Desktop" da).
 
 import type { Pool } from "pg";
 
@@ -32,6 +36,7 @@ export function geraetAus(client: string | null, userAgent: string | null): stri
       return "Desktop";
     }
     if (c.startsWith("server")) return "Server";
+    if (c === "app") return "App (Browser)";
     return c.slice(0, 40);
   }
   const ua = userAgent ?? "";
@@ -46,6 +51,7 @@ export function geraetAus(client: string | null, userAgent: string | null): stri
 }
 
 export function vermerkeAktivitaet(pool: Pool, e: AktivitaetEingang): void {
+  if ((e.client ?? "").trim().toLowerCase() === "konsole") return;
   const jetzt = Date.now();
   const letzte = zuletztGeschrieben.get(e.actorId) ?? 0;
   if (jetzt - letzte < SCHREIB_ABSTAND_MS) return;
