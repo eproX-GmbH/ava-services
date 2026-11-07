@@ -220,7 +220,28 @@ Lösung in 3–8 Sätzen, in Nutzersprache, mit dem, was AVA selbst tun kann.
 L0 und L1 bringen Patrick sofort etwas. L2 ist der größte Brocken und läuft als eigene
 Session; L3 kann parallel das Format festzurren, damit L2 direkt im Zielformat schreibt.
 
-## 5. Offene Fragen
+## 5. Umsetzungsstand
+
+- **L0 gebaut, v0.1.943 (2026-11-07).** Messung in Produktion vorab (LlmUsage, Kanal chat,
+  3 Tage, gpt-6.1-sol): Eingabe je Modellaufruf mind. 22.600, Median 42.700, max. 69.600
+  Tokens; im Schnitt ~34.000 aus dem Cache. Eine Antwort mit zwei Schritten kommt so auf
+  ~105.000. Statischer Systemprompt ~16.000 Tokens (`scripts/prompt-groesse.mts`), größte
+  Abschnitte: Tool-Discovery ~1.550, „Wie du mit dem Nutzer arbeitest“ ~1.040, Import
+  ~730, Bestandsfragen ~730, Freshness ~700, Retry ~650, HubSpot-Übernahme ~630.
+  Je Schritt schreibt die App jetzt `[kontext] {…}` ins Protokoll (System, Abschnitte,
+  Werkzeugliste, Schemas, Verlauf je Rolle, echte Eingabe- und Cache-Tokens).
+  Sofortmaßnahme: Die Werkzeugliste im Prompt nennt nur noch Namen (Beschreibungen
+  standen doppelt, Schemas tragen sie ohnehin).
+- **L1 gebaut, v0.1.943.** Seele „Wie ich spreche“; `app_oeffnen` als Kern-Werkzeug
+  (benannte Ziele, `dienst_verbinden` füllt das Formular über `?vorlage=`/`?name=` vor);
+  Chat zeigt standardmäßig nur „Denkt nach · <Alltagstext>“ und danach eine leise,
+  aufklappbare Zeile „Nachgedacht“; Schalter „Arbeitsschritte und Verbrauch anzeigen“
+  (Einstellungen → Meldungen → Vorschläge im Chat, und `vorschlaege_config`), Standard
+  aus für alle. Knopftexte der Vorschläge mit Umlauten.
+- Offen aus L1: Werkzeugfehler in Nutzersprache übersetzen (heute nur über die
+  Ton-Regel), Betreiber-Standard „an“ (offene Frage 1).
+
+## 6. Offene Fragen
 
 1. Schalter „Arbeitsschritte anzeigen“: für Betreiber an, für alle anderen aus — oder
    für alle aus?
