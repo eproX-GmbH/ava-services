@@ -216,6 +216,10 @@ export async function ensureTenantForAuth(
       void import("./start-analyse/auftrag")
         .then(({ auftragAnlegen }) => auftragAnlegen(pool, { actorId: auth.actorId, email: auth.email ?? null, vorname: auth.name ?? null }))
         .catch(() => undefined);
+      // O11: Organisation der eigenen Firma (offene Beitrittsanfrage).
+      void import("./beitritt-domain")
+        .then(({ domainZuordnen }) => domainZuordnen(pool, { actorId: auth.actorId, email: auth.email ?? null, name: auth.name ?? null }))
+        .catch(() => undefined);
     }
     const membership = m.rows[0];
     const open = jr.rows[0];
@@ -372,7 +376,9 @@ export interface OrgState {
   myRole: string;
   inviteToken: string | null;
   members: Array<{ actorId: string; role: string; joinedAt: string; email: string | null; name: string | null }>;
-  openRequests: Array<{ id: string; actorId: string; email: string | null; name: string | null; requestedAt: string }>;
+  openRequests: Array<{ id: string; actorId: string; email: string | null; name: string | null; requestedAt: string; quelle?: string | null }>;
+  /** O11: Beitrittsanfragen ueber die E-Mail-Domain erlaubt. */
+  domainBeitritt: boolean;
   policy: TenantPolicyShape;
   /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
   providers: Array<{ kind: string; keyHint: string; updatedAt: string }>;
@@ -389,8 +395,8 @@ export interface OrgState {
 }
 
 export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<OrgState> {
-  const t = await pool.query<{ id: string; name: string | null; kind: string; inviteToken: string | null }>(
-    `SELECT "id", "name", "kind", "inviteToken" FROM "Tenant" WHERE "id" = $1`,
+  const t = await pool.query<{ id: string; name: string | null; kind: string; inviteToken: string | null; domainBeitritt: boolean | null }>(
+    `SELECT "id", "name", "kind", "inviteToken", "domainBeitritt" FROM "Tenant" WHERE "id" = $1`,
     [auth.tenantId],
   );
   const row = t.rows[0];
@@ -411,7 +417,7 @@ export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<Org
   );
   const reqs = admin
     ? await pool.query<{ id: string; actorId: string; email: string | null; name: string | null; requestedAt: Date }>(
-        `SELECT "id", "actorId", "email", "name", "requestedAt" FROM "TenantJoinRequest" WHERE "tenantId" = $1 AND "status" = 'open' ORDER BY "requestedAt"`,
+        `SELECT "id", "actorId", "email", "name", "requestedAt", "quelle" FROM "TenantJoinRequest" WHERE "tenantId" = $1 AND "status" = 'open' ORDER BY "requestedAt"`,
         [auth.tenantId],
       )
     : { rows: [] as Array<{ id: string; actorId: string; email: string | null; name: string | null; requestedAt: Date }> };
@@ -421,6 +427,8 @@ export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<Org
     kind: row.kind === "organisation" ? "organisation" : "personal",
     myRole: me.rows[0]?.role ?? "member",
     inviteToken: admin ? row.inviteToken : null,
+    // O11: Beitrittsanfragen ueber die E-Mail-Domain (Konsole schaltet um).
+    domainBeitritt: row.domainBeitritt !== false,
     members: members.rows.map((m) => ({ ...m, joinedAt: new Date(m.joinedAt).toISOString() })),
     openRequests: reqs.rows.map((r) => ({ ...r, requestedAt: new Date(r.requestedAt).toISOString() })),
     policy: await readPolicy(pool, auth.tenantId),

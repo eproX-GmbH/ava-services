@@ -175,6 +175,8 @@ const schema = z.object({
   AVA_DOWNLOAD_URL: z.string().url().default("https://www.ava.bi/willkommen"),
   /** Web-App fuer Firmenlinks in Mails (app.ava.bi/firmen/<companyId>). */
   AVA_APP_URL: z.string().url().default("https://app.ava.bi"),
+  /** AVA Konsole (Admins), z. B. Beitrittsanfragen unter /mitglieder. */
+  AVA_KONSOLE_URL: z.string().url().default("https://admin.ava.bi"),
   /** Eigener Host fuer den MCP-Endpunkt (Endpunkt an der Wurzel, OAuth unter /oauth). */
   MCP_PUBLIC_HOST: z.string().default("mcp.ava.bi"),
   /** Keycloak-Client, dessen Client-Scopes neue MCP-Clients erben. */

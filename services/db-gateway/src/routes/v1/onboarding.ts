@@ -8,6 +8,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { abholen, auftragAnlegen, auftragLesen, websiteNachreichen } from "../../lib/start-analyse/auftrag";
+import { domainZuordnen } from "../../lib/beitritt-domain";
 import { ErrorShape } from "./schemas";
 import { loadEnv } from "../../lib/env";
 import { getProducerPool } from "../../lib/producer-pools";
@@ -38,6 +39,8 @@ onboardingRouter.openapi(
     const body = (await c.req.json().catch(() => ({}))) as { website?: unknown };
     const website = typeof body.website === "string" && WebsiteFeld.safeParse(body.website).success ? body.website : null;
     await auftragAnlegen(getGatewayPool(), { actorId: a.actorId, email: a.email ?? null, vorname: a.name ?? null, website });
+    // O11 (Website-Registrierung): Organisation der eigenen Firma als offene Anfrage.
+    await domainZuordnen(getGatewayPool(), { actorId: a.actorId, email: a.email ?? null, name: a.name ?? null }).catch(() => undefined);
     return c.json({ ok: true, stand: await auftragLesen(getGatewayPool(), a.actorId) }, 202);
   },
 );

@@ -515,6 +515,8 @@ model Tenant {
   /// O1 — "personal" (Tenant = User, Default) | "organisation".
   kind         String              @default("personal")
   /// O1 — Einladungslink-Token (ava://join/<token>), rotierbar.
+  /// O11: Beitrittsanfragen ueber die E-Mail-Domain (Standard an, Admin kann abschalten).
+  domainBeitritt Boolean @default(true)
   inviteToken  String?             @unique
   /// 2026-10-15 — Organisation ohne Mitglieder: als geloescht markiert, nie hart geloescht.
   deletedAt    DateTime?
@@ -545,6 +547,8 @@ model TenantJoinRequest {
   sitzWunsch  String?
   requestedAt DateTime  @default(now())
   decidedAt   DateTime?
+  /// O11: 'link' oder 'domain'.
+  quelle      String?
   decidedBy   String?
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

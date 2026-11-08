@@ -16,6 +16,8 @@ function logoLaden(): Buffer {
   return logo;
 }
 
+const DIENSTMAILS = new Set(["willkommen", "beitritt"]);
+
 export function versandBereit(): boolean {
   return Boolean(loadEnv().MAILGUN_API_KEY);
 }
@@ -54,7 +56,8 @@ export async function mailSenden(pool: Pool, konto: MailKonto, art: string, mail
   const protokoll = (status: string, mailgunId: string | null, fehler: string | null) =>
     pool.query(`INSERT INTO "MailVersand" ("actorId", "art", "status", "mailgunId", "fehler") VALUES ($1, $2, $3, $4, $5)`, [konto.actorId, art, status, mailgunId, fehler]).catch(() => undefined);
   if (konto.abgemeldet) { await protokoll("uebersprungen", null, "abgemeldet"); return { ok: false, grund: "abgemeldet" }; }
-  if (art !== "willkommen" && !konto.neuigkeiten) { await protokoll("uebersprungen", null, "keine Zustimmung"); return { ok: false, grund: "keine Zustimmung" }; }
+  // Dienstmails (Willkommen, Beitrittsanfrage an Admins) brauchen keine Zustimmung, Neuigkeiten schon.
+  if (!DIENSTMAILS.has(art) && !konto.neuigkeiten) { await protokoll("uebersprungen", null, "keine Zustimmung"); return { ok: false, grund: "keine Zustimmung" }; }
   if (!env.MAILGUN_API_KEY) { await protokoll("uebersprungen", null, "MAILGUN_API_KEY fehlt"); return { ok: false, grund: "Versand nicht eingerichtet" }; }
   const form = new FormData();
   form.set("from", env.MAIL_ABSENDER);

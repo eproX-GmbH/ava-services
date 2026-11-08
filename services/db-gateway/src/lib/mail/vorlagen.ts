@@ -179,3 +179,31 @@ ${m.quelleUrl || m.companyId ? `<div style="margin-top:5px;font-size:13px;">${[m
   ].join("\n");
   return { betreff: n === 1 ? `${d.meldungen[0]!.firma}: ${d.meldungen[0]!.titel}` : `${n} Neuigkeiten zu deinen Firmen`, html: rahmen({ vorschau: d.meldungen.map((m) => m.firma).slice(0, 3).join(", "), inhalt, fusszeile: abmelden(d.abmeldenUrl) }), text };
 }
+
+// ---- 4. Beitrittsanfrage (an Owner/Admins, O11) --------------------------------
+
+export interface BeitrittDaten {
+  vorname: string | null;
+  organisation: string;
+  wer: string;
+  email: string | null;
+  quelle: "link" | "domain";
+  konsoleUrl: string;
+}
+
+export function beitrittsanfrageMail(d: BeitrittDaten): Mail {
+  const wie = d.quelle === "domain" ? "über eure Firmen-Domain (gleiche E-Mail-Domain wie eure Mitglieder)" : "über euren Einladungslink";
+  const inhalt =
+    ueberschrift("Neue Beitrittsanfrage") +
+    absatz(esc(d.vorname ? `Hallo ${d.vorname},` : "Hallo,")) +
+    absatz(`<strong>${esc(d.wer)}</strong>${d.email ? ` (${esc(d.email)})` : ""} möchte ${wie} der Organisation <strong>${esc(d.organisation)}</strong> beitreten.`) +
+    absatz("Bitte prüfe, ob du die Person kennst. Erst nach deiner Freigabe sieht sie eure Firmen und nutzt eure Schlüssel. Kennst du sie nicht, lehne die Anfrage ab.") +
+    knopf("Anfrage in der AVA Konsole ansehen", d.konsoleUrl);
+  const text = [
+    d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "",
+    `${d.wer}${d.email ? ` (${d.email})` : ""} möchte ${wie} der Organisation ${d.organisation} beitreten.`,
+    "Erst nach deiner Freigabe sieht die Person eure Firmen und nutzt eure Schlüssel. Kennst du sie nicht, lehne die Anfrage ab.", "",
+    `Zur Anfrage: ${d.konsoleUrl}`,
+  ].join("\n");
+  return { betreff: `Beitrittsanfrage für ${d.organisation}: ${d.wer}`, html: rahmen({ vorschau: `${d.wer} möchte ${d.organisation} beitreten`, inhalt, fusszeile: "Du bekommst diese Mail als Owner oder Admin der Organisation." }), text };
+}

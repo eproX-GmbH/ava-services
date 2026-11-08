@@ -9,6 +9,7 @@ import { passwordGrant } from "../../lib/keycloak-tokens";
 import { takeRegistrationSlot } from "../../lib/auth-rate-limit";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { auftragAnlegen } from "../../lib/start-analyse/auftrag";
+import { domainZuordnen } from "../../lib/beitritt-domain";
 
 // In-App-Registration endpoint (POST /v1/auth/register).
 //
@@ -111,6 +112,10 @@ publicAuthRouter.post("/v1/auth/register", async (c) => {
     const website = body.website && /^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(body.website) ? body.website : null;
     void auftragAnlegen(getGatewayPool(), { actorId: userId, email: body.email.trim().toLowerCase(), vorname: body.firstName, website }).catch((err) =>
       logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register] Start-Analyse nicht angelegt"),
+    );
+    // O11: Organisation der eigenen Firma sofort als offene Beitrittsanfrage.
+    void domainZuordnen(getGatewayPool(), { actorId: userId, email: body.email.trim().toLowerCase(), name: `${body.firstName.trim()} ${body.lastName.trim()}` }).catch((err) =>
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register] Domain-Zuordnung fehlgeschlagen"),
     );
 
     const tokens = await passwordGrant(

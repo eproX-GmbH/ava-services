@@ -19,6 +19,7 @@ import { istBetreiber } from "../../middleware/auth";
 import { createShare, createRadarShares, listShares, revokeShare, markShare } from "../../lib/org-shares";
 import { getOrgWorkflow, listOrgWorkflows, revokeOrgWorkflow, shareWorkflow } from "../../lib/org-workflows";
 import { callUpstream } from "../../lib/upstream";
+import { adminsBenachrichtigen, anfrageNachDomain, anfrageZurueckziehen, domainBeitrittSetzen, passendeOrganisationen } from "../../lib/beitritt-domain";
 import { ssoEntfernen, ssoLesen, ssoPruefen, ssoSetzen } from "../../lib/sso";
 import { a2aClientEntfernen, a2aClientErstellen, a2aGeheimnisErneuern, a2aRedirectsAendern, a2aVerbindung } from "../../lib/a2a-client";
 import {
@@ -30,6 +31,7 @@ import {
   setMemberRole,
   setPolicy,
   rotateInvite,
+  istAdmin,
   TenantError,
 } from "../../lib/tenants";
 
@@ -99,7 +101,77 @@ tenantsRouter.openapi(
     const auth = c.get("auth");
     const { inviteToken } = c.req.valid("json");
     const r = await wrap(() => requestJoin(getGatewayPool(), auth, inviteToken));
+    // O11: Owner/Admins per Mail informieren (schnellere Freigabe).
+    void adminsBenachrichtigen(getGatewayPool(), r.tenantId, { wer: auth.name ?? auth.email ?? "Jemand", email: auth.email ?? null, quelle: "link" }).catch(() => undefined);
     return c.json({ ok: true as const, ...r }, 201);
+  },
+);
+
+// ---- O11 — Organisation der eigenen Firma (E-Mail-Domain) ---------------------
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "get", path: "/tenants/vorschlaege", tags: ["tenants"],
+    summary: "Organisationen, deren Owner/Admins dieselbe E-Mail-Domain haben (fuer den Einrichtungsassistenten).",
+    responses: { 200: { content: { "application/json": { schema: z.object({ organisationen: z.array(z.object({ tenantId: z.string(), name: z.string().nullable() })) }) } }, description: "Vorschlaege" } },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    return c.json({ organisationen: await passendeOrganisationen(getGatewayPool(), auth.email ?? null) }, 200);
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post", path: "/tenants/join/domain", tags: ["tenants"],
+    summary: "Beitritt zu einer Organisation mit passender E-Mail-Domain anfragen (wirkt erst nach Admin-Freigabe).",
+    request: { body: { content: { "application/json": { schema: z.object({ tenantId: z.string().min(1).max(80) }) } } } },
+    responses: {
+      201: { content: { "application/json": { schema: Ok } }, description: "Anfrage offen" },
+      404: { content: { "application/json": { schema: Err } }, description: "passt nicht zur Domain" },
+    },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    const { tenantId } = c.req.valid("json");
+    try {
+      const org = await anfrageNachDomain(getGatewayPool(), { actorId: auth.actorId, email: auth.email ?? null, name: auth.name ?? null, tenantId });
+      return c.json({ ok: true as const, tenantId: org.tenantId, tenantName: org.name }, 201);
+    } catch (err) {
+      return c.json({ error: "not_found", message: err instanceof Error ? err.message : String(err) }, 404);
+    }
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post", path: "/tenants/join/zurueckziehen", tags: ["tenants"],
+    summary: "Offene Beitrittsanfrage zurueckziehen (\"Organisation wechseln\").",
+    responses: { 200: { content: { "application/json": { schema: Ok } }, description: "zurueckgezogen" } },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    const zurueck = await anfrageZurueckziehen(getGatewayPool(), auth.actorId);
+    return c.json({ ok: true as const, zurueckgezogen: zurueck }, 200);
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "patch", path: "/tenants/me/domain-beitritt", tags: ["tenants"],
+    summary: "Admin: Beitrittsanfragen ueber die E-Mail-Domain an/aus.",
+    request: { body: { content: { "application/json": { schema: z.object({ an: z.boolean() }) } } } },
+    responses: {
+      200: { content: { "application/json": { schema: Ok } }, description: "gesetzt" },
+      403: { content: { "application/json": { schema: Err } }, description: "nur Admins" },
+    },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    if (!(await istAdmin(getGatewayPool(), auth.tenantId, auth.actorId))) return c.json({ error: "forbidden", message: "Nur Admins der Organisation." }, 403);
+    const { an } = c.req.valid("json");
+    await domainBeitrittSetzen(getGatewayPool(), auth.tenantId, an);
+    return c.json({ ok: true as const, domainBeitritt: an }, 200);
   },
 );
 
