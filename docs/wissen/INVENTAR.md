@@ -44,14 +44,14 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 
 | Block | Ast | Karten | Abnahme |
 |---|---|---|---|
-| 1 | erste-schritte | 11 | 10 abgenommen 2026-11-08; neu start-analyse (Onboarding O2) offen |
+| 1 | erste-schritte | 11 | abgenommen 2026-11-08 (start-analyse mit Block 3) |
 | 1 | konto | 12 | abgenommen 2026-11-08 |
 | 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | abgenommen 2026-11-08 |
 | 1 | datenschutz | 7 | abgenommen 2026-11-08 |
 | 2 | firmen | 48 | abgenommen 2026-11-08 |
-| 3 | kontakte | 19 (neu kontakt-suchen) | offen |
-| 3 | radar | 13 | offen |
-| 3 | recherche | 12 | offen |
+| 3 | kontakte | 19 (neu kontakt-suchen) | abgenommen 2026-11-08 |
+| 3 | radar | 13 | abgenommen 2026-11-08 |
+| 3 | recherche | 12 | abgenommen 2026-11-08 |
 | 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | abgenommen 2026-11-07/08 (7 Fall-Karten am 07., übrige 19 am 08.) |
 | 4 | mail | 10 | abgenommen 2026-11-08 |
 | 4 | telegram | 14 | abgenommen 2026-11-08 |
