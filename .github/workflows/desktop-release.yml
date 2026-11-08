@@ -306,9 +306,12 @@ jobs:
           BASE="https://github.com/electron/electron/releases/download/v$EV"
           DIR="$HOME/Library/Caches/electron/$(printf '%s' "$BASE" | shasum -a 256 | cut -c1-64)"
           mkdir -p "$DIR"
-          for f in "electron-v$EV-darwin-arm64.zip" "SHASUMS256.txt"; do
-            curl -fL --retry 10 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$f" "$BASE/$f"
-          done
+          # Pruefsummen nur von GitHub; das Archiv bei GitHub-504 vom npm-Spiegel,
+          # geprueft gegen die GitHub-Pruefsumme (unten).
+          curl -fL --retry 20 --retry-delay 15 --retry-all-errors --max-time 120 -o "$DIR/SHASUMS256.txt" "$BASE/SHASUMS256.txt"
+          ZIP="electron-v$EV-darwin-arm64.zip"
+          curl -fL --retry 5 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$ZIP" "$BASE/$ZIP" \
+            || curl -fL --retry 5 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$ZIP" "https://registry.npmmirror.com/-/binary/electron/$EV/$ZIP"
           grep "electron-v$EV-darwin-arm64.zip" "$DIR/SHASUMS256.txt" | sed "s#electron-v#$DIR/electron-v#" | shasum -a 256 -c -
           ls -la "$DIR"
 
@@ -738,9 +741,12 @@ jobs:
           BASE="https://github.com/electron/electron/releases/download/v$EV"
           DIR="$HOME/Library/Caches/electron/$(printf '%s' "$BASE" | shasum -a 256 | cut -c1-64)"
           mkdir -p "$DIR"
-          for f in "electron-v$EV-darwin-x64.zip" "SHASUMS256.txt"; do
-            curl -fL --retry 10 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$f" "$BASE/$f"
-          done
+          # Pruefsummen nur von GitHub; das Archiv bei GitHub-504 vom npm-Spiegel,
+          # geprueft gegen die GitHub-Pruefsumme (unten).
+          curl -fL --retry 20 --retry-delay 15 --retry-all-errors --max-time 120 -o "$DIR/SHASUMS256.txt" "$BASE/SHASUMS256.txt"
+          ZIP="electron-v$EV-darwin-x64.zip"
+          curl -fL --retry 5 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$ZIP" "$BASE/$ZIP" \
+            || curl -fL --retry 5 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$ZIP" "https://registry.npmmirror.com/-/binary/electron/$EV/$ZIP"
           grep "electron-v$EV-darwin-x64.zip" "$DIR/SHASUMS256.txt" | sed "s#electron-v#$DIR/electron-v#" | shasum -a 256 -c -
           ls -la "$DIR"
 
