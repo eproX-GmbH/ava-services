@@ -511,7 +511,9 @@ export function IcpAssistant(): JSX.Element {
                 ? "im Chat erfasst"
                 : quelle === "dokument"
                   ? "aus deinem bestehenden ICP übernommen"
-                  : "von Hand gepflegt"}
+                  : quelle === "start-analyse"
+                    ? "aus deiner Website angelegt"
+                    : "von Hand gepflegt"}
             .
           </>
         )}{" "}

@@ -41,7 +41,8 @@ export interface IcpProfile {
   /** K9 — beste Bestandskunden (bleiben LOKAL — Entscheidung B1). */
   kundenBeispiele: IcpKundenBeispiel[];
   /** Wie das ICP entstand — fuers UI ("per Assistent erstellt"). */
-  quelle: "assistent" | "manuell" | "chat" | "dokument" | null;
+  /** start-analyse = einmalig aus der Website-Analyse bei der Registrierung (Onboarding O2). */
+  quelle: "assistent" | "manuell" | "chat" | "dokument" | "start-analyse" | null;
   updatedAt: string | null;
 }
 
@@ -102,7 +103,7 @@ function normalise(p: Partial<IcpProfile>): IcpProfile {
     ausschluesse: clampStr(p.ausschluesse, 500),
     kundenBeispiele: kunden,
     quelle:
-      p.quelle === "assistent" || p.quelle === "manuell" || p.quelle === "chat" || p.quelle === "dokument"
+      p.quelle === "assistent" || p.quelle === "manuell" || p.quelle === "chat" || p.quelle === "dokument" || p.quelle === "start-analyse"
         ? p.quelle
         : null,
     updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : null,

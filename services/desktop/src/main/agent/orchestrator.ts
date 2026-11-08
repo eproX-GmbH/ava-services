@@ -26,7 +26,7 @@ import { zielAufloesen } from "./tools/app-oeffnen";
 import { embedQueries } from "./tools/publications";
 import { isUserDeclined } from "./define-tool";
 import { welcomeMessage, isWelcomeTrigger } from "./welcome";
-import type { AgentMessageImage } from "../../shared/types";
+import type { AgentKartenAktion, AgentMessageImage } from "../../shared/types";
 import {
   UiBridge,
   type PendingChoice,
@@ -672,6 +672,18 @@ export class AgentOrchestrator extends EventEmitter {
    * Liefert false, wenn gerade ein Zug laeuft oder kein Modell bereit ist;
    * der Waechter versucht es dann beim naechsten Takt erneut.
    */
+  /**
+   * Onboarding O2 (docs/PLAN_ONBOARDING.md): feste Begruessung als neue Unterhaltung,
+   * ohne KI-Aufruf. Der Chat wechselt nur dorthin, wenn er gerade leer ist (Chat.tsx).
+   */
+  begruessungAnlegen(text: string, aktionen: AgentKartenAktion[] = []): string {
+    const id = randomUUID();
+    const convo = this.getOrCreateConversation(id);
+    this.appendMessage(convo, { id: randomUUID(), role: "assistant", content: text, createdAt: Date.now(), ...(aktionen.length ? { aktionen: aktionen.slice(0, 4) } : {}) });
+    this.emitFrame({ kind: "navigate", requestId: `begruessung-${id}`, conversationId: id, path: `/chat?c=${id}` });
+    return id;
+  }
+
   meldeAufgabe(conversationId: string, text: string): boolean {
     if (this.inFlightRequestId !== null) return false;
     if (!this.getStatus().ready) return false;

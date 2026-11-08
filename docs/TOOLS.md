@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-08
-Anzahl Tools: 309
+Anzahl Tools: 312
 
-## Firmen (29)
+## Firmen (30)
 
 ### `bestand_suchen`
 
@@ -219,6 +219,19 @@ _Parameter:_
 - `fullName: string` (required) — Voller Personenname.
 - `companyName: string` — Firmenname fuer die Suche (empfohlen).
 - `chosenUrl: string` — Bereits geklaerte Profil-URL — ueberspringt die Suche und speichert direkt.
+
+### `kontakt_suchen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Sucht Personen nach Name in den Kontakten aller eigenen Firmen (Meine Firmen), ohne vorher eine Firma zu bestimmen. Schreibweisen mit Umlaut (Tölle/Toelle) werden gefunden. PFLICHT als ERSTER Schritt, sobald der Nutzer eine Person nennt ('E-Mail von X', 'Kontakt X bei Y', 'wer ist X'): firma und ort nur als Filter mitgeben. Erst ohne Treffer company_search/company_contacts, CRM oder Web — und dann mit dem Nutzer abstimmen. Treffer: personId, name, rolle, companyId, firma, ort, email, emailHerkunft, emailAbgeleitet. Mehrere Treffer → Tabelle Name | Rolle | Firma | Ort | E-Mail | Herkunft und nach der richtigen Person fragen. emailAbgeleitet=true heisst: aus dem Adressmuster der Firma gebildet, nicht bestaetigt — so benennen. Keine E-Mail vorhanden → das sagen, nie eine Adresse erfinden. bereich 'pool' NUR auf ausdrueckliche Nachfrage nach Personen AUSSERHALB der Firmenliste: hoechstens 5 Treffer mit Name, Firma und Ort, ohne Rolle und ohne E-Mail; mehr erst nach Aufnahme der Firma (import_companies mit companyIds, nur auf Wunsch).
+
+_Parameter:_
+- `name: string` (required) — Name der Person, Vor- und/oder Nachname
+- `firma: string` — Firmenname als Filter (Teiltreffer)
+- `ort: string` — Ort der Firma als Filter
+- `bereich: string (enum: bestand, pool)` — bestand (Standard) = eigene Firmen; pool = ausserhalb, nur Name/Firma/Ort
+- `limit: integer` — Treffer, Standard 5, hoechstens 10
 
 ### `kunden_umkehrsuche`
 
@@ -752,7 +765,7 @@ Switch the active LLM provider. `kind` is one of 'ollama', 'openai', 'anthropic'
 
 _Parameter:_ keine.
 
-## CRM (31)
+## CRM (32)
 
 ### `connect_crm`
 
@@ -921,6 +934,18 @@ _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 Listet die Verknüpfungen eines HubSpot-Records zu einem anderen Object-Type. Beispiele: alle Contacts einer Company, alle Deals einer Company, alle Deals eines Contacts. Returned: Liste mit toObjectId + association-type-Labels. Read-only — keine Schreibänderung.
 
 _Parameter:_ keine.
+
+### `crm_list_hubspot_deals`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Listet Deals aus HubSpot OHNE Suchbegriff — Standard: alle OFFENEN Deals (nicht gewonnen/verloren), sortiert nach Abschlussdatum, Pipeline und Phase im Klartext. Für „meine offenen Deals“ zuerst crm_list_hubspot_owners aufrufen und die ownerId zur E-Mail des Nutzers übergeben. Returns items (id, name, amount, pipeline, stage, closeDate, ownerId), gesamt, mehr. Für einen bestimmten Deal per Name: crm_search_hubspot_deals.
+
+_Parameter:_
+- `ownerId: string` — Nur Deals dieses HubSpot-Owners (id aus crm_list_hubspot_owners).
+- `pipeline: string` — Nur diese Pipeline (Pipeline-Id).
+- `auchGeschlossene: boolean` — true = auch gewonnene/verlorene Deals. Default false.
+- `limit: integer` — Max Deals (1-500). Default 100.
 
 ### `crm_list_hubspot_notes_for_object`
 
@@ -1710,7 +1735,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
 
-Markiert den Lead als ignoriert; der Kommentartext wird dabei geloescht. Grund z. B. 'Kein Entscheider', 'Falsche Branche', 'Wettbewerber'. Laesst sich im Bereich LinkedIn → Leads zuruecknehmen.
+Markiert den Lead als ignoriert; der Kommentartext wird dabei geloescht. Gruende wie in der Oberflaeche: 'Kein Entscheider', 'Falsche Branche', 'Wettbewerber', 'Kenne ich schon', 'Mini-Profil fehlt', 'Unklare Zuordnung', 'Sonstiges'. Laesst sich im Bereich LinkedIn → Leads zuruecknehmen.
 
 _Parameter:_
 - `leadId: string` (required)
@@ -1720,11 +1745,12 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
 
-Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. Fehlt der Sitz der Firma, wird das Impressum gelesen; klappt auch das nicht (ortFehlt=true), den Nutzer nach dem Ort fragen und mit ort erneut aufrufen. Braucht die leadId aus linkedin_leads.
+Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. Passen mehrere Register-Firmen zum Firmennamen, zeigt das Werkzeug dem Nutzer selbst eine Auswahl (Name · Ort) und macht mit der gewaehlten Firma weiter; ohne Nutzer (Automatik) kommt auswahlNoetig=true mit kandidaten zurueck → mit companyId erneut aufrufen. Fehlt der Sitz der Firma und gibt es keinen Registertreffer, wird das Impressum gelesen; klappt auch das nicht (ortFehlt=true), den Nutzer nach dem Ort fragen und mit ort erneut aufrufen. Braucht die leadId aus linkedin_leads.
 
 _Parameter:_
 - `leadId: string` (required)
 - `ort: string` — Sitz der Firma, falls die Uebernahme ihn nicht selbst findet (Antwort ortFehlt=true).
+- `companyId: string` — Gewaehlte Firma aus kandidaten (Antwort auswahlNoetig=true).
 
 ### `linkedin_leads`
 
@@ -2681,6 +2707,17 @@ _Parameter:_
 - `ruheSekunden: integer`
 - `signalton: boolean`
 - `wachwort: boolean`
+
+## start-analyse (1)
+
+### `start_analyse_website`
+
+_Datei:_ `services/desktop/src/main/agent/tools/start-analyse.ts`
+
+Nur für den Start: Der Nutzer nennt die Website SEINER Firma (z. B. nach der Begrüßung, wenn er sich mit Gmail o. Ä. registriert hat). Die Website wird im Hintergrund gelesen, Referenzkunden werden gesucht, daraus entsteht das erste Idealkundenprofil. Das Ergebnis erscheint in wenigen Minuten als neue Nachricht im Chat. Gibt es schon ein Idealkundenprofil, nicht nutzen, sondern icp_assist_from_urls bzw. den ICP-Assistenten.
+
+_Parameter:_
+- `website: string` (required) — Website der eigenen Firma, z. B. eprox.de
 
 ## telegram (8)
 
