@@ -8,7 +8,7 @@ fragen:
   - ich habe mich mit gmail angemeldet, was jetzt
   - warum fragst du nach meiner website
   - start analyse hat nicht geklappt
-schlagworte: [woher weißt du, was meine firma macht, meine firma, private mail, begrüßung, willkommen, start-analyse, erste schritte, idealkundenprofil, icp, website, referenzkunden, e-mail-domain, gmail, freemail, registrierung, onboarding, vorschlag]
+schlagworte: [willkommensmail, mail von ava, abmelden, woher weißt du, was meine firma macht, meine firma, private mail, begrüßung, willkommen, start-analyse, erste schritte, idealkundenprofil, icp, website, referenzkunden, e-mail-domain, gmail, freemail, registrierung, onboarding, vorschlag]
 aktionen:
   - { art: chat_vorschlag, ziel: "Mein Idealkundenprofil passt. Starte den Firmen-Radar und zeig mir die besten Treffer.", label: "Passende Firmen suchen" }
   - { art: app_oeffnen, ziel: icp, label: "Idealkundenprofil öffnen" }
@@ -19,5 +19,7 @@ Wenn du dich registrierst, sehe ich mir die Website deiner Firma an, abgeleitet 
 Passt das Profil, sag es mir, dann starte ich den Firmen-Radar und zeige dir die besten Treffer. Sonst passt du es unter Firmen → Radar → „ICP bearbeiten“ an oder sagst mir einfach, was anders sein soll.
 
 Hast du dich mit einer privaten Adresse wie Gmail registriert oder fand ich keine Website, frage ich dich einmal nach der Website deiner Firma. Nenn sie mir, dann sehe ich sie mir an; das dauert meist unter einer Minute, das Ergebnis kommt als neue Nachricht.
+
+Sobald die Analyse fertig ist, bekommst du außerdem eine Willkommensmail an die Adresse, mit der du dich registriert hast. Weitere Mails von AVA kommen nur, wenn du sie bestätigst; abmelden kannst du dich über den Link in jeder Mail.
 
 Das passiert genau einmal. Hast du schon ein Idealkundenprofil, überschreibe ich es nicht.
