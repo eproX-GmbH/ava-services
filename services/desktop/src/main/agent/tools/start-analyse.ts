@@ -67,5 +67,43 @@ export function buildStartAnalyseTools(deps: { gateway: GatewayClient; icpGesetz
     run: async (args) => (await startlisteUebernehmen({ gateway: deps.gateway, matchStore: deps.matchStore }, args)) as unknown as Record<string, unknown>,
     preview: (r: Record<string, unknown>) => (typeof r.importiert === "number" ? `${r.importiert} Firmen übernommen` : String(r.hinweis ?? r.error ?? "")),
   });
-  return [website, startliste];
+  // O5 — Self-Service: Neuigkeiten-Mails an/aus (an = Bestaetigungsmail, Double-Opt-in).
+  const mailNeuigkeiten = defineTool({
+    name: "neuigkeiten_mail",
+    summary: "Neuigkeiten zu meinen Firmen per E-Mail: Stand zeigen, einschalten (mit Bestätigungsmail) oder abbestellen",
+    category: "mail email e-mail neuigkeiten newsletter abmelden abbestellen benachrichtigung zustimmung",
+    description:
+      "Neuigkeiten-Mails von AVA (höchstens eine Sammelmail am Tag mit neuen Meldungen zu den Firmen des Nutzers, an seine Registrierungsadresse). " +
+      "aktion=stand zeigt Adresse und ob sie an sind. aktion=an schickt eine Bestätigungsmail; erst der Klick darin schaltet sie ein (Double-Opt-in), das dem Nutzer sagen. " +
+      "aktion=aus bestellt sofort ab. An und aus fragen vorher nach Bestätigung.",
+    parameters: {
+      type: "object",
+      properties: { aktion: { type: "string", enum: ["stand", "an", "aus"], description: "stand, an oder aus" } },
+      required: ["aktion"],
+    },
+    schema: yup.object({ aktion: yup.string().oneOf(["stand", "an", "aus"]).required() }).noUnknown(true),
+    preview: (r: Record<string, unknown>) =>
+      r.abgebrochen ? "abgebrochen" : r.status === "bestaetigung_gesendet" ? "Bestätigungsmail gesendet" : r.status === "aus" ? "Neuigkeiten-Mails abbestellt" : r.neuigkeiten === true ? "Neuigkeiten-Mails an" : r.neuigkeiten === false ? "Neuigkeiten-Mails aus" : String(r.status ?? r.error ?? ""),
+    run: async (args, c) => {
+      const stand = await deps.gateway.request<{ adresse: string | null; neuigkeiten: boolean }>("/v1/onboarding/mail", { signal: c.signal });
+      if (args.aktion === "stand") return stand;
+      if (args.aktion === "an" && stand.neuigkeiten) return { status: "schon_an", adresse: stand.adresse };
+      if (args.aktion === "aus" && !stand.neuigkeiten) return { status: "schon_aus", adresse: stand.adresse };
+      const an = args.aktion === "an";
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: an
+            ? `Neuigkeiten zu deinen Firmen per E-Mail an ${stand.adresse ?? "deine Adresse"} schicken?\n\nDu bekommst gleich eine Mail mit einem Bestätigungslink; erst danach kommen Neuigkeiten, höchstens eine Mail am Tag.`
+            : `Neuigkeiten-Mails an ${stand.adresse ?? "deine Adresse"} abbestellen?`,
+          confirmValue: "ja",
+          options: [{ value: "ja", label: an ? "Bestätigungsmail schicken" : "Abbestellen" }, { value: "cancel", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { abgebrochen: true };
+      return await deps.gateway.request<Record<string, unknown>>("/v1/onboarding/mail", { method: "PUT", body: { neuigkeiten: an }, signal: c.signal });
+    },
+  });
+  return [website, startliste, mailNeuigkeiten];
 }

@@ -37,6 +37,7 @@ import { StartIcpUebernahme } from "../main/onboarding/start-icp";
 import { setzeStartIcpWecker } from "../main/agent/tools/start-analyse";
 import { erstlaufPruefen, startlisteUebernehmen, startWorkflowAnlegen, startWorkflowVormerken, top10MailPruefen } from "../main/onboarding/startliste";
 import { onboardingDatei as onboardingDateiPfad } from "../main/onboarding/marke";
+import { neuigkeitenMailPruefen } from "../main/onboarding/neuigkeiten-mail";
 import { workerModus } from "../main/worker-modus";
 import { ChromeForTesting } from "../main/chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
@@ -2275,6 +2276,12 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     void top10MailPruefen({ gateway: gatewayClient, datei: onboardingDatei }).catch((err) => console.warn("[onboarding] Top-10-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
   }, 2 * 60_000);
   top10Takt.unref?.();
+  // O5: Neuigkeiten per Mail (Gateway prueft Zustimmung und 20-Stunden-Abstand).
+  const neuigkeitenTakt = setInterval(() => {
+    if (!auth.getStatus().signedIn || workerModus.aktiv()) return;
+    void neuigkeitenMailPruefen({ gateway: gatewayClient, meldungen: () => alerts.list(), datei: onboardingDatei }).catch((err) => console.warn("[onboarding] Neuigkeiten-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
+  }, 30 * 60_000);
+  neuigkeitenTakt.unref?.();
   const startIcp = new StartIcpUebernahme({
     gateway: gatewayClient,
     datei: onboardingDatei,

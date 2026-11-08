@@ -32,7 +32,7 @@ einen der folgenden Fälle:
 
 1. **Enterprise:** „Dein Konto gehört zu einem Enterprise-Vertrag. Löschen oder Deaktivieren
    läuft über das AVA-Team.“ Darunter ein Knopf **„Problem melden“** (vorbefüllt, Kategorie
-   Konto) und ein Link zu support@ava.bi. Es gibt keinen Löschknopf.
+   Konto) und ein Link zu info@eprox-gmbh.de. Es gibt keinen Löschknopf.
 2. **Einziger Owner mit weiteren Mitgliedern:** „Du bist der einzige Owner von <Org>. Ernenne
    in der AVA Konsole unter Mitglieder zuerst eine weitere Person zum Owner, dann kannst du
    dein Konto löschen.“ Daneben ein Knopf zur Konsole.
@@ -170,7 +170,7 @@ und Web-App.
 
 1. **Abo bei R4:** Das Abo der Organisation endet zum Periodenende, wenn sich ihr einziges
    Mitglied deaktiviert. Abgeleitet aus R6, bitte bestätigen.
-2. **Problem melden** als Kontaktweg zum AVA-Team im Dialog, plus support@ava.bi. Passt das?
+2. **Problem melden** als Kontaktweg zum AVA-Team im Dialog, plus info@eprox-gmbh.de. Passt das?
 3. **Prompt-Protokoll (PromptAudit):** Löschen statt aufbewahren? Es enthält Inhalte der
    KI-Anfragen. Vorschlag: löschen; abgerechnet wird über LlmUsage.
 4. **Fly-Instanz eines Nicht-Enterprise-Kontos** (Cloud-AVA): gibt es so etwas, das beim

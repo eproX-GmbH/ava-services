@@ -170,14 +170,31 @@ ${m.quelleUrl || m.companyId ? `<div style="margin-top:5px;font-size:13px;">${[m
   const inhalt =
     ueberschrift(n === 1 ? "Eine Neuigkeit zu deinen Firmen" : `${n} Neuigkeiten zu deinen Firmen`) +
     absatz(esc(d.vorname ? `Hallo ${d.vorname},` : "Hallo,")) +
-    absatz("das hat sich seit gestern bei deinen Firmen getan:") +
+    absatz("das hat sich seit meiner letzten Mail bei deinen Firmen getan:") +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${eintraege}</table>`;
   const text = [
-    d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "", "das hat sich seit gestern bei deinen Firmen getan:", "",
+    d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "", "das hat sich seit meiner letzten Mail bei deinen Firmen getan:", "",
     ...d.meldungen.slice(0, 12).map((m) => `- ${m.firma}: ${m.titel}\n  ${m.text}${m.companyId ? `\n  In AVA: ${firmenLink(d.appBasis, m.companyId)}` : ""}${m.quelleUrl ? `\n  Quelle: ${m.quelleUrl}` : ""}`), "",
     `Keine Mails mehr von AVA: ${d.abmeldenUrl}`,
   ].join("\n");
   return { betreff: n === 1 ? `${d.meldungen[0]!.firma}: ${d.meldungen[0]!.titel}` : `${n} Neuigkeiten zu deinen Firmen`, html: rahmen({ vorschau: d.meldungen.map((m) => m.firma).slice(0, 3).join(", "), inhalt, fusszeile: abmelden(d.abmeldenUrl) }), text };
+}
+
+// ---- 3b. Bestaetigung (Neuigkeiten im Chat eingeschaltet, Double-Opt-in) ------
+
+export function bestaetigungMail(d: { vorname: string | null; bestaetigenUrl: string }): Mail {
+  const inhalt =
+    ueberschrift("Neuigkeiten per E-Mail bestätigen") +
+    absatz(esc(d.vorname ? `Hallo ${d.vorname},` : "Hallo,")) +
+    absatz("du möchtest Neuigkeiten zu deinen Firmen auch per E-Mail bekommen. Bitte bestätige das mit einem Klick. Danach schicke ich dir höchstens eine Mail am Tag, und abmelden kannst du dich in jeder Mail.") +
+    knopf("Ja, Neuigkeiten per E-Mail erhalten", d.bestaetigenUrl) +
+    absatz(`<span style="color:${FARBE.leise};font-size:13px;">Hast du das nicht angefordert, ignoriere diese Mail einfach. Ohne Bestätigung bekommst du keine Neuigkeiten.</span>`);
+  const text = [
+    d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "",
+    "du möchtest Neuigkeiten zu deinen Firmen auch per E-Mail bekommen. Bitte bestätige das:", d.bestaetigenUrl, "",
+    "Hast du das nicht angefordert, ignoriere diese Mail einfach.",
+  ].join("\n");
+  return { betreff: "Bitte bestätigen: Neuigkeiten von AVA per E-Mail", html: rahmen({ vorschau: "Ein Klick, dann bekommst du Neuigkeiten zu deinen Firmen", inhalt }), text };
 }
 
 // ---- 4. Beitrittsanfrage (an Owner/Admins, O11) --------------------------------

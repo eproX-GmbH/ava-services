@@ -131,7 +131,7 @@ export class WebPushKanal implements ExtraNotificationChannel {
       return { gesendet: 0, fehler: d.abos.length };
     }
     const optionen = {
-      vapidDetails: { subject: "mailto:support@ava.bi", publicKey: d.vapidPublic, privateKey: privat },
+      vapidDetails: { subject: "mailto:info@eprox-gmbh.de", publicKey: d.vapidPublic, privateKey: privat },
       TTL: n.dringend ? 24 * 3600 : 3600,
       urgency: (n.dringend ? "high" : "normal") as "high" | "normal",
     };

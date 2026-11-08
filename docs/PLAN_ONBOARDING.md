@@ -338,8 +338,13 @@ kein Postfach. Also verschickt der Server.
   2. **„Deine Top 10“** nach dem ersten Radar-Lauf. Die App meldet nur die Liste (Name,
      Ort, Grund) an `POST /v1/onboarding/mail/top10`, der Server schickt die Mail.
   3. **Neuigkeiten-Übersicht** höchstens 1 je Tag zu Meldungen über die Firmen in „Meine
-     Firmen“. Neuer Kanal „E-Mail“ im `NotificationManager` →
-     `POST /v1/benachrichtigungen/mail`.
+     Firmen“. **Gebaut 2026-11-08 (v0.1.952, Gateway v377):** statt eines
+     NotificationManager-Kanals sammelt `main/onboarding/neuigkeiten-mail.ts` alle 30 Min.
+     ungelesene neue Meldungen mit Firmenbezug (Marke `neuigkeitenBis`, erster Lauf ohne
+     Nachschicken) → `POST /v1/onboarding/mail/neuigkeiten` (nur mit Opt-in, 20-h-Abstand,
+     Inhalte nicht gespeichert). Self-Service: Werkzeug `neuigkeiten_mail` (stand/an/aus) →
+     `GET/PUT /v1/onboarding/mail`; „an“ schickt eine Bestätigungsmail (Dienstmail
+     `bestaetigung`, höchstens alle 10 Min.). Eigene Schalterfläche in „Meldungen“ steht aus.
 - Mails 2 und 3 entstehen, solange AVA irgendwo läuft (Desktop oder `headless-ava`), weil
   Radar und Meldungen dort gerechnet werden.
 - Einstellung in „Meldungen“ (an/aus) **und** ein Chat-Werkzeug (Regel „Self-Service im

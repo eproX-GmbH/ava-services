@@ -1144,5 +1144,13 @@
   {
     "frage": "wieso hab ich meldungen zu firmen die ich nicht kenne",
     "erwartet": "meldungen-ansehen"
+  },
+  {
+    "frage": "kann ava mir die neuigkeiten auch per mail schicken",
+    "erwartet": "neuigkeiten-per-mail"
+  },
+  {
+    "frage": "wie bestell ich die ava mails ab",
+    "erwartet": "neuigkeiten-per-mail"
   }
 ]

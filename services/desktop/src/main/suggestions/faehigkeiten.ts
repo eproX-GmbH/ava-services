@@ -36,7 +36,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "personen_radar", text: "Beobachtete LinkedIn-Posts: Automatik, Intervall und Apify-Budget des Personen-Radars einstellen", tools: ["personen_radar_*"], feature: "linkedin.radar" },
   { id: "linkedin_leads", text: "LinkedIn-Leads: wer auf beobachtete Posts reagiert oder kommentiert hat (Firma, Anlass, Kommentar), Lead uebernehmen (Firma + Kontakt), ignorieren, Posts beobachten", tools: ["linkedin_leads", "linkedin_lead_*", "linkedin_posts_beobachten"], feature: "linkedin.leads" },
   { id: "link_monitor", text: "Website-Ueberwachung: beliebige URL beobachten und bei Aenderung melden", tools: ["link_monitor_*"] },
-  { id: "meldungen", text: "Meldungen (Alerts) ansehen, verwerfen, Einstellungen fuer Benachrichtigungen", tools: ["alerts_*"] },
+  { id: "meldungen", text: "Meldungen (Alerts) ansehen, verwerfen, Einstellungen fuer Benachrichtigungen; Neuigkeiten per E-Mail bestellen oder abbestellen", tools: ["alerts_*", "neuigkeiten_mail"] },
   { id: "watches", text: "Beobachtungsregeln (Watches) mit eigener Bewertungsvorschrift anlegen und verwalten", tools: ["watch_*"] },
   { id: "buying_center", text: "Buying Center (Power Map nach Sieck) zu einer Firma erarbeiten: Personen mit Rolle, Einstellung, Kontaktintensitaet, Einfluss, Beziehungen; Karte im Chat; die Firma wird Fokuskunde", tools: ["buying_center_*"], feature: "buyingcenter" },
   { id: "relevanz", text: "Relevanz: wie nah du an einer Firma oder Person dran bist (1-10), was AVA als naechstes beobachtet, welche Firmen im Team gerade Thema sind, Erfassung ein- und ausschalten oder loeschen", tools: ["relevanz_*"], feature: "relevanz" },

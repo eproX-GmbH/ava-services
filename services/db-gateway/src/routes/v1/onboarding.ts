@@ -4,6 +4,9 @@
 // POST /onboarding/start/website  Website nachreichen (Freemail, fehlgeschlagen)
 // POST /onboarding/start/abholen  einmalige Uebergabe des ICP-Vorschlags an die App
 // POST /onboarding/mail/top10     Mail "Deine Top 10" nach dem Start-Workflow
+// POST /onboarding/mail/neuigkeiten  Sammelmail neuer Meldungen (nur mit Double-Opt-in, hoechstens alle 20 h)
+// GET  /onboarding/mail            Stand der Neuigkeiten-Mails (Adresse, an/aus)
+// PUT  /onboarding/mail            an (schickt Bestaetigungsmail, Double-Opt-in) oder aus (sofort)
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
@@ -12,8 +15,8 @@ import { domainZuordnen } from "../../lib/beitritt-domain";
 import { ErrorShape } from "./schemas";
 import { loadEnv } from "../../lib/env";
 import { getProducerPool } from "../../lib/producer-pools";
-import { linkAdressen, mailKonto, mailKontoLesen, mailSenden } from "../../lib/mail/versand";
-import { top10Mail } from "../../lib/mail/vorlagen";
+import { abmelden, linkAdressen, mailKonto, mailKontoLesen, mailSenden } from "../../lib/mail/versand";
+import { bestaetigungMail, neuigkeitenMail, top10Mail } from "../../lib/mail/vorlagen";
 import { assertTransactionOwnershipById } from "./transactions";
 
 export const onboardingRouter = new OpenAPIHono();
@@ -143,5 +146,95 @@ onboardingRouter.openapi(
     const env = loadEnv();
     const erg = await mailSenden(pool, konto, "top10", top10Mail({ vorname: konto.vorname, firmen, appBasis: env.AVA_APP_URL, abmeldenUrl: linkAdressen(konto.token).abmelden }));
     return c.json({ gesendet: erg.ok, ...(erg.grund ? { grund: erg.grund } : {}), verlinkt: firmen.filter((f) => f.companyId).length }, 200);
+  },
+);
+
+// O5 — Neuigkeiten: die App schickt ihre neuen Meldungen, das Gateway versendet hoechstens
+// eine Sammelmail je 20 Stunden und nur mit bestaetigter Zustimmung (Double-Opt-in).
+const NEUIGKEITEN_ABSTAND_MS = 20 * 3600_000;
+const NeuigkeitenBody = z.object({
+  meldungen: z.array(z.object({
+    firma: z.string().trim().min(1).max(200),
+    titel: z.string().trim().min(1).max(200),
+    text: z.string().trim().max(600).default(""),
+    art: z.string().trim().min(1).max(60),
+    quelleUrl: z.string().trim().url().max(1000).regex(/^https?:\/\//).nullable().optional(),
+    companyId: z.string().trim().max(120).regex(/^[A-Za-z0-9_.:-]+$/).nullable().optional(),
+  })).min(1).max(30),
+});
+
+onboardingRouter.openapi(
+  createRoute({
+    method: "post", path: "/onboarding/mail/neuigkeiten", tags: [tag], summary: "Sammelmail neuer Meldungen (nur mit Zustimmung, hoechstens alle 20 Stunden)",
+    request: { body: { content: { "application/json": { schema: NeuigkeitenBody } }, required: true } },
+    responses: {
+      200: { content: { "application/json": { schema: Passthrough } }, description: "gesendet oder uebersprungen (mit Grund)" },
+      400: { content: { "application/json": { schema: ErrorShape } }, description: "ungueltig" },
+    },
+  }),
+  async (c) => {
+    const a = auth(c);
+    const p = NeuigkeitenBody.safeParse(await c.req.json().catch(() => null));
+    if (!p.success) return c.json({ error: "invalid_input", message: "meldungen (1 bis 30) erwartet." }, 400);
+    const pool = getGatewayPool();
+    const konto = await mailKontoLesen(pool, a.actorId);
+    // Ohne Zustimmung gar nicht erst protokollieren: die App fragt regelmaessig.
+    if (!konto || konto.abgemeldet || !konto.neuigkeiten) return c.json({ gesendet: false, grund: "keine Zustimmung" }, 200);
+    const letzte = await pool.query<{ at: Date }>(
+      `SELECT "createdAt" AS at FROM "MailVersand" WHERE "actorId" = $1 AND "art" = 'neuigkeiten' AND "status" = 'gesendet' ORDER BY "createdAt" DESC LIMIT 1`, [a.actorId],
+    );
+    const zuletzt = letzte.rows[0]?.at ? new Date(letzte.rows[0].at).getTime() : 0;
+    if (Date.now() - zuletzt < NEUIGKEITEN_ABSTAND_MS) {
+      return c.json({ gesendet: false, grund: "zu frueh", naechsterVersandAb: new Date(zuletzt + NEUIGKEITEN_ABSTAND_MS).toISOString() }, 200);
+    }
+    const env = loadEnv();
+    const meldungen = p.data.meldungen.map((m) => ({ ...m, text: m.text ?? "", quelleUrl: m.quelleUrl ?? null, companyId: m.companyId ?? null }));
+    const erg = await mailSenden(pool, konto, "neuigkeiten", neuigkeitenMail({ vorname: konto.vorname, meldungen, appBasis: env.AVA_APP_URL, abmeldenUrl: linkAdressen(konto.token).abmelden }));
+    return c.json({ gesendet: erg.ok, ...(erg.grund ? { grund: erg.grund } : {}), anzahl: meldungen.length }, 200);
+  },
+);
+
+// Self-Service im Chat: Neuigkeiten-Mails ansehen, abbestellen oder (per Bestaetigungsmail) bestellen.
+onboardingRouter.openapi(
+  createRoute({
+    method: "get", path: "/onboarding/mail", tags: [tag], summary: "Stand der Neuigkeiten-Mails",
+    responses: { 200: { content: { "application/json": { schema: Passthrough } }, description: "Stand" } },
+  }),
+  async (c) => {
+    const a = auth(c);
+    const k = await mailKontoLesen(getGatewayPool(), a.actorId);
+    return c.json({ adresse: k?.email ?? a.email ?? null, neuigkeiten: !!k && k.neuigkeiten && !k.abgemeldet, abgemeldet: k?.abgemeldet ?? false }, 200);
+  },
+);
+
+const MailSchalter = z.object({ neuigkeiten: z.boolean() });
+onboardingRouter.openapi(
+  createRoute({
+    method: "put", path: "/onboarding/mail", tags: [tag], summary: "Neuigkeiten-Mails an (Bestaetigungsmail) oder aus",
+    request: { body: { content: { "application/json": { schema: MailSchalter } }, required: true } },
+    responses: {
+      200: { content: { "application/json": { schema: Passthrough } }, description: "Ergebnis" },
+      400: { content: { "application/json": { schema: ErrorShape } }, description: "ungueltig" },
+    },
+  }),
+  async (c) => {
+    const a = auth(c);
+    const p = MailSchalter.safeParse(await c.req.json().catch(() => null));
+    if (!p.success) return c.json({ error: "invalid_input", message: "neuigkeiten (true/false) erwartet." }, 400);
+    const pool = getGatewayPool();
+    const vorhanden = await mailKontoLesen(pool, a.actorId);
+    const email = vorhanden?.email ?? a.email ?? null;
+    if (!email) return c.json({ status: "keine_adresse" }, 200);
+    const konto = vorhanden ?? (await mailKonto(pool, { actorId: a.actorId, email, vorname: a.name ?? null }));
+    if (!p.data.neuigkeiten) {
+      await abmelden(pool, konto.token);
+      return c.json({ status: "aus", adresse: konto.email }, 200);
+    }
+    if (konto.neuigkeiten && !konto.abgemeldet) return c.json({ status: "schon_an", adresse: konto.email }, 200);
+    // Hoechstens eine Bestaetigungsmail je 10 Minuten.
+    const kurz = await pool.query(`SELECT 1 FROM "MailVersand" WHERE "actorId" = $1 AND "art" = 'bestaetigung' AND "status" = 'gesendet' AND "createdAt" > NOW() - interval '10 minutes' LIMIT 1`, [a.actorId]);
+    if (kurz.rows.length > 0) return c.json({ status: "bestaetigung_unterwegs", adresse: konto.email }, 200);
+    const erg = await mailSenden(pool, konto, "bestaetigung", bestaetigungMail({ vorname: konto.vorname, bestaetigenUrl: linkAdressen(konto.token).bestaetigen }));
+    return c.json(erg.ok ? { status: "bestaetigung_gesendet", adresse: konto.email } : { status: "fehler", grund: erg.grund ?? "nicht gesendet" }, 200);
   },
 );

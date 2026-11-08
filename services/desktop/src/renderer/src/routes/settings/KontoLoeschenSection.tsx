@@ -12,7 +12,7 @@ type Pruefung =
   | { moeglich: false; grund: "allein_in_organisation"; organisation: string | null; mitglieder: number; abo: { endetAm: string | null; bereitsGekuendigt: boolean } | null }
   | { moeglich: false; grund: "einziger_owner" | "enterprise"; organisation: string | null; mitglieder: number };
 
-const SUPPORT = "support@ava.bi";
+const SUPPORT = "info@eprox-gmbh.de";
 
 function datum(iso: string | null | undefined): string | null {
   if (!iso) return null;
