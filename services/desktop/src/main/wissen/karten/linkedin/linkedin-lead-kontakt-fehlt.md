@@ -1,6 +1,6 @@
 ---
 id: linkedin-lead-kontakt-fehlt
-titel: Lead übernehmen: Firma auswählen, Ort angeben oder fehlenden Kontakt nachholen
+titel: Lead übernehmen, Firma auswählen, Ort angeben oder fehlenden Kontakt nachholen
 fragen:
   - beim lead übernehmen soll ich eine firma auswählen
   - die richtige firma ist bei der auswahl nicht dabei

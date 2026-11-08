@@ -24,7 +24,7 @@ Am Lead steht „Firma bestätigt“, wenn die Firma feststeht, oder „Firma er
 
 Du siehst die Leads deiner eigenen beobachteten Posts. Hat eine Kollegin dieselbe Person schon übernommen, steht das am Lead; stimmt euch dann vor der Ansprache ab. Offene Leads verfallen nach 90 Tagen.
 
-### Lead übernehmen: Firma auswählen, Ort angeben oder fehlenden Kontakt nachholen
+### Lead übernehmen, Firma auswählen, Ort angeben oder fehlenden Kontakt nachholen
 `linkedin-lead-kontakt-fehlt` · gilt für: [desktop] · Knöpfe: Leads öffnen (öffnet Seite), Problem melden (Chat-Vorschlag)
 
 > Fragen: beim lead übernehmen soll ich eine firma auswählen · die richtige firma ist bei der auswahl nicht dabei · lead übernommen aber kontakt fehlt · person wurde nicht angelegt beim lead · übernahme nicht möglich ort fehlt
