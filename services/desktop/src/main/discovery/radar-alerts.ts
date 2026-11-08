@@ -59,6 +59,8 @@ export interface RadarAlertEmitterDeps {
   getPolicy?: () => RadarAlertPolicy;
   /** W4 — neue heisse Treffer als Workflow-Ereignis (radar.newHot). */
   onNeueHeisse?: (rows: MatchResultRow[]) => void;
+  /** Onboarding O3 — jedes Match-Ergebnis (fuer das einmalige radar.erstlauf). */
+  onMatch?: (rows: MatchResultRow[]) => void;
 }
 
 export interface EmitResult {
@@ -161,6 +163,7 @@ export class RadarAlertEmitter {
     // Matching anstiess. Der Treffer geht nicht verloren: er ist weiterhin
     // faellig und wird nach dem Ausschalten gemeldet.
     if (arbeitAbbrechen()) return { neu: 0, bereitsGemeldet: 0 };
+    try { this.deps.onMatch?.(ergebnisse); } catch (err) { console.warn("[radar-alerts] onMatch:", err); }
     const policy = this.deps.getPolicy?.() ?? policyForTier(null);
     const alerted = this.getAlerted();
     const hot = ergebnisse.filter((r) => r.score >= policy.threshold);

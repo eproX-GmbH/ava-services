@@ -7,6 +7,8 @@ import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { GatewayClient } from "../gateway-client";
 import type { Tool } from "../types";
+import type { MatchStore } from "../../discovery/match-store";
+import { startlisteUebernehmen } from "../../onboarding/startliste";
 
 /** Weckt die Abholung (bootstrap setzt das, sobald sie existiert). */
 let neuStarten: () => void = () => undefined;
@@ -14,7 +16,7 @@ export function setzeStartIcpWecker(fn: () => void): void {
   neuStarten = fn;
 }
 
-export function buildStartAnalyseTools(deps: { gateway: GatewayClient; icpGesetzt: () => boolean }): Tool[] {
+export function buildStartAnalyseTools(deps: { gateway: GatewayClient; icpGesetzt: () => boolean; matchStore: MatchStore }): Tool[] {
   const website = defineTool({
     name: "start_analyse_website",
     summary: "Analysiert beim Start die Website der eigenen Firma (mit Referenzkunden) und legt daraus das erste Idealkundenprofil an",
@@ -43,5 +45,27 @@ export function buildStartAnalyseTools(deps: { gateway: GatewayClient; icpGesetz
     },
     preview: (r: Record<string, unknown>) => (r.gestartet ? "Website-Analyse gestartet" : String(r.hinweis ?? "nicht gestartet")),
   });
-  return [website];
+  // O3: Schritt des Start-Workflows "Start: Top-10-Firmen übernehmen".
+  const startliste = defineTool({
+    name: "onboarding_startliste",
+    summary: "Übernimmt die besten Radar-Treffer (Score ab 60) nach dem ersten Radar-Lauf in Meine Firmen und schickt die Liste per Mail",
+    category: "onboarding radar start top10 firmen uebernehmen",
+    description:
+      "Schritt des Start-Workflows nach dem ersten Radar-Lauf: nimmt bis zu `anzahl` (Standard 10) noch nicht übernommene Radar-Treffer ab `mindestScore` (Standard 60) mit Ort und übernimmt sie in Meine Firmen. Sind sie verarbeitet, geht einmalig die Mail „Deine Top 10“ raus (nur, wenn der Nutzer Mails bestätigt hat). " +
+      "Im Chat nur auf ausdrücklichen Wunsch des Nutzers aufrufen; sonst discovery_decide.",
+    parameters: {
+      type: "object",
+      properties: {
+        anzahl: { type: "integer", description: "Höchstens so viele Firmen (1–10, Standard 10)" },
+        mindestScore: { type: "integer", description: "Mindest-Score 0–100 (Standard 60)" },
+      },
+    },
+    schema: yup.object({
+      anzahl: yup.number().integer().min(1).max(10).optional(),
+      mindestScore: yup.number().integer().min(0).max(100).optional(),
+    }),
+    run: async (args) => (await startlisteUebernehmen({ gateway: deps.gateway, matchStore: deps.matchStore }, args)) as unknown as Record<string, unknown>,
+    preview: (r: Record<string, unknown>) => (typeof r.importiert === "number" ? `${r.importiert} Firmen übernommen` : String(r.hinweis ?? r.error ?? "")),
+  });
+  return [website, startliste];
 }

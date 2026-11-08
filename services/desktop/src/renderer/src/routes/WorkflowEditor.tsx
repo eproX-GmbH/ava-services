@@ -1254,6 +1254,7 @@ export function WorkflowEditor(): JSX.Element {
                     <option value="import.finished">Import abgeschlossen</option>
                     <option value="linkedin.lead">LinkedIn: neuer Lead</option>
                     <option value="dienst.ereignis">Verbundener Dienst meldet etwas</option>
+                    <option value="radar.erstlauf">Erster Radar-Lauf fertig (einmalig)</option>
                   </select>
                 </label>
               )}
