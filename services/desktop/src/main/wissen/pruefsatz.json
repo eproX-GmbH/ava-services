@@ -1096,5 +1096,21 @@
   {
     "frage": "wir nutzen slack im team, kannst du da posten",
     "erwartet": "whatsapp-und-andere-messenger"
+  },
+  {
+    "frage": "Hast du die Mailadresse von Jens Kowalski?",
+    "erwartet": "kontakt-suchen"
+  },
+  {
+    "frage": "bei welcher meiner firmen ist eine frau lindner",
+    "erwartet": "kontakt-suchen"
+  },
+  {
+    "frage": "Woher weißt du schon, was meine Firma macht?",
+    "erwartet": "start-analyse"
+  },
+  {
+    "frage": "Ich hab mich mit meiner privaten Mail registriert",
+    "erwartet": "start-analyse"
   }
 ]

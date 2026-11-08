@@ -17,7 +17,7 @@ stand: 2026-11-07
 ---
 Drei Schritte bringen dir am schnellsten etwas:
 
-1. Idealkundenprofil festlegen. Nenn mir deine Website und die Websites von bis zu fünf guten Kunden, dann leite ich ab, welche Firmen zu dir passen. Alternativ gehen wir einen kurzen Fragebogen durch.
+1. Idealkundenprofil festlegen. Meist habe ich nach deiner Registrierung schon eins aus deiner Website angelegt; dann prüfst du es nur. Sonst nenn mir deine Website und die Websites von bis zu fünf guten Kunden, dann leite ich ab, welche Firmen zu dir passen. Alternativ gehen wir einen kurzen Fragebogen durch.
 2. Erste Firmen aufnehmen. Zieh eine Excel-Liste in den Chat, nenn mir Firmennamen oder übernimm sie aus deinem CRM. Ich bereite jede Firma im Hintergrund auf.
 3. Verbindungen einrichten, die du wirklich nutzt: CRM, Telegram fürs Handy, dein Mail-Postfach, soweit deine Organisation sie freigegeben hat.
 

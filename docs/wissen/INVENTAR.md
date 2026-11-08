@@ -44,25 +44,25 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 
 | Block | Ast | Karten | Abnahme |
 |---|---|---|---|
-| 1 | erste-schritte | 10 | abgenommen 2026-11-08 |
+| 1 | erste-schritte | 11 | 10 abgenommen 2026-11-08; neu start-analyse (Onboarding O2) offen |
 | 1 | konto | 12 | abgenommen 2026-11-08 |
 | 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | abgenommen 2026-11-08 |
 | 1 | datenschutz | 7 | abgenommen 2026-11-08 |
 | 2 | firmen | 48 | abgenommen 2026-11-08 |
-| 3 | kontakte | 18 | offen |
+| 3 | kontakte | 19 (neu kontakt-suchen) | offen |
 | 3 | radar | 13 | offen |
 | 3 | recherche | 12 | offen |
 | 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | abgenommen 2026-11-07/08 (7 Fall-Karten am 07., übrige 19 am 08.) |
 | 4 | mail | 10 | abgenommen 2026-11-08 |
 | 4 | telegram | 14 | abgenommen 2026-11-08 |
-| 5 | linkedin | 17 | offen |
+| 5 | linkedin | 17 | offen; Leads-Änderungen aus 2ac245fd (Firmenauswahl, „Firma bestätigt“, neue Ignoriergründe) vor der Abnahme nachziehen |
 | 5 | meldungen | 17 | offen |
 | 6 | ki | 20 | offen |
 | 6 | chat | 15 (davon 1 aus der Hauptsession) | offen |
 | 7 | workflows | 17 | offen |
 | 7 | app | 11 | offen |
 | 7 | hilfe | 14 | offen |
-| | **gesamt** | **291** | |
+| | **gesamt** | **293** | |
 
 Inventar: rund 700 Einträge, davon 628 geprüft, 33 unklar, 14 veraltet, 11 nur für Betreiber.
 
