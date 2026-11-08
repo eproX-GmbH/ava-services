@@ -1241,6 +1241,39 @@ function OrgStep({
     }
   };
 
+  // Joyce 2026-11-08: Waehrend die Beitrittsanfrage offen ist, wartet der Assistent
+  // (keine Einrichtung ohne Organisation) und prueft alle 15 Sekunden still, ob
+  // freigegeben wurde. Bei Freigabe wechselt AVA von selbst in die Organisation;
+  // wird die Anfrage abgelehnt, steht wieder die Auswahl da.
+  const [abgelehnt, setAbgelehnt] = useState(false);
+  useEffect(() => {
+    if (!offen) return;
+    let alive = true;
+    const takt = setInterval(() => {
+      void (async () => {
+        try {
+          const gewechselt = await window.api.org.checkTenant();
+          if (gewechselt || !alive) return;
+          const who = await gatewayFetch<{ openJoinRequest?: { tenantName: string | null } | null }>("/v1/whoami", { signal: AbortSignal.timeout(10_000) });
+          if (!alive) return;
+          if (!who.openJoinRequest) {
+            const org = await gatewayFetch<OrgState>("/v1/tenants/me", { signal: AbortSignal.timeout(10_000) });
+            if (!alive) return;
+            setSt(org);
+            setOffen(null);
+            if (org.kind !== "organisation") setAbgelehnt(true);
+          }
+        } catch {
+          // Netz kurz weg: naechster Takt
+        }
+      })();
+    }, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(takt);
+    };
+  }, [offen]);
+
   // 2026-10-15 — Registrierung verlangt eine Organisation: hier anlegen (der
   // Aufrufer wird Owner). Das Gateway traegt die Organisation in Keycloak ein,
   // danach wechselt AVA per Tenant-Pruefung in die neue Organisation.
@@ -1353,21 +1386,22 @@ function OrgStep({
         {offen ? (
           <>
             <p className="first-run__option-sub">
-              Beitritt zu <strong>{offen.tenantName ?? "der Organisation"}</strong> angefragt. Sobald ein Admin freigibt, startet AVA
-              in der Organisation neu; die Schlüssel der Organisation gelten dann automatisch. Bis dahin wähle bitte deinen
-              Anbieter selbst.
+              <strong>Wartet auf Freigabe.</strong> Du hast den Beitritt zu <strong>{offen.tenantName ?? "der Organisation"}</strong>{" "}
+              angefragt. Ein Admin der Organisation muss ihn noch bestätigen. Ich prüfe alle 15 Sekunden und mache automatisch
+              weiter, sobald du freigegeben bist; die Schlüssel der Organisation gelten dann von selbst. Du kannst AVA so lange
+              offen lassen oder schließen, beim nächsten Start geht es hier weiter.
             </p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button type="button" onClick={() => void statusPruefen()} disabled={busy}>
-                Freigabe prüfen
-              </button>
-              <button type="button" className="primary" onClick={onWeiterOhne} disabled={busy}>
-                Weiter: Anbieter wählen →
+                {busy ? "Prüfe…" : "Jetzt prüfen"}
               </button>
             </div>
           </>
         ) : (
           <>
+            {abgelehnt && (
+              <p className="bad">Die Beitrittsanfrage wurde nicht angenommen. Frag deinen Admin nach einem neuen Link oder lege eine eigene Organisation an.</p>
+            )}
             <p className="first-run__option-sub">
               Füge den Link ein, den du von deinem Admin bekommen hast (https://admin.ava.bi/beitreten/…). Der Beitritt wird angefragt und muss vom
               Admin freigegeben werden.

@@ -148,13 +148,14 @@ export function App({ children }: PropsWithChildren) {
     };
   }, [signedIn, einrichtung]);
 
-  // Assistent abgeschlossen: Marke nur mit Organisation oder offener Beitrittsanfrage
-  // (Organisation ist Pflicht); sonst kommt der Assistent beim naechsten Start wieder.
+  // Assistent abgeschlossen: Marke nur mit Organisation (Pflicht); eine offene
+  // Beitrittsanfrage wartet im Assistenten (Organisationsschritt), bis sie
+  // freigegeben ist. Ohne Organisation kommt der Assistent beim naechsten Start wieder.
   const einrichtungAbschliessen = () => {
     setPathChosen(true);
     setEinrichtung("fertig");
     void organisationsStand().then((s) => {
-      if (s && (s.inOrg || s.anfrageOffen)) einrichtungMarkeSetzen();
+      if (s?.inOrg) einrichtungMarkeSetzen();
     });
   };
 
