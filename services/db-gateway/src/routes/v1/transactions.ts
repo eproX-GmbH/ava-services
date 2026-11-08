@@ -2081,7 +2081,7 @@ async function assertTransactionOwnership(
   }
 }
 
-async function assertTransactionOwnershipById(
+export async function assertTransactionOwnershipById(
   c: Context,
   transactionId: string,
   opts: { allowShared?: boolean } = {},

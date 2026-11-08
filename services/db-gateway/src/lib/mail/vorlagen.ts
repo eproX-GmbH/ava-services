@@ -1,6 +1,8 @@
 // Onboarding O5 (docs/PLAN_ONBOARDING.md): E-Mail-Vorlagen fuer Nutzer.
 // Tabellen-Layout mit Inline-Styles (Outlook/Gmail), 600 px, Markenfarben
-// #F2F7F6 / #00C0A7 / #0A1F2A. Das Logo kommt als Inline-Anhang (cid:ava-logo.png),
+// #F2F7F6 / #00C0A7 / #0A1F2A. Links in die App gehen NUR auf eine konkrete Firma in
+// der Web-App (app.ava.bi/firmen/<companyId>, Joyce 2026-11-08): ob die Desktop-App
+// aufgeht, ist nicht sicher, die Firmenseite der Web-App schon. Das Logo kommt als Inline-Anhang (cid:ava-logo.png),
 // damit keine Bildquelle im Netz noetig ist. Jede Mail hat eine Textfassung.
 
 const FARBE = { grund: "#F2F7F6", akzent: "#00C0A7", akzentDunkel: "#009C88", text: "#0A1F2A", leise: "#5B6B73", linie: "#DCE7E5", karte: "#FFFFFF" };
@@ -113,10 +115,15 @@ export function willkommenMail(d: WillkommenDaten): Mail {
 
 // ---- 2. Deine Top 10 ----------------------------------------------------------
 
+/** Firmenseite in der Web-App. */
+export function firmenLink(appBasis: string, companyId: string): string {
+  return `${appBasis.replace(/\/+$/, "")}/firmen/${encodeURIComponent(companyId)}`;
+}
+
 export interface Top10Daten {
   vorname: string | null;
-  firmen: Array<{ name: string; ort: string | null; branche: string | null; score: number; grund: string }>;
-  appUrl: string;
+  firmen: Array<{ name: string; ort: string | null; branche: string | null; score: number; grund: string; companyId?: string | null }>;
+  appBasis: string;
   abmeldenUrl: string;
 }
 
@@ -124,7 +131,7 @@ export function top10Mail(d: Top10Daten): Mail {
   const zeilen = d.firmen.slice(0, 10).map((f, i) => `<tr>
 <td valign="top" style="padding:12px 10px 12px 0;border-top:1px solid ${FARBE.linie};font-family:${SCHRIFT};font-size:13px;font-weight:700;color:${FARBE.akzentDunkel};width:22px;">${i + 1}</td>
 <td valign="top" style="padding:12px 0;border-top:1px solid ${FARBE.linie};font-family:${SCHRIFT};">
-<div style="font-size:15px;font-weight:600;color:${FARBE.text};">${esc(f.name)}</div>
+<div style="font-size:15px;font-weight:600;color:${FARBE.text};">${f.companyId ? `<a href="${esc(firmenLink(d.appBasis, f.companyId))}" style="color:${FARBE.text};text-decoration:underline;text-decoration-color:${FARBE.akzent};">${esc(f.name)}</a>` : esc(f.name)}</div>
 <div style="font-size:13px;color:${FARBE.leise};margin:2px 0 4px 0;">${esc([f.branche, f.ort].filter(Boolean).join(" · "))}</div>
 <div style="font-size:14px;line-height:20px;color:${FARBE.text};">${esc(f.grund)}</div></td>
 <td valign="top" align="right" style="padding:12px 0 12px 10px;border-top:1px solid ${FARBE.linie};font-family:${SCHRIFT};white-space:nowrap;">
@@ -133,14 +140,13 @@ export function top10Mail(d: Top10Daten): Mail {
     ueberschrift(`Deine ${d.firmen.length === 10 ? "Top 10" : `${d.firmen.length} besten Treffer`}`) +
     absatz(esc(d.vorname ? `Hallo ${d.vorname},` : "Hallo,")) +
     absatz(`der Firmen-Radar ist zum ersten Mal durchgelaufen. Diese Firmen passen am besten zu deinem Idealkundenprofil. Ich habe sie in <strong>Meine Firmen</strong> übernommen und behalte sie ab jetzt für dich im Blick.`) +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 0 0;">${zeilen}</table>` +
-    knopf("In AVA ansehen", d.appUrl) +
-    absatz(`<span style="color:${FARBE.leise};font-size:13px;">Die Zahl ist die Passung zu deinem Profil (0 bis 100). Ändert sich bei einer dieser Firmen etwas Wichtiges, melde ich mich.</span>`);
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 18px 0;">${zeilen}</table>` +
+    absatz(`<span style="color:${FARBE.leise};font-size:13px;">Ein Klick auf den Namen öffnet die Firma in der AVA-App. Die Zahl ist die Passung zu deinem Profil (0 bis 100). Ändert sich bei einer dieser Firmen etwas Wichtiges, melde ich mich.</span>`);
   const text = [
     d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "",
     "der Firmen-Radar ist zum ersten Mal durchgelaufen. Diese Firmen passen am besten zu deinem Idealkundenprofil und sind jetzt in Meine Firmen:", "",
-    ...d.firmen.slice(0, 10).map((f, i) => `${i + 1}. ${f.name}${f.ort ? `, ${f.ort}` : ""} (${Math.round(f.score)}) – ${f.grund}`), "",
-    `In AVA ansehen: ${d.appUrl}`, "", `Keine Mails mehr von AVA: ${d.abmeldenUrl}`,
+    ...d.firmen.slice(0, 10).map((f, i) => `${i + 1}. ${f.name}${f.ort ? `, ${f.ort}` : ""} (${Math.round(f.score)}) – ${f.grund}${f.companyId ? `\n   ${firmenLink(d.appBasis, f.companyId)}` : ""}`), "",
+    `Keine Mails mehr von AVA: ${d.abmeldenUrl}`,
   ].join("\n");
   return { betreff: `Deine Top ${Math.min(10, d.firmen.length)}: Diese Firmen passen zu dir`, html: rahmen({ vorschau: `${d.firmen[0]?.name ?? ""} und weitere passende Firmen`, inhalt, fusszeile: abmelden(d.abmeldenUrl) }), text };
 }
@@ -149,8 +155,8 @@ export function top10Mail(d: Top10Daten): Mail {
 
 export interface NeuigkeitenDaten {
   vorname: string | null;
-  meldungen: Array<{ firma: string; titel: string; text: string; art: string; quelleUrl: string | null }>;
-  appUrl: string;
+  meldungen: Array<{ firma: string; titel: string; text: string; art: string; quelleUrl: string | null; companyId?: string | null }>;
+  appBasis: string;
   abmeldenUrl: string;
 }
 
@@ -159,18 +165,17 @@ export function neuigkeitenMail(d: NeuigkeitenDaten): Mail {
 <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;font-weight:700;color:${FARBE.akzentDunkel};margin-bottom:3px;">${esc(m.art)}</div>
 <div style="font-size:15px;font-weight:600;color:${FARBE.text};">${esc(m.firma)}: ${esc(m.titel)}</div>
 <div style="font-size:14px;line-height:20px;color:${FARBE.text};margin-top:3px;">${esc(m.text)}</div>
-${m.quelleUrl ? `<div style="margin-top:5px;font-size:13px;"><a href="${esc(m.quelleUrl)}" style="color:${FARBE.akzentDunkel};">Quelle ansehen</a></div>` : ""}</td></tr>`).join("");
+${m.quelleUrl || m.companyId ? `<div style="margin-top:5px;font-size:13px;">${[m.companyId ? `<a href="${esc(firmenLink(d.appBasis, m.companyId))}" style="color:${FARBE.akzentDunkel};">Firma in AVA öffnen</a>` : "", m.quelleUrl ? `<a href="${esc(m.quelleUrl)}" style="color:${FARBE.akzentDunkel};">Quelle ansehen</a>` : ""].filter(Boolean).join(" &nbsp;·&nbsp; ")}</div>` : ""}</td></tr>`).join("");
   const n = d.meldungen.length;
   const inhalt =
     ueberschrift(n === 1 ? "Eine Neuigkeit zu deinen Firmen" : `${n} Neuigkeiten zu deinen Firmen`) +
     absatz(esc(d.vorname ? `Hallo ${d.vorname},` : "Hallo,")) +
     absatz("das hat sich seit gestern bei deinen Firmen getan:") +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${eintraege}</table>` +
-    knopf("Alle Meldungen in AVA", d.appUrl);
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${eintraege}</table>`;
   const text = [
     d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "", "das hat sich seit gestern bei deinen Firmen getan:", "",
-    ...d.meldungen.slice(0, 12).map((m) => `- ${m.firma}: ${m.titel}\n  ${m.text}${m.quelleUrl ? `\n  Quelle: ${m.quelleUrl}` : ""}`), "",
-    `Alle Meldungen: ${d.appUrl}`, "", `Keine Mails mehr von AVA: ${d.abmeldenUrl}`,
+    ...d.meldungen.slice(0, 12).map((m) => `- ${m.firma}: ${m.titel}\n  ${m.text}${m.companyId ? `\n  In AVA: ${firmenLink(d.appBasis, m.companyId)}` : ""}${m.quelleUrl ? `\n  Quelle: ${m.quelleUrl}` : ""}`), "",
+    `Keine Mails mehr von AVA: ${d.abmeldenUrl}`,
   ].join("\n");
   return { betreff: n === 1 ? `${d.meldungen[0]!.firma}: ${d.meldungen[0]!.titel}` : `${n} Neuigkeiten zu deinen Firmen`, html: rahmen({ vorschau: d.meldungen.map((m) => m.firma).slice(0, 3).join(", "), inhalt, fusszeile: abmelden(d.abmeldenUrl) }), text };
 }

@@ -272,7 +272,7 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildAppOeffnenTools()) registry.register(t);
   for (const t of buildZugangTools()) registry.register(t);
   // Onboarding O2 — Website fuer die Start-Analyse nachreichen.
-  for (const t of buildStartAnalyseTools({ gateway: deps.gateway, icpGesetzt: () => deps.icp.isSet() })) registry.register(t);
+  for (const t of buildStartAnalyseTools({ gateway: deps.gateway, icpGesetzt: () => deps.icp.isSet(), matchStore: deps.discoveryMatches })) registry.register(t);
   // v0.1.427 — PB3: Lazy-RAG-Suche ueber Jahresabschluss-Bloecke.
   for (const t of buildPublicationTools({
     gateway: deps.gateway,

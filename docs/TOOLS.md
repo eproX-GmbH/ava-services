@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-08
-Anzahl Tools: 312
+Anzahl Tools: 313
 
 ## Firmen (30)
 
@@ -2708,7 +2708,17 @@ _Parameter:_
 - `signalton: boolean`
 - `wachwort: boolean`
 
-## start-analyse (1)
+## start-analyse (2)
+
+### `onboarding_startliste`
+
+_Datei:_ `services/desktop/src/main/agent/tools/start-analyse.ts`
+
+Schritt des Start-Workflows nach dem ersten Radar-Lauf: nimmt bis zu `anzahl` (Standard 10) noch nicht übernommene Radar-Treffer ab `mindestScore` (Standard 60) mit Ort und übernimmt sie in Meine Firmen. Sind sie verarbeitet, geht einmalig die Mail „Deine Top 10“ raus (nur, wenn der Nutzer Mails bestätigt hat). Im Chat nur auf ausdrücklichen Wunsch des Nutzers aufrufen; sonst discovery_decide.
+
+_Parameter:_
+- `anzahl: integer` — Höchstens so viele Firmen (1–10, Standard 10)
+- `mindestScore: integer` — Mindest-Score 0–100 (Standard 60)
 
 ### `start_analyse_website`
 

@@ -374,6 +374,23 @@ kein Postfach. Also verschickt der Server.
 - Mit Alessandros echtem Zugang prüfen: CompLeadly-Werkzeugnamen und ob Webhooks
   (Premium) gehen. Ohne Webhook stündlich abfragen.
 
+### O10 — Radar-Kurzprofil als Ersatz auf der Firmenseite (Gateway, Desktop, Web-App, ≈2 Tage)
+Joyce 2026-11-08: Solange die echte Verarbeitung (Profil-, Website-Producer) für eine Firma
+noch nichts geliefert hat, zeigt die Firmenseite in der Desktop-App und in der Web-App
+an dieser Stelle das Mini-Profil und die Website aus dem Firmen-Radar. Das Ergebnis der
+echten Verarbeitung hat immer Vorrang und ersetzt den Ersatz, sobald es da ist.
+- **Nur bei sicherer Zuordnung:** Der Ersatz erscheint ausschließlich, wenn der
+  Radar-Kandidat eindeutig dieser Firma (companyId aus dem Register) zugeordnet ist, so wie
+  der Radar die Zuordnung heute schon als geklärt hervorhebt. Gleiche Namen sind häufig;
+  ein reiner Namenstreffer genügt nie. Ohne sichere Zuordnung bleibt die Seite wie heute.
+- Kennzeichnung auf der Seite: „Kurzprofil aus dem Firmen-Radar, die vollständige
+  Auswertung läuft“.
+- Eine Stelle im Gateway liefert den Ersatz, damit Desktop und Web-App gleich arbeiten.
+
+**Mails (Joyce 2026-11-08):** Links in Mails gehen nur auf eine konkrete Firma in der
+Web-App (`app.ava.bi/firmen/<companyId>`), keine allgemeinen „In AVA ansehen“-Knöpfe.
+Die Mail „Deine Top 10“ geht erst raus, wenn die Firmen verarbeitet sind (oder nach 24 h).
+
 ### O9 — Workflow-Bausteine vollständig (Desktop, ≈2–3 Tage)
 Joyce: Alles, was man für echte Abläufe braucht, muss da sein, auch „es gibt keinen Lead“.
 

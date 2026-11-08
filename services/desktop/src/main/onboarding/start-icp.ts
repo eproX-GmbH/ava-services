@@ -13,9 +13,8 @@
 // Kurz vor dem Speichern wird noch einmal geprueft, ob der ICP inzwischen
 // gesetzt wurde (Nutzer war schneller): dann bleibt seiner stehen.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname, platform } from "node:os";
-import { dirname } from "node:path";
+import { markeLesen, markeSetzen, type OnboardingMarke } from "./marke";
 import type { GatewayClient } from "../agent/gateway-client";
 import type { IcpProfile } from "../agent/icp-store";
 import type { AgentKartenAktion } from "../../shared/types";
@@ -37,8 +36,6 @@ interface Vorschlag {
 
 type AbholAntwort = { art: "vorschlag"; vorschlag: Vorschlag } | { art: "schon_abgeholt" } | { art: "verworfen" } | { art: "nicht_fertig"; status: Status | null };
 
-interface Marke { startIcpGeprueft?: string; websiteGefragt?: string; begruessungId?: string }
-
 export interface StartIcpDeps {
   gateway: GatewayClient;
   datei: string;
@@ -47,6 +44,8 @@ export interface StartIcpDeps {
   hatVerlauf: () => boolean;
   begruessen: (text: string, aktionen: AgentKartenAktion[]) => string;
   aktiv: () => boolean;
+  /** O3: neues Konto erkannt (ICP uebernommen oder Website erfragt) → Start-Workflow anlegen. */
+  neuesKonto?: () => void;
 }
 
 export class StartIcpUebernahme {
@@ -69,21 +68,12 @@ export class StartIcpUebernahme {
     this.timer = null;
   }
 
-  private marke(): Marke {
-    try {
-      return existsSync(this.deps.datei) ? (JSON.parse(readFileSync(this.deps.datei, "utf8")) as Marke) : {};
-    } catch {
-      return {};
-    }
+  private marke(): OnboardingMarke {
+    return markeLesen(this.deps.datei);
   }
 
-  private markeSetzen(patch: Partial<Marke>): void {
-    try {
-      mkdirSync(dirname(this.deps.datei), { recursive: true });
-      writeFileSync(this.deps.datei, JSON.stringify({ ...this.marke(), ...patch }, null, 2), "utf8");
-    } catch (err) {
-      console.warn("[onboarding] Marke nicht gespeichert:", err instanceof Error ? err.message : err);
-    }
+  private markeSetzen(patch: Partial<OnboardingMarke>): void {
+    markeSetzen(this.deps.datei, patch);
   }
 
   private fertig(grund: string): void {
@@ -131,6 +121,7 @@ export class StartIcpUebernahme {
       if (!this.marke().websiteGefragt) {
         const id = this.deps.begruessen(websiteFrage(stand), []);
         this.markeSetzen({ websiteGefragt: new Date().toISOString(), begruessungId: id });
+        this.deps.neuesKonto?.();
       }
       return;
     }
@@ -141,6 +132,7 @@ export class StartIcpUebernahme {
     const v = a.vorschlag;
     this.deps.icp.set({ ...v.icp, quelle: "start-analyse" });
     this.fertig(`ICP aus ${v.website} uebernommen`);
+    this.deps.neuesKonto?.();
     this.deps.begruessen(begruessungText(v), [
       { art: "chat_vorschlag", label: "Passt, such mir passende Firmen", auftrag: "Mein Idealkundenprofil passt. Starte den Firmen-Radar und zeig mir die besten Treffer." },
       { art: "app_oeffnen", label: "Profil anpassen", pfad: "/icp-assistent" },

@@ -173,6 +173,8 @@ const schema = z.object({
   MAILGUN_API_BASE: z.string().url().default("https://api.eu.mailgun.net"),
   MAIL_ABSENDER: z.string().default("AVA <hallo@mail.ava.bi>"),
   AVA_DOWNLOAD_URL: z.string().url().default("https://www.ava.bi/willkommen"),
+  /** Web-App fuer Firmenlinks in Mails (app.ava.bi/firmen/<companyId>). */
+  AVA_APP_URL: z.string().url().default("https://app.ava.bi"),
   /** Eigener Host fuer den MCP-Endpunkt (Endpunkt an der Wurzel, OAuth unter /oauth). */
   MCP_PUBLIC_HOST: z.string().default("mcp.ava.bi"),
   /** Keycloak-Client, dessen Client-Scopes neue MCP-Clients erben. */

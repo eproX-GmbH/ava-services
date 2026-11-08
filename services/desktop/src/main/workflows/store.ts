@@ -55,7 +55,7 @@ const triggerSchema = yup.object({
     })
     .default(undefined)
     .optional(),
-  event: yup.string().oneOf(["radar.newHot", "mail.inbound", "alert.created", "import.finished", "linkedin.lead", "dienst.ereignis"]).optional(),
+  event: yup.string().oneOf(["radar.newHot", "radar.erstlauf", "mail.inbound", "alert.created", "import.finished", "linkedin.lead", "dienst.ereignis"]).optional(),
   filter: yup.object().default(undefined).optional(),
 });
 

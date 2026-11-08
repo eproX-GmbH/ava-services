@@ -35,6 +35,8 @@ import { MithelfenSettingsStore, MithelfenSupervisor } from "../main/register-de
 import { HintergrundAufgaben, AUTO_WERKZEUGE, setzeAufgabenInstanz } from "../main/aufgaben/aufgaben";
 import { StartIcpUebernahme } from "../main/onboarding/start-icp";
 import { setzeStartIcpWecker } from "../main/agent/tools/start-analyse";
+import { erstlaufPruefen, startlisteUebernehmen, startWorkflowAnlegen, startWorkflowVormerken, top10MailPruefen } from "../main/onboarding/startliste";
+import { onboardingDatei as onboardingDateiPfad } from "../main/onboarding/marke";
 import { workerModus } from "../main/worker-modus";
 import { ChromeForTesting } from "../main/chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
@@ -2302,13 +2304,25 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
 
   // Onboarding O2 (docs/PLAN_ONBOARDING.md): ICP aus der Start-Analyse EINMALIG
   // uebernehmen und den ersten Chat eroeffnen. Nie einen vorhandenen ICP ueberschreiben.
+  const onboardingDatei = onboardingDateiPfad();
+  // O3/O5: Mail "Deine Top 10" einmalig, sobald der Start-Import verarbeitet ist.
+  const top10Takt = setInterval(() => {
+    if (!auth.getStatus().signedIn || workerModus.aktiv()) return;
+    void top10MailPruefen({ gateway: gatewayClient, datei: onboardingDatei }).catch((err) => console.warn("[onboarding] Top-10-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
+  }, 2 * 60_000);
+  top10Takt.unref?.();
   const startIcp = new StartIcpUebernahme({
     gateway: gatewayClient,
-    datei: join(paths().get("userData"), "onboarding.json"),
+    datei: onboardingDatei,
     icp: icpStore,
     hatVerlauf: () => memory.list().length > 0,
     begruessen: (text, aktionen) => agent.begruessungAnlegen(text, aktionen),
     aktiv: () => auth.getStatus().signedIn && !workerModus.aktiv(),
+    // O3: neues Konto → Start-Workflow "Top 10 übernehmen" (einmalig, löschbar).
+    neuesKonto: () => {
+      startWorkflowVormerken(onboardingDatei);
+      startWorkflowAnlegen(onboardingDatei, workflowService && featureEnabled("workflows") ? workflowService : null);
+    },
   });
   startIcp.start();
   setzeStartIcpWecker(() => startIcp.start());
@@ -2799,6 +2813,14 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     onAlertsChanged: broadcastAlertsChanged,
     // v0.1.466 — Plan-Politik: Schwelle/Budget nach Abo-Stufe.
     getPolicy: () => policyForTier(getTenantTierCached()),
+    // Onboarding O3 — einmalig nach dem ersten richtigen Radar-Lauf: Start-Workflow
+    // (radar.erstlauf); sind Workflows in der Organisation aus, direkt uebernehmen.
+    onMatch: (rows) => {
+      erstlaufPruefen(onboardingDatei, rows, (payload) => {
+        if (workflowService && featureEnabled("workflows")) void workflowService.emitEvent("radar.erstlauf", payload);
+        else void startlisteUebernehmen({ gateway: gatewayClient, matchStore: discoveryMatches, datei: onboardingDatei }).catch((err) => console.warn("[onboarding] Startliste:", err));
+      });
+    },
     // W4 — Workflow-Trigger radar.newHot (je Treffer ein Ereignis).
     onNeueHeisse: (rows) => {
       for (const r of rows) void workflowService?.emitEvent("radar.newHot", { discoveryId: r.discoveryId, name: r.name, ort: r.ort, score: r.score, begruendung: r.begruendung });
@@ -3150,6 +3172,8 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     getActorId: () => auth.getStatus().actorId ?? null,
   });
   workflowService.start();
+  // Onboarding O3: vorgemerkten Start-Workflow anlegen, falls der Dienst vorher noch fehlte.
+  if (featureEnabled("workflows")) startWorkflowAnlegen(onboardingDatei, workflowService);
   workerModus.anmelden({ name: "Ablaeufe", anhalten: () => workflowService?.stop(), anlaufen: () => workflowService?.start() });
   // v0.1.593 — Vorgangs-Watcher: Meldung nach Abschluss eines Imports (mit
   // Fehleruebersicht) und Quelle fuer das Workflow-Ereignis import.finished.
