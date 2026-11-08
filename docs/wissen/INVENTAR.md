@@ -54,7 +54,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 3 | recherche | 12 | offen |
 | 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | abgenommen 2026-11-07/08 (7 Fall-Karten am 07., übrige 19 am 08.) |
 | 4 | mail | 10 | abgenommen 2026-11-08 |
-| 4 | telegram | 14 | offen |
+| 4 | telegram | 14 | abgenommen 2026-11-08 |
 | 5 | linkedin | 17 | offen |
 | 5 | meldungen | 17 | offen |
 | 6 | ki | 20 | offen |
