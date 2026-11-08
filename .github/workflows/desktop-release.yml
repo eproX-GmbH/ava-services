@@ -232,6 +232,21 @@ jobs:
       # Pulls Ollama + whisper-cli release artifacts into
       # `services/desktop/resources/{ollama,whisper}/<platform>/`
       # before electron-builder hits `extraResources`.
+      # 2026-11-08: GitHub-Release-Downloads (Ollama, Whisper, Electron) lieferten stundenlang
+      # 504, jeder Build brach ab. Einmal geladene Binaries kommen aus dem Cache; die
+      # Fetch-Skripte pruefen die Fassung und ueberspringen Vorhandenes.
+      - name: Cache Downloads (darwin-arm64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            services/desktop/resources/ollama
+            services/desktop/resources/whisper
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: bin-darwin-arm64-${{ hashFiles('services/desktop/src/main/ollama-pin.ts', 'services/desktop/scripts/fetch-ollama.mjs', 'services/desktop/scripts/fetch-whisper.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            bin-darwin-arm64-
+
       - name: Fetch Ollama binary
         working-directory: services/desktop
         run: pnpm fetch:ollama --platform=darwin-arm64
@@ -639,6 +654,21 @@ jobs:
       # any drift, with a per-producer diff in the log.
       - name: Check vendored ai-provider matches workspace
         run: node scripts/check-vendor-drift.mjs
+
+      # 2026-11-08: GitHub-Release-Downloads (Ollama, Whisper, Electron) lieferten stundenlang
+      # 504, jeder Build brach ab. Einmal geladene Binaries kommen aus dem Cache; die
+      # Fetch-Skripte pruefen die Fassung und ueberspringen Vorhandenes.
+      - name: Cache Downloads (darwin-x64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            services/desktop/resources/ollama
+            services/desktop/resources/whisper
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: bin-darwin-x64-${{ hashFiles('services/desktop/src/main/ollama-pin.ts', 'services/desktop/scripts/fetch-ollama.mjs', 'services/desktop/scripts/fetch-whisper.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            bin-darwin-x64-
 
       - name: Fetch Ollama binary (darwin-x64)
         working-directory: services/desktop
@@ -1054,6 +1084,21 @@ jobs:
       # any drift, with a per-producer diff in the log.
       - name: Check vendored ai-provider matches workspace
         run: node scripts/check-vendor-drift.mjs
+
+      # 2026-11-08: GitHub-Release-Downloads (Ollama, Whisper, Electron) lieferten stundenlang
+      # 504, jeder Build brach ab. Einmal geladene Binaries kommen aus dem Cache; die
+      # Fetch-Skripte pruefen die Fassung und ueberspringen Vorhandenes.
+      - name: Cache Downloads (win32-x64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            services/desktop/resources/ollama
+            services/desktop/resources/whisper
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: bin-win32-x64-${{ hashFiles('services/desktop/src/main/ollama-pin.ts', 'services/desktop/scripts/fetch-ollama.mjs', 'services/desktop/scripts/fetch-whisper.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            bin-win32-x64-
 
       - name: Fetch Ollama binary
         working-directory: services/desktop

@@ -106,7 +106,21 @@ jobs:
             *) echo "NPM_TOKEN ok (HTTP $code)" ;;
           esac
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # 2026-11-08: GitHub-Release-Downloads lieferten stundenlang 504 (auch flyctl).
+      # Bis zu drei Versuche mit Pause, statt beim ersten Fehler abzubrechen.
+      - id: flyctl1
+        uses: superfly/flyctl-actions/setup-flyctl@master
+        continue-on-error: true
+      - if: steps.flyctl1.outcome == 'failure'
+        run: sleep 60
+      - id: flyctl2
+        if: steps.flyctl1.outcome == 'failure'
+        uses: superfly/flyctl-actions/setup-flyctl@master
+        continue-on-error: true
+      - if: steps.flyctl1.outcome == 'failure' && steps.flyctl2.outcome == 'failure'
+        run: sleep 180
+      - if: steps.flyctl1.outcome == 'failure' && steps.flyctl2.outcome == 'failure'
+        uses: superfly/flyctl-actions/setup-flyctl@master
 
       # Der Build laeuft auf den Fly-Buildern (--remote-only), der Runner
       # schiebt nur den Kontext hoch. Kontext = Repo-Wurzel, Dockerfile relativ

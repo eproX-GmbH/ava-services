@@ -40,6 +40,29 @@ import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+// 2026-11-08: GitHub lieferte stundenlang sporadisch 504 auf Release-Downloads;
+// jeder Build brach beim ersten Fehler ab. Jetzt: Wiederholung bei Netzfehlern,
+// 429 und 5xx mit wachsender Pause (gut 7 Minuten insgesamt).
+const WARTEN_S = [5, 10, 20, 30, 60, 90, 120, 120];
+async function fetchMitWiederholung(url, init) {
+  let letzter = null;
+  for (let i = 0; i <= WARTEN_S.length; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok || (res.status < 500 && res.status !== 429)) return res;
+      letzter = new Error(`HTTP ${res.status}`);
+      try { await res.body?.cancel(); } catch { /* egal */ }
+    } catch (err) {
+      letzter = err;
+    }
+    if (i < WARTEN_S.length) {
+      console.warn(`[download] ${url}: ${letzter?.message ?? letzter} — neuer Versuch in ${WARTEN_S[i]} s (${i + 1}/${WARTEN_S.length})`);
+      await new Promise((r) => setTimeout(r, WARTEN_S[i] * 1000));
+    }
+  }
+  throw new Error(`download failed: ${url} → ${letzter?.message ?? letzter}`);
+}
+
 // v0.1.220 — Upstream-Schema-Wechsel von v0.3.x auf v0.5.x+. Wir
 // landen ab hier auf der modernen Linie.
 // v0.1.361 — Default-Bundle-Version auf v0.30.0 angehoben (Stand Juni
@@ -142,7 +165,7 @@ let checksums = null;
 async function verifyChecksum(file, assetName) {
   if (checksums === null) {
     const url = `https://github.com/ollama/ollama/releases/download/${VERSION}/sha256sum.txt`;
-    const res = await fetch(url, { redirect: "follow" });
+    const res = await fetchMitWiederholung(url, { redirect: "follow" });
     checksums = new Map();
     if (res.ok) {
       for (const line of (await res.text()).split("\n")) {
@@ -168,7 +191,7 @@ async function verifyChecksum(file, assetName) {
 }
 
 async function download(url, dest) {
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetchMitWiederholung(url, { redirect: "follow" });
   if (!res.ok) {
     throw new Error(`download failed: ${url} → HTTP ${res.status}`);
   }

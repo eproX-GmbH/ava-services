@@ -41,6 +41,29 @@ import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+// 2026-11-08: GitHub lieferte stundenlang sporadisch 504 auf Release-Downloads;
+// jeder Build brach beim ersten Fehler ab. Jetzt: Wiederholung bei Netzfehlern,
+// 429 und 5xx mit wachsender Pause (gut 7 Minuten insgesamt).
+const WARTEN_S = [5, 10, 20, 30, 60, 90, 120, 120];
+async function fetchMitWiederholung(url, init) {
+  let letzter = null;
+  for (let i = 0; i <= WARTEN_S.length; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok || (res.status < 500 && res.status !== 429)) return res;
+      letzter = new Error(`HTTP ${res.status}`);
+      try { await res.body?.cancel(); } catch { /* egal */ }
+    } catch (err) {
+      letzter = err;
+    }
+    if (i < WARTEN_S.length) {
+      console.warn(`[download] ${url}: ${letzter?.message ?? letzter} — neuer Versuch in ${WARTEN_S[i]} s (${i + 1}/${WARTEN_S.length})`);
+      await new Promise((r) => setTimeout(r, WARTEN_S[i] * 1000));
+    }
+  }
+  throw new Error(`download failed: ${url} → ${letzter?.message ?? letzter}`);
+}
+
 // v1.8.4 is the first release that ships the `whisper-bin-x64.zip`
 // asset we need for Windows. v1.7.4 was source-only (zero assets).
 const VERSION = process.env.WHISPER_CPP_VERSION ?? "v1.8.4";
@@ -256,7 +279,7 @@ const PINNED_BOTTLES = {
 };
 
 async function resolveBottleFromApi(formula, bottleTag) {
-  const res = await fetch(
+  const res = await fetchMitWiederholung(
     `https://formulae.brew.sh/api/formula/${formula}.json`,
     { redirect: "follow" },
   );
@@ -301,7 +324,7 @@ async function resolveBottleFromApi(formula, bottleTag) {
  * keine Auth).
  */
 async function downloadBottle(url, dest) {
-  const res = await fetch(url, {
+  const res = await fetchMitWiederholung(url, {
     headers: { Authorization: "Bearer QQ==" },
     redirect: "follow",
   });
@@ -765,7 +788,7 @@ async function cleanupMisplacedDylibs(outDir) {
 }
 
 async function streamTo(url, path) {
-  const res = await fetch(url);
+  const res = await fetchMitWiederholung(url);
   if (!res.ok || !res.body) {
     throw new Error(`download failed: HTTP ${res.status} ${res.statusText}`);
   }
