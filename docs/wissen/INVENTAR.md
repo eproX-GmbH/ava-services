@@ -46,7 +46,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 |---|---|---|---|
 | 1 | erste-schritte | 10 | offen |
 | 1 | konto | 12 | offen |
-| 1 | abrechnung | 11 | offen |
+| 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | offen |
 | 1 | datenschutz | 7 | offen |
 | 2 | firmen | 48 | offen |
 | 3 | kontakte | 18 | offen |
@@ -62,7 +62,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 7 | workflows | 17 | offen |
 | 7 | app | 11 | offen |
 | 7 | hilfe | 14 | offen |
-| | **gesamt** | **292** | |
+| | **gesamt** | **291** | |
 
 Inventar: rund 700 Einträge, davon 628 geprüft, 33 unklar, 14 veraltet, 11 nur für Betreiber.
 
@@ -144,6 +144,8 @@ a = erste-schritte/konto/abrechnung/datenschutz, b = firmen, c = kontakte/radar/
 d = verbindungen/mail/telegram, e = linkedin/meldungen, f = ki/chat, g = workflows/app/hilfe).
 
 **Grundsätzliches**
+
+Entschieden 2026-11-08: A1 nur Sitz-Modell, A2 Preise nennen, A4 ohne Anbieternamen, A8 so lassen (Problem melden oder info@eprox-gmbh.de).
 
 - A1. Sitz-Modell ist live (PRICING_TIERS=1). Sollen die Abrechnungskarten jetzt nur noch das Sitz-Modell
   beschreiben (Karte `ausgabenlimit` streichen, Aktiv/Ruhend ohne Vorbehalt)? (a-F1, b-5)

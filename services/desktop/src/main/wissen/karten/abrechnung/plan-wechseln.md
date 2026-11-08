@@ -14,8 +14,11 @@ aktionen:
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Den Plan wechselst du unter Einstellungen → Konto → Plan & Abrechnung; den Knopf zur Seite findest du unter meiner Antwort. Ein Upgrade wirkt sofort. Beim ersten Kauf öffnet sich die Bezahlseite im Browser, dort hinterlegst du das Zahlungsmittel. Je nach Konto kann ich ein Upgrade auch direkt hier im Chat anstoßen, nachdem du bestätigt hast.
+Den Plan wechselst du unter Einstellungen → Konto → Plan & Abrechnung mit „Plan ändern“; den Knopf zur Seite findest du unter meiner Antwort.
 
-Einen kleineren Plan wählst du ebenfalls dort, je nach Ansicht direkt über „Plan ändern“ oder im Kundenportal über „Abonnement verwalten“. Er gilt zum Ende des laufenden Abrechnungszeitraums; bis dahin behältst du deinen bisherigen Plan.
+- Größerer Plan: „Auf Max wechseln“ oder „Auf Ultra wechseln“ wirkt sofort. Dein Kontingent für diesen Monat steigt anteilig, ab dem nächsten Zyklus gilt der neue Preis. Beim ersten Kauf öffnet sich die Bezahlseite im Browser.
+- Kleinerer Plan: Der Wechsel gilt zum Ende des laufenden Zyklus, bis dahin behältst du deinen Plan samt Kontingent. Du merkst ihn mit „Wechsel vormerken“ vor und kannst ihn bis zum Stichtag rückgängig machen. Ist dein Bestand mehr wert als das neue Kontingent, behältst du alle Daten, nimmst aber keine neuen Firmen auf, bis du Firmen entfernst oder ruhen lässt.
 
-Bezahlt deine Organisation deinen Zugang, entscheiden Owner und Admins über den Plan. Siehst du dort „Wechsel anfragen“, kannst du einen größeren Plan bei ihnen anfragen; die Anfrage stelle ich auch für dich.
+Die Preise: Pro 49 €, Max 149 €, Ultra 299 € je Nutzer und Monat.
+
+Verwaltet deine Organisation die Sitze, entscheiden Owner und Admins in der AVA Konsole. Mit „Wechsel anfragen“ bittest du sie um einen größeren Plan.

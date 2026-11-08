@@ -86,7 +86,7 @@ Close verbindest du an zwei Stellen, jeweils mit demselben persönlichen Schlüs
 Schick den Schlüssel bitte nie als normale Nachricht. Eine Anmeldung bei Close über ein Anmeldefenster statt Schlüssel gibt es noch nicht. Die Eingabekarte gibt es nur in der Desktop-App und wenn deine Organisation „Weitere Dienste“ erlaubt.
 
 ### Was AVA mit CompLeadly für mich tun kann
-`compleadly-nutzen` · gilt für: alle Kanäle · Knöpfe: Vorlagen zeigen (Chat-Vorschlag), CompLeadly verbinden (öffnet Seite)
+`compleadly-nutzen` · gilt für: alle Kanäle · Knöpfe: Vorlagen zeigen (Chat-Vorschlag), CompLeadly verbinden (Eingabekarte)
 
 > Fragen: was kannst du mit compleadly machen · übergib die kontakte von firma x an compleadly · linkedin ansprache über compleadly starten · leads in meine compleadly zielgruppe · wie weit sind meine compleadly sequenzen
 
@@ -94,7 +94,7 @@ Mit verbundenem CompLeadly arbeite ich direkt in deinem CompLeadly-Konto, zum Be
 
 Für die Ansprache je Firma gibt es die Workflow-Vorlage „LinkedIn-Ansprache über CompLeadly“: Ich hole die Kontakte der Firma mit LinkedIn-Profil, du gibst frei, wer an CompLeadly geht, und ich lege sie in deine Zielgruppe. Kontaktanfragen und Nachfassen laufen in CompLeadly und werden dort freigegeben. Ich selbst schicke nichts über LinkedIn.
 
-Was in CompLeadly etwas anlegt oder ändert, bestätigst du vorher. Workflows gibt es, wenn deine Organisation sie freigeschaltet hat. Ist CompLeadly noch nicht verbunden, öffne ich dir die Seite dafür.
+Was in CompLeadly etwas anlegt oder ändert, bestätigst du vorher. Workflows gibt es, wenn deine Organisation sie freigeschaltet hat. Ist CompLeadly noch nicht verbunden, zeige ich dir zuerst die sichere Eingabekarte dafür.
 
 ### Rückmeldungen aus CompLeadly in AVA bekommen (Lead hat geantwortet)
 `compleadly-rueckmeldungen` · gilt für: [desktop] · Knöpfe: Letzte Ereignisse zeigen (Chat-Vorschlag), Rückkanal einrichten (öffnet Seite)
@@ -129,7 +129,7 @@ Das geht nur in der Desktop-App und nur, wenn deine Organisation „Weitere Dien
 
 Mit verbundenem CRM gleiche ich deine Firmen ab, lese Kontakte, Deals und Notizen und lege auf deinen Wunsch Einträge an. Vor jeder Änderung im CRM fragst du kurz zu.
 
-HubSpot verbindest du über ein Anmeldefenster: Ich öffne dir die Seite, du meldest dich bei HubSpot an und gibst AVA frei. Close verbindest du mit deinem Schlüssel aus den Entwickler-Einstellungen von Close. Den trägst du auf derselben Seite ein, nicht im Chat.
+HubSpot verbindest du über ein Anmeldefenster: Unter meiner Antwort findest du den Knopf zur Seite, dort meldest du dich bei HubSpot an und gibst AVA frei. Close verbindest du mit deinem Schlüssel aus den Entwickler-Einstellungen von Close. Den trägst du auf derselben Seite ein, nicht im Chat.
 
 Danach kann ich zum Beispiel deine Firmen aus dem CRM übernehmen und anreichern oder dir zu jeder Firma zeigen, was im CRM dazu steht.
 
@@ -317,7 +317,7 @@ Unter Einstellungen → Verbindungen hängst du alles an, womit ich für dich ar
 
 Umgekehrt kannst du mich aus Claude, ChatGPT oder Microsoft Copilot heraus nutzen, wenn deine Organisation das freigeschaltet hat. Das findest du unter Konto → Verbundene Apps.
 
-Sag mir einfach, was du verbinden willst. Für Weitere Dienste zeige ich dir eine sichere Eingabekarte im Chat, für alles andere öffne ich dir die richtige Stelle. Zugangsdaten schickst du nie als normale Nachricht. Fehlt ein Abschnitt, hat deine Organisation ihn abgeschaltet.
+Sag mir einfach, was du verbinden willst. Für Weitere Dienste zeige ich dir eine sichere Eingabekarte im Chat, für alles andere bekommst du unter meiner Antwort einen Knopf zur richtigen Stelle. Zugangsdaten schickst du nie als normale Nachricht. Fehlt ein Abschnitt, hat deine Organisation ihn abgeschaltet.
 
 ## mail (10 Karten)
 

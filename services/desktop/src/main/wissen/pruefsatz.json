@@ -127,7 +127,7 @@
   },
   {
     "frage": "Ich will höchstens 100 Euro im Monat ausgeben",
-    "erwartet": "ausgabenlimit"
+    "erwartet": "kontingent-erreicht"
   },
   {
     "frage": "Kann ich eine Firma vorübergehend deaktivieren, damit sie nichts kostet?",

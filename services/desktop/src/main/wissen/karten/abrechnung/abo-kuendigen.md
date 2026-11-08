@@ -14,8 +14,10 @@ aktionen:
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Kündigen kannst du jederzeit unter Einstellungen → Konto → Plan & Abrechnung, je nach Ansicht über „Plan ändern“ mit dem Free-Plan oder über „Abonnement verwalten“ im Kundenportal. Die Kündigung gilt zum Ende des laufenden Abrechnungszeitraums; bis dahin nutzt du deinen Plan weiter, danach wechselt dein Konto auf Free. Bis zum Stichtag kannst du die Kündigung zurücknehmen.
+Kündigen heißt bei AVA: zurück auf Free. Unter Einstellungen → Konto → Plan & Abrechnung wählst du über „Plan ändern“ den Plan „Free (ohne Sitz)“ und merkst den Wechsel vor. Er gilt zum Ende des laufenden Zyklus; bis dahin nutzt du deinen Plan samt Kontingent weiter und kannst den Wechsel rückgängig machen.
 
-Deine Daten bleiben erhalten. Im Free-Plan gilt dann wieder die Grenze von 25 Firmen insgesamt.
+Deine Daten bleiben erhalten. Im Free-Plan gilt dann die Grenze von 25 Firmen insgesamt; liegen mehr in „Meine Firmen“, nehme ich keine neuen auf.
 
-Bezahlt deine Organisation deinen Zugang, kündigst du nicht selbst; sprich dafür mit eurem Owner oder Admin. Willst du nur für einzelne Firmen nicht mehr zahlen, nimm sie aus „Meine Firmen“; ab dem Folgemonat zählen sie nicht mehr.
+Hat dir deine Organisation einen Sitz zugewiesen, kündigst du nicht selbst. Das machen Owner oder Admins in der AVA Konsole unter Abrechnung, dort lässt sich ein Sitz zum Zyklusende reduzieren.
+
+Willst du nur für einzelne Firmen nicht mehr zahlen, lass sie ruhen oder nimm sie aus „Meine Firmen“; ab dem Folgemonat zählen sie nicht mehr.
