@@ -16,7 +16,7 @@ stand: 2026-11-07
 Sag mir die Firma, dann sehe ich nach, wie weit sie verarbeitet ist, und handle gleich:
 
 - Noch nicht aufgenommen: Ich nehme sie auf und bereite sie vollständig auf.
-- Läuft noch: Ich verfolge die Verarbeitung und melde mich, wenn sie fertig ist.
+- Läuft noch: Ich verfolge die Verarbeitung und melde mich, wenn sie fertig ist. Kam die Firma aus dem Radar, siehst du bis dahin oft schon ein „Kurzprofil aus dem Firmen-Radar“; die vollständige Auswertung ersetzt es.
 - Ein Schritt fehlt oder ist fehlgeschlagen: Ich hole genau diesen Schritt nach, kostenlos.
 - Die Firma ruht bei dir: Dann zeige ich nur Grunddaten; mit „Aktivieren“ wird sie wieder aufbereitet.
 
