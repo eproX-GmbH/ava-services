@@ -46,7 +46,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 |---|---|---|---|
 | 1 | erste-schritte | 10 | offen |
 | 1 | konto | 12 | offen |
-| 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | offen |
+| 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | abgenommen 2026-11-08 |
 | 1 | datenschutz | 7 | offen |
 | 2 | firmen | 48 | offen |
 | 3 | kontakte | 18 | offen |
