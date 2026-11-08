@@ -70,6 +70,17 @@ export function kartenAusErgebnis(inhalt: string): string[] {
   }
 }
 
+/** Knopf aus einem app_oeffnen-/navigate-Ergebnis ({ knopf: { label, pfad } }). */
+export function knopfAusErgebnis(inhalt: string): AgentKartenAktion | null {
+  try {
+    const k = (JSON.parse(inhalt) as { knopf?: { label?: unknown; pfad?: unknown } }).knopf;
+    if (!k || typeof k.label !== "string" || typeof k.pfad !== "string" || !k.pfad.startsWith("/")) return null;
+    return { art: "app_oeffnen", label: k.label, pfad: k.pfad };
+  } catch {
+    return null;
+  }
+}
+
 export interface AusgefuehrteAktion {
   name: string;
   args: Record<string, unknown>;
@@ -77,7 +88,9 @@ export interface AusgefuehrteAktion {
 
 /**
  * Knoepfe der markierten Karten. Nur Karten, die in dieser Anfrage geliefert
- * wurden; Aktionen, die AVA schon selbst ausgefuehrt hat, fallen weg.
+ * wurden; ein Zugang, den AVA schon selbst angefordert hat, faellt weg.
+ * `angeboten` = Knoepfe aus app_oeffnen/navigate in dieser Anfrage; gleiche
+ * Seite nur einmal (die Kartenbeschriftung gewinnt).
  */
 export function aktionenAufloesen(opts: {
   ids: string[];
@@ -85,9 +98,9 @@ export function aktionenAufloesen(opts: {
   karten: (id: string) => Karte | undefined;
   ausgefuehrt: AusgefuehrteAktion[];
   pfadFuer: (ziel: string, dienst?: string) => string | null;
+  angeboten?: AgentKartenAktion[];
 }): AgentKartenAktion[] {
   const out: AgentKartenAktion[] = [];
-  const schonOffen = new Set(opts.ausgefuehrt.filter((a) => a.name === "app_oeffnen").map((a) => String(a.args.ziel ?? "")));
   const zugangSchon = opts.ausgefuehrt.some((a) => a.name === "zugang_anfordern");
   for (const id of opts.ids.slice(0, 2)) {
     if (!opts.geliefert.has(id)) continue;
@@ -95,7 +108,7 @@ export function aktionenAufloesen(opts: {
     if (!k) continue;
     for (const a of k.aktionen) {
       if (a.art === "app_oeffnen") {
-        if (!a.ziel || schonOffen.has(a.ziel)) continue;
+        if (!a.ziel) continue;
         const pfad = opts.pfadFuer(a.ziel, a.dienst);
         if (pfad) out.push({ art: "app_oeffnen", label: a.label, pfad });
       } else if (a.art === "zugang_anfordern") {
@@ -107,6 +120,7 @@ export function aktionenAufloesen(opts: {
       }
     }
   }
+  out.push(...(opts.angeboten ?? []));
   const gesehen = new Set<string>();
   return out
     .filter((a) => {
