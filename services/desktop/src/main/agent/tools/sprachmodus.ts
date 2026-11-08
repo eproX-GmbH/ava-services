@@ -43,7 +43,7 @@ export function buildSprachmodusTools(ctx: Ctx): Tool[] {
       const value = await c.ui.confirmAction(
         {
           kind: "additive",
-          prompt: `Sprachmodus ändern?\n\n${aenderungen.map(([k, v]) => `${k}: ${String(v)}`).join("\n")}${args.aktiv === true ? "\n\nHinweis: Gesprächsminuten kosten mehr als Chat (grob 0,20–0,40 € je Minute)." : ""}`,
+          prompt: `Sprachmodus ändern?\n\n${aenderungen.map(([k, v]) => `${k}: ${String(v)}`).join("\n")}${args.aktiv === true ? "\n\nHinweis: Die Stimme kostet rund 5 Cent je Gesprächsminute (0,05 US-Dollar), dazu wie im Chat, was AVA im Gespräch erledigt." : ""}`,
           confirmValue: "ja",
           options: [{ value: "ja", label: "Übernehmen" }, { value: "nein", label: "Abbrechen" }],
         },

@@ -20,7 +20,7 @@ export function SprachmodusSection() {
     <section className="provider-section alerts-prefs" id="sprachmodus-section">
       <h3>Mit AVA sprechen</h3>
       <p className="muted">
-        Sprich mit AVA statt zu tippen. Sie hört zu, antwortet mit ihrer Stimme und kann dabei alles, was sie im Chat kann. Gesprächsminuten kosten mehr als Chat, grob 0,20 bis 0,40 Euro je Minute; nach einer Weile Stille geht AVA in den Ruhezustand.
+        Sprich mit AVA statt zu tippen. Sie hört zu, antwortet mit ihrer Stimme und kann dabei alles, was sie im Chat kann. Die Stimme kostet rund 5 Cent je Gesprächsminute (0,05 US-Dollar); dazu kommt wie im Chat, was AVA im Gespräch für dich erledigt. Nach einer Weile Stille geht AVA in den Ruhezustand, dann entstehen keine Kosten.
       </p>
       {!stand.verfuegbar ? (
         stand.hinweis ? (

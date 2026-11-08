@@ -366,6 +366,7 @@ Kontext: Während „Organisation wird geprüft…“ lädt, gibt es einen Link 
 3. **Sprachmodus-Kosten: 0,20 bis 0,40 € je Minute noch aktuell?**
    Gefunden: Oberfläche und Bestätigung nennen „grob 0,20–0,40 € je Minute“ (SprachmodusSection.tsx:23, tools/sprachmodus.ts:45); docs/SPRACHMODUS.md:49 und die Notiz nennen für gpt-live-1 0,05 $/Min. Karte übernimmt den App-Text mit „laut App“.
    Zu entscheiden: Text anpassen oder bestätigen (Chat-Züge kommen dazu).
+   **Erledigt 2026-11-08:** Abrechnung im Gateway ist 0,05 $/Min (gpt-live-1, llm-proxy.ts); 0,20–0,40 € stammte vom Realtime-Rueckfall. App, Bestaetigung, Karte ki-sprachmodus und docs/SPRACHMODUS.md nennen jetzt rund 5 Cent je Minute plus die Chat-Zuege.
 
 4. **Stimme des Sprachmodus: fest Marin oder wählbar?**
    Gefunden: Einstellungen zeigen fest „Stimme: Marin“ (Entscheidung 2026-09-24), `sprachmodus_konfigurieren` erlaubt aber marin/coral/sage/shimmer und die Sitzung nutzt die gespeicherte Stimme (ipc/sprache.ts:49,58). Karte ki-sprachmodus-einstellen nennt die vier Stimmen.

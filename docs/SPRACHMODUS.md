@@ -30,9 +30,14 @@ Stand 2026-09-24 (v0.1.728). Plan und Entscheidungen: docs/PLAN_SPRACHMODUS.md.
   sprechen (Push-to-Talk).
 - **Beenden:** X unten rechts oder Esc. Sonst gibt es im Sprachmodus keine
   Navigation und keine Links.
-- **Kosten:** Gespraechsminuten kosten mehr als Chat (grob 0,20–0,40 € je
-  Minute, dazu die Chat-Zuege wie bisher). Beim Schluessel der Organisation
-  landet der Verbrauch im Kontingent der Organisation.
+- **Kosten:** Die Stimme (GPT Live, `gpt-live-1`) wird je Sekunde abgerechnet:
+  0,05 $ je Gespraechsminute (so auch im Gateway, `routes/v1/llm-proxy.ts`).
+  Dazu kommen wie bisher die Chat-Zuege, die der Relay fuer Denken und
+  Werkzeuge ausfuehrt. Nur im Rueckfall auf die Realtime-Modelle
+  (`gpt-realtime-2.1-mini`/`-2.1`, wenn OpenAI die Live-Sitzung ablehnt) wird je
+  Audio-Token abgerechnet und es wird teurer; daher stammte die fruehere Angabe
+  "0,20–0,40 € je Minute". Beim Schluessel der Organisation landet der
+  Verbrauch im Kontingent der Organisation.
 
 ## Fehlerbilder
 
