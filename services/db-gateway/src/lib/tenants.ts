@@ -210,6 +210,13 @@ export async function ensureTenantForAuth(
     );
     const policy = await readPolicy(client, auth.tenantId);
     await client.query("COMMIT");
+    // Onboarding O1 — Rueckfall fuer Registrierungen, die nicht ueber
+    // /v1/auth/register liefen (Keycloak-Seite): beim ersten Anlegen des Mitglieds.
+    if ((neu.rowCount ?? 0) > 0) {
+      void import("./start-analyse/auftrag")
+        .then(({ auftragAnlegen }) => auftragAnlegen(pool, { actorId: auth.actorId, email: auth.email ?? null }))
+        .catch(() => undefined);
+    }
     const membership = m.rows[0];
     const open = jr.rows[0];
     return {

@@ -170,9 +170,9 @@ eigenem Kurzprofil (ohne deren Referenzen), Workflow-Bausteine vollständig (O9)
 |---|---|---|
 | E1 | Start-Analyse auf dem Server als neue Betreiber-Ausnahme (je Domain einmal, Deckel je Tag)? | **Entschieden (Joyce 2026-11-08): ja**, sofort beim Registrieren, auf vorhandener Fly-Instanz (Gateway); D14 in DECISIONS |
 | E2 | ICP still speichern oder mit einem Klick bestätigen? | **Entschieden (Joyce 2026-11-08):** wird beim ersten Anmelden einmalig in die App übertragen und gespeichert; der erste Chat zeigt ihn und lädt zum Prüfen ein. Ersetzt für diesen einen Fall die Regel „kein stilles Speichern“ aus dem ICP-Plan |
-| E3 | Top 10 automatisch übernehmen (Abweichung von A10) oder ein Klick „Alle 10 übernehmen“? | Ein Klick; bei Bedarf später automatisch |
+| E3 | Top 10 automatisch übernehmen (Abweichung von A10) oder ein Klick „Alle 10 übernehmen“? | **Entschieden (Joyce 2026-11-08):** automatisch über einen beim ersten Start angelegten, sichtbaren und löschbaren Workflow „Start: Top-10-Firmen übernehmen“ (einmalig nach dem ersten Radar-Lauf). Ersetzt für diesen Fall A10 |
 | E4 | Zählt die Startliste aufs Kontingent? | Nein, „Startpaket“ (10 Firmen, Kennzeichen an der Aktivierung) |
-| E5 | Versanddienst für Mails an Nutzer | Microsoft 365 der eproX über Graph (kein neuer Anbieter, Absender z. B. ava@ava.bi) oder ein EU-Transaktionsdienst; beides geht |
+| E5 | Versanddienst für Mails an Nutzer | **Richtung entschieden (Joyce 2026-11-08):** serverseitig über ein Mail-Abo des Betreibers, nicht über die App und nicht über Nutzerkontingente. Welches Abo: offen (Rückfrage an Joyce) |
 | E6 | Double-Opt-in für Meldungsmails? | Ja, über die Willkommensmail |
 | E7 | Freemail-Nutzer: Website im Chat erfragen oder optionales Feld „Firmenwebsite“ in der Registrierung? | Beides: optionales Feld, sonst fragt der Chat |
 | E8 | Gilt O1 auch für Nutzer, die einer bestehenden Organisation beitreten? | Ja, die Analyse ist je Domain zwischengespeichert, also ohne Zusatzkosten |
@@ -294,12 +294,21 @@ fehlgeschlagen.
   mit Deckel je Nutzer. Rückfall: Angebot in eigenen Worten beschreiben oder diktieren,
   daraus wird `icp_aus_dokument`.
 
-### O3 — Erster Radar-Lauf automatisch (Desktop, ≈1–2 Tage)
-- Direkt nach „Passt so“ startet der Rückstands-Lauf (Pro-Parameter, nicht aufs
-  Kontingent). Der Fortschritt steht im Chat.
-- Ergebnis im Chat: die zehn besten Treffer mit Ort, Branche und einem Satz, warum sie
-  passen, plus die Knöpfe **Alle 10 übernehmen** und **Auswählen** (E3), über die
-  L4-Knöpfe und `discovery_decide`.
+### O3 — Erster Radar-Lauf und Start-Workflow (Desktop, ≈2 Tage)
+- Direkt nach der Übernahme des ICP (O2) startet der Rückstands-Lauf (Pro-Parameter, nicht
+  aufs Kontingent). Der Fortschritt steht im Chat.
+- **Start-Workflow (E3, Joyce 2026-11-08):** Beim ersten Start legt die App einmalig den
+  Workflow „Start: Top-10-Firmen übernehmen“ an. Er ist sichtbar und löschbar und läuft
+  einmal nach dem ersten Radar-Lauf: Treffer ab Mindestscore, die besten 10 →
+  `discovery_decide` (übernehmen) → Mail „Deine Top 10“ (O5) → Hinweis im Chat.
+  - Dafür braucht es einen neuen Auslöser „erster Radar-Lauf fertig“ (oder `radar.newHot`
+    mit Kennzeichen Erstlauf) und eine Lauf-Grenze „nur einmal“.
+  - Die lokale Marke `startWorkflowAngelegt` verhindert, dass er nach dem Löschen
+    wiederkommt.
+- Veränderungen zu diesen Firmen meldet danach das normale Meldungswesen; dafür ist kein
+  eigener Workflow nötig.
+- Ergebnis im Chat: die zehn übernommenen Firmen mit Ort, Branche und einem Satz, warum sie
+  passen.
 - Risiko: KI-Urteil über 120 Kandidaten auf einem lokalen Kleinmodell dauert. Für das
   Onboarding auf 40 Kandidaten begrenzen und den Rest im Hintergrund nachziehen. Erst
   messen, dann festlegen.
@@ -309,21 +318,32 @@ fehlgeschlagen.
   auf Free-Aktivierungen und Monatskontingent (E4), höchstens 10 je Organisation, einmal.
 - Vorher prüfen, ob P10 („aktiv/ruhend“) in Gateway und master-data deployt ist.
 
-### O5 — Meldungen per E-Mail (Server und Desktop, ≈3–4 Tage)
-- Versand im Gateway (`lib/mail-versand.ts`, Anbieter nach E5), Absender auf ava.bi mit
-  SPF/DKIM.
-- Mails:
-  1. **Willkommen**: was AVA über die Firma weiß (ICP-Kurzfassung) und Double-Opt-in-Knopf
-     (E6).
-  2. **Radar-Fund**: die besten Treffer mit Begründung, gleich nach O3.
-  3. **Tagesübersicht**: neue Meldungen, höchstens 1 je Tag; Fundstellen immer
-     verlinkt.
-- Desktop: neuer Kanal „E-Mail“ im `NotificationManager` →
-  `POST /v1/benachrichtigungen/mail`. Der Server sendet nur an die eigene, bestätigte
-  Adresse des Kontos und nimmt keine freien Empfänger an.
-- Einstellung in „Meldungen“ (an/aus, Tagesübersicht/sofort) **und** ein Chat-Werkzeug
-  (Regel „Self-Service im Chat“). Abmeldelink in jeder Mail.
-- Ehrlich dazuschreiben: Meldungen kommen, solange AVA läuft.
+### O5 — E-Mails vom Server (Gateway, ≈3–4 Tage)
+Joyce 2026-11-08: Das ist Betreiber-Sache, um Nutzer abzuholen, nicht etwas, das der Nutzer
+einrichtet. Die App hat keinen Mailserver, und der Nutzer hinterlegt nach der Registrierung
+kein Postfach. Also verschickt der Server.
+
+- **Versand:** Gateway (`lib/mail-versand.ts`) über das Mail-Abo des Betreibers (Zugang als
+  Fly-Secret), Absender auf ava.bi mit SPF/DKIM.
+- **Empfänger:** immer die Registrierungsadresse des Kontos, die der Server kennt. Freie
+  Empfänger gibt es nicht.
+- **Vorlage:** schickes HTML in den Markenfarben (#F2F7F6 / #00C0A7 / #0A1F2A), getestet
+  für Outlook und Gmail, mit Textfassung. Fundstellen sind immer verlinkt, und jede Mail
+  hat einen Abmeldelink.
+- **Mails:**
+  1. **Willkommen** direkt nach der Start-Analyse, rein serverseitig, also auch für
+     Website-Registrierungen ohne installierte App: „So sieht AVA eproX“, ICP-Kurzfassung,
+     Referenzen, Download-Knopf, Knopf „Neuigkeiten per E-Mail erhalten“ (Double-Opt-in,
+     E6).
+  2. **„Deine Top 10“** nach dem ersten Radar-Lauf. Die App meldet nur die Liste (Name,
+     Ort, Grund) an `POST /v1/onboarding/mail/top10`, der Server schickt die Mail.
+  3. **Neuigkeiten-Übersicht** höchstens 1 je Tag zu Meldungen über die Firmen in „Meine
+     Firmen“. Neuer Kanal „E-Mail“ im `NotificationManager` →
+     `POST /v1/benachrichtigungen/mail`.
+- Mails 2 und 3 entstehen, solange AVA irgendwo läuft (Desktop oder `headless-ava`), weil
+  Radar und Meldungen dort gerechnet werden.
+- Einstellung in „Meldungen“ (an/aus) **und** ein Chat-Werkzeug (Regel „Self-Service im
+  Chat“).
 
 ### O6 — Einrichtungs-Begleiter im Chat (Desktop, ≈3–4 Tage)
 - Gespeicherte Checkliste (Stand aus O0), sichtbar als schmale Leiste „Einrichtung 3 von
@@ -376,12 +396,10 @@ Joyce: Alles, was man für echte Abläufe braucht, muss da sein, auch „es gibt
 | Auslöser | manuell, Chat, Zeitplan (`intervalMinutes`, Uhrzeit `at`, Wochentage), Ereignisse (`alert.created`, `radar.newHot`, `mail.inbound`, `import.finished`, `linkedin.lead`, `dienst.ereignis`) |
 
 **Lücken, die O9 schließt:**
-1. **„Alle 5 Minuten“ geht nicht.** `intervalMinutes` hat das Minimum 15
-   (`store.ts:41`); der Takt prüft jede Minute (`index.ts:28`). Minimum auf 5 senken.
-   Bei kurzen Abständen keine KI-Schritte ohne Not, also im Entwurf erst prüfen, ob es
-   Neues gibt (`if`), dann rechnen. Vorgaben in Klartext „alle 5 Minuten / stündlich /
-   alle 24 Stunden / werktags um 8“ als feste Abbildung im Werkzeugtext, damit das Modell
-   nicht rät.
+1. **Takt:** Minimum bleibt 15 Minuten (Joyce 2026-11-08, reicht aus). Klartext-Vorgaben
+   „alle 15 Minuten / stündlich / alle 24 Stunden / werktags um 8“ als feste Abbildung im
+   Werkzeugtext, damit das Modell nicht rät; bei kurzen Abständen im Entwurf erst prüfen,
+   ob es Neues gibt (`if`), dann rechnen.
 2. **Kein Zweig für „nichts gefunden“.** Liefert ein Schritt keine Einträge, laufen alle
    folgenden Nodes nicht (wie in n8n). Ein `if` sieht den Fall gar nicht, weil es keine
    Einträge zum Prüfen gibt. Neu:

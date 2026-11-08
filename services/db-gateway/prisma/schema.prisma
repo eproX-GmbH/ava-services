@@ -1476,3 +1476,30 @@ model TransaktionsName {
   name          String
   updatedAt     DateTime @default(now()) @db.Timestamptz(6)
 }
+
+/// Onboarding O1: Start-Analyse je Domain (oeffentliche Website-Daten, 90 Tage Zwischenspeicher).
+model StartAnalyse {
+  domain    String   @id
+  ergebnis  Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// Onboarding O1/O2: ein Auftrag je Nutzer; abgeholtAt sperrt die einmalige Uebernahme des ICP in die App.
+model StartAuftrag {
+  actorId            String    @id
+  domain             String?
+  website            String?
+  status             String    @default("offen")
+  versuch            Int       @default(0)
+  naechsterVersuchAt DateTime  @default(now()) @db.Timestamptz(6)
+  letzterFehler      String?
+  vorschlag          Json?
+  abgeholtAt         DateTime? @db.Timestamptz(6)
+  abgeholtVon        String?
+  abholArt           String?
+  fertigAt           DateTime? @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status, naechsterVersuchAt], map: "StartAuftrag_faellig_idx")
+}

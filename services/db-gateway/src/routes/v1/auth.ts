@@ -7,6 +7,8 @@ import {
 } from "../../lib/keycloak-admin";
 import { passwordGrant } from "../../lib/keycloak-tokens";
 import { takeRegistrationSlot } from "../../lib/auth-rate-limit";
+import { getGatewayPool } from "../../lib/producer-pools";
+import { auftragAnlegen } from "../../lib/start-analyse/auftrag";
 
 // In-App-Registration endpoint (POST /v1/auth/register).
 //
@@ -36,6 +38,8 @@ const RegisterBody = z.object({
   // Pflicht-Checkbox: der Client darf hier nur literal `true` schicken.
   // Schickt er `false` oder lässt er das Feld weg, lehnen wir die
   // Anfrage als invalid_input ab.
+  // Onboarding O1: optionale Firmenwebsite (geht vor der E-Mail-Domain, auch bei Freemail).
+  website: z.string().trim().max(300).optional(),
   acceptTerms: z.literal(true, {
     errorMap: () => ({
       message: "AGB und Datenschutzerklärung müssen akzeptiert werden",
@@ -101,6 +105,12 @@ publicAuthRouter.post("/v1/auth/register", async (c) => {
     logger.info(
       { userId, email: redactEmail(body.email) },
       "[register] keycloak user created",
+    );
+    // Onboarding O1: Start-Analyse sofort anstossen (fire-and-forget, die
+    // Registrierung wartet nie darauf; Freemail wird dort nicht verarbeitet).
+    const website = body.website && /^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(body.website) ? body.website : null;
+    void auftragAnlegen(getGatewayPool(), { actorId: userId, email: body.email.trim().toLowerCase(), website }).catch((err) =>
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register] Start-Analyse nicht angelegt"),
     );
 
     const tokens = await passwordGrant(
