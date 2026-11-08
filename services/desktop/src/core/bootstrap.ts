@@ -33,6 +33,8 @@ import { VorschlaegeSettingsStore } from "../main/suggestions/settings";
 import { ThemenStore } from "../main/themen/store";
 import { MithelfenSettingsStore, MithelfenSupervisor } from "../main/register-delta/supervisor";
 import { HintergrundAufgaben, AUTO_WERKZEUGE, setzeAufgabenInstanz } from "../main/aufgaben/aufgaben";
+import { StartIcpUebernahme } from "../main/onboarding/start-icp";
+import { setzeStartIcpWecker } from "../main/agent/tools/start-analyse";
 import { workerModus } from "../main/worker-modus";
 import { ChromeForTesting } from "../main/chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
@@ -2297,6 +2299,20 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     appKanalRef?.aufgabenGeaendert([...new Set((liste as Array<{ conversationId: string }>).map((a) => a.conversationId))]);
   });
   hintergrundAufgaben.start();
+
+  // Onboarding O2 (docs/PLAN_ONBOARDING.md): ICP aus der Start-Analyse EINMALIG
+  // uebernehmen und den ersten Chat eroeffnen. Nie einen vorhandenen ICP ueberschreiben.
+  const startIcp = new StartIcpUebernahme({
+    gateway: gatewayClient,
+    datei: join(paths().get("userData"), "onboarding.json"),
+    icp: icpStore,
+    hatVerlauf: () => memory.list().length > 0,
+    begruessen: (text, aktionen) => agent.begruessungAnlegen(text, aktionen),
+    aktiv: () => auth.getStatus().signedIn && !workerModus.aktiv(),
+  });
+  startIcp.start();
+  setzeStartIcpWecker(() => startIcp.start());
+  auth.on("status", (s: { signedIn?: boolean }) => { if (s?.signedIn) startIcp.start(); });
 
 
 

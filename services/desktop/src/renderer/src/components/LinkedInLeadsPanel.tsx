@@ -10,7 +10,10 @@ import type { LinkedInLead, LinkedInLeadPost } from "../../../shared/types";
 type Status = "offen" | "uebernommen" | "ignoriert" | "ungeklaert";
 
 const STATUS_LABEL: Record<Status, string> = { offen: "Offen", uebernommen: "Übernommen", ignoriert: "Ignoriert", ungeklaert: "Ungeklärt" };
-const IGNORIER_GRUENDE = ["Kein Entscheider", "Falsche Branche", "Wettbewerber", "Kenne ich schon", "Sonstiges"];
+// PM-2026-0008: fehlende Profilangaben und unklare Firma von fachlicher Nichtpassung trennen.
+const IGNORIER_GRUENDE = ["Kein Entscheider", "Falsche Branche", "Wettbewerber", "Kenne ich schon", "Mini-Profil fehlt", "Unklare Zuordnung", "Sonstiges"];
+
+type Kandidat = { companyId: string; name: string; location: string | null; registerStatus: string | null };
 
 function postKurz(url: string, titel: string | null): string {
   if (titel) return titel;
@@ -45,6 +48,8 @@ export function LinkedInLeadsPanel(): JSX.Element {
   // Sitz unbekannt (weder Mini-Profil noch Impressum): Nutzer traegt den Ort ein.
   const [ortId, setOrtId] = useState<string | null>(null);
   const [ortText, setOrtText] = useState("");
+  // Mehrere Register-Firmen zum Namen (PM-2026-0007): Nutzer waehlt die richtige.
+  const [auswahl, setAuswahl] = useState<{ id: string; kandidaten: Kandidat[] } | null>(null);
   const groesse = 50;
 
   const ladePosts = useCallback(async () => {
@@ -86,15 +91,22 @@ export function LinkedInLeadsPanel(): JSX.Element {
     }
   };
 
-  const uebernehmen = (l: LinkedInLead, ort?: string) =>
-    aktion(l.id, () => window.api.linkedin.leads.uebernehmen(l.id, ort ?? null), (r) => {
-      const x = r as { ok: boolean; ortFehlt?: boolean; hinweise: string[]; error?: string };
+  const uebernehmen = (l: LinkedInLead, wahl?: { ort?: string; companyId?: string }) =>
+    aktion(l.id, () => window.api.linkedin.leads.uebernehmen(l.id, wahl), (r) => {
+      const x = r as { ok: boolean; ortFehlt?: boolean; auswahlNoetig?: boolean; kandidaten?: Kandidat[]; hinweise: string[]; error?: string };
       if (x.ok) {
         setOrtId(null);
         setOrtText("");
+        setAuswahl(null);
         return `${l.personName ?? "Person"} übernommen. ${x.hinweise.join(" ")}`.trim();
       }
-      if (x.ortFehlt) setOrtId(l.id);
+      if (x.auswahlNoetig && x.kandidaten?.length) {
+        setOrtId(null);
+        setAuswahl({ id: l.id, kandidaten: x.kandidaten });
+      } else if (x.ortFehlt) {
+        setAuswahl(null);
+        setOrtId(l.id);
+      }
       return x.error ?? "Übernahme nicht möglich.";
     });
 
@@ -201,7 +213,12 @@ export function LinkedInLeadsPanel(): JSX.Element {
                           ) : (
                             <span>{l.firmaName}</span>
                           )}
-                          {l.konfidenz !== null && <span className="muted small" title="Wie sicher die Zuordnung Person → Firma ist">{l.konfidenz >= 0.9 ? "Zuordnung sicher" : "Zuordnung wahrscheinlich"}</span>}
+                          {/* PM-2026-0007: Firmenname erkannt (Person → Firma) und Firma bestätigt (Register/Website-Firma feststehend) getrennt zeigen. */}
+                          {l.companyId || l.masterCompanyId ? (
+                            <span className="muted small" title="Die Firma steht fest und kann direkt übernommen werden">Firma bestätigt</span>
+                          ) : (
+                            <span className="muted small" title={`Firmenname aus dem Profil erkannt (${l.konfidenz !== null && l.konfidenz >= 0.9 ? "sicher" : "wahrscheinlich"}); welche Firma genau gemeint ist, klärt sich bei der Übernahme`}>Firma erkannt, noch nicht eindeutig</span>
+                          )}
                         </div>
                         <div className="muted small">{[l.firmaOrt, l.firmaDomain, l.firmaBranche].filter(Boolean).join(" · ")}</div>
                         {l.firmaKurz && <p className="leads__kurz">{l.firmaKurz}</p>}
@@ -214,8 +231,21 @@ export function LinkedInLeadsPanel(): JSX.Element {
                   <div className="leads__aktionen">
                     {l.status === "offen" && (
                       <>
+                        {auswahl?.id === l.id && (
+                          <div className="leads__auswahl" role="group" aria-label="Firma auswählen">
+                            <span className="muted small">Welche Firma ist gemeint?</span>
+                            {auswahl.kandidaten.map((k) => (
+                              <button key={k.companyId} type="button" className="btn" disabled={busy === l.id} onClick={() => void uebernehmen(l, { companyId: k.companyId })}>
+                                {k.name}
+                                {k.location ? ` · ${k.location}` : ""}
+                                {k.registerStatus === "CLOSED" ? " · gelöscht" : k.registerStatus === "LOESCHUNG_ANGEKUENDIGT" ? " · in Löschung" : ""}
+                              </button>
+                            ))}
+                            <button type="button" className="btn" onClick={() => { setAuswahl(null); setOrtId(l.id); }}>Nicht dabei – Ort angeben</button>
+                          </div>
+                        )}
                         {ortId === l.id && (
-                          <form className="leads__ort" onSubmit={(e) => { e.preventDefault(); if (ortText.trim()) void uebernehmen(l, ortText.trim()); }}>
+                          <form className="leads__ort" onSubmit={(e) => { e.preventDefault(); if (ortText.trim()) void uebernehmen(l, { ort: ortText.trim() }); }}>
                             <input type="text" value={ortText} onChange={(e) => setOrtText(e.target.value)} placeholder="Sitz der Firma (Ort)" autoFocus />
                             <button type="submit" className="btn btn--primary" disabled={busy === l.id || !ortText.trim()}>Mit Ort übernehmen</button>
                           </form>

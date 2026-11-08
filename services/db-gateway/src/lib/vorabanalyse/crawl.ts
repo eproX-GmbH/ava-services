@@ -110,7 +110,30 @@ function unterseiten(html: string, base: URL, kern: string): string[] {
   return out;
 }
 
-export interface CrawlErgebnis { text: string; url: string; seiten: number; titel: string | null }
+export interface CrawlErgebnis {
+  text: string; url: string; seiten: number; titel: string | null;
+  /** Domains fremder Links (ohne Plattformen), z. B. Logos von Referenzkunden. */
+  externeDomains: string[];
+  /** alt-/title-Texte von Bildern (Referenz-Logos tragen oft nur dort den Namen). */
+  bildtexte: string[];
+}
+
+/** Fremde Link-Domains und Bildtexte einer Seite (fuer Referenzkunden, Start-Analyse). */
+function hinweiseSammeln(html: string, base: URL, kern: string, domains: Set<string>, bilder: Set<string>): void {
+  const href = /href\s*=\s*["'](https?:\/\/[^"'#]+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = href.exec(html)) !== null && domains.size < 80) {
+    try {
+      const d = kernDomain(new URL(m[1]!, base).hostname);
+      if (d && d !== kern && !istPlattform(d)) domains.add(d);
+    } catch { /* unbrauchbar */ }
+  }
+  const alt = /<img\b[^>]*?\b(?:alt|title)\s*=\s*["']([^"']{2,80})["']/gi;
+  while ((m = alt.exec(html)) !== null && bilder.size < 120) {
+    const t = m[1]!.replace(/\s+/g, " ").trim();
+    if (!/^(logo|bild|image|icon|foto|photo)$/i.test(t)) bilder.add(t);
+  }
+}
 
 /** Website kurz lesen: Startseite + bis zu 4 Unterseiten. null = nicht erreichbar/zu wenig Text. */
 export async function websiteLesen(start: string): Promise<CrawlErgebnis | null> {
@@ -126,14 +149,17 @@ export async function websiteLesen(start: string): Promise<CrawlErgebnis | null>
   const sperren = await disallows(base.origin);
   if (sperren.includes("/")) return null;
   const titel = /<title[^>]*>([^<]{1,200})<\/title>/i.exec(html)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
+  const domains = new Set<string>();
+  const bilder = new Set<string>();
+  hinweiseSammeln(html, base, kern, domains, bilder);
   const teile = [htmlZuText(html)];
   let seiten = 1;
   for (const link of unterseiten(html, base, kern)) {
     const pfad = new URL(link).pathname;
     if (sperren.some((d) => pfad.startsWith(d))) continue;
     const h = await seiteLaden(link, 15_000);
-    if (h) { teile.push(`[Seite ${pfad}] ${htmlZuText(h)}`); seiten++; }
+    if (h) { teile.push(`[Seite ${pfad}] ${htmlZuText(h)}`); seiten++; hinweiseSammeln(h, new URL(link), kern, domains, bilder); }
   }
   const text = teile.join("\n\n").trim();
-  return text.length >= 200 ? { text, url: base.toString(), seiten, titel } : null;
+  return text.length >= 200 ? { text, url: base.toString(), seiten, titel, externeDomains: [...domains], bildtexte: [...bilder] } : null;
 }

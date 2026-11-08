@@ -420,6 +420,80 @@ export async function searchHubspotDeals(
   };
 }
 
+// ---- Deal-Liste (PM-2026-0006) ------------------------------------------
+// "Welche offenen Deals habe ich?" — die Suche oben verlangt einen Namen. Die
+// Liste filtert ueber hs_is_closed und uebersetzt Pipeline/Phase in Klartext.
+
+export interface DealListEntry {
+  id: string;
+  name: string | null;
+  amount: string | null;
+  pipeline: string | null;
+  stage: string | null;
+  closeDate: string | null;
+  ownerId: string | null;
+}
+
+export async function listHubspotDeals(
+  crm: CrmManager,
+  args: { ownerId?: string; pipeline?: string; auchGeschlossene?: boolean; limit?: number },
+): Promise<{ items: DealListEntry[]; gesamt: number; mehr: boolean }> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const limit = Math.max(1, Math.min(args.limit ?? 100, 500));
+  const filters: Array<Record<string, unknown>> = [];
+  if (!args.auchGeschlossene) filters.push({ propertyName: "hs_is_closed", operator: "EQ", value: "false" });
+  if (args.ownerId) filters.push({ propertyName: "hubspot_owner_id", operator: "EQ", value: args.ownerId });
+  if (args.pipeline) filters.push({ propertyName: "pipeline", operator: "EQ", value: args.pipeline });
+
+  // Pipelines einmal lesen: Phasen-Ids ("appointmentscheduled", "12345") sind fuer Nutzer unlesbar.
+  const pipelines = (await hubspotFetch(accessToken, `${HUBSPOT_API}/crm/v3/pipelines/deals`).catch(() => null)) as {
+    results?: Array<{ id: string; label?: string; stages?: Array<{ id: string; label?: string }> }>;
+  } | null;
+  const pipelineLabel = new Map<string, string>();
+  const stageLabel = new Map<string, string>();
+  for (const p of pipelines?.results ?? []) {
+    if (p.label) pipelineLabel.set(p.id, p.label);
+    for (const st of p.stages ?? []) if (st.label) stageLabel.set(st.id, st.label);
+  }
+
+  const items: DealListEntry[] = [];
+  let after: string | undefined;
+  let gesamt = 0;
+  do {
+    const json = (await hubspotFetch(accessToken, `${HUBSPOT_API}/crm/v3/objects/deals/search`, {
+      method: "POST",
+      body: JSON.stringify({
+        filterGroups: filters.length > 0 ? [{ filters }] : [],
+        properties: ["dealname", "amount", "dealstage", "pipeline", "closedate", "hubspot_owner_id"],
+        sorts: [{ propertyName: "closedate", direction: "ASCENDING" }],
+        limit: Math.min(100, limit - items.length),
+        ...(after ? { after } : {}),
+      }),
+    })) as {
+      total?: number;
+      results?: Array<{ id: string; properties: Record<string, string | null | undefined> }>;
+      paging?: { next?: { after?: string } };
+    };
+    gesamt = json.total ?? gesamt;
+    for (const r of json.results ?? []) {
+      const pipeline = trimOrNull(r.properties.pipeline);
+      const stage = trimOrNull(r.properties.dealstage);
+      items.push({
+        id: r.id,
+        name: trimOrNull(r.properties.dealname),
+        amount: trimOrNull(r.properties.amount),
+        pipeline: pipeline ? (pipelineLabel.get(pipeline) ?? pipeline) : null,
+        stage: stage ? (stageLabel.get(stage) ?? stage) : null,
+        closeDate: trimOrNull(r.properties.closedate),
+        ownerId: trimOrNull(r.properties.hubspot_owner_id),
+      });
+    }
+    after = json.paging?.next?.after;
+  } while (after && items.length < limit);
+  return { items, gesamt: Math.max(gesamt, items.length), mehr: gesamt > items.length };
+}
+
 // ---- Owners --------------------------------------------------------------
 
 export interface HubspotOwner {

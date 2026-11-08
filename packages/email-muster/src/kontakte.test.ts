@@ -34,3 +34,17 @@ test("kontakteAusAntwort ohne Personen und ohne Namen", () => {
   assert.equal(k.websiteUrl, null);
   assert.deepEqual(k.personen, []);
 });
+
+test("Funktionsadresse an einer Person zaehlt als Firmenadresse (PM-2026-0010)", () => {
+  const k = kontakteAusAntwort("c3", {
+    employments: [{ personId: "p1" }],
+    companyObservations: [{ id: "o1", source: "pattern:offen" }],
+    companyFacts: [
+      { status: "ACTIVE", entityType: "PERSON", personId: "p1", field: "fullName", value: "Anna Meier" },
+      { status: "ACTIVE", entityType: "PERSON", personId: "p1", field: "email", value: "info@muster.de", lastObsId: "o1" },
+    ],
+  });
+  assert.deepEqual(k.firmenEmails, ["info@muster.de"]);
+  assert.deepEqual(k.personen[0]?.emails, []);
+  assert.deepEqual(k.personen[0]?.offeneEmails, [], "Person gilt als unversorgt und bekommt eine echte Ableitung");
+});

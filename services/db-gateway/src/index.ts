@@ -281,6 +281,9 @@ startA2aTakt();
 // Vorabanalyse: Laeufe weiterfuehren, die beim letzten Neustart liefen.
 void import("./lib/vorabanalyse/laeufer").then(({ laeuferStarten }) => laeuferStarten(getGatewayPool())).catch(() => undefined);
 
+// Onboarding O1 — Start-Analysen beim Registrieren (Wiederholungen aus der DB).
+void import("./lib/start-analyse/auftrag").then(({ startLaeuferStarten }) => startLaeuferStarten(getGatewayPool())).catch(() => undefined);
+
 // Verflechtungen V5 — Geschaeftsfuehrer-Rollen des Altbestands nachtragen.
 // Einmaliger Durchgang in kleinen Buendeln; endet von selbst.
 startGfRollenNachtrag();

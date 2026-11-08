@@ -302,6 +302,9 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // (Befund Joyce 2026-11-04, 300k Tokens ohne einen Suchaufruf).
   // Always-on macht die Bestandssuche zum 1-Hop-Pfad.
   "bestand_suchen",
+  // 2026-11-08 (PM-2026-0009): Personenfragen ("E-Mail von X") gehen direkt
+  // an die Kontakte, ohne Umweg ueber Firmensuche und Rueckfrage.
+  "kontakt_suchen",
 ]);
 
 // v0.1.244 — Tool-Bundles. Wenn `tool_search` Treffer aus einer
@@ -383,6 +386,7 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "crm_search_hubspot_companies",
       "crm_search_hubspot_contacts",
       "crm_search_hubspot_deals",
+      "crm_list_hubspot_deals",
       "crm_list_hubspot_owners",
       "crm_introspect_hubspot_company",
       "crm_update_hubspot_company",

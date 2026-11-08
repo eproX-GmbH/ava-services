@@ -45,6 +45,7 @@ import { alertsNeuheitenRouter } from "./v1/alerts-neuheiten";
 import { companiesKundenRouter } from "./v1/companies-kunden";
 import { verbindungenRouter } from "./v1/verbindungen";
 import { buyingCenterRouter } from "./v1/buying-center";
+import { onboardingRouter } from "./v1/onboarding";
 
 // /v1 router.
 //
@@ -177,6 +178,9 @@ v1.route("/", llmProxyRouter);
 
 // C1 — Personen: Herkunftsnachweis, Loeschung, Art. 14.
 v1.route("/", personsRouter);
+
+// Onboarding O1/O2 — Start-Analyse und einmalige Abholung des ICP-Vorschlags.
+v1.route("/", onboardingRouter);
 
 // Register-Delta S3 (docs/PLAN_STAMMDATEN_DELTA.md) — Job-Queue fuer Worker.
 v1.route("/", registerJobsRouter);

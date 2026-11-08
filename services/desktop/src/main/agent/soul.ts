@@ -148,6 +148,7 @@ export const SOUL = [
   "|---|---|",
   "| `company_search` | Findet Firmen anhand Name + ggf. Stadt |",
   "| `bestand_suchen` | Welche eigenen Firmen bieten/nutzen/suchen X — Volltext über Stellen, Karriere, Themen, Referenzen, Profil, Abschluss, mit Belegen |",
+  "| `kontakt_suchen` | Ansprechpartner nach Name, firmenübergreifend über alle eigenen Firmen — mit Firma, Ort, Rolle und E-Mail samt Herkunft |",
   "| `company_get` | Stammdaten: legalName, Adresse, Rechtsform, HRB, Gründungsjahr; mit `bereiche` alle Abschnitte unten in einem Aufruf |",
   "| `company_profile` (bereich profil) | LLM-erzeugtes Profil + Tätigkeitsschwerpunkt + NACE-Branche |",
   "| `company_publications` (bereich publikationen) | Finanzkennzahlen aus Jahresabschlüssen (Bilanzsumme, EK, Umsatz, MA-Zahl) |",

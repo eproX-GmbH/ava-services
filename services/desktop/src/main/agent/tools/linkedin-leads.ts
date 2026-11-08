@@ -75,9 +75,18 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
     category: "linkedin lead uebernehmen kontakt anlegen firma importieren",
     description:
       "Nimmt die Firma des Leads in den Bestand (Registersuche nach Name und Ort, sonst Firma ohne Register ueber die Website), startet die Verarbeitung und legt die Person als Kontakt mit LinkedIn-URL, Rolle und Anlass-Notiz an. " +
-      "Fehlt der Sitz der Firma, wird das Impressum gelesen; klappt auch das nicht (ortFehlt=true), den Nutzer nach dem Ort fragen und mit ort erneut aufrufen. Braucht die leadId aus linkedin_leads.",
-    parameters: { type: "object", required: ["leadId"], properties: { leadId: { type: "string" }, ort: { type: "string", description: "Sitz der Firma, falls die Uebernahme ihn nicht selbst findet (Antwort ortFehlt=true)." } } },
-    schema: yup.object({ leadId: yup.string().trim().min(4).required(), ort: yup.string().trim().max(120).optional() }).noUnknown(true),
+      "Passen mehrere Register-Firmen zum Firmennamen, zeigt das Werkzeug dem Nutzer selbst eine Auswahl (Name · Ort) und macht mit der gewaehlten Firma weiter; ohne Nutzer (Automatik) kommt auswahlNoetig=true mit kandidaten zurueck → mit companyId erneut aufrufen. " +
+      "Fehlt der Sitz der Firma und gibt es keinen Registertreffer, wird das Impressum gelesen; klappt auch das nicht (ortFehlt=true), den Nutzer nach dem Ort fragen und mit ort erneut aufrufen. Braucht die leadId aus linkedin_leads.",
+    parameters: {
+      type: "object",
+      required: ["leadId"],
+      properties: {
+        leadId: { type: "string" },
+        ort: { type: "string", description: "Sitz der Firma, falls die Uebernahme ihn nicht selbst findet (Antwort ortFehlt=true)." },
+        companyId: { type: "string", description: "Gewaehlte Firma aus kandidaten (Antwort auswahlNoetig=true)." },
+      },
+    },
+    schema: yup.object({ leadId: yup.string().trim().min(4).required(), ort: yup.string().trim().max(120).optional(), companyId: yup.string().trim().max(120).optional() }).noUnknown(true),
     preview: (r: { ok?: boolean; companyId?: string; error?: string; abgebrochen?: boolean }) => (r.abgebrochen ? "abgebrochen" : r.ok ? `uebernommen → ${r.companyId}` : `nicht uebernommen: ${r.error ?? "?"}`),
     run: async (args, c) => {
       const value = await c.ui.confirmAction(
@@ -90,7 +99,28 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
         c.signal,
       );
       if (value !== "uebernehmen") return { ok: false, abgebrochen: true };
-      return leadUebernehmen(gw, args.leadId, { ort: args.ort ?? null });
+      const r = await leadUebernehmen(gw, args.leadId, { ort: args.ort ?? null, companyId: args.companyId ?? null });
+      if (!r.auswahlNoetig || !r.kandidaten?.length) return r;
+      // PM-2026-0007: Auswahl direkt anbieten statt nach einem unbekannten Ort zu fragen.
+      let wahl: string;
+      try {
+        wahl = await c.ui.askChoice(
+          r.error ?? "Welche Firma ist gemeint?",
+          [
+            ...r.kandidaten.map((k) => ({
+              value: k.companyId,
+              label: k.name,
+              description: [k.location, k.registerStatus === "CLOSED" ? "gelöscht" : k.registerStatus === "LOESCHUNG_ANGEKUENDIGT" ? "in Löschung" : null].filter(Boolean).join(" · ") || undefined,
+            })),
+            { value: "__keine__", label: "Keine davon", description: "Ort angeben, dann wird die Firma über ihre Website gesucht" },
+          ],
+          c.signal,
+        );
+      } catch {
+        return r; // Automatik ohne Nutzer: Kandidaten zurueckgeben
+      }
+      if (wahl === "__keine__" || wahl.startsWith("__user_other__")) return { ok: false, ortFehlt: true, hinweise: r.hinweise, error: "Keine der Firmen passt. Bitte den Ort der Firma nennen, dann suche ich über die Website weiter." };
+      return leadUebernehmen(gw, args.leadId, { companyId: wahl });
     },
   });
 
@@ -98,7 +128,7 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
     name: "linkedin_lead_ignorieren",
     summary: "Einen LinkedIn-Lead ignorieren (mit Grund) — verschwindet fuer die ganze Organisation aus den offenen Leads.",
     category: "linkedin lead ignorieren verwerfen",
-    description: "Markiert den Lead als ignoriert; der Kommentartext wird dabei geloescht. Grund z. B. 'Kein Entscheider', 'Falsche Branche', 'Wettbewerber'. Laesst sich im Bereich LinkedIn → Leads zuruecknehmen.",
+    description: "Markiert den Lead als ignoriert; der Kommentartext wird dabei geloescht. Gruende wie in der Oberflaeche: 'Kein Entscheider', 'Falsche Branche', 'Wettbewerber', 'Kenne ich schon', 'Mini-Profil fehlt', 'Unklare Zuordnung', 'Sonstiges'. Laesst sich im Bereich LinkedIn → Leads zuruecknehmen.",
     parameters: { type: "object", required: ["leadId"], properties: { leadId: { type: "string" }, grund: { type: "string" } } },
     schema: yup.object({ leadId: yup.string().trim().min(4).required(), grund: yup.string().trim().max(200).optional() }).noUnknown(true),
     preview: (r: { status?: string; personName?: string | null }) => `${r.personName ?? "Lead"}: ${r.status ?? "?"}`,

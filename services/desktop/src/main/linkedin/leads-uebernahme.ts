@@ -34,6 +34,16 @@ export interface UebernahmeErgebnis {
   error?: string;
   /** Firma hat keinen bekannten Sitz: Aufrufer kann den Ort nachliefern (opts.ort). */
   ortFehlt?: boolean;
+  /** Mehrere Register-Firmen passen zum Namen: Aufrufer waehlt eine (opts.companyId). PM-2026-0007 */
+  auswahlNoetig?: boolean;
+  kandidaten?: FirmenKandidat[];
+}
+
+export interface FirmenKandidat {
+  companyId: string;
+  name: string;
+  location: string | null;
+  registerStatus: string | null;
 }
 
 /** Person des Leads als Kontakt an der Firma anlegen (LinkedIn-URL, Rolle, Anlass). */
@@ -46,13 +56,13 @@ export async function kontaktAnlegen(gw: Gw, lead: LinkedInLead, companyId: stri
 }
 
 /** Lead → Firma im Bestand + Person als Kontakt mit Anlass (ein Schritt). */
-export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string | null } = {}): Promise<UebernahmeErgebnis> {
+export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string | null; companyId?: string | null } = {}): Promise<UebernahmeErgebnis> {
   const hinweise: string[] = [];
   const lead = await leadLesen(gw, id);
   if (lead.status === "uebernommen") return { ok: false, hinweise, error: "Dieser Lead ist bereits übernommen." };
 
-  // 1. Firma bestimmen: bekannt → Register-Suche nach Name und Ort → ohne Register per Website.
-  let companyId = lead.companyId ?? lead.masterCompanyId ?? null;
+  // 1. Firma bestimmen: gewaehlt/bekannt → Register-Suche nach Name und Ort → Auswahl → ohne Register per Website.
+  let companyId = opts.companyId?.trim() || lead.companyId || lead.masterCompanyId || null;
   // Sitz: Nutzerangabe → Mini-Profil → Impressum direkt lesen.
   let firmaOrt = opts.ort?.trim() || lead.firmaOrt || null;
   let firmaPlz = opts.ort?.trim() ? null : lead.firmaPlz;
@@ -64,11 +74,13 @@ export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string |
       hinweise.push(`Sitz ${imp.plz} ${imp.ort} laut Impressum.`);
     }
   }
+  let kandidaten: FirmenKandidat[] = [];
   if (!companyId && lead.firmaName) {
     try {
-      const r = await gw<{ items: Array<{ companyId: string; name: string; location?: string | null }> }>(`/v1/companies/search?q=${encodeURIComponent(lead.firmaName)}&limit=5`);
+      const r = await gw<{ items: Array<{ companyId: string; name: string; location?: string | null; registerStatus?: string | null }> }>(`/v1/companies/search?q=${encodeURIComponent(lead.firmaName)}&limit=10`);
+      kandidaten = (r.items ?? []).map((i) => ({ companyId: i.companyId, name: i.name, location: i.location ?? null, registerStatus: i.registerStatus ?? null }));
       const ort = (firmaOrt ?? "").toLowerCase();
-      const treffer = ort ? r.items.find((i) => (i.location ?? "").toLowerCase().includes(ort)) : r.items.length === 1 ? r.items[0] : undefined;
+      const treffer = ort ? kandidaten.find((i) => (i.location ?? "").toLowerCase().includes(ort)) : kandidaten.length === 1 ? kandidaten[0] : undefined;
       if (treffer) {
         companyId = treffer.companyId;
         hinweise.push(`Register-Firma ${treffer.name}${treffer.location ? ` (${treffer.location})` : ""} zugeordnet.`);
@@ -77,8 +89,16 @@ export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string |
       /* Suche nicht entscheidend */
     }
   }
+  // PM-2026-0007: Mehrere Register-Firmen zum Namen und kein Ort, der entscheidet —
+  // die Kandidaten zur Auswahl geben statt nach einem unbekannten Ort zu fragen.
+  // Mit Ort aus dem Mini-Profil, der keinen Treffer ergibt, ebenfalls, solange kein
+  // Website-Weg offen ist und der Nutzer den Ort nicht selbst genannt hat.
+  if (!companyId && kandidaten.length > 1 && (!firmaOrt || (!lead.firmaDomain && !opts.ort?.trim()))) {
+    return { ok: false, auswahlNoetig: true, kandidaten, hinweise, error: `Mehrere Firmen heißen ähnlich wie „${lead.firmaName}“. Bitte die richtige auswählen.` };
+  }
+  if (!companyId && lead.firmaName && kandidaten.length === 0) hinweise.push(`Keine Register-Firma namens „${lead.firmaName}“ gefunden.`);
   if (!companyId && lead.firmaDomain) {
-    if (!firmaOrt) return { ok: false, ortFehlt: true, hinweise, error: "Der Sitz der Firma ist nicht bekannt (weder im Mini-Profil noch im Impressum). Bitte den Ort angeben, dann wird die Firma angelegt." };
+    if (!firmaOrt) return { ok: false, ortFehlt: true, hinweise, error: `${kandidaten.length === 0 && lead.firmaName ? `Keine Register-Firma namens „${lead.firmaName}“ gefunden. ` : ""}Der Sitz der Firma ist nicht bekannt (weder im Mini-Profil noch im Impressum). Bitte den Ort angeben, dann wird die Firma über ihre Website angelegt.` };
     const w = await gw<{ companyId: string; domain: string; neu: boolean; konflikt?: Array<{ companyId: string; name: string | null }> }>("/v1/companies/web", {
       method: "POST",
       body: { name: lead.firmaName ?? lead.firmaDomain, website: lead.firmaDomain, ort: firmaOrt, ...(firmaPlz ? { plz: firmaPlz } : {}) },
@@ -86,7 +106,7 @@ export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string |
     companyId = w.konflikt?.[0]?.companyId ?? w.companyId;
     hinweise.push(w.konflikt?.length ? `Website gehört zur Register-Firma ${w.konflikt[0]!.name ?? w.konflikt[0]!.companyId}.` : w.neu ? "Firma ohne Registereintrag über ihre Website angelegt." : "Firma war bereits angelegt.");
   }
-  if (!companyId) return { ok: false, hinweise, error: "Keine Firma zu diesem Lead bekannt." };
+  if (!companyId) return { ok: false, hinweise, error: lead.firmaName ? `Keine passende Firma zu „${lead.firmaName}“ gefunden und keine Website bekannt.` : "Keine Firma zu diesem Lead bekannt." };
 
   // 2. In den Bestand aufnehmen und verarbeiten.
   let transactionId: string | null = null;

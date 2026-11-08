@@ -233,6 +233,9 @@ export function Chat() {
     useState<ProviderConfigBundle | null>(null);
   const ollamaInstalled = useOllamaStore((s) => s.status.installed);
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  // Onboarding O2: Begruessung nur oeffnen, wenn im Chat gerade nichts steht.
+  const messagesLenRef = useRef(0);
+  messagesLenRef.current = messages.length;
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
@@ -475,6 +478,7 @@ export function Chat() {
   // (frame filter via conversationIdRef, inFlight derived from
   // status.inFlightConversationId === current), so leaving the other
   // turn alone is the right call.
+  const switchConversationRef = useRef<((id: string) => Promise<void>) | null>(null);
   const switchConversation = useCallback(
     async (id: string) => {
       setError(null);
@@ -558,6 +562,8 @@ export function Chat() {
     },
     [replayConversation],
   );
+  switchConversationRef.current = switchConversation;
+
 
   // Start a brand-new conversation. We don't persist it until the
   // first user message lands (the orchestrator's appendMessage path
@@ -730,6 +736,12 @@ export function Chat() {
         // v0.1.578 — neue Telegram-/Mail-Konversation taucht sofort in
         // der Liste auf, auch wenn gerade eine andere offen ist.
         if (frame.kind === "user-message") void refreshConversations();
+        // Onboarding O2: Begruessung (Start-Analyse) als neue Unterhaltung.
+        // Nur hinwechseln, wenn der Chat leer ist; sonst steht sie in der Liste.
+        if (frame.kind === "navigate" && frame.path.startsWith("/chat?c=")) {
+          void refreshConversations();
+          if (messagesLenRef.current === 0) void switchConversationRef.current?.(frame.path.slice("/chat?c=".length));
+        }
         return;
       }
       // Late-binding: if we accepted via (b) and the ref is empty,
