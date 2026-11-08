@@ -14,7 +14,7 @@ aktionen:
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Schlägt ein Verarbeitungsschritt einer Firma fehl, zum Beispiel weil eine Website gerade nicht erreichbar war, versuche ich es von selbst erneut. Dafür schaue ich alle 10 Minuten nach fehlgeschlagenen Schritten und starte sie neu. Nach fünf Versuchen in 24 Stunden gebe ich auf, damit nichts in einer Schleife hängt.
+Schlägt ein Verarbeitungsschritt einer Firma fehl, zum Beispiel weil eine Website gerade nicht erreichbar war, versuche ich es von selbst erneut. Dafür schaue ich alle 10 Minuten nach fehlgeschlagenen Schritten und starte sie neu. Aufgeben tue ich erst, wenn ein Schritt mindestens fünfmal gescheitert ist und der erste Fehler mehr als 24 Stunden zurückliegt, damit nichts endlos in einer Schleife hängt.
 
 Der Schalter heißt „Fehlgeschlagene Schritte automatisch erneut versuchen“ und steht unter Einstellungen → Meldungen → „Meldungen & Ruhezeiten“. Er ist voreingestellt an. Ausschalten lohnt sich nur, wenn ein Schritt immer wieder scheitert und du das erst klären willst.
 
