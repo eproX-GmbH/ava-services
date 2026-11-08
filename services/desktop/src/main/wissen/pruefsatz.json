@@ -1112,5 +1112,9 @@
   {
     "frage": "Ich hab mich mit meiner privaten Mail registriert",
     "erwartet": "start-analyse"
+  },
+  {
+    "frage": "Warum stehen auf einmal zehn Firmen in meiner Liste, die ich nicht importiert habe?",
+    "erwartet": "start-top10"
   }
 ]

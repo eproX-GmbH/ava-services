@@ -20,6 +20,6 @@ Passt das Profil, sag es mir, dann starte ich den Firmen-Radar und zeige dir die
 
 Hast du dich mit einer privaten Adresse wie Gmail registriert oder fand ich keine Website, frage ich dich einmal nach der Website deiner Firma. Nenn sie mir, dann sehe ich sie mir an; das dauert meist unter einer Minute, das Ergebnis kommt als neue Nachricht.
 
-Sobald die Analyse fertig ist, bekommst du außerdem eine Willkommensmail an die Adresse, mit der du dich registriert hast. Weitere Mails von AVA kommen nur, wenn du sie bestätigst; abmelden kannst du dich über den Link in jeder Mail.
+Sobald die Analyse fertig ist, bekommst du außerdem eine Willkommensmail an die Adresse, mit der du dich registriert hast. Weitere Mails kommen nur, wenn du Mails von AVA bestätigt hast; abmelden kannst du dich über den Link in jeder Mail.
 
 Das passiert genau einmal. Hast du schon ein Idealkundenprofil, überschreibe ich es nicht.
