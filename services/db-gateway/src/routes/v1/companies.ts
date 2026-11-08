@@ -11,6 +11,7 @@ import { listProfileChanges } from "../../lib/profile-changes";
 import { applySingleEmployeeCandidate } from "../../lib/contact-extraction-apply";
 import { normalizeLinkedInProfileUrl } from "../../lib/contact-extraction/employee-contact";
 import { logger } from "../../lib/logger";
+import { radarErsatz } from "../../lib/radar-ersatz";
 import { firmenNachGruendungsjahr, gruendungsFilterAktiv } from "../../lib/companies-gruendungsjahr";
 import { requireFeature } from "../../lib/policy-guard";
 import { ensurePersonComplianceSchema } from "../../lib/person-compliance";
@@ -231,8 +232,8 @@ const profileRoute = createRoute({
   method: "get",
   path: "/companies/{companyId}/profile",
   tags: [tag],
-  summary: "Get company profile (W8)",
-  request: { params: CompanyIdParam },
+  summary: "Get company profile (W8); ?ersatz=radar liefert ohne Profil das Radar-Kurzprofil (nur bei sicherer Zuordnung, ersatz: \"radar\")",
+  request: { params: CompanyIdParam, query: z.object({ ersatz: z.literal("radar").optional() }) },
   responses: {
     200: { content: { "application/json": { schema: CompanyProfileShape } }, description: "profile" },
     ...errorResponses,
@@ -268,7 +269,12 @@ companiesRouter.openapi(profileRoute, async (c) => {
     [companyId],
   );
   if (profileRow.rowCount === 0) {
-    throw new HTTPException(404, { message: "not_found" });
+    // Onboarding O10: Radar-Kurzprofil als Ersatz, nur bei sicherer Zuordnung und nur
+    // auf ausdruecklichen Wunsch der Firmenseite (?ersatz=radar). CRM-Abgleich, Werkzeuge
+    // und MCP bekommen weiter 404 und schreiben so nie ein vorlaeufiges Profil weg.
+    const ersatz = c.req.query("ersatz") === "radar" ? await radarErsatz(companyId) : null;
+    if (!ersatz) throw new HTTPException(404, { message: "not_found" });
+    return c.json({ id: companyId, profile: ersatz.profil, url: ersatz.url, businessPurpose: null, keywords: ersatz.keywords, createdAt: ersatz.stand, updatedAt: ersatz.stand, ersatz: "radar" as const }, 200);
   }
   const row = profileRow.rows[0];
   const keywordsRows = await pool.query<{ keyword: string }>(

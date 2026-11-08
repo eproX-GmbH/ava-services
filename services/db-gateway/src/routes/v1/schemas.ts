@@ -86,6 +86,8 @@ export const CompanyProfileShape = z
     keywords: z.array(z.string()).default([]),
     createdAt: z.string(),
     updatedAt: z.string(),
+    /** Onboarding O10: "radar" = Kurzprofil aus dem Firmen-Radar, solange die Verarbeitung fehlt. */
+    ersatz: z.literal("radar").optional(),
   })
   .openapi("CompanyProfile");
 
