@@ -500,8 +500,10 @@ export function SettingsHeader({ tab }: { tab?: SettingsTabId }) {
 // -- Auto-updater (Phase 8.u4) ----------------------------------------
 //
 // Renders the update lifecycle (idle → checking → up-to-date /
-// available → downloading → ready) plus action buttons. The user
-// always confirms downloads + installs — no silent updates.
+// available → downloading → ready) plus action buttons. Seit v0.1.279
+// laedt AVA Updates selbst im Hintergrund (autoDownload); installiert
+// wird beim Klick auf „Neu starten“ oder spaetestens beim Beenden
+// (autoInstallOnAppQuit). Gepruefte Intervalle: Start + alle 15 Minuten.
 
 export function UpdaterSection() {
   const status = useUpdaterStore((s) => s.status);
@@ -514,9 +516,9 @@ export function UpdaterSection() {
     <section className="provider-section" id="updates">
       <h3>Updates</h3>
       <p className="muted small">
-        AVA prüft beim Start und alle vier Stunden auf neue Versionen.
-        Du bestätigst jeden Download und jeden Neustart selbst. Es gibt
-        keine stillen Updates.
+        AVA prüft beim Start und danach alle 15 Minuten auf neue Versionen
+        und lädt sie im Hintergrund herunter. Installiert wird, wenn du auf
+        „Neu starten“ klickst, sonst beim nächsten Beenden von AVA.
       </p>
       <ul className="kv">
         <li>
