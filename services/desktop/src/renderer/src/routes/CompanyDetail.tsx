@@ -135,6 +135,8 @@ interface CompanyProfile {
   url?: string | null;
   businessPurpose?: string | null;
   keywords?: string[];
+  /** Onboarding O10: Kurzprofil aus dem Firmen-Radar, solange die Verarbeitung fehlt. */
+  ersatz?: "radar";
 }
 
 interface ManagingDirector {
@@ -563,7 +565,7 @@ export function CompanyDetail() {
   const profile = useTabQuery<CompanyProfile>(
     "profile",
     id!,
-    `/v1/companies/${id}/profile`,
+    `/v1/companies/${id}/profile?ersatz=radar`,
     !!id && datenErlaubt
   );
   const structured = useTabQuery<StructuredContent>(
@@ -1231,6 +1233,19 @@ function OverviewTab({
     <div className="grid-2">
       <article className="panel">
         <h3>Firmenprofil</h3>
+        {profile?.ersatz === "radar" && (
+          <p className="muted" style={{ marginTop: 0 }}>
+            Kurzprofil aus dem Firmen-Radar. Die vollständige Auswertung läuft noch und ersetzt es, sobald sie fertig ist.
+            {profile.url && !website?.website?.url && (
+              <>
+                {" "}Website:{" "}
+                <a href={profile.url} target="_blank" rel="noreferrer">
+                  {profile.url.replace(/^https?:\/\//, "")}
+                </a>
+              </>
+            )}
+          </p>
+        )}
         {profile?.profile ? (
           <div className="markdown">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
