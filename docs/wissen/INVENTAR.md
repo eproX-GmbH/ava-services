@@ -45,7 +45,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | Block | Ast | Karten | Abnahme |
 |---|---|---|---|
 | 1 | erste-schritte | 10 | offen |
-| 1 | konto | 12 | offen |
+| 1 | konto | 12 | abgenommen 2026-11-08 |
 | 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | abgenommen 2026-11-08 |
 | 1 | datenschutz | 7 | abgenommen 2026-11-08 |
 | 2 | firmen | 48 | offen |
