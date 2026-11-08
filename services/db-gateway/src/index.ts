@@ -21,6 +21,7 @@ import { healthRouter } from "./routes/health";
 import { v1 } from "./routes/v1";
 import { billingWebhookRouter } from "./routes/v1/billing";
 import { publicAuthRouter } from "./routes/v1/auth";
+import { mailLinksRouter } from "./routes/mail-links";
 import { plaeneRouter } from "./routes/v1/plaene";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { internalRegisterJobsRouter } from "./routes/internal-register-jobs";
@@ -103,6 +104,8 @@ app.route("/", webhookEmpfangRouter);
 // reach the handler (the /v1 chain requires a Bearer token). See
 // routes/v1/auth.ts — implements POST /v1/auth/register.
 app.route("/", publicAuthRouter);
+// Onboarding O5 — Bestaetigen/Abmelden aus den Mails (oeffentlich, Token im Link).
+app.route("/", mailLinksRouter);
 // docs/PLAN_PRICING_TIERS.md P1 — Plan-Katalog ohne Auth (Listenpreise fuer App, Konsole, Website).
 app.route("/v1", plaeneRouter);
 

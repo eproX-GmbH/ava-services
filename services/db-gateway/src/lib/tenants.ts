@@ -214,7 +214,7 @@ export async function ensureTenantForAuth(
     // /v1/auth/register liefen (Keycloak-Seite): beim ersten Anlegen des Mitglieds.
     if ((neu.rowCount ?? 0) > 0) {
       void import("./start-analyse/auftrag")
-        .then(({ auftragAnlegen }) => auftragAnlegen(pool, { actorId: auth.actorId, email: auth.email ?? null }))
+        .then(({ auftragAnlegen }) => auftragAnlegen(pool, { actorId: auth.actorId, email: auth.email ?? null, vorname: auth.name ?? null }))
         .catch(() => undefined);
     }
     const membership = m.rows[0];

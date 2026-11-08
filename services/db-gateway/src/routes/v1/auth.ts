@@ -109,7 +109,7 @@ publicAuthRouter.post("/v1/auth/register", async (c) => {
     // Onboarding O1: Start-Analyse sofort anstossen (fire-and-forget, die
     // Registrierung wartet nie darauf; Freemail wird dort nicht verarbeitet).
     const website = body.website && /^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(body.website) ? body.website : null;
-    void auftragAnlegen(getGatewayPool(), { actorId: userId, email: body.email.trim().toLowerCase(), website }).catch((err) =>
+    void auftragAnlegen(getGatewayPool(), { actorId: userId, email: body.email.trim().toLowerCase(), vorname: body.firstName, website }).catch((err) =>
       logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register] Start-Analyse nicht angelegt"),
     );
 

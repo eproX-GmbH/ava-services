@@ -15,6 +15,9 @@ import type { Pool } from "pg";
 import { logger } from "../logger";
 import { startAnalyse, type StartErgebnis } from "./analyse";
 import { domainAusEmail, istFreemail } from "./freemail";
+import { loadEnv } from "../env";
+import { linkAdressen, mailKonto, mailSenden, versandBereit } from "../mail/versand";
+import { willkommenMail } from "../mail/vorlagen";
 
 /** Wartezeit vor Versuch 2, 3, 4 (Versuch 1 laeuft sofort). */
 export const WARTEZEITEN_MS = [10_000, 2 * 60_000, 10 * 60_000];
@@ -40,15 +43,15 @@ function tagesDeckel(): number {
 }
 
 /** Auftrag anlegen, falls es fuer diesen Nutzer noch keinen gibt (idempotent). Freemail ohne Website = sofort fertig, ohne Verarbeitung. */
-export async function auftragAnlegen(pool: Pool, e: { actorId: string; email?: string | null; website?: string | null }): Promise<void> {
+export async function auftragAnlegen(pool: Pool, e: { actorId: string; email?: string | null; vorname?: string | null; website?: string | null }): Promise<void> {
   const domain = e.email ? domainAusEmail(e.email) : null;
   const website = e.website?.trim() || null;
   const status: AuftragStatus = !website && (!domain || istFreemail(domain)) ? "freemail" : "offen";
   const r = await pool.query(
-    `INSERT INTO "StartAuftrag" ("actorId", "domain", "website", "status", "fertigAt")
-     VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'offen' THEN NULL ELSE NOW() END)
+    `INSERT INTO "StartAuftrag" ("actorId", "domain", "website", "status", "fertigAt", "email", "vorname")
+     VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'offen' THEN NULL ELSE NOW() END, $5, $6)
      ON CONFLICT ("actorId") DO NOTHING`,
-    [e.actorId, domain, website, status],
+    [e.actorId, domain, website, status, e.email?.trim().toLowerCase() || null, e.vorname?.trim().split(/\s+/)[0]?.slice(0, 60) || null],
   );
   if ((r.rowCount ?? 0) > 0) {
     logger.info({ actorId: e.actorId, domain, mitWebsite: !!website, status }, "[start-analyse] Auftrag angelegt");
@@ -188,7 +191,11 @@ async function bearbeiten(pool: Pool, a: { actorId: string; domain: string | nul
   try {
     if (!zielDomain) { await fertig("freemail", null, null); return; }
     const gespeichert = await ausZwischenspeicher(pool, zielDomain);
-    if (gespeichert) { await fertig("fertig", gespeichert, null); return; }
+    if (gespeichert) {
+      await fertig("fertig", gespeichert, null);
+      void willkommenSenden(pool, a.actorId).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[start-analyse] Willkommensmail"));
+      return;
+    }
     if (await deckelErreicht(pool)) {
       // Kein Versuch verbraucht: in 30 Minuten erneut.
       await pool.query(`UPDATE "StartAuftrag" SET "status" = 'offen', "versuch" = "versuch" - 1, "naechsterVersuchAt" = NOW() + interval '30 minutes', "letzterFehler" = 'Tagesdeckel erreicht' WHERE "actorId" = $1`, [a.actorId]);
@@ -202,6 +209,7 @@ async function bearbeiten(pool: Pool, a: { actorId: string; domain: string | nul
         [zielDomain, JSON.stringify(aus.ergebnis)],
       );
       await fertig("fertig", aus.ergebnis, null);
+      void willkommenSenden(pool, a.actorId).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[start-analyse] Willkommensmail"));
       return;
     }
     if (aus.endgueltig) { await fertig(aus.status === "freemail" ? "freemail" : "keine_website", null, aus.grund); return; }
@@ -223,4 +231,42 @@ async function wiederholen(pool: Pool, a: { actorId: string; versuch: number }, 
     [a.actorId, grund.slice(0, 500), String(warte)],
   );
   logger.info({ actorId: a.actorId, versuch: a.versuch, inSek: warte / 1000, grund }, "[start-analyse] Wiederholung geplant");
+}
+
+// ---- Willkommensmail (O5) ---------------------------------------------------
+
+function domainVon(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+}
+
+/** Willkommensmail genau einmal je Auftrag (willkommenGesendetAt wird atomar gesetzt). */
+export async function willkommenSenden(pool: Pool, actorId: string): Promise<void> {
+  if (!versandBereit()) return;
+  const r = await pool.query<{ email: string | null; vorname: string | null; vorschlag: StartErgebnis | null }>(
+    `UPDATE "StartAuftrag" SET "willkommenGesendetAt" = NOW()
+     WHERE "actorId" = $1 AND "willkommenGesendetAt" IS NULL AND "status" = 'fertig' AND "email" IS NOT NULL AND "vorschlag" IS NOT NULL
+     RETURNING "email", "vorname", "vorschlag"`,
+    [actorId],
+  );
+  const z = r.rows[0];
+  if (!z?.email || !z.vorschlag) return;
+  const v = z.vorschlag;
+  const konto = await mailKonto(pool, { actorId, email: z.email, vorname: z.vorname });
+  const links = linkAdressen(konto.token);
+  const mail = willkommenMail({
+    vorname: konto.vorname,
+    domain: domainVon(v.website),
+    firma: v.eigeneFirma.name || null,
+    angebot: v.icp.angebot,
+    beschreibung: v.icp.beschreibung,
+    branchen: v.icp.branchen,
+    region: v.icp.orte.length ? `${v.icp.orte.join(", ")}, ${v.icp.radiusKm} km Umkreis` : null,
+    referenzen: v.referenzen.filter((x) => x.profil).map((x) => ({ name: x.name, ...(x.profil?.branche ? { branche: x.profil.branche } : {}) })),
+    downloadUrl: loadEnv().AVA_DOWNLOAD_URL,
+    bestaetigenUrl: links.bestaetigen,
+    abmeldenUrl: links.abmelden,
+  });
+  const erg = await mailSenden(pool, konto, "willkommen", mail);
+  // Fehlgeschlagen (z. B. Mailgun kurz weg): Sperre loesen, der naechste Abruf versucht es erneut.
+  if (!erg.ok && erg.grund !== "abgemeldet") await pool.query(`UPDATE "StartAuftrag" SET "willkommenGesendetAt" = NULL WHERE "actorId" = $1`, [actorId]);
 }
