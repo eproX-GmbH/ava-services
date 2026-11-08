@@ -251,7 +251,8 @@ export const ErgebnisShape = z.object({
   trefferUk: z.array(TrefferUkShape).max(5000).optional(),
   ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
   trefferCh: z.array(TrefferChShape).max(5000).optional(),
-  trefferNo: z.array(TrefferNoShape).max(5000).optional(),
+  // Brreg-Aenderungsfeed: ein Tag hatte 6.112 Treffer (2026-11-02), das alte Limit 5.000 brach den Job mit 400 ab.
+  trefferNo: z.array(TrefferNoShape).max(25_000).optional(),
   noBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
   trefferFi: z.array(TrefferFiShape).max(5000).optional(),
   fiBulk: z.object({ von: z.string().max(10), bis: z.string().max(10), gesamt: z.number().int().nonnegative(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),

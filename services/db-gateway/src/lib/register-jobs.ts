@@ -1120,10 +1120,15 @@ async function fiPoolFirmen(pool: pg.Pool): Promise<Array<{ companyId: string; b
   return out;
 }
 
-/** Taeglich: fi_neu je Tag der letzten drei Tage, monatlich fi_refresh je Pool-Firma. */
+/**
+ * Taeglich: fi_neu je Tag (vorgestern bis vor vier Tagen), monatlich fi_refresh
+ * je Pool-Firma. PRH veroeffentlicht neue Firmen erst im Laufe des Folgetags;
+ * um 02:00 UTC am Folgetag lieferte die Abfrage 0 Treffer, und der Tag war
+ * ueber den Schluessel fuer immer erledigt (29.10.-07.11.2026).
+ */
 export async function erzeugeFiJobs(pool: pg.Pool, now: Date = new Date()): Promise<{ neu: number; refresh: number }> {
   let neu = 0;
-  for (let tage = 1; tage <= 3; tage++) {
+  for (let tage = 2; tage <= 4; tage++) {
     const datum = tagIso(new Date(now.getTime() - tage * 86_400_000));
     if (await legeJobAn(pool, "fi_neu", `fi_neu:${datum}`, { datum }, 4)) neu++;
   }
