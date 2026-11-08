@@ -1194,6 +1194,9 @@ const api = {
     addAnother: (): Promise<boolean> => ipcRenderer.invoke("accounts:addAnother"),
     remove: (sub: string): Promise<{ ok: boolean; grund?: string }> =>
       ipcRenderer.invoke("accounts:remove", sub),
+    /** Konto geloescht/deaktiviert: lokalen Space entfernen (aktives Konto → Neustart). */
+    nachLoeschungEntfernen: (sub: string): Promise<{ ok: boolean; grund?: string }> =>
+      ipcRenderer.invoke("accounts:nachLoeschungEntfernen", sub),
     onRelaunching: (cb: (info: { sub: string }) => void): (() => void) => {
       const h = (_e: unknown, info: { sub: string }) => cb(info);
       ipcRenderer.on("accounts:relaunching", h);

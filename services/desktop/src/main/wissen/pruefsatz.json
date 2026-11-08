@@ -1124,5 +1124,21 @@
   {
     "frage": "Ich hänge bei Wartet auf Freigabe fest, was nun?",
     "erwartet": "organisation-beitreten"
+  },
+  {
+    "frage": "Wie kann ich meinen Account komplett löschen?",
+    "erwartet": "konto-loeschen"
+  },
+  {
+    "frage": "Ich bin allein in meiner Organisation und will mein Konto weg haben",
+    "erwartet": "konto-loeschen"
+  },
+  {
+    "frage": "Woher kommen die zehn Firmen in meiner Liste?",
+    "erwartet": "start-top10"
+  },
+  {
+    "frage": "Ich wurde automatisch der falschen Organisation zugeordnet",
+    "erwartet": "organisation-beitreten"
   }
 ]

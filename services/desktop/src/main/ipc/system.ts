@@ -5,7 +5,7 @@
 import { BrowserWindow, app, clipboard, ipcMain, protocol, shell } from "electron";
 import type { resolveConfig } from "../../shared/config";
 import { paths } from "../../core/platform";
-import { getActiveSpaceId, listAccounts, readIdentity, removeAccount, startNewAccount, switchAccount } from "../account-space";
+import { getActiveSpaceId, listAccounts, readIdentity, removeAccount, kontoNachLoeschungEntfernen, startNewAccount, switchAccount } from "../account-space";
 import { Heartbeat } from "../agent";
 import { Auth } from "../auth";
 import { getLogDir, getMainLogPath, logRendererLine } from "../file-logger";
@@ -198,6 +198,9 @@ export function registerSystemIpc(deps: SystemIpcDeps): void {
   });
 
   ipcMain.handle("accounts:remove", (_e, sub: string) => removeAccount(String(sub)));
+
+  // Konto geloescht/deaktiviert (docs/PLAN_KONTO_LOESCHEN.md): Space entfernen, auch das aktive (Neustart).
+  ipcMain.handle("accounts:nachLoeschungEntfernen", (_e, sub: string) => kontoNachLoeschungEntfernen(String(sub)));
 
   // v0.1.409 — „Alles zurücksetzen außer KI-Modelle" (Werksreset). Setzt
   // einen Marker und startet die App neu; die Löschung passiert beim

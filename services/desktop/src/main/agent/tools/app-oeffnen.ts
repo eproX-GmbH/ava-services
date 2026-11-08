@@ -45,6 +45,7 @@ const ZIELE: Record<string, Ziel> = {
   linkedin_bildanalyse: { pfad: "/settings/verbindungen#linkedin-image-analysis", text: "Einstellungen → Verbindungen → LinkedIn" },
   verbundene_apps: { pfad: "/settings/konto#verbindungen", text: "Einstellungen → Konto → Verbundene Apps" },
   organisation: { pfad: "/settings/konto#organisation", text: "Einstellungen → Konto → Organisation" },
+  konto_loeschen: { pfad: "/settings/konto#konto-loeschen", text: "Einstellungen → Konto → Konto löschen (ganz unten)" },
   deine_avas: { pfad: "/settings/konto#instanzen", text: "Einstellungen → Konto → Deine AVAs" },
   langzeitgedaechtnis: { pfad: "/settings/konto#general-memory", text: "Einstellungen → Konto → Langzeitgedächtnis" },
   lokale_modelle: { pfad: "/settings/ki#installed-models", text: "Einstellungen → KI & Kosten → Modelle auf diesem Rechner" },

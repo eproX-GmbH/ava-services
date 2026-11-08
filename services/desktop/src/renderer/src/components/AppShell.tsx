@@ -1,3 +1,4 @@
+import { gatewayFetch } from "../api/gateway";
 import type { PropsWithChildren } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -1050,15 +1051,32 @@ function UserBadge() {
     void lade();
     return window.api.accounts.onRelaunching(({ sub }) => setRelaunching(sub));
   }, [lade]);
+  // Konto loeschen (docs/PLAN_KONTO_LOESCHEN.md, R7): Beim Oeffnen pruefen, ob die
+  // gelisteten Konten noch bestehen; geloeschte/deaktivierte verschwinden von diesem
+  // Rechner. Ohne Netz bleibt die Liste, wie sie ist.
+  const abgleichen = useCallback(async () => {
+    try {
+      const s = await window.api.accounts.list();
+      const fremde = s.accounts.map((a) => a.sub).filter((sub) => sub !== auth.actorId);
+      if (fremde.length === 0) return;
+      const r = await gatewayFetch<{ entfernt: string[] }>("/v1/konten/status", { method: "POST", body: { subs: fremde }, signal: AbortSignal.timeout(8000) });
+      if (!r.entfernt.length) return;
+      for (const sub of r.entfernt) await window.api.accounts.nachLoeschungEntfernen(sub).catch(() => undefined);
+      await lade();
+    } catch {
+      // offline oder Gateway alt: Liste unveraendert
+    }
+  }, [auth.actorId, lade]);
   useEffect(() => {
     if (!open) return;
     void lade();
+    void abgleichen();
     const onDoc = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, lade]);
+  }, [open, lade, abgleichen]);
 
   const anzeigeName = auth.name ?? auth.email ?? (auth.actorId ? kurzId(auth.actorId) : "Konto");
   // T3 — tenant_name-Claim (Keycloak-Gruppe) hat Vorrang; ohne Claim:

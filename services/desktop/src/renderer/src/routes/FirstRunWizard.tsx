@@ -111,7 +111,9 @@ export function FirstRunWizard({
   // schlechter Qualität führte). Neue Reihenfolge: aktive Wahl
   // zwischen Abo (prominent) → API → Lokal (kollabiert).
   // v0.1.555 — Schritt 1: Organisation (Einladungslink / Organisationsschluessel).
-  const [view, setView] = useState<ViewState>("org");
+  // O11 (Joyce 2026-11-08): Reihenfolge KI-Anbieter → Modelle → Organisation. Die
+  // Einrichtung ist erst mit der Organisation fertig (Schritt 3 ruft onPathChosen).
+  const [view, setView] = useState<ViewState>("chooser");
   const [config, setConfig] = useState<ProviderConfigBundle | null>(null);
 
   // Read the persisted provider config once on mount so we know whether
@@ -147,7 +149,7 @@ export function FirstRunWizard({
       </p>
     ) : null;
 
-  if (status.state === "error") {
+  if (status.state === "error" && view !== "org") {
     // v0.1.169 — Escape-hatch via ProviderChooserGrid. Pre-v0.1.169
     // this branch showed a dead-end "install again" screen with no
     // way out, locking Windows users whose bundled Ollama binary
@@ -162,7 +164,7 @@ export function FirstRunWizard({
       const next = await window.api.agent.getProviderConfig();
       setConfig(next);
       onProviderConfigChanged?.(next);
-      onPathChosen?.();
+      setView("org");
     };
     // 2026-11-05 (Befund Alessandro): Seit dem Abo-ueberall-Umbau laeuft auch
     // die Firmenverarbeitung ueber das ChatGPT-Abo. Mit Plan-Freigabe ist
@@ -233,10 +235,8 @@ export function FirstRunWizard({
   const onDownloadAll = async () => {
     setRunning(true);
     setErrorMessage(null);
-    // Tell App.tsx the user has committed to a path BEFORE we await the
-    // first pull. Otherwise the wizard would stay full-screen for the
-    // entire ~9 GB download instead of collapsing into the dock.
-    onPathChosen?.();
+    // Downloads laufen im Hintergrund (DownloadDock); weiter zur Organisation (Schritt 3).
+    setView("org");
     // Sequential. The per-model progress is broadcast over IPC so we
     // don't need to thread it through the await chain. We use the
     // tracked wrapper so the DownloadDock renders a "Queued…" row
@@ -277,7 +277,7 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card first-run__card--wide">
-          <p className="first-run__eyebrow">Schritt 1 von 3 · Organisation</p>
+          <p className="first-run__eyebrow">Schritt 3 von 3 · Organisation</p>
           <h1 className="first-run__title">Arbeitest du in einer Organisation?</h1>
           <p className="muted">
             Organisationen teilen Firmenbestand, Vorgaben und auf Wunsch zentrale KI-Schlüssel. Über einen
@@ -285,7 +285,7 @@ export function FirstRunWizard({
           </p>
           {memoryWarning}
           <OrgStep
-            onWeiterOhne={() => setView("chooser")}
+            onWeiterOhne={() => onPathChosen?.()}
             onOrgSchluessel={async (kind) => {
               try {
                 await window.api.agent.setProvider({ kind });
@@ -320,8 +320,7 @@ export function FirstRunWizard({
       for (const m of stillNeeded) {
         void pullModelTracked(m.name).catch(() => undefined);
       }
-      onPathChosen?.();
-      setView("intro");
+      setView("org");
     };
     // 2026-11-05 (Befund Alessandro): Das ChatGPT-Abo traegt Chat UND
     // Firmenverarbeitung. Mit Plan-Freigabe ist der Schritt erledigt wie beim
@@ -360,7 +359,7 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card first-run__card--wide">
-          <p className="first-run__eyebrow">Schritt 2 von 3 · KI-Anbieter wählen</p>
+          <p className="first-run__eyebrow">Schritt 1 von 3 · KI-Anbieter wählen</p>
           <h1 className="first-run__title">Womit soll AVA denken?</h1>
           <p className="muted">
             {config?.providerLock
@@ -415,7 +414,7 @@ export function FirstRunWizard({
       for (const m of stillNeeded) {
         void pullModelTracked(m.name).catch(() => undefined);
       }
-      onPathChosen?.();
+      setView("org");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -425,7 +424,7 @@ export function FirstRunWizard({
   return (
     <div className="first-run">
       <div className="first-run__card">
-        <p className="first-run__eyebrow">Schritt 3 von 3 · Modelle bereitstellen</p>
+        <p className="first-run__eyebrow">Schritt 2 von 3 · Modelle bereitstellen</p>
         <h1 className="first-run__title">
           {cloudOk ? "Fast geschafft" : "Lokale Modelle herunterladen"}
         </h1>
@@ -488,13 +487,13 @@ export function FirstRunWizard({
               className={visibleMissing.length === 0 ? "primary" : undefined}
               // Alles schon auf dem Rechner (z. B. von einem anderen Konto):
               // dann schliesst der Knopf die Einrichtung ab, statt zu sperren.
-              onClick={visibleMissing.length === 0 ? () => onPathChosen?.() : onDownloadAll}
+              onClick={visibleMissing.length === 0 ? () => setView("org") : onDownloadAll}
               disabled={running}
             >
               {running
                 ? "Lädt…"
                 : visibleMissing.length === 0
-                  ? "Alle Modelle vorhanden, los geht’s →"
+                  ? "Alle Modelle vorhanden, weiter →"
                   : `${cloudOk ? "Embedding" : "Alle"} herunterladen (${visibleMissing.length})`}
             </button>
           )}
@@ -1241,6 +1240,42 @@ function OrgStep({
     }
   };
 
+  // O11: Organisationen mit derselben E-Mail-Domain (Vorschlaege) und "Organisation wechseln".
+  const [vorschlaege, setVorschlaege] = useState<Array<{ tenantId: string; name: string | null }>>([]);
+  useEffect(() => {
+    if (offen || st?.kind === "organisation") return;
+    let alive = true;
+    void gatewayFetch<{ organisationen: Array<{ tenantId: string; name: string | null }> }>("/v1/tenants/vorschlaege", { signal: AbortSignal.timeout(10_000) })
+      .then((r) => { if (alive) setVorschlaege(r.organisationen ?? []); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [offen, st?.kind]);
+  const wechseln = async () => {
+    setBusy(true);
+    setFehler(null);
+    try {
+      await gatewayFetch("/v1/tenants/join/zurueckziehen", { method: "POST", body: {} });
+      setOffen(null);
+      setAbgelehnt(false);
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const domainAnfragen = async (tenantId: string) => {
+    setBusy(true);
+    setFehler(null);
+    try {
+      const r = await gatewayFetch<{ tenantName: string | null }>("/v1/tenants/join/domain", { method: "POST", body: { tenantId } });
+      setOffen({ tenantName: r.tenantName });
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Joyce 2026-11-08: Waehrend die Beitrittsanfrage offen ist, wartet der Assistent
   // (keine Einrichtung ohne Organisation) und prueft alle 15 Sekunden still, ob
   // freigegeben wurde. Bei Freigabe wechselt AVA von selbst in die Organisation;
@@ -1335,7 +1370,7 @@ function OrgStep({
               </button>
               {!st.policy?.providerLock && (
                 <button type="button" onClick={onWeiterOhne} disabled={busy}>
-                  Eigenen Anbieter wählen
+                  Mit meinem gewählten Anbieter weiter
                 </button>
               )}
             </div>
@@ -1344,10 +1379,10 @@ function OrgStep({
           <>
             <p className="first-run__option-sub">
               Deine Organisation hat noch keinen KI-Schlüssel hinterlegt. Bis ein Admin das in der AVA Konsole (admin.ava.bi)
-              nachholt, wähle deinen Anbieter selbst.
+              nachholt, nutzt AVA den Anbieter, den du gerade gewählt hast.
             </p>
             <button type="button" className="primary" onClick={onWeiterOhne}>
-              Anbieter wählen →
+              Weiter →
             </button>
           </>
         )}
@@ -1363,59 +1398,81 @@ function OrgStep({
     );
   }
 
+  // O11: offene Anfrage → nur der Wartebildschirm, mit „Organisation wechseln“ (nie gefangen).
+  if (offen) {
+    return (
+      <div className="first-run__option-card" style={{ borderColor: "var(--accent, #00C0A7)" }}>
+        <h3 className="first-run__option-title">Wartet auf Freigabe</h3>
+        <p className="first-run__option-sub">
+          Wir haben dich der Organisation <strong>{offen.tenantName ?? "deiner Firma"}</strong> zugeordnet. Ein Admin der Organisation muss
+          dich noch freigeben. Ich prüfe alle 15 Sekunden und mache automatisch weiter, sobald du freigegeben bist; die Schlüssel der
+          Organisation gelten dann von selbst. Du kannst AVA so lange offen lassen oder schließen, beim nächsten Start geht es hier
+          weiter.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button type="button" onClick={() => void statusPruefen()} disabled={busy}>
+            {busy ? "Prüfe…" : "Jetzt prüfen"}
+          </button>
+          <button type="button" className="link" onClick={() => void wechseln()} disabled={busy}>
+            Organisation wechseln
+          </button>
+        </div>
+        {fehler && <p className="bad">{fehler}</p>}
+      </div>
+    );
+  }
+
   return (
     <>
       <p className="muted small">
         AVA arbeitet in Organisationen: Sie teilen Firmenbestand, Vorgaben und Schlüssel und sind die Abrechnungseinheit.
-        Lege eine Organisation an (du wirst Owner) oder tritt per Einladungslink bei.
+        Tritt der Organisation deiner Firma bei, lege eine eigene an (du wirst Owner) oder nutze einen Einladungslink.
       </p>
+      {abgelehnt && (
+        <p className="bad">Die Beitrittsanfrage wurde nicht angenommen. Frag deinen Admin nach einem neuen Link oder lege eine eigene Organisation an.</p>
+      )}
+      {vorschlaege.length > 0 && (
+        <div className="first-run__option-card">
+          <h3 className="first-run__option-title">Organisation deiner Firma</h3>
+          <p className="first-run__option-sub">
+            Zu deiner E-Mail-Adresse gibt es {vorschlaege.length === 1 ? "eine Organisation" : "mehrere Organisationen"} in AVA. Der Beitritt
+            wird angefragt und muss von einem Admin freigegeben werden.
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {vorschlaege.map((v) => (
+              <button key={v.tenantId} type="button" className="primary" disabled={busy} onClick={() => void domainAnfragen(v.tenantId)}>
+                {v.name ?? "Organisation"} beitreten
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">Eigene Organisation anlegen</h3>
         <p className="first-run__option-sub">
           Für dein Unternehmen oder Team. Du kannst danach Mitarbeitende einladen, Vorgaben setzen und Schlüssel hinterlegen.
         </p>
         <div style={{ display: "flex", gap: "0.5rem", maxWidth: 560 }}>
-          <input type="text" placeholder="Name der Organisation" value={orgName} onChange={(e) => setOrgName(e.target.value)} style={{ flex: 1 }} disabled={busy || !!offen} />
-          <button type="button" className="primary" disabled={busy || !!offen || orgName.trim().length < 2} onClick={() => void anlegen()}>
+          <input type="text" placeholder="Name der Organisation" value={orgName} onChange={(e) => setOrgName(e.target.value)} style={{ flex: 1 }} disabled={busy} />
+          <button type="button" className="primary" disabled={busy || orgName.trim().length < 2} onClick={() => void anlegen()}>
             Anlegen
           </button>
         </div>
       </div>
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">Einladungslink einer Organisation</h3>
-        {offen ? (
-          <>
-            <p className="first-run__option-sub">
-              <strong>Wartet auf Freigabe.</strong> Du hast den Beitritt zu <strong>{offen.tenantName ?? "der Organisation"}</strong>{" "}
-              angefragt. Ein Admin der Organisation muss ihn noch bestätigen. Ich prüfe alle 15 Sekunden und mache automatisch
-              weiter, sobald du freigegeben bist; die Schlüssel der Organisation gelten dann von selbst. Du kannst AVA so lange
-              offen lassen oder schließen, beim nächsten Start geht es hier weiter.
-            </p>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button type="button" onClick={() => void statusPruefen()} disabled={busy}>
-                {busy ? "Prüfe…" : "Jetzt prüfen"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            {abgelehnt && (
-              <p className="bad">Die Beitrittsanfrage wurde nicht angenommen. Frag deinen Admin nach einem neuen Link oder lege eine eigene Organisation an.</p>
-            )}
-            <p className="first-run__option-sub">
-              Füge den Link ein, den du von deinem Admin bekommen hast (https://admin.ava.bi/beitreten/…). Der Beitritt wird angefragt und muss vom
-              Admin freigegeben werden.
-            </p>
-            <div style={{ display: "flex", gap: "0.5rem", maxWidth: 560 }}>
-              <input type="text" placeholder="https://admin.ava.bi/beitreten/…" value={link} onChange={(e) => setLink(e.target.value)} style={{ flex: 1 }} />
-              <button type="button" className="primary" disabled={busy || link.trim().length < 8} onClick={() => void beitritt()}>
-                Beitritt anfragen
-              </button>
-            </div>
-          </>
-        )}
-        {fehler && <p className="bad">{fehler}</p>}
+        <p className="first-run__option-sub">
+          Füge den Link ein, den du von deinem Admin bekommen hast (https://admin.ava.bi/beitreten/…). Der Beitritt wird angefragt und muss vom
+          Admin freigegeben werden.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", maxWidth: 560 }}>
+          <input type="text" placeholder="https://admin.ava.bi/beitreten/…" value={link} onChange={(e) => setLink(e.target.value)} style={{ flex: 1 }} />
+          <button type="button" className="primary" disabled={busy || link.trim().length < 8} onClick={() => void beitritt()}>
+            Beitritt anfragen
+          </button>
+        </div>
       </div>
+      {fehler && <p className="bad">{fehler}</p>}
     </>
   );
 }

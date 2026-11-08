@@ -5,6 +5,7 @@ import { GeneralMemorySection, PlanSection, ProfileSection } from "../Settings";
 import { VerbindungenSection } from "./VerbindungenSection";
 import { InstanzenSection } from "./InstanzenSection";
 import { KonsoleSection } from "./KonsoleSection";
+import { KontoLoeschenSection } from "./KontoLoeschenSection";
 
 export function KontoTab() {
   return (
@@ -15,6 +16,8 @@ export function KontoTab() {
       <KonsoleSection />
       <InstanzenSection />
       <VerbindungenSection />
+      {/* Konto loeschen: bewusst ganz unten und dezent (docs/PLAN_KONTO_LOESCHEN.md). */}
+      <KontoLoeschenSection />
     </>
   );
 }
