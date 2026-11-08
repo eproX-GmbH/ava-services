@@ -358,7 +358,9 @@ export async function recordUsage(
     // Organisationskonten existieren bereits (Aktivierung); lazily
     // angelegt werden nur persoenliche Konten.
     const acc = await ensureBillingAccount(pool, billingAccountId, "personal");
-    const periodKey = periodKeyFor(effectiveTier(acc));
+    // O4 — Startpaket: unter eigenem periodKey gebucht, zaehlt nirgends aufs Kontingent.
+    const { istStartpaket, STARTPAKET_PERIODE } = await import("./startpaket");
+    const periodKey = (await istStartpaket(pool, billingAccountId, args.companyId)) ? STARTPAKET_PERIODE : periodKeyFor(effectiveTier(acc));
     const res = await pool.query(
       `INSERT INTO "UsageEntry"
          ("billingAccountId", "periodKey", "companyId", source, "createdAt")

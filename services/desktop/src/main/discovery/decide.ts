@@ -41,6 +41,8 @@ interface CandidateLookupRow {
 export async function decideCandidates(
   gateway: GatewayClient,
   decisions: DecideInput[],
+  /** Onboarding O4: Import des Start-Workflows zaehlt als Startpaket nicht aufs Kontingent. */
+  opts: { startpaket?: boolean } = {},
 ): Promise<DecideSummary | { error: string }> {
   if (decisions.length === 0) {
     return { error: "Keine Entscheidungen uebergeben." };
@@ -102,6 +104,7 @@ export async function decideCandidates(
           {
             method: "POST",
             body: {
+              ...(opts.startpaket ? { startpaket: true } : {}),
               companies: teil.map((d) => {
                 const c = byId.get(d.discoveryId)!;
                 return { name: c.name, city: (c.city ?? "").trim() };

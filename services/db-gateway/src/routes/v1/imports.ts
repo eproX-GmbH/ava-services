@@ -1,3 +1,5 @@
+import { startpaketVormerken } from "../../lib/startpaket";
+import { resolveBillingAccountId } from "../../lib/billing";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
@@ -501,7 +503,7 @@ const fromListIngestRoute = createRoute({
 });
 
 importsRouter.openapi(fromListIngestRoute, async (c) => {
-  const { companies, transactionName, isFuzzy, dryRun, country } = c.req.valid("json");
+  const { companies, transactionName, isFuzzy, dryRun, country, startpaket } = c.req.valid("json");
   // P2/P10 — keine Vorabpruefung des ganzen Imports mehr: master-data entscheidet je Firma
   // (try-reserve), was nicht passt, wird ruhend (docs/PLAN_PRICING_TIERS.md P10).
   void dryRun;
@@ -603,6 +605,17 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
     });
   }
   setTransactionName(transactionId, effectiveTxName);
+  // O4 — Startpaket VOR dem Seed vormerken (der bucht bezahlte Konten sofort).
+  if (startpaket) {
+    try {
+      const auth = c.get("auth");
+      const res = await callUpstream<{ companyIds?: string[] }>(c, "masterData", `/api/v1/transactions/${encodeURIComponent(transactionId)}/companies`);
+      const billingAccountId = await resolveBillingAccountId(getGatewayPool(), { tenantId: auth.tenantId, actorId: auth.actorId ?? null });
+      await startpaketVormerken(getGatewayPool(), { billingAccountId, transactionId, companyIds: res?.companyIds ?? [] });
+    } catch (err) {
+      logger.warn({ transactionId, err: err instanceof Error ? err.message : String(err) }, "from-list: Startpaket nicht vorgemerkt");
+    }
+  }
   await seedEntityProgressForTransaction(c, transactionId);
 
   // Persist CRM links for rows we resolved a companyId for.

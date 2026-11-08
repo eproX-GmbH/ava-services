@@ -1545,3 +1545,13 @@ model KontoStatus {
   fehler  String?
   am      DateTime @default(now()) @db.Timestamptz(6)
 }
+
+/// Onboarding O4: Startpaket — bis zu 10 Firmen des Start-Workflows zaehlen nicht aufs Kontingent (einmal je Abrechnungskonto).
+model StartpaketFirma {
+  billingAccountId String
+  companyId        String
+  transactionId    String
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([billingAccountId, companyId])
+}

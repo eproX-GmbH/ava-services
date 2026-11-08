@@ -37,7 +37,9 @@ export async function startlisteUebernehmen(
     .filter((r) => !r.bereitsInAva && r.matchScore !== null && r.matchScore >= mindest && !!r.ort)
     .slice(0, anzahl);
   if (auswahl.length === 0) return { importiert: 0, firmen: [], transactionId: null, hinweis: `Noch kein Treffer ab Score ${mindest} mit Ort.` };
-  const d = await decideCandidates(deps.gateway, auswahl.map((r) => ({ discoveryId: r.discoveryId, decision: "imported" as const, reason: "Start-Workflow: Top-Treffer nach dem ersten Radar-Lauf" })));
+  // Bewusst auch Treffer, die im Free-Plan in der Radar-Tabelle verdeckt sind (Joyce
+  // 2026-11-08: die 10 Besten als Geschenk); als Startpaket zaehlen sie nicht aufs Kontingent.
+  const d = await decideCandidates(deps.gateway, auswahl.map((r) => ({ discoveryId: r.discoveryId, decision: "imported" as const, reason: "Start-Workflow: Top-Treffer nach dem ersten Radar-Lauf" })), { startpaket: true });
   if ("error" in d) return { error: d.error };
   const firmen = auswahl.map((r) => ({ name: r.name, ort: r.ort, branche: r.kategorie ?? null, score: r.matchScore ?? 0, grund: (r.matchBegruendung ?? "").slice(0, 300) }));
   const datei = deps.datei ?? onboardingDatei();

@@ -565,6 +565,8 @@ export const FromListIngestBody = z
     /** docs/PLAN_RADAR_LAENDER.md: Land der Firmen fuer den Abgleich (DE | AT | CH | UK), Standard DE. */
     country: z.enum(["DE", "AT", "CH", "UK", "NO", "FI"]).optional(),
     dryRun: z.boolean().optional().default(false),
+    /** Onboarding O4: Import des Start-Workflows (Top 10) zaehlt als Startpaket nicht aufs Kontingent. */
+    startpaket: z.boolean().optional(),
   })
   .openapi("FromListIngest");
 
