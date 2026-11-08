@@ -703,50 +703,11 @@ function decisionFor(
 
 // ---- Stubs (8.f1) ----------------------------------------------------------
 //
-// Placeholders so the renderer surface has something to render on a fresh
-// install. Replaced in 8.f2 by the gateway endpoint + LLM judge.
+// Ohne eingespeiste Quelle gibt es keine Kandidaten. Die frueheren
+// Demo-Kandidaten (erfundene Meldungen) sind seit 2026-11-08 entfernt.
 
 function defaultStubSource(): CandidateSource {
-  let fired = false;
-  return async () => {
-    if (fired) return [];
-    fired = true;
-    const now = new Date();
-    const recent = (daysAgo: number): string =>
-      new Date(now.getTime() - daysAgo * 86_400_000).toISOString();
-    return [
-      {
-        kind: "publication",
-        companyId: "DEMO_KANNEGIESSER",
-        companyName: "Herbert Kannegiesser GmbH",
-        sourceRef: "demo:publication:kannegiesser:expansion-2026",
-        occurredAt: recent(2),
-        summary:
-          "Pressemitteilung zur Eröffnung eines neuen Werks in Polen mit 120 zusätzlichen Stellen.",
-        payload: { topic: "expansion" },
-      },
-      {
-        kind: "financial-delta",
-        companyId: "DEMO_HETTICH",
-        companyName: "Paul Hettich GmbH & Co. KG",
-        sourceRef: "demo:financial-delta:hettich:fy2025",
-        occurredAt: recent(14),
-        summary:
-          "Geschäftsbericht 2025: Umsatz +18 % gegenüber 2024 (€ 1,42 Mrd.), Operatives Ergebnis +24 %.",
-        payload: { metric: "revenue", deltaPct: 18 },
-      },
-      {
-        kind: "evaluation-flag",
-        companyId: "DEMO_MIELE",
-        companyName: "Miele & Cie. KG",
-        sourceRef: "demo:evaluation-flag:miele:leadership-2026",
-        occurredAt: recent(5),
-        summary:
-          "Vorstandswechsel: Reinhard Zinkann gibt operativen Vorsitz ab; Nachfolge intern bestätigt.",
-        payload: { topic: "leadership" },
-      },
-    ];
-  };
+  return async () => [];
 }
 
 const defaultStubJudge: Judge = async (candidate) => {

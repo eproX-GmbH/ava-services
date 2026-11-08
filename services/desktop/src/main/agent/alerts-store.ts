@@ -292,8 +292,12 @@ export class AlertsStore {
     } catch (err) {
       console.warn("[alerts] read failed:", err);
     }
-    this.cache = out;
-    this.bySourceRef = new Map(out.map((a, i) => [a.sourceRef, i]));
+    // 2026-11-08 — erfundene Demo-Meldungen (sourceRef "demo:…") aus
+    // frueheren Versionen einmalig von der Platte entfernen.
+    const echt = out.filter((a) => !a.sourceRef.startsWith("demo:"));
+    if (echt.length !== out.length) this.rewrite(echt);
+    this.cache = echt;
+    this.bySourceRef = new Map(echt.map((a, i) => [a.sourceRef, i]));
     return this.cache;
   }
 

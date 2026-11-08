@@ -1140,5 +1140,9 @@
   {
     "frage": "Ich wurde automatisch der falschen Organisation zugeordnet",
     "erwartet": "organisation-beitreten"
+  },
+  {
+    "frage": "wieso hab ich meldungen zu firmen die ich nicht kenne",
+    "erwartet": "meldungen-ansehen"
   }
 ]

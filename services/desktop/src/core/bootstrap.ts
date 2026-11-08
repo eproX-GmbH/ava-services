@@ -1094,44 +1094,11 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     windows().broadcast("telegram:changed", snapshot);
   }
   // 8.f4 — real candidate source backed by existing gateway endpoints
-  // (transactions → entities → publications). Falls back to the in-process
-  // demo source ONLY when the real source returns nothing AND the alerts
-  // file is empty, so a fresh-install user still sees something on the
-  // /alerts page while a populated install only sees real candidates.
+  // (transactions → entities → publications). 2026-11-08: der fruehere
+  // Demo-Rueckfall (erfundene Meldungen zu Kannegiesser/Hettich bei jedem
+  // neuen Konto) ist entfernt; ohne echte Kandidaten gibt es keine Meldung.
   const realCandidateSource = buildRealCandidateSource(gatewayClient);
   const compositeCandidateSource = (() => {
-    let demoFired = false;
-    const demoOnce = async (): Promise<
-      Awaited<ReturnType<typeof realCandidateSource>>
-    > => {
-      if (demoFired) return [];
-      demoFired = true;
-      const now = Date.now();
-      const recent = (daysAgo: number) =>
-        new Date(now - daysAgo * 86_400_000).toISOString();
-      return [
-        {
-          kind: "publication" as const,
-          companyId: "DEMO_KANNEGIESSER",
-          companyName: "Herbert Kannegiesser GmbH",
-          sourceRef: "demo:publication:kannegiesser:expansion-2026",
-          occurredAt: recent(2),
-          summary:
-            "Pressemitteilung zur Eröffnung eines neuen Werks in Polen mit 120 zusätzlichen Stellen.",
-          payload: { topic: "expansion" },
-        },
-        {
-          kind: "financial-delta" as const,
-          companyId: "DEMO_HETTICH",
-          companyName: "Paul Hettich GmbH & Co. KG",
-          sourceRef: "demo:financial-delta:hettich:fy2025",
-          occurredAt: recent(14),
-          summary:
-            "Geschäftsbericht 2025: Umsatz +18 % gegenüber 2024 (€ 1,42 Mrd.), Operatives Ergebnis +24 %.",
-          payload: { metric: "revenue", deltaPct: 18 },
-        },
-      ];
-    };
     return async (since: Date | null) => {
       const real = await realCandidateSource(since);
       // L6 — fold LinkedIn-Beobachter heartbeat candidates into the same
@@ -1140,10 +1107,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       // tick skips it. We never overwrite real publications even when
       // they overlap: both kinds can fire in the same sweep.
       const linkedin = await fetchLinkedInHeartbeatCandidates();
-      const merged = [...real, ...linkedin];
-      if (merged.length > 0) return merged;
-      if (alerts.list().length > 0) return [];
-      return demoOnce();
+      return [...real, ...linkedin];
     };
   })();
 
