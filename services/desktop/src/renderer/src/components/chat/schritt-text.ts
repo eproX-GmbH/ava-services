@@ -24,7 +24,7 @@ const REGELN: Array<[RegExp, string]> = [
   [/^(datei_|attachment|excel)/, "Liest die Datei"],
   [/^(web_|website|recherche|research)/, "Recherchiert im Netz"],
   [/^(buying_center)/, "Arbeitet an der Power Map"],
-  [/^(app_oeffnen|navigate)$/, "Öffnet die Seite"],
+  [/^(app_oeffnen|navigate)$/, "Legt einen Knopf zur Seite an"],
   [/^(remember|recall_memory|memory)/, "Erinnert sich"],
   [/^(settings_|vorschlaege_|ollama_|voice_|updater_)/, "Passt die Einstellungen an"],
   [/^(ask_user_)/, "Wartet auf deine Antwort"],

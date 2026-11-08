@@ -80,7 +80,7 @@ export function buildUiTools(): Tool[] {
   const navigate = defineTool({
     name: "navigate",
     description:
-      "Switch the renderer to another route. Paths are SPA-relative, e.g. `/companies/<id>`, `/transactions`, `/chat`. Use AFTER fetching data so the user lands on a populated view.",
+      "Put a button under your reply that opens another route of the app (it does not switch by itself; the user clicks). Paths are SPA-relative, e.g. `/companies/<id>`, `/transactions`, `/chat`. Prefer `app_oeffnen` with a named target. Never say you opened the page and do not describe the button.",
     parameters: {
       type: "object",
       properties: {
@@ -99,11 +99,11 @@ export function buildUiTools(): Tool[] {
         .min(1)
         .required(),
     }),
-    run: async (args, ctx) => {
-      ctx.ui.navigate(args.path);
-      return { ok: true, path: args.path };
+    // Kein Sprung mehr (Befund Patrick 2026-11-08), Knopf wie app_oeffnen.
+    run: async (args) => {
+      return { ok: true, path: args.path, knopf: { label: args.path.startsWith("/companies/") ? "Firmenseite" : "Seite in der App", pfad: args.path } };
     },
-    preview: (r) => `navigated to ${r.path}`,
+    preview: (r) => `Knopf zu ${r.path}`,
   });
 
   const notify = defineTool({

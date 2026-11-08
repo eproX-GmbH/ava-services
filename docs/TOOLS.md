@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-07
+Stand: 2026-11-08
 Anzahl Tools: 309
 
 ## Firmen (29)
@@ -1115,7 +1115,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/ui.ts`
 
-Switch the renderer to another route. Paths are SPA-relative, e.g. `/companies/<id>`, `/transactions`, `/chat`. Use AFTER fetching data so the user lands on a populated view.
+Put a button under your reply that opens another route of the app (it does not switch by itself; the user clicks). Paths are SPA-relative, e.g. `/companies/<id>`, `/transactions`, `/chat`. Prefer `app_oeffnen` with a named target. Never say you opened the page and do not describe the button.
 
 _Parameter:_
 - `path: string` (required) — SPA path beginning with `/`.
@@ -1193,7 +1193,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/app-oeffnen.ts`
 
-Öffnet für den Nutzer direkt die passende Seite der App, statt ihm einen Klickpfad zu beschreiben. Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. ziel=firma braucht `companyId`, ziel=vorgang `vorgangId`. firmenliste = Meine Firmen, firmensuche = Suche über alle Firmen im Register. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.
+Legt unter deine Antwort einen Knopf, der die passende Seite der App öffnet, statt dem Nutzer einen Klickpfad zu beschreiben. Die Seite öffnet sich erst, wenn der Nutzer klickt; sag also nie, du hättest sie geöffnet, und beschreib den Knopf nicht. Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. ziel=firma braucht `companyId`, ziel=vorgang `vorgangId`. firmenliste = Meine Firmen, firmensuche = Suche über alle Firmen im Register. In deiner Antwort in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.
 
 _Parameter:_ keine.
 

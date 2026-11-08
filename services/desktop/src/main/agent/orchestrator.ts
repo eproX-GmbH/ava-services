@@ -21,7 +21,7 @@ import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { kontextMessen, kontextProtokollieren } from "./kontext-messung";
 import { wissensIndex } from "../wissen";
-import { MarkierungsFilter, aktionenAufloesen, kartenAusErgebnis, markierungEntfernen, type AusgefuehrteAktion } from "../wissen/aktionen";
+import { MarkierungsFilter, aktionenAufloesen, kartenAusErgebnis, knopfAusErgebnis, markierungEntfernen, type AusgefuehrteAktion } from "../wissen/aktionen";
 import { zielAufloesen } from "./tools/app-oeffnen";
 import { embedQueries } from "./tools/publications";
 import { isUserDeclined } from "./define-tool";
@@ -1119,6 +1119,7 @@ export class AgentOrchestrator extends EventEmitter {
     // selbst ausgefuehrte Kartenaktionen (die bekommen keinen Knopf mehr).
     const turnKarten = new Set<string>();
     const turnAusgefuehrt: AusgefuehrteAktion[] = [];
+    const turnSeiten: import("../../shared/types").AgentKartenAktion[] = [];
 
     // v0.1.346 — last system message built in the loop, reused for the
     // graceful wrap-up turn if the step budget is reached.
@@ -1344,7 +1345,7 @@ export class AgentOrchestrator extends EventEmitter {
         const toolCalls = collectedToolCalls
           ? this.normaliseToolCalls(collectedToolCalls)
           : undefined;
-        const knoepfe = !toolCalls || toolCalls.length === 0 ? this.kartenKnoepfe(conversation, markiert.ids, turnKarten, turnAusgefuehrt) : [];
+        const knoepfe = !toolCalls || toolCalls.length === 0 ? this.kartenKnoepfe(conversation, markiert.ids, turnKarten, turnAusgefuehrt, turnSeiten) : [];
         const assistantMessage: AgentMessage = {
           id: assistantId,
           role: "assistant",
@@ -1492,7 +1493,11 @@ export class AgentOrchestrator extends EventEmitter {
           if (result.ok && isWriteTool(call.name)) writesExecuted++;
           turnToolNamen.push(call.name);
           if (result.ok && call.name === "tool_search") for (const id of kartenAusErgebnis(result.content)) turnKarten.add(id);
-          if (result.ok && (call.name === "app_oeffnen" || call.name === "zugang_anfordern")) turnAusgefuehrt.push({ name: call.name, args: (call.args ?? {}) as Record<string, unknown> });
+          if (result.ok && call.name === "zugang_anfordern") turnAusgefuehrt.push({ name: call.name, args: (call.args ?? {}) as Record<string, unknown> });
+          if (result.ok && (call.name === "app_oeffnen" || call.name === "navigate")) {
+            const knopf = knopfAusErgebnis(result.content);
+            if (knopf) turnSeiten.push(knopf);
+          }
           toolCallSignatures.set(callSignature, sigState);
           // v0.1.375 — Ablehnung merken, damit ein erneuter Aufruf desselben
           // Tools in diesem Turn oben hart abgefangen wird.
@@ -1627,7 +1632,7 @@ export class AgentOrchestrator extends EventEmitter {
       if (wrapUpRest) this.emitFrame({ kind: "token", requestId, conversationId: conversation.id, messageId: wrapUpId, delta: wrapUpRest });
       const wrapUpMarkiert = markierungEntfernen(wrapUpContent);
       wrapUpContent = wrapUpMarkiert.text;
-      const wrapUpKnoepfe = this.kartenKnoepfe(conversation, wrapUpMarkiert.ids, turnKarten, turnAusgefuehrt);
+      const wrapUpKnoepfe = this.kartenKnoepfe(conversation, wrapUpMarkiert.ids, turnKarten, turnAusgefuehrt, turnSeiten);
       // Sicherheitsnetz: hat das Modell nichts geliefert, eine
       // verständliche Standard-Antwort senden (statt Leer-Bubble).
       if (!wrapUpContent.trim()) {
@@ -1735,9 +1740,15 @@ export class AgentOrchestrator extends EventEmitter {
    * Push a message into the in-memory conversation AND mirror it to disk.
    * Centralised so we don't forget the append on a future code path.
    */
-  /** L4: Knoepfe der markierten Loesungskarten; nur in der Desktop-App. */
-  private kartenKnoepfe(convo: Conversation, ids: string[], geliefert: Set<string>, ausgefuehrt: AusgefuehrteAktion[]): import("../../shared/types").AgentKartenAktion[] {
-    if (ids.length === 0 || convo.autonomousMode === true || convo.id.startsWith("telegram-")) return [];
+  /** L4: Knoepfe der markierten Loesungskarten plus Seiten aus app_oeffnen/navigate; nur in der Desktop-App. */
+  private kartenKnoepfe(
+    convo: Conversation,
+    ids: string[],
+    geliefert: Set<string>,
+    ausgefuehrt: AusgefuehrteAktion[],
+    angeboten: import("../../shared/types").AgentKartenAktion[],
+  ): import("../../shared/types").AgentKartenAktion[] {
+    if ((ids.length === 0 && angeboten.length === 0) || convo.autonomousMode === true || convo.id.startsWith("telegram-")) return [];
     try {
       const karten = wissensIndex(embedQueries).karten;
       return aktionenAufloesen({
@@ -1745,6 +1756,7 @@ export class AgentOrchestrator extends EventEmitter {
         geliefert,
         karten: (id) => karten.find((k) => k.id === id),
         ausgefuehrt,
+        angeboten,
         pfadFuer: (ziel, dienst) => {
           const z = zielAufloesen(ziel, dienst ? { dienst } : {});
           return "pfad" in z ? z.pfad : null;
@@ -1752,7 +1764,7 @@ export class AgentOrchestrator extends EventEmitter {
       });
     } catch (err) {
       console.warn("[wissen] Knöpfe nicht aufgelöst:", err);
-      return [];
+      return angeboten.slice(0, 4);
     }
   }
 

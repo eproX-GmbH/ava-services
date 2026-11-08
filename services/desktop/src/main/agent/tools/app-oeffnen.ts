@@ -1,7 +1,10 @@
-// L1 (docs/PLAN_LOESUNGSKARTEN.md): AVA oeffnet die passende Seite der App
-// selbst, statt dem Nutzer einen Klickpfad zu diktieren ("kein Werkzeug zur
+// L1 (docs/PLAN_LOESUNGSKARTEN.md): AVA bietet die passende Seite der App an,
+// statt dem Nutzer einen Klickpfad zu diktieren ("kein Werkzeug zur
 // App-Navigation"). Benannte Ziele statt freier Pfade, damit das Modell keine
 // Adressen erfindet. Fuer "Dienst verbinden" ist die Vorlage vorbelegt.
+// Seit Befund Patrick 2026-11-08 kein Sprung mehr: die App sprang auf die
+// Seite, bevor man AVAs Erklaerung lesen konnte. Jetzt wird daraus ein Knopf
+// unter der Antwort (Orchestrator sammelt `knopf`, wie bei den Karten, L4).
 
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
@@ -99,16 +102,21 @@ export function zielAufloesen(
   return { pfad, text: z.text };
 }
 
+/** "deine Firmenliste (Meine Firmen)" → "Deine Firmenliste (Meine Firmen)" */
+function knopfLabel(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function buildAppOeffnenTools(): Tool[] {
   const oeffnen = defineTool({
     name: "app_oeffnen",
-    summary: "Öffnet eine Seite der App für den Nutzer (Firma, Firmenliste, Einstellungen, Dienst verbinden, Plan, Modell …)",
+    summary: "Legt unter die Antwort einen Knopf zu einer Seite der App (Firma, Firmenliste, Einstellungen, Dienst verbinden, Plan, Modell …)",
     category: "ui navigation seite oeffnen einstellungen verbinden",
     description:
-      "Öffnet für den Nutzer direkt die passende Seite der App, statt ihm einen Klickpfad zu beschreiben. " +
+      "Legt unter deine Antwort einen Knopf, der die passende Seite der App öffnet, statt dem Nutzer einen Klickpfad zu beschreiben. Die Seite öffnet sich erst, wenn der Nutzer klickt; sag also nie, du hättest sie geöffnet, und beschreib den Knopf nicht. " +
       "Nutze es, sobald der Nutzer etwas nur dort erledigen kann (Zugang hinterlegen, Dienst/CRM/LinkedIn/Mail verbinden, Plan, Modell) " +
       "oder eine Ansicht sehen will. ziel=dienst_verbinden mit `dienst` (z. B. compleadly, close) öffnet das Formular mit vorbelegtem Dienst. " +
-      "ziel=firma braucht `companyId`, ziel=vorgang `vorgangId`. firmenliste = Meine Firmen, firmensuche = Suche über alle Firmen im Register. Danach in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. " +
+      "ziel=firma braucht `companyId`, ziel=vorgang `vorgangId`. firmenliste = Meine Firmen, firmensuche = Suche über alle Firmen im Register. In deiner Antwort in einem Satz sagen, was der Nutzer dort tut; Zugangsdaten nie im Chat erfragen. " +
       "Wirkt nur in der Desktop-App; auf Telegram kommt ein Hinweis zurück, dann den Weg in Worten nennen.",
     parameters: {
       type: "object",
@@ -134,10 +142,9 @@ export function buildAppOeffnenTools(): Tool[] {
       const z = zielAufloesen(args.ziel, args);
       if ("hinweis" in z) return { geoeffnet: false, ...(z.fehler ? { error: z.hinweis } : { hinweis: z.hinweis }) };
       const { pfad, text } = z;
-      ctx.ui.navigate(pfad);
-      return { geoeffnet: true, seite: text };
+      return { geoeffnet: false, knopf: { label: knopfLabel(text), pfad }, hinweis: "Unter deiner Antwort erscheint ein Knopf zu dieser Seite." };
     },
-    preview: (r: Record<string, unknown>) => (r.geoeffnet ? `${String(r.seite)} geöffnet` : String(r.hinweis ?? r.error ?? "nicht geöffnet")),
+    preview: (r: Record<string, unknown>) => (r.knopf ? `Knopf zu ${(r.knopf as { label: string }).label}` : String(r.hinweis ?? r.error ?? "nicht geöffnet")),
   });
   return [oeffnen];
 }
