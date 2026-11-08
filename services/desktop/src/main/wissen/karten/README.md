@@ -56,3 +56,24 @@ Desktop-App brauchen: `[desktop]`.
 `../pruefsatz.json`: `[{ "frage": "…", "erwartet": "<id>" | ["<id>", …] }]`. Treffer =
 eine erwartete id unter den ersten drei. Prüfen mit
 `../../node_modules/.bin/tsx scripts/test-wissen.mts` in services/desktop.
+
+## Pflege bei jeder Änderung an AVA (Regel, Joyce 2026-11-08)
+
+Wer eine Funktion, einen Text, einen Ablauf oder eine Einstellung in AVA ändert, prüft
+im selben Zug die betroffenen Karten und passt sie an (Suche: `grep -rl "<Begriff>" karten/`).
+Neue Funktion = neue Karte oder Ergänzung einer bestehenden; entfernte Funktion = Karte
+anpassen oder löschen. Dazu gehören:
+
+1. **Text** der Karte (Lösung, Fragen, Schlagworte, Aktionen) und `stand:` auf das Datum der Änderung.
+2. **Prüfsatz**: für neue oder geänderte Karten mindestens eine Frage in `../pruefsatz.json`.
+3. **Suche prüfen**, beide Wege:
+   - `../../node_modules/.bin/tsx scripts/test-wissen.mts` (Volltext/BM25, muss 0 kaputte Karten melden)
+   - `../../node_modules/.bin/tsx scripts/test-wissen.mts --vektoren` (mit Vektoren über das lokale Ollama, embeddinggemma)
+   Die Trefferquote darf nicht sinken (Stand 2026-11-08: 294 Karten, Volltext 241/246, mit Vektoren 237/246).
+4. **Vektoren**: Es gibt keinen gespeicherten Vektorbestand, der von Hand erneuert werden müsste.
+   Die Karten werden beim Bauen in die App gebacken (Vite-Glob); der BM25-Index und die
+   Vektoren (Titel + Fragen je Karte) entstehen beim ersten Zugriff in der laufenden App neu
+   (`suche.ts`, `vektorenSicherstellen`). Eine geänderte Karte ist also nach dem nächsten
+   Release automatisch neu indiziert und vektorisiert; Schritt 3 prüft vorab, dass das gelingt.
+5. **Keine Release-Bündelung ohne Karten**: Karten gehören in denselben Commit wie die Änderung,
+   damit App und Wissen im selben Release zusammenpassen.
