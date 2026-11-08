@@ -14,7 +14,7 @@ aktionen:
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Den Plan wechselst du unter Einstellungen → Konto → Plan & Abrechnung; ich öffne dir die Seite gern. Ein Upgrade wirkt sofort. Beim ersten Kauf öffnet sich die Bezahlseite im Browser, dort hinterlegst du das Zahlungsmittel. Je nach Konto kann ich ein Upgrade auch direkt hier im Chat anstoßen, nachdem du bestätigt hast.
+Den Plan wechselst du unter Einstellungen → Konto → Plan & Abrechnung; den Knopf zur Seite findest du unter meiner Antwort. Ein Upgrade wirkt sofort. Beim ersten Kauf öffnet sich die Bezahlseite im Browser, dort hinterlegst du das Zahlungsmittel. Je nach Konto kann ich ein Upgrade auch direkt hier im Chat anstoßen, nachdem du bestätigt hast.
 
 Einen kleineren Plan wählst du ebenfalls dort, je nach Ansicht direkt über „Plan ändern“ oder im Kundenportal über „Abonnement verwalten“. Er gilt zum Ende des laufenden Abrechnungszeitraums; bis dahin behältst du deinen bisherigen Plan.
 

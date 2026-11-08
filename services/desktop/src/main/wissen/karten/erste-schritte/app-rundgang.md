@@ -24,4 +24,4 @@ Oben in der Desktop-App findest du:
 - Signale: LinkedIn, falls deine Organisation das freigeschaltet hat.
 - Einstellungen und Status: Status zeigt deine Konten auf diesem Gerät und ob alle Quellen erreichbar sind.
 
-Rechts oben liegen die Glocke für neue Meldungen, der Hell-Dunkel-Schalter und dein Konto-Menü mit Kontowechsel und Abmelden. Sag mir einfach, welche Seite du sehen willst, dann öffne ich sie dir.
+Rechts oben liegen die Glocke für neue Meldungen, der Hell-Dunkel-Schalter und dein Konto-Menü mit Kontowechsel und Abmelden. Sag mir einfach, welche Seite du sehen willst, dann bekommst du unter meiner Antwort einen Knopf dorthin.

@@ -25,4 +25,4 @@ Unter Einstellungen → Verbindungen hängst du alles an, womit ich für dich ar
 
 Umgekehrt kannst du mich aus Claude, ChatGPT oder Microsoft Copilot heraus nutzen, wenn deine Organisation das freigeschaltet hat. Das findest du unter Konto → Verbundene Apps.
 
-Sag mir einfach, was du verbinden willst. Für Weitere Dienste zeige ich dir eine sichere Eingabekarte im Chat, für alles andere öffne ich dir die richtige Stelle. Zugangsdaten schickst du nie als normale Nachricht. Fehlt ein Abschnitt, hat deine Organisation ihn abgeschaltet.
+Sag mir einfach, was du verbinden willst. Für Weitere Dienste zeige ich dir eine sichere Eingabekarte im Chat, für alles andere bekommst du unter meiner Antwort einen Knopf zur richtigen Stelle. Zugangsdaten schickst du nie als normale Nachricht. Fehlt ein Abschnitt, hat deine Organisation ihn abgeschaltet.

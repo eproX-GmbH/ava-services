@@ -22,4 +22,4 @@ Gut zu wissen: Ich brauche je Firma Name und Ort. Firmen ohne Ort im CRM übersp
 
 Salesforce und Microsoft Dynamics kann ich noch nicht übernehmen. Dann geht der Weg über eine Excel-Datei aus dem CRM.
 
-Ist das CRM noch nicht verbunden, öffne ich dir die Seite dafür.
+Ist das CRM noch nicht verbunden, findest du unter meiner Antwort den Knopf zur Seite dafür.

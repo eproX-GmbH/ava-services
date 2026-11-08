@@ -10,7 +10,7 @@ fragen:
 schlagworte: [link, firmenlink, anklicken, firmenseite öffnen, firmenansicht, navigation, chat]
 stand: 2026-11-07
 ---
-Nenne ich im Chat eine Firma, die in AVA steht, ist ihr Name ein Link. Ein Klick öffnet die Firmenseite mit allen Reitern. Sag mir auch einfach „öffne die Firma“, dann wechsle ich in der Desktop-App direkt dorthin.
+Nenne ich im Chat eine Firma, die in AVA steht, ist ihr Name ein Link. Ein Klick öffnet die Firmenseite mit allen Reitern. Sag mir auch einfach „öffne die Firma“, dann bekommst du in der Desktop-App unter meiner Antwort einen Knopf dorthin.
 
 Ohne Link erscheinen Firmen, die noch nicht in AVA stehen, zum Beispiel in der Vorschau eines Imports, bevor du ihn bestätigt hast. Für sie gibt es noch keine Firmenseite. Personen verlinke ich nie, nur Firmen.
 

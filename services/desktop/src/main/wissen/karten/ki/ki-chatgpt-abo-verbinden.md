@@ -15,7 +15,7 @@ aktionen:
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Mit einem persönlichen ChatGPT-Abo (Plus oder Pro) brauchst du keinen Schlüssel. Ich öffne dir die Karte „ChatGPT-Abo“, du klickst „Continue with ChatGPT“, liest den kurzen Hinweis und meldest dich im Fenster von OpenAI an.
+Mit einem persönlichen ChatGPT-Abo (Plus oder Pro) brauchst du keinen Schlüssel. Unter meiner Antwort findest du den Knopf zur Karte „ChatGPT-Abo“. Dort klickst du „Continue with ChatGPT“, liest den kurzen Hinweis und meldest dich im Fenster von OpenAI an.
 
 Danach laufen Chat, Radar, Alarme, Recherche und Workflows über dein Abo, mit einem Modell deiner Wahl aus den Modellen, die dein Konto freigibt. Das Modell kann ich dir auch im Chat umstellen. Die Firmenverarbeitung läuft weiter über AVAs eigenes Modell.
 

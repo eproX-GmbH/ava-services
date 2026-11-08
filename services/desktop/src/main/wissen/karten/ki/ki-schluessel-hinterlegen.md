@@ -14,7 +14,7 @@ aktionen:
 gilt_fuer: [desktop]
 stand: 2026-11-07
 ---
-Ich öffne dir die Seite, auf der du den Schlüssel einträgst. Schick ihn mir bitte nicht in den Chat, dort ist er nicht geschützt.
+Unter meiner Antwort findest du den Knopf zur Seite, auf der du den Schlüssel einträgst. Schick ihn mir bitte nicht in den Chat, dort ist er nicht geschützt.
 
 So geht es: Einstellungen → KI & Kosten → Anbieter & Modell, dann die Klappe „API-Schlüssel“ aufmachen. Dort gibt es eine Karte je Anbieter: OpenAI, Anthropic, Google, Mistral, DeepSeek, xAI (Grok) und Qwen. Schlüssel einfügen, „Speichern“, fertig. Unter jeder Karte führt „Wo bekomme ich einen Schlüssel?“ direkt zur Schlüsselseite des Anbieters. Mit „entfernen“ löschst du einen gespeicherten Schlüssel wieder.
 
