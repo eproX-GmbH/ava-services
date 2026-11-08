@@ -1,7 +1,7 @@
 # Wissensinventar AVA (Nutzersicht)
 
 Stand 2026-11-07. Grundlage für die Lösungskarten (docs/PLAN_LOESUNGSKARTEN.md, Schritt L2).
-Lesestand Code: main a4c38708. Status der Karten: **Entwurf, wartet auf Abnahme durch Joyce**
+Lesestand Code: main a4c38708. Status der Karten: **alle Äste abgenommen durch Joyce (2026-11-07/08)**
 (je Themenast, Tabelle in §2). Erst nach dem OK gelten Karten als ausgeliefert; bis dahin liegen sie
 nur auf dem Branch `claude/wonderful-bell-d6f985`, nicht auf main.
 
@@ -59,9 +59,9 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 5 | meldungen | 17 | abgenommen 2026-11-08 |
 | 6 | ki | 20 | abgenommen 2026-11-08 (Sprachmodus-Preis wie in der App, B7 offen) |
 | 6 | chat | 15 (davon 1 aus der Hauptsession) | abgenommen 2026-11-08 |
-| 7 | workflows | 18 (neu start-top10, Onboarding O3) | offen |
-| 7 | app | 11 | offen |
-| 7 | hilfe | 14 | offen |
+| 7 | workflows | 18 (neu start-top10, Onboarding O3) | abgenommen 2026-11-08 |
+| 7 | app | 11 | abgenommen 2026-11-08 |
+| 7 | hilfe | 14 | abgenommen 2026-11-08 |
 | | **gesamt** | **294** | |
 
 Inventar: rund 700 Einträge, davon 628 geprüft, 33 unklar, 14 veraltet, 11 nur für Betreiber.
