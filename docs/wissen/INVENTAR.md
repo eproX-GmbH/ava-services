@@ -48,7 +48,7 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 1 | konto | 12 | abgenommen 2026-11-08 |
 | 1 | abrechnung | 10 (ausgabenlimit in kontingent-erreicht aufgegangen, A1) | abgenommen 2026-11-08 |
 | 1 | datenschutz | 7 | abgenommen 2026-11-08 |
-| 2 | firmen | 48 | offen |
+| 2 | firmen | 48 | abgenommen 2026-11-08 |
 | 3 | kontakte | 18 | offen |
 | 3 | radar | 13 | offen |
 | 3 | recherche | 12 | offen |
