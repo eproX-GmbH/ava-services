@@ -391,6 +391,65 @@ echten Verarbeitung hat immer Vorrang und ersetzt den Ersatz, sobald es da ist.
 Web-App (`app.ava.bi/firmen/<companyId>`), keine allgemeinen „In AVA ansehen“-Knöpfe.
 Die Mail „Deine Top 10“ geht erst raus, wenn die Firmen verarbeitet sind (oder nach 24 h).
 
+### O11 — Automatisch der Organisation der eigenen Firma zuordnen (Gateway, Desktop, Web-App; ≈2–3 Tage)
+Joyce 2026-11-08: Registriert sich jemand mit `jrafflenbeul@eprox-gmbh.de` und es gibt schon
+eine Organisation mit Mitgliedern aus `@eprox-gmbh.de`, wird er ihr bei der Registrierung
+sofort zugeordnet, als **offene Beitrittsanfrage**. Er ist also noch nicht freigegeben. Die App
+zeigt das im Assistenten, und der Wartebildschirm hat immer einen Knopf **„Organisation
+wechseln“**, damit niemand gefangen ist (eigene Organisation anlegen oder anderer
+Einladungslink).
+
+**Ist-Stand:**
+- Beitrittsanfragen gibt es nur per Einladungslink (`requestJoin`, `lib/tenants.ts:340`).
+- Eine neue Anfrage zieht die alte zurück (Status `withdrawn`), eine eigene Route zum
+  Zurückziehen fehlt.
+- Admins werden über neue Anfragen nicht benachrichtigt; sie sehen sie nur in der Konsole unter
+  Mitglieder.
+
+**Bausteine:**
+1. **Domain der Organisation erkennen.** Eine Organisation „besitzt“ eine Domain, wenn
+   mindestens ein Owner oder Admin eine E-Mail-Adresse dieser Domain hat.
+   - Freemail- und Baukasten-Domains zählen nie (Liste aus O1).
+   - Admins können das in der Konsole je Organisation abschalten („Beitrittsanfragen über die
+     E-Mail-Domain“, Standard an).
+2. **Zuordnung beim Registrieren.** Der Auslöser ist derselbe wie bei O1 (App-Registrierung,
+   Website-Registrierung, erstes Anmelden).
+   - Gibt es genau eine passende Organisation: offene Beitrittsanfrage anlegen (`quelle:
+     domain`).
+   - Gibt es mehrere: keine automatische Anfrage. Der Assistent zeigt die Namen zur Auswahl.
+3. **Admins benachrichtigen.** Mail über Mailgun (O5) an Owner und Admins: „Neue
+   Beitrittsanfrage von <Name> (<E-Mail>) über eure Firmen-Domain“, mit Link in die Konsole.
+   Das gilt auch für Anfragen per Einladungslink; so wird schneller freigegeben.
+4. **Anfrage zurückziehen.** Neue Route `POST /v1/tenants/join/zurueckziehen` für den Knopf
+   „Organisation wechseln“.
+5. **Assistent (Desktop, Web-App):**
+   - Reihenfolge wie von Joyce beschrieben: erst KI-Anbieter, dann Organisation.
+   - Mit offener Anfrage steht dort: „Wir haben dich der Organisation **eproX GmbH**
+     zugeordnet. Ein Admin muss dich noch freigeben.“
+   - Danach die Prüfung alle 15 Sekunden (schon gebaut), Knopf „Jetzt prüfen“ und immer
+     „Organisation wechseln“. Dieser Knopf zieht die Anfrage zurück und zeigt „Eigene
+     Organisation anlegen“ und „Einladungslink“.
+   - Nach der Freigabe geht es automatisch weiter. Stellt die Organisation einen KI-Schlüssel
+     bereit, bietet die App ihn an.
+6. **Lösungskarten:** Organisation beitreten, Einrichtungsassistent, neue Karte „Automatisch
+   zugeordnet“. Prüfsatz ergänzen.
+
+**Datenschutz und Missbrauch:** E-Mail-Adressen sind bei der Registrierung nicht bestätigt.
+Wer sich mit einer fremden Adresse `@eprox-gmbh.de` registriert, sieht den Namen der
+Organisation und stellt eine Anfrage. Er kommt aber nicht hinein, weil ein Admin freigeben
+muss, und die Admins sehen die Adresse in der Benachrichtigung. Das Restrisiko ist, dass der
+Organisationsname sichtbar wird. Wer das nicht will, schaltet die Zuordnung je Organisation ab.
+
+**Offene Entscheidungen:**
+- **O11-1 Domain-Erkennung:** automatisch aus den Adressen der Owner und Admins (Vorschlag),
+  oder nur eine Domain, die ein Admin in der Konsole einträgt.
+- **O11-2 Mehrere passende Organisationen:** Auswahl anzeigen (Vorschlag).
+- **O11-3 Reihenfolge im Assistenten:** KI zuerst, dann Organisation (wie beschrieben).
+  Hinweis: Den Schlüssel der Organisation gibt es erst nach der Freigabe. Bis dahin wählt man
+  einen eigenen KI-Anbieter, später kann man wechseln.
+- **O11-4 Mail an die Admins** bei jeder neuen Beitrittsanfrage (Vorschlag: ja).
+- **O11-5 Abschalter je Organisation** in der Konsole (Vorschlag: ja, Standard an).
+
 ### O9 — Workflow-Bausteine vollständig (Desktop, ≈2–3 Tage)
 Joyce: Alles, was man für echte Abläufe braucht, muss da sein, auch „es gibt keinen Lead“.
 
