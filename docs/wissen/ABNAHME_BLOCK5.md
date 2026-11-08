@@ -33,7 +33,7 @@ Bei der Übernahme lege ich zuerst die Firma an und danach die Person als Kontak
 
 So holst du das nach: Unter „Signale“ im Reiter „Leads“ steht bei solchen Leads (Filter „Übernommen“) der Knopf „Kontakt nachholen“. Ein Klick versucht die Anlage erneut. „Firma öffnen“ bringt dich direkt zur Firma.
 
-Passen mehrere Firmen zum Namen, frage ich „Welche Firma ist gemeint?“ und zeige sie mit Ort zur Auswahl, im Chat als Knöpfe. Ist die richtige nicht dabei, wählst du „Nicht dabei – Ort angeben“.
+Passen mehrere Firmen zum Namen, frage ich „Welche Firma ist gemeint?“ und zeige sie mit Ort zur Auswahl, im Chat als Knöpfe. Ist die richtige nicht dabei, wählst du „Nicht dabei“ und gibst den Ort an.
 
 Findet die Übernahme den Sitz der Firma nicht, auch nicht im Impressum, frage ich nach dem Ort. In der App erscheint dann ein Feld „Sitz der Firma (Ort)“ mit „Mit Ort übernehmen“; im Chat nennst du mir einfach den Ort. Ohne erkannte Firma lässt sich ein Lead nicht übernehmen.
 
