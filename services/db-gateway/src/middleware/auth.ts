@@ -11,6 +11,7 @@ import { logger } from "../lib/logger";
 import { getGatewayPool } from "../lib/producer-pools";
 import { resolveTenantByMembership, tenantKind } from "../lib/membership-cache";
 import { vermerkeAktivitaet } from "../lib/nutzer-aktivitaet";
+import { istGeloescht } from "../lib/konto-loeschen";
 
 const fallbackGeloggt = new Set<string>();
 
@@ -227,6 +228,11 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     if (tenantSource === "sub" && !fallbackGeloggt.has(payload.sub)) {
       fallbackGeloggt.add(payload.sub);
       logger.info({ actorId: payload.sub, tenant_fallback: "sub" }, "tenantId aus sub abgeleitet (kein tenant_id-Claim)");
+    }
+    // Konto geloescht oder deaktiviert (docs/PLAN_KONTO_LOESCHEN.md): noch gueltige
+    // Tokens duerfen nichts mehr tun. Die Liste ist klein und eine Minute zwischengespeichert.
+    if (await istGeloescht(getGatewayPool(), payload.sub)) {
+      return c.json({ error: "konto_geloescht", message: "Dieses Konto wurde gelöscht oder deaktiviert." }, 401);
     }
     c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles: [...roles] });
     // Betreiber-Konsole „Aktive Nutzer“: letzte Anfrage je Nutzer vermerken (gedrosselt, nie blockierend).

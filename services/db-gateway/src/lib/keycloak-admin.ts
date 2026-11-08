@@ -653,3 +653,44 @@ export async function a2aClientLoeschen(tenantId: string): Promise<boolean> {
   logger.info({ tenantId, clientId: c.clientId }, "[a2a] Client geloescht");
   return true;
 }
+
+// ---- Konto loeschen / deaktivieren (docs/PLAN_KONTO_LOESCHEN.md) ------------
+
+async function keycloakUser(sub: string): Promise<Record<string, unknown>> {
+  const r = await adminFetch(`/users/${encodeURIComponent(sub)}`);
+  if (!r.ok) throw new Error(`Keycloak-Nutzer nicht lesbar (${r.status})`);
+  return (await r.json()) as Record<string, unknown>;
+}
+
+async function sitzungenBeenden(sub: string): Promise<void> {
+  const r = await adminFetch(`/users/${encodeURIComponent(sub)}/logout`, { method: "POST" });
+  if (!r.ok && r.status !== 204) throw new Error(`Sitzungen nicht beendet (${r.status})`);
+}
+
+/** Konto anonymisieren: E-Mail/Benutzername = <sub>@<Domain>, Namen = Sterne,
+ *  deaktiviert, Attribut ava_geloescht, aus allen tenant:*-Gruppen, Sitzungen beendet. */
+export async function kontoInKeycloakAnonymisieren(sub: string, anonEmail: string, sterne: string): Promise<void> {
+  const u = await keycloakUser(sub);
+  const attribute = { ...((u.attributes as Record<string, string[]> | undefined) ?? {}), ava_geloescht: [new Date().toISOString()] };
+  const basis = { email: anonEmail, emailVerified: false, firstName: sterne, lastName: sterne, enabled: false, attributes: attribute };
+  let r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify({ ...basis, username: anonEmail }) });
+  // Erlaubt der Realm keinen Benutzernamen-Wechsel, bleibt es bei E-Mail/Namen/Sperre.
+  if (!r.ok) r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify(basis) });
+  if (!r.ok) throw new Error(`Keycloak-Nutzer nicht anonymisiert (${r.status}: ${(await r.text()).slice(0, 200)})`);
+  const g = await adminFetch(`/users/${encodeURIComponent(sub)}/groups`);
+  if (g.ok) {
+    for (const gruppe of (await g.json()) as Array<{ id: string; name: string }>) {
+      if (gruppe.name.startsWith("tenant:")) await adminFetch(`/users/${encodeURIComponent(sub)}/groups/${gruppe.id}`, { method: "DELETE" });
+    }
+  }
+  await sitzungenBeenden(sub);
+}
+
+/** Nur deaktivieren (allein in der Organisation): Daten bleiben, Anmeldung gesperrt. */
+export async function kontoInKeycloakDeaktivieren(sub: string): Promise<void> {
+  const u = await keycloakUser(sub);
+  const attribute = { ...((u.attributes as Record<string, string[]> | undefined) ?? {}), ava_deaktiviert: [new Date().toISOString()] };
+  const r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify({ enabled: false, attributes: attribute }) });
+  if (!r.ok) throw new Error(`Keycloak-Nutzer nicht deaktiviert (${r.status}: ${(await r.text()).slice(0, 200)})`);
+  await sitzungenBeenden(sub);
+}

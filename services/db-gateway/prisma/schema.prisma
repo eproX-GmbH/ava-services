@@ -1532,3 +1532,12 @@ model MailVersand {
 
   @@index([actorId, createdAt(sort: Desc)], map: "MailVersand_actor_idx")
 }
+
+/// Konto geloescht (anonymisiert, unumkehrbar) oder deaktiviert (allein in der Organisation). Anmeldung gesperrt.
+model KontoStatus {
+  actorId String   @id
+  art     String
+  domain  String?
+  fehler  String?
+  am      DateTime @default(now()) @db.Timestamptz(6)
+}
