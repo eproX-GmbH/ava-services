@@ -313,7 +313,7 @@ fehlgeschlagen.
   Onboarding auf 40 Kandidaten begrenzen und den Rest im Hintergrund nachziehen. Erst
   messen, dann festlegen.
 
-### O4 — Startpaket (Gateway/Abrechnung, ≈1 Tag)
+### O4 — Startpaket (Gateway/Abrechnung, ≈1 Tag) — gebaut 2026-11-08 (2dd8d58b), nicht ausgerollt
 - Die übernommenen Startfirmen bekommen ein Kennzeichen `startpaket`; sie zählen nicht
   auf Free-Aktivierungen und Monatskontingent (E4), höchstens 10 je Organisation, einmal.
 - Vorher prüfen, ob P10 („aktiv/ruhend“) in Gateway und master-data deployt ist.
@@ -391,7 +391,7 @@ echten Verarbeitung hat immer Vorrang und ersetzt den Ersatz, sobald es da ist.
 Web-App (`app.ava.bi/firmen/<companyId>`), keine allgemeinen „In AVA ansehen“-Knöpfe.
 Die Mail „Deine Top 10“ geht erst raus, wenn die Firmen verarbeitet sind (oder nach 24 h).
 
-### O11 — Automatisch der Organisation der eigenen Firma zuordnen (Gateway, Desktop, Web-App; ≈2–3 Tage)
+### O11 — Automatisch der Organisation der eigenen Firma zuordnen (Gateway, Desktop, Web-App; ≈2–3 Tage) — gebaut 2026-11-08 (ddb61fa4, 65d0695a; Konsolen-Schalter auf ava-admin-Branch feat/domain-beitritt), nicht ausgerollt
 Joyce 2026-11-08: Registriert sich jemand mit `jrafflenbeul@eprox-gmbh.de` und es gibt schon
 eine Organisation mit Mitgliedern aus `@eprox-gmbh.de`, wird er ihr bei der Registrierung
 sofort zugeordnet, als **offene Beitrittsanfrage**. Er ist also noch nicht freigegeben. Die App

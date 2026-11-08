@@ -5,8 +5,12 @@ Rechner) eine Möglichkeit, das ganze Konto zu löschen. Die Funktion liegt deze
 den Einstellungen, als kleiner Link und nicht als roter Knopf, und läuft immer über einen
 Bestätigungsdialog.
 
-Ein Entwurf des Gateway-Teils liegt außerhalb des Repos (Scratchpad) und ist weder committet
-noch ausgerollt. Gebaut wird erst nach Abnahme dieses Plans.
+**Stand 2026-11-08 abends:**
+- Joyce hat den Plan abgenommen, die offenen Punkte gelten wie vorgeschlagen.
+- KL1+KL2 (Gateway, Tests 24/24) und KL3 (Desktop) sind auf main.
+- KL4 (Web-App) liegt auf dem Branch `feat/konto-loeschen` in ava-app.
+- Nichts davon ist ausgerollt.
+- KL5 kommt später.
 
 ## 1. Entscheidungen (Joyce 2026-11-08)
 
