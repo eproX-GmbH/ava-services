@@ -57,8 +57,8 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 4 | telegram | 14 | abgenommen 2026-11-08 |
 | 5 | linkedin | 17 | abgenommen 2026-11-08 (Leads nach 2ac245fd) |
 | 5 | meldungen | 17 | abgenommen 2026-11-08 |
-| 6 | ki | 20 | offen |
-| 6 | chat | 15 (davon 1 aus der Hauptsession) | offen |
+| 6 | ki | 20 | abgenommen 2026-11-08 (Sprachmodus-Preis wie in der App, B7 offen) |
+| 6 | chat | 15 (davon 1 aus der Hauptsession) | abgenommen 2026-11-08 |
 | 7 | workflows | 17 | offen |
 | 7 | app | 11 | offen |
 | 7 | hilfe | 14 | offen |
