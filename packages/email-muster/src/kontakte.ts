@@ -3,6 +3,8 @@
 // firmenweiten Adressen. Gemeinsam fuer den Hintergrund-Job (Desktop) und den
 // Producer company-email (docs/PLAN_EMAIL_VERIFIZIERUNG.md, V0).
 
+import { istFunktionsadresse } from "./pattern";
+
 export interface PersonInfo {
   personId: string;
   fullName: string;
@@ -52,7 +54,12 @@ export function kontakteAusAntwort(companyId: string, r: KontakteAntwort): Firme
     const p = byPerson.get(pid) ?? { personId: pid, fullName: "", emails: [], offeneEmails: [] };
     if (f.field === "fullName" && typeof f.value === "string" && !p.fullName) p.fullName = f.value;
     if (f.field === "jobTitle" && typeof f.value === "string" && !p.title) p.title = f.value;
-    if (f.field === "email" && typeof f.value === "string") (istOffen(f) ? p.offeneEmails : p.emails).push(f.value.toLowerCase());
+    if (f.field === "email" && typeof f.value === "string") {
+      const email = f.value.toLowerCase().trim();
+      // info@ & Co. an einer Person ist eine Firmenadresse, keine Personenadresse (PM-2026-0010).
+      if (istFunktionsadresse(email)) firmenEmails.add(email);
+      else (istOffen(f) ? p.offeneEmails : p.emails).push(email);
+    }
     byPerson.set(pid, p);
   }
   return {

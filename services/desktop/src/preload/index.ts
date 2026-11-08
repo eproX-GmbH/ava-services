@@ -2070,8 +2070,11 @@ const api = {
       posts: (q?: { alle?: boolean }): Promise<{ posts: LinkedInLeadPost[] }> => ipcRenderer.invoke("leads:posts", q),
       ignorieren: (id: string, grund?: string | null): Promise<LinkedInLead> => ipcRenderer.invoke("leads:ignorieren", { id, grund }),
       zuruecknehmen: (id: string): Promise<LinkedInLead> => ipcRenderer.invoke("leads:zuruecknehmen", { id }),
-      uebernehmen: (id: string, ort?: string | null): Promise<{ ok: boolean; ortFehlt?: boolean; companyId?: string; personId?: string | null; transactionId?: string | null; hinweise: string[]; error?: string }> =>
-        ipcRenderer.invoke("leads:uebernehmen", { id, ort: ort ?? null }),
+      uebernehmen: (
+        id: string,
+        wahl?: { ort?: string | null; companyId?: string | null },
+      ): Promise<{ ok: boolean; ortFehlt?: boolean; auswahlNoetig?: boolean; kandidaten?: Array<{ companyId: string; name: string; location: string | null; registerStatus: string | null }>; companyId?: string; personId?: string | null; transactionId?: string | null; hinweise: string[]; error?: string }> =>
+        ipcRenderer.invoke("leads:uebernehmen", { id, ort: wahl?.ort ?? null, companyId: wahl?.companyId ?? null }),
       kontaktNachholen: (id: string): Promise<{ ok: boolean; personId?: string | null; error?: string }> => ipcRenderer.invoke("leads:kontaktNachholen", { id }),
     },
     getSettings: (): Promise<LinkedInSettings> =>

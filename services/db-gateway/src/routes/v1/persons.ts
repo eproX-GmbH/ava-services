@@ -4,6 +4,7 @@
 //   GET    /v1/persons/{id}/hinweis                          Art.-14-Hinweistext
 //   POST   /v1/persons/{id}/informed {channel?}              „Informiert am" (je Tenant)
 //   DELETE /v1/persons/{id} {reason?}                        globale Loeschung + Tombstone + Audit
+//   POST   /v1/persons/suche {name, firma?, ort?, bereich?}  Kontaktsuche nach Name (PM-2026-0009)
 //
 // Loeschung: jeder angemeldete Tenant, der die Person erhoben hat; Altbestand
 // ohne Zuordnung darf jeder angemeldete Tenant loeschen (Entscheidung
@@ -28,6 +29,9 @@ import { getContactPrismaClient } from "../../lib/contact-prisma";
 import { applyObservation, createObservationIdempotent } from "../../lib/contact-extraction/observation";
 import { stampObservations } from "../../lib/person-compliance";
 import { firmenWebsite, passtZurFirma } from "../../lib/firmen-domain";
+import { resolveCompanyNames } from "../../lib/company-names";
+import { requireScope } from "../../middleware/auth";
+import { bestandIds, orteAufloesen } from "./bestandssuche";
 
 export const personsRouter = new OpenAPIHono();
 const Id = z.object({ id: z.string().min(1).max(64) });
@@ -198,5 +202,140 @@ personsRouter.openapi(
     }
     void getQuota; void DEFAULT_POLICY;
     return c.json({ ok: true, ...r });
+  },
+);
+
+// ---- Kontaktsuche nach Name (PM-2026-0009) ---------------------------------------
+// "E-Mail von Fabian Toelle bei Brinkmann in Lemgo": bisher brauchte jeder Kontaktweg
+// zuerst eine Firma. Bestand = eigene Firmen mit Rolle und E-Mail samt Herkunft.
+// Pool = Firmen ausserhalb des Bestands, bewusst arm wie die Pool-Bestandssuche
+// (Name, Firma, Ort; Rolle und Adresse erst nach Aufnahme der Firma).
+
+const POOL_MAX = 5;
+
+/** Schreibweisen je Namensteil: Tölle ~ Toelle ~ Tolle. */
+function namensVarianten(teil: string): string[] {
+  const t = teil.toLowerCase();
+  const aus = t.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+  const ohne = t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss");
+  const ein = t.replace(/ae/g, "ä").replace(/oe/g, "ö").replace(/ue/g, "ü");
+  return [...new Set([t, aus, ohne, ein])].map((v) => `%${v.replace(/[%_\\]/g, (m) => `\\${m}`)}%`);
+}
+
+personsRouter.use("/persons/suche", requireScope("company:read"));
+personsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/persons/suche",
+    tags: ["persons"],
+    summary: "Ansprechpartner nach Name suchen, firmenuebergreifend (Bestand mit E-Mail und Herkunft; Pool nur Name/Firma/Ort).",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              name: z.string().trim().min(2).max(120),
+              firma: z.string().trim().max(120).optional(),
+              ort: z.string().trim().max(80).optional(),
+              bereich: z.enum(["bestand", "pool"]).default("bestand"),
+              limit: z.number().int().min(1).max(10).default(5),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => {
+    const auth = c.get("auth") as { tenantId?: string | null; actorId?: string | null } | undefined;
+    if (!auth?.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
+    const body = c.req.valid("json");
+    const pool = body.bereich === "pool";
+    const limit = pool ? Math.min(body.limit, POOL_MAX) : body.limit;
+    const teile = body.name.split(/\s+/).map((t) => t.replace(/[.,;()"']/g, "")).filter((t) => t.length >= 2).slice(0, 4);
+    if (teile.length === 0) throw new HTTPException(400, { message: "name_zu_kurz" });
+    const ids = await bestandIds(auth.actorId);
+    if (!pool && ids.length === 0) return c.json({ bereich: body.bereich, anzahl: 0, bestand: 0, treffer: [] }, 200);
+
+    const params: unknown[] = [];
+    const p = (v: unknown) => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const bedingungen = teile.map((t) => `p."fullName" ILIKE ANY(${p(namensVarianten(t))}::text[])`);
+    bedingungen.push(pool ? `NOT (e."companyId" = ANY(${p(ids)}::text[]))` : `e."companyId" = ANY(${p(ids)}::text[])`);
+    if (body.firma) bedingungen.push(`c."name" ILIKE ANY(${p(namensVarianten(body.firma))}::text[])`);
+    const contact = getProducerPool("company-contact");
+    const roh = await contact.query<{ personId: string; fullName: string; companyId: string; title: string | null; firma: string | null }>(
+      `SELECT p.id AS "personId", p."fullName", e."companyId", e."title", c."name" AS firma
+         FROM "Person" p
+         JOIN "Employment" e ON e."personId" = p.id AND e."isCurrent"
+         LEFT JOIN "Company" c ON c.id = e."companyId"
+        WHERE ${bedingungen.join(" AND ")}
+        ORDER BY (lower(p."fullName") = lower(${p(body.name)})) DESC, p."fullName"
+        LIMIT 100`,
+      params,
+    );
+    // Je Person+Firma einmal (mehrere Rollen-Zeilen)
+    const gesehen = new Set<string>();
+    let zeilen = roh.rows.filter((r) => {
+      const k = `${r.personId}|${r.companyId}`;
+      if (gesehen.has(k)) return false;
+      gesehen.add(k);
+      return true;
+    });
+    const firmenIds = [...new Set(zeilen.map((r) => r.companyId))];
+    const [orte, namen] = await Promise.all([orteAufloesen(firmenIds), resolveCompanyNames(getGatewayPool(), firmenIds)]);
+    if (body.ort) {
+      const o = body.ort.toLowerCase();
+      zeilen = zeilen.filter((r) => (orte.get(r.companyId) ?? "").toLowerCase().includes(o));
+    }
+    const gesamt = zeilen.length;
+    zeilen = zeilen.slice(0, limit);
+
+    if (pool) {
+      return c.json({
+        bereich: "pool",
+        anzahl: zeilen.length,
+        gesamt,
+        hinweis: "Firmen ausserhalb des Bestands: Rolle und E-Mail erst nach Aufnahme der Firma (import_companies mit companyId).",
+        treffer: zeilen.map((r) => ({ name: r.fullName, companyId: r.companyId, firma: namen.get(r.companyId) ?? r.firma, ort: orte.get(r.companyId) ?? null })),
+      }, 200);
+    }
+
+    // E-Mail je Person und Firma: nur Adressen dieser Firma, keine abgelehnten Ableitungen.
+    const mails = zeilen.length
+      ? await contact.query<{ personId: string; value: string; confidence: number | null; scopeCompanyId: string; source: string | null }>(
+          `SELECT f."personId", f."value", f."confidence", f."scopeCompanyId", o."source"
+             FROM "Fact" f LEFT JOIN "Observation" o ON o.id = f."lastObsId"
+            WHERE f."personId" = ANY($1::text[]) AND f."field" = 'email' AND f."status" = 'ACTIVE' AND f."entityType" = 'PERSON'`,
+          [zeilen.map((r) => r.personId)],
+        )
+      : { rows: [] };
+    return c.json({
+      bereich: "bestand",
+      anzahl: zeilen.length,
+      gesamt,
+      bestand: ids.length,
+      treffer: zeilen.map((r) => {
+        const kandidaten = mails.rows
+          .filter((m) => m.personId === r.personId && (m.scopeCompanyId === r.companyId || m.scopeCompanyId === ""))
+          .filter((m) => !/^(pattern|zuordnung):abgelehnt$/.test(m.source ?? ""))
+          .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+        const m = kandidaten[0];
+        return {
+          personId: r.personId,
+          name: r.fullName,
+          rolle: r.title,
+          companyId: r.companyId,
+          firma: namen.get(r.companyId) ?? r.firma,
+          ort: orte.get(r.companyId) ?? null,
+          email: m?.value ?? null,
+          emailQuelle: m?.source ?? null,
+          emailKonfidenz: m?.confidence ?? null,
+          emailAbgeleitet: !!m && /^(pattern|zuordnung):/.test(m.source ?? ""),
+        };
+      }),
+    }, 200);
   },
 );

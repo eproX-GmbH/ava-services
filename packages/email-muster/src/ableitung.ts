@@ -20,9 +20,9 @@
 // Seiteneffekte testbar. Hoechstens MAX_DURCHGAENGE SMTP-Verbindungen je Firma,
 // jede mit hoechstens 5 RCPT TO (smtp-verify.ts); danach jede Adresse einzeln, ohne Tages-Deckel.
 
-import { MUSTER, bildeAdresse, domainVon, erkenneMuster, nameVarianten, type MusterBeleg } from "./pattern";
+import { MUSTER, bildeAdresse, domainVon, erkenneMuster, istFunktionsadresse, nameVarianten, type MusterBeleg } from "./pattern";
 import { firmenDomain } from "./domain";
-import { beurteileMuster, bildeAdresseAllgemein, ordneFirmenadressen, type Urteil, type Zuordnung } from "./zuordnung";
+import { beurteileMuster, bildeAdresseAllgemein, musterGueltig, ordneFirmenadressen, type Urteil, type Zuordnung } from "./zuordnung";
 import { pruefeAdressen, zufallsAdresse, type PruefDetails, type PruefErgebnis, type PruefOptionen } from "./smtp-verify";
 import type { Takt } from "./takt";
 import type { FirmenKontakte, PersonInfo } from "./kontakte";
@@ -234,7 +234,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   const zuordnungen: Zuordnung[] = deps.zuordnungAktiv !== false && kandidatenAdressen.length > 0 ? (await ordneFirmenadressen({ firmenEmails: kandidatenAdressen, personen: unversorgt, firmenname: k.name, urteil })).zuordnungen : [];
   const zugeordnet = new Set(zuordnungen.map((z) => z.personId));
   const belege: MusterBeleg[] = [
-    ...k.personen.flatMap((p) => p.emails.filter((e) => domainVon(e) === domain).map((email) => ({ fullName: p.fullName, email }))),
+    // Funktionsadressen (info@ …) an einer Person sind kein Beleg fuer ein Personenmuster (PM-2026-0010).
+    ...k.personen.flatMap((p) => p.emails.filter((e) => domainVon(e) === domain && !istFunktionsadresse(e)).map((email) => ({ fullName: p.fullName, email }))),
     ...zuordnungen.map((z) => ({ fullName: z.fullName, email: z.email })),
   ];
 
@@ -263,7 +264,8 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   const serverFrisch = !!server && alterMs(server.checkedAt, jetzt) < DOMAIN_RECHECK_MS;
   const catchAllBekannt = !!server?.catchAllAt && alterMs(server.catchAllAt, jetzt) < CATCHALL_RECHECK_MS;
   // Auch ein abgelaufenes Muster ist ein guter Kandidat; es wird dann neu bestaetigt statt uebernommen.
-  if (!muster && server?.muster) {
+  // Geteilte Muster ohne Namensbezug (vor dem Fix gespeichert, z. B. "info") nie uebernehmen.
+  if (!muster && server?.muster && musterGueltig(server.muster)) {
     muster = server.muster;
     herkunft = "cache";
     baseline = server.belege?.[0]?.email ?? (typeof server.stats?.baseline === "string" ? server.stats.baseline : null);

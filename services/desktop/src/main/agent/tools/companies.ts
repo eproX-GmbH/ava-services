@@ -6,7 +6,7 @@ import type { Tool } from "../types";
 import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
 import { landText, statusWarnungText } from "../../firmen-status";
-import { kompakteKontakte } from "./kontakte-kompakt";
+import { kompakteKontakte, quellenGruppe } from "./kontakte-kompakt";
 import { ladeFirmenliste } from "../real-candidate-source";
 import { verarbeitungsstand, type MatrixZeile } from "../verarbeitungsstand";
 
@@ -571,6 +571,60 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     preview: (r) => {
       const x = r as { anzahlPersonen?: number };
       return typeof x.anzahlPersonen === "number" ? `${x.anzahlPersonen} Personen (kompakt)` : "Kontakte mit Belegen geladen";
+    },
+  });
+
+  // PM-2026-0009 (Patrick 2026-11-08): "E-Mail von Fabian Toelle bei Brinkmann in
+  // Lemgo" lief ueber Firmensuche + Rueckfrage und kam nie beim Kontakt an. Die
+  // Personensuche geht direkt ueber die AVA-Kontakte, firmenuebergreifend.
+  const kontaktSuchen = defineTool({
+    name: "kontakt_suchen",
+    summary: "Ansprechpartner nach Name finden, firmenuebergreifend in den AVA-Kontakten (mit Firma, Ort, Rolle und vorhandener E-Mail samt Herkunft).",
+    category: "kontakte ansprechpartner person suchen name email",
+    description:
+      "Sucht Personen nach Name in den Kontakten aller eigenen Firmen (Meine Firmen), ohne vorher eine Firma zu bestimmen. Schreibweisen mit Umlaut (Tölle/Toelle) werden gefunden. " +
+      "PFLICHT als ERSTER Schritt, sobald der Nutzer eine Person nennt ('E-Mail von X', 'Kontakt X bei Y', 'wer ist X'): firma und ort nur als Filter mitgeben. Erst ohne Treffer company_search/company_contacts, CRM oder Web — und dann mit dem Nutzer abstimmen. " +
+      "Treffer: personId, name, rolle, companyId, firma, ort, email, emailHerkunft, emailAbgeleitet. Mehrere Treffer → Tabelle Name | Rolle | Firma | Ort | E-Mail | Herkunft und nach der richtigen Person fragen. " +
+      "emailAbgeleitet=true heisst: aus dem Adressmuster der Firma gebildet, nicht bestaetigt — so benennen. Keine E-Mail vorhanden → das sagen, nie eine Adresse erfinden. " +
+      "bereich 'pool' NUR auf ausdrueckliche Nachfrage nach Personen AUSSERHALB der Firmenliste: hoechstens 5 Treffer mit Name, Firma und Ort, ohne Rolle und ohne E-Mail; mehr erst nach Aufnahme der Firma (import_companies mit companyIds, nur auf Wunsch).",
+    parameters: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: { type: "string", description: "Name der Person, Vor- und/oder Nachname" },
+        firma: { type: "string", description: "Firmenname als Filter (Teiltreffer)" },
+        ort: { type: "string", description: "Ort der Firma als Filter" },
+        bereich: { type: "string", enum: ["bestand", "pool"], description: "bestand (Standard) = eigene Firmen; pool = ausserhalb, nur Name/Firma/Ort" },
+        limit: { type: "integer", description: "Treffer, Standard 5, hoechstens 10" },
+      },
+    },
+    schema: yup
+      .object({
+        name: yup.string().trim().min(2).max(120).required(),
+        firma: yup.string().trim().max(120).optional(),
+        ort: yup.string().trim().max(80).optional(),
+        bereich: yup.string().oneOf(["bestand", "pool"]).optional(),
+        limit: yup.number().integer().min(1).max(10).optional(),
+      })
+      .noUnknown(true),
+    run: async (args, c) => {
+      const r = await gateway.request<{ bereich: string; anzahl: number; gesamt: number; bestand?: number; hinweis?: string; treffer: Array<Record<string, unknown>> }>("/v1/persons/suche", {
+        method: "POST",
+        body: { name: args.name, ...(args.firma ? { firma: args.firma } : {}), ...(args.ort ? { ort: args.ort } : {}), bereich: args.bereich ?? "bestand", limit: args.limit ?? 5 },
+        signal: c.signal,
+      });
+      return {
+        ...r,
+        treffer: r.treffer.map((t) => {
+          const { emailQuelle, emailKonfidenz, ...rest } = t as { emailQuelle?: string | null; emailKonfidenz?: number | null };
+          return { ...rest, ...(t.email ? { emailHerkunft: quellenGruppe(emailQuelle) ?? emailQuelle ?? null } : {}) };
+        }),
+        ...(r.anzahl === 0 && r.bereich === "bestand" ? { hinweis: "Keine Person dieses Namens in den eigenen Firmen. Mit dem Nutzer den naechsten Suchweg abstimmen (Firma suchen und verarbeiten, CRM, Personen ausserhalb der Firmenliste)." } : {}),
+      };
+    },
+    preview: (r) => {
+      const x = r as { anzahl?: number; gesamt?: number };
+      return `${x.anzahl ?? 0} von ${x.gesamt ?? 0} Personen`;
     },
   });
 
@@ -1431,6 +1485,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     // Bestandssuche (docs/PLAN_BESTANDSSUCHE.md). Bis v0.1.926 stand sie
     // versehentlich nur in BEREICHE und war damit nie registriert.
     bestandSuchen,
+    kontaktSuchen,
     insolvency,
     profile,
     keywords,

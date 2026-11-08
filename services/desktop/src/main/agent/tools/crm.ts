@@ -29,6 +29,7 @@ import {
   updateHubspotObject,
   searchHubspotContacts,
   searchHubspotDeals,
+  listHubspotDeals,
   listHubspotOwners,
   listHubspotAssociations,
   listHubspotAssociatedRecords,
@@ -876,6 +877,34 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       .noUnknown(true),
     preview: (r: { items: { id: string }[] }) => `${r.items.length} Deals`,
     run: async (args) => searchHubspotDeals(crm, args),
+  });
+
+  // PM-2026-0006: "Welche offenen Deals habe ich?" ging nicht — die Suche oben
+  // verlangt einen Deal-Namen. Die Liste braucht keinen.
+  const listDealsTool = defineTool({
+    name: "crm_list_hubspot_deals",
+    description:
+      "Listet Deals aus HubSpot OHNE Suchbegriff — Standard: alle OFFENEN Deals (nicht gewonnen/verloren), sortiert nach Abschlussdatum, Pipeline und Phase im Klartext. Für „meine offenen Deals“ zuerst crm_list_hubspot_owners aufrufen und die ownerId zur E-Mail des Nutzers übergeben. Returns items (id, name, amount, pipeline, stage, closeDate, ownerId), gesamt, mehr. Für einen bestimmten Deal per Name: crm_search_hubspot_deals.",
+    category: "crm hubspot deals pipeline offene deals liste verkaufschancen",
+    parameters: {
+      type: "object",
+      properties: {
+        ownerId: { type: "string", description: "Nur Deals dieses HubSpot-Owners (id aus crm_list_hubspot_owners)." },
+        pipeline: { type: "string", description: "Nur diese Pipeline (Pipeline-Id)." },
+        auchGeschlossene: { type: "boolean", description: "true = auch gewonnene/verlorene Deals. Default false." },
+        limit: { type: "integer", description: "Max Deals (1-500). Default 100." },
+      },
+    },
+    schema: yup
+      .object({
+        ownerId: yup.string().trim().optional(),
+        pipeline: yup.string().trim().optional(),
+        auchGeschlossene: yup.boolean().optional(),
+        limit: yup.number().integer().min(1).max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { items: unknown[]; gesamt: number }) => `${r.items.length} von ${r.gesamt} Deals`,
+    run: async (args) => listHubspotDeals(crm, args),
   });
 
   // Owner-Lookup — Voraussetzung für "Owner ändern auf <Name>"-Workflows
@@ -3147,6 +3176,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     taskPair.update,
     searchContactsTool,
     searchDealsTool,
+    listDealsTool,
     listOwnersTool,
     listAssociationsTool,
     listAssociatedRecordsTool,

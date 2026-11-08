@@ -124,7 +124,7 @@ async function abschlussAbfragen(ids: string[], begriffe: string[], modus: "nur"
 }
 
 /** Ort je Firma aus den Stammdaten (best-effort, fuer die Pool-Kandidaten). */
-async function orteAufloesen(ids: string[]): Promise<Map<string, string>> {
+export async function orteAufloesen(ids: string[]): Promise<Map<string, string>> {
   const orte = new Map<string, string>();
   if (ids.length === 0) return orte;
   try {

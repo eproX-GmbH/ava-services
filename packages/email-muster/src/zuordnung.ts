@@ -215,6 +215,7 @@ export interface MusterUrteil {
  * alle personengebundenen Belege reproduziert.
  */
 export async function beurteileMuster(args: { domain: string; belege: MusterBeleg[]; alternativen: string[]; urteil: Urteil }): Promise<MusterUrteil | null> {
+  args = { ...args, belege: args.belege.filter((b) => !istFunktionsadresse(b.email)) };
   if (args.belege.length === 0) return null;
   const system = [
     "Du bestimmst das E-Mail-Adressmuster einer Firma aus belegten Adressen bekannter Personen.",
@@ -239,6 +240,7 @@ export async function beurteileMuster(args: { domain: string; belege: MusterBele
     if (start < 0 || end < start) return null;
     const parsed = (await musterYup.validate(JSON.parse(t.slice(start, end + 1)), { stripUnknown: true })) as { muster: string; baseline: string; begruendung: string };
     const muster = parsed.muster.trim();
+    if (!musterGueltig(muster)) return null;
     const passt = args.belege.every((b) => {
       const adresse = bildeAdresseAllgemein(muster, b.fullName, args.domain);
       return adresse !== null && adresse === b.email.toLowerCase().trim();
@@ -251,9 +253,25 @@ export async function beurteileMuster(args: { domain: string; belege: MusterBele
   }
 }
 
-/** Adresse nach Katalog-Id ODER Vorlage bilden. */
+/**
+ * Katalog-Id oder Vorlage, die wirklich vom Namen abhaengt. Eine Vorlage ohne
+ * {vorname}/{nachname} ("info") ergibt fuer jede Person dieselbe Adresse —
+ * Befund PM-2026-0010: info@ontras.com bei allen Personen.
+ */
+export function musterGueltig(muster: string): boolean {
+  if (MUSTER.some((m) => m.id === muster)) return true;
+  if (!/\{(vorname|nachname)\}/i.test(muster)) return false;
+  const a = vorlageAnwenden(muster, "Anna Berger");
+  const b = vorlageAnwenden(muster, "Max Schulte");
+  return !!a && !!b && a !== b && !istFunktionsadresse(`${a}@x.de`);
+}
+
+/** Adresse nach Katalog-Id ODER Vorlage bilden; nie eine Funktionsadresse. */
 export function bildeAdresseAllgemein(muster: string, fullName: string, domain: string): string | null {
   if (MUSTER.some((m) => m.id === muster)) return bildeAdresse(muster, fullName, domain);
+  if (!musterGueltig(muster)) return null;
   const local = vorlageAnwenden(muster, fullName);
-  return local ? `${local}@${domain.toLowerCase().trim()}` : null;
+  if (!local) return null;
+  const email = `${local}@${domain.toLowerCase().trim()}`;
+  return istFunktionsadresse(email) ? null : email;
 }

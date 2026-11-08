@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ermittleFirmenAdressen, type AbgeleiteteAdresse, type AbleitungDeps, type MusterSpeichern, type ServerMuster } from "./ableitung";
 import type { FirmenKontakte } from "./kontakte";
+import { beurteileMuster, bildeAdresseAllgemein, musterGueltig } from "./zuordnung";
 import type { PruefDetails, PruefOptionen } from "./smtp-verify";
 
 const PROBE = "ava-probe@muster.de";
@@ -311,4 +312,36 @@ test("Gateway weist ab (kein Fehler): status fertig, abgewiesen gezaehlt", async
   const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
   assert.equal(r.status, "fertig");
   assert.equal(r.abgewiesen, 3);
+});
+
+test("Funktionsadresse an einer Person ist kein Beleg; Muster ohne Namensbezug wird verworfen (PM-2026-0010)", async () => {
+  let urteile = 0;
+  const urteil = async () => {
+    urteile++;
+    return '{"muster":"info","baseline":"info@muster.de","begruendung":"alle Belege info@"}';
+  };
+  const { d, gespeichert, geteilt } = deps({ urteil, netzOk: () => false });
+  const r = await ermittleFirmenAdressen("c1", kontakte([{ id: "p0", name: "Hans Schmidt", emails: ["info@muster.de"] }, ...TEAM]), d);
+  assert.equal(urteile, 0, "ohne Personenbeleg kein KI-Urteil");
+  assert.ok(gespeichert.every((g) => !g.email.startsWith("info@")), "nie info@ als Personenadresse");
+  assert.ok(geteilt.every((g) => g.muster !== "info"));
+  assert.notEqual(r.muster, "info");
+});
+
+test("geteiltes Muster ohne Namensbezug am Gateway wird nicht uebernommen", async () => {
+  const { d, gespeichert } = deps({ netzOk: () => false, serverMuster: { muster: "info", konfidenz: 0.5, belege: [{ fullName: "X", email: "info@muster.de" }], catchAllAt: null, checkedAt: "2026-10-11T00:00:00Z" } });
+  const r = await ermittleFirmenAdressen("c1", kontakte(TEAM), d);
+  assert.notEqual(r.muster, "info");
+  assert.ok(gespeichert.every((g) => !g.email.startsWith("info@")));
+});
+
+test("KI-Urteil mit fester Vorlage wird abgelehnt, Namensvorlage angenommen", async () => {
+  const belege = [{ fullName: "Anna Meier", email: "info@muster.de" }, { fullName: "Bernd Kunz", email: "bkunz.x@muster.de" }];
+  const fest = await beurteileMuster({ domain: "muster.de", belege: belege.slice(0, 1), alternativen: [], urteil: async () => '{"muster":"info","baseline":"info@muster.de","begruendung":""}' });
+  assert.equal(fest, null);
+  const name = await beurteileMuster({ domain: "muster.de", belege, alternativen: [], urteil: async () => '{"muster":"{v}{nachname}.x","baseline":"bkunz.x@muster.de","begruendung":""}' });
+  assert.equal(name?.muster, "{v}{nachname}.x");
+  assert.equal(musterGueltig("info"), false);
+  assert.equal(musterGueltig("{vorname}"), true);
+  assert.equal(bildeAdresseAllgemein("info", "Anna Meier", "muster.de"), null);
 });

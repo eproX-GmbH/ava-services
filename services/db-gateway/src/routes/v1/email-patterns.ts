@@ -7,6 +7,7 @@
 // Die Ableitung und die SMTP-Pruefung laufen lokal auf dem Geraet des Nutzers.
 
 import { firmenWebsite, passtZurFirma } from "../../lib/firmen-domain";
+import { istFunktionsadresse, musterGueltig } from "../../lib/funktionsadresse";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
@@ -121,6 +122,8 @@ emailPatternsRouter.openapi(putRoute, async (c) => {
   const auth = c.get("auth") as { tenantId?: string; actorId?: string } | undefined;
   const { domain } = c.req.valid("param");
   const b = c.req.valid("json");
+  // Muster ohne Namensbezug ("info") wuerden geteilt und bei allen Nutzern uebernommen (PM-2026-0010).
+  if (b.muster && !musterGueltig(b.muster)) throw new HTTPException(422, { message: "muster_ohne_namen" });
   const pool = getGatewayPool();
   const d = domain.toLowerCase();
   const alt = await pool.query(`SELECT "muster", "checkedAt" FROM "EmailPattern" WHERE "domain" = $1`, [d]);
@@ -195,6 +198,8 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
   const email = b.email.toLowerCase().trim();
   const domain = email.split("@")[1] ?? "";
   if (domain !== (b.beleg.split("@")[1] ?? "").toLowerCase()) throw new HTTPException(400, { message: "domain_mismatch" });
+  // info@ & Co. ist nie eine Personenadresse (PM-2026-0010).
+  if (istFunktionsadresse(email)) throw new HTTPException(422, { message: "funktionsadresse" });
   const pool = getProducerPool("company-contact");
   // Die Domain muss zur Firma gehoeren (Befund 2026-10-10: quikk.de bei Strategic IT).
   // Massstab ist die Website; eine abweichende Domain nur, wenn die AVA sie als Alias
@@ -218,6 +223,14 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
   );
   const fest = vorhanden.rows.find((r) => !/^(pattern|zuordnung):(offen|abgelehnt)$/.test(r.source ?? ""));
   if (fest) throw new HTTPException(409, { message: "email_exists", cause: fest.value });
+  // Dieselbe Adresse gehoert in dieser Firma schon einer anderen Person: eine Ableitung
+  // kann nicht zwei Menschen dieselbe persoenliche Adresse geben.
+  const andere = await pool.query(
+    `SELECT 1 FROM "Fact" WHERE "field" = 'email' AND "status" = 'ACTIVE' AND "entityType" = 'PERSON'
+        AND "companyId" = $1 AND "scopeCompanyId" = $1 AND lower("value") = $2 AND "personId" <> $3 LIMIT 1`,
+    [companyId, email, b.personId],
+  );
+  if (andere.rows[0]) throw new HTTPException(409, { message: "email_andere_person" });
   const prisma = getContactPrismaClient();
   const runId = `derived:${companyId}:${b.personId}:${Date.now()}`;
   const geprueft = b.checkedAt ?? new Date().toISOString();
