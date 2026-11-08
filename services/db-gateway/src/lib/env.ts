@@ -167,6 +167,12 @@ const schema = z.object({
   GATEWAY_ALLOWED_ORIGINS: z.string().optional(),
   /** Oeffentliche Basis-URL des Gateways (MCP-OAuth-Metadata, docs/PLAN_MCP_OEFFNUNG.md). */
   GATEWAY_PUBLIC_URL: z.string().url().default("https://ava-db-gateway.fly.dev"),
+  // Onboarding O5 — Mails an Nutzer ueber Mailgun (EU). Ohne Schluessel wird nichts versendet.
+  MAILGUN_API_KEY: z.string().optional(),
+  MAILGUN_DOMAIN: z.string().default("mail.ava.bi"),
+  MAILGUN_API_BASE: z.string().url().default("https://api.eu.mailgun.net"),
+  MAIL_ABSENDER: z.string().default("AVA <hallo@mail.ava.bi>"),
+  AVA_DOWNLOAD_URL: z.string().url().default("https://www.ava.bi/willkommen"),
   /** Eigener Host fuer den MCP-Endpunkt (Endpunkt an der Wurzel, OAuth unter /oauth). */
   MCP_PUBLIC_HOST: z.string().default("mcp.ava.bi"),
   /** Keycloak-Client, dessen Client-Scopes neue MCP-Clients erben. */

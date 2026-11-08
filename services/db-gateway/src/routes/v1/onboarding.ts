@@ -13,7 +13,7 @@ export const onboardingRouter = new OpenAPIHono();
 const tag = "onboarding";
 const Passthrough = z.object({}).passthrough();
 
-function auth(c: { get: (k: "auth") => { actorId: string; email?: string | null } }) {
+function auth(c: { get: (k: "auth") => { actorId: string; email?: string | null; name?: string | null } }) {
   const a = c.get("auth");
   if (!a?.actorId) throw new HTTPException(401, { message: "auth_context_missing" });
   return a;
@@ -31,7 +31,7 @@ onboardingRouter.openapi(
     const a = auth(c);
     const body = (await c.req.json().catch(() => ({}))) as { website?: unknown };
     const website = typeof body.website === "string" && WebsiteFeld.safeParse(body.website).success ? body.website : null;
-    await auftragAnlegen(getGatewayPool(), { actorId: a.actorId, email: a.email ?? null, website });
+    await auftragAnlegen(getGatewayPool(), { actorId: a.actorId, email: a.email ?? null, vorname: a.name ?? null, website });
     return c.json({ ok: true, stand: await auftragLesen(getGatewayPool(), a.actorId) }, 202);
   },
 );

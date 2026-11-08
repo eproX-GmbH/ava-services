@@ -1489,6 +1489,9 @@ model StartAuftrag {
   actorId            String    @id
   domain             String?
   website            String?
+  email              String?
+  vorname            String?
+  willkommenGesendetAt DateTime? @db.Timestamptz(6)
   status             String    @default("offen")
   versuch            Int       @default(0)
   naechsterVersuchAt DateTime  @default(now()) @db.Timestamptz(6)
@@ -1502,4 +1505,30 @@ model StartAuftrag {
   updatedAt          DateTime  @default(now()) @db.Timestamptz(6)
 
   @@index([status, naechsterVersuchAt], map: "StartAuftrag_faellig_idx")
+}
+
+/// Onboarding O5: Mail-Zustimmung je Nutzer (Willkommen immer, Neuigkeiten nur nach Bestaetigung).
+model MailEinstellung {
+  actorId      String    @id
+  email        String
+  vorname      String?
+  token        String    @unique
+  neuigkeiten  Boolean   @default(false)
+  bestaetigtAt DateTime? @db.Timestamptz(6)
+  abgemeldetAt DateTime? @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+/// Onboarding O5: Protokoll versendeter Mails (Art, Mailgun-Id, Fehler).
+model MailVersand {
+  id        BigInt   @id @default(autoincrement())
+  actorId   String
+  art       String
+  status    String
+  mailgunId String?
+  fehler    String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([actorId, createdAt(sort: Desc)], map: "MailVersand_actor_idx")
 }
