@@ -62,6 +62,9 @@ interface Registry {
   version: 1;
   active: string | null;
   accounts: Record<string, AccountRecord>;
+  /** Konto geloescht/deaktiviert (docs/PLAN_KONTO_LOESCHEN.md): Spaces, die beim
+   *  naechsten Start VOR dem Oeffnen der Stores entfernt werden. */
+  entfernen?: Array<{ sub: string; dir: string }>;
 }
 
 const PENDING = "_pending";
@@ -160,6 +163,50 @@ export function initAccountSpace(): void {
     mkdirSync(baseDir, { recursive: true });
     migrateLegacyLayout();
     const reg = readRegistry();
+    // Konto geloescht/deaktiviert: vorgemerkte Spaces jetzt entfernen (noch keine Stores offen).
+    if (reg.entfernen?.length) {
+      for (const e of reg.entfernen) {
+        try {
+          if (e.dir && existsSync(e.dir)) rmSync(e.dir, { recursive: true, force: true });
+          log(`Space von ${e.sub} entfernt (Konto geloescht/deaktiviert)`);
+        } catch (err) {
+          console.warn("[account-space] Space nicht entfernt:", err);
+        }
+      }
+      delete reg.entfernen;
+      writeRegistry(reg);
+    }
+    // Befund Joyce 2026-11-08: Zwei Konten zeigten auf DENSELBEN Space "_pending"
+    // (Konto angelegt → ohne Neustart "Konto hinzufuegen" → das neue Konto uebernahm
+    // den noch nicht umbenannten Space des ersten, samt Schluesseln, ICP und Radar).
+    // Darum jetzt vor allem anderen: Jeder Eintrag mit dir "_pending" bekommt seinen
+    // eigenen Ordner, nicht nur der aktive. Beanspruchen mehrere Konten "_pending",
+    // gehoert er dem zuerst angelegten (aeltestes lastUsedAt); die anderen bekommen
+    // einen frischen Space und richten sich neu ein.
+    {
+      const anspruch = Object.values(reg.accounts)
+        .filter((a) => a.dir === PENDING)
+        .sort((a, b) => (a.lastUsedAt < b.lastUsedAt ? -1 : 1));
+      if (anspruch.length > 0) {
+        const [eigner, ...andere] = anspruch;
+        const nach = spaceDir(eigner!.sub);
+        if (existsSync(spaceDir(PENDING)) && !existsSync(nach)) {
+          try {
+            renameSync(spaceDir(PENDING), nach);
+            log(`_pending → accounts/${eigner!.sub} (Umbenennung nachgeholt, ${eigner!.email ?? "ohne E-Mail"})`);
+          } catch (err) {
+            console.warn("[account-space] Umbenennung von _pending fehlgeschlagen:", err);
+          }
+        }
+        if (existsSync(nach)) delete reg.accounts[eigner!.sub]!.dir;
+        for (const a of andere) {
+          delete reg.accounts[a.sub]!.dir;
+          if (!existsSync(spaceDir(a.sub))) mkdirSync(spaceDir(a.sub), { recursive: true });
+          log(`Konto ${a.email ?? a.sub} teilte sich _pending mit ${eigner!.email ?? eigner!.sub} → eigener, frischer Space`);
+        }
+        writeRegistry(reg);
+      }
+    }
     // v0.1.536 — aufgeschobene Umbenennung: Space liegt noch unter
     // "_pending" (Adoption ohne Neustart) → jetzt, vor allen Stores,
     // nach accounts/<sub> verschieben.
@@ -310,7 +357,10 @@ export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: nu
   }
   reg.accounts[id.sub] = { ...id, lastUsedAt: now };
 
-  if (activeId === PENDING) {
+  // _pending gehoert schon einem anderen Konto (Umbenennung steht noch aus)? Dann
+  // nie uebernehmen, sondern eigener Space + Neustart (Befund 2026-11-08).
+  const pendingBelegt = Object.values(reg.accounts).some((a) => a.sub !== id.sub && a.dir === PENDING);
+  if (activeId === PENDING && !pendingBelegt) {
     const ziel = spaceDir(id.sub);
     if (!existsSync(ziel)) {
       // v0.1.536 — Adoption OHNE Neustart (User-Befund: nach der
@@ -329,7 +379,7 @@ export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: nu
     // das alte gewaehlt): _pending bleibt liegen, Neustart in den Space.
     log(`accounts/${id.sub} existiert bereits, _pending bleibt unbenutzt → Neustart`);
   } else {
-    log(`Identitaets-Sperre: Space ${activeId} gehoert nicht zu ${id.sub} → eigener Space, Neustart`);
+    log(`Identitaets-Sperre: Space ${activeId} gehoert nicht zu ${id.sub}${pendingBelegt ? " (_pending gehoert einem anderen Konto)" : ""} → eigener Space, Neustart`);
     mkdirSync(spaceDir(id.sub), { recursive: true });
     // v0.1.535 — ein fremdes Token darf im Space des anderen Kontos nicht
     // liegen bleiben (sonst Endlosschleife: Wechsel → stille Anmeldung
@@ -409,6 +459,36 @@ export function removeAccount(sub: string): { ok: boolean; grund?: string } {
   if (reg.active === sub) reg.active = null;
   writeRegistry(reg);
   log(`Konto ${sub} vom Geraet entfernt`);
+  return { ok: true };
+}
+
+/**
+ * Konto geloescht oder deaktiviert (docs/PLAN_KONTO_LOESCHEN.md): Space beim
+ * naechsten Start entfernen, Konto aus der Liste nehmen und neu starten. Funktioniert
+ * auch fuer das AKTIVE Konto (removeAccount nicht, weil dessen Dateien offen sind).
+ */
+export function kontoNachLoeschungEntfernen(sub: string): { ok: boolean; grund?: string } {
+  if (sub === PENDING || !/^[A-Za-z0-9._-]+$/.test(sub)) return { ok: false, grund: "ungueltige Konto-ID" };
+  const reg = readRegistry();
+  const dir = dirOf(sub, reg);
+  reg.entfernen = [...(reg.entfernen ?? []).filter((e) => e.sub !== sub), { sub, dir }];
+  delete reg.accounts[sub];
+  const warAktiv = reg.active === sub || activeId === sub;
+  if (reg.active === sub) reg.active = null;
+  writeRegistry(reg);
+  log(`Konto ${sub} zum Entfernen vorgemerkt${warAktiv ? " (aktiv → Neustart)" : ""}`);
+  if (warAktiv) setTimeout(relaunch, 300);
+  else {
+    // Nicht aktiv: sofort loeschen geht (keine offenen Dateien).
+    try {
+      if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+      const r2 = readRegistry();
+      r2.entfernen = (r2.entfernen ?? []).filter((e) => e.sub !== sub);
+      writeRegistry(r2);
+    } catch {
+      /* dann beim naechsten Start */
+    }
+  }
   return { ok: true };
 }
 
