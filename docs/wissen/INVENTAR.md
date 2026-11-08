@@ -145,7 +145,7 @@ d = verbindungen/mail/telegram, e = linkedin/meldungen, f = ki/chat, g = workflo
 
 **Grundsätzliches**
 
-Entschieden 2026-11-08: A1 nur Sitz-Modell, A2 Preise nennen, A4 ohne Anbieternamen, A8 so lassen (Problem melden oder info@eprox-gmbh.de).
+Entschieden 2026-11-08: A1 nur Sitz-Modell, A2 Preise nennen, A4 ohne Anbieternamen, A8 so lassen (Problem melden oder info@eprox-gmbh.de). A5 (Länder): Norwegen und Finnland werden genannt, obwohl sie am 2026-11-08 in Produktion noch nicht im Bestand waren (firma_suchen 0 Treffer, firma_lesen NO_923609016 und FI_01120389 = 404); den Erstabzug startet Joyce vor dem Release.
 
 - A1. Sitz-Modell ist live (PRICING_TIERS=1). Sollen die Abrechnungskarten jetzt nur noch das Sitz-Modell
   beschreiben (Karte `ausgabenlimit` streichen, Aktiv/Ruhend ohne Vorbehalt)? (a-F1, b-5)
