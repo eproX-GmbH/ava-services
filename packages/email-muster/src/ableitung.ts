@@ -572,7 +572,9 @@ export async function ermittleFirmenAdressen(companyId: string, k: FirmenKontakt
   ergebnis.baseline = baseline;
 
   // ---- Teilen: Muster + Catch-all (nie eine reine Annahme) --------------------
-  if (!annahme) {
+  // "nachpruefung" ist nur ein Platzhalter fuer Nachpruefungen ohne Muster und landete
+  // so bei 9 Domains im Gateway (Befund 2026-11-08); geteilt wird nur ein echtes Muster.
+  if (!annahme && musterGueltig(muster)) {
     const neuBestaetigt = domainUrteil === "verifiziert" && !serverBestaetigt;
     const neuesMuster = muster !== server?.muster || musterKonfidenz > (server?.konfidenz ?? 0);
     const catchAllNeu = domainUrteil === "catchall" && !catchAllBekannt;

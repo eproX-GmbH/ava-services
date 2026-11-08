@@ -8,9 +8,12 @@
 //
 // Auf der Gateway-Maschine (nutzt DATABASE_URL, nur Datenbanken des Clusters):
 //   fly ssh console -a ava-db-gateway -C "sh -c 'cat > /app/_b.cjs && cd /app && node _b.cjs [--anwenden]; rm -f /app/_b.cjs'" < diese-datei
-// Ohne --anwenden: nur Liste (Trockenlauf).
+// Ohne --anwenden: nur Liste (Trockenlauf). Dubletten persoenlicher Adressen nur mit --mit-dubletten.
 const { Client } = require("pg");
 const ANWENDEN = process.argv.includes("--anwenden");
+// Gleiche persoenlich aussehende Adresse bei mehreren Personen (oft Dubletten derselben
+// Person oder Inhaberadresse) nur mit --mit-dubletten; Funktionsadressen immer.
+const DUBLETTEN = process.argv.includes("--mit-dubletten");
 // Spiegel von packages/email-muster/src/pattern.ts (FUNKTIONS_LOCALS, MUSTER-Ids).
 const FUNKTION = new Set(["info", "kontakt", "contact", "hello", "hallo", "office", "mail", "post", "hr", "ir", "pr", "presse", "press", "vertrieb", "sales", "support", "service", "kundenservice", "buchhaltung", "rechnung", "invoice", "bewerbung", "jobs", "karriere", "career", "careers", "marketing", "team", "admin", "webmaster", "postmaster", "noreply", "no-reply", "newsletter", "anfrage", "anfragen", "zentrale", "empfang", "verwaltung", "datenschutz", "privacy", "legal", "recht", "einkauf", "purchasing", "export", "import", "shop", "bestellung", "order", "orders", "welcome"]);
 const MUSTER_IDS = new Set(["vorname.nachname", "v.nachname", "vnachname", "vorname", "nachname", "vorname_nachname", "vornamenachname", "nachname.vorname", "v-nachname", "vorname-nachname", "nachname.v", "nachnamev", "nachname_vorname", "vn"]);
@@ -31,7 +34,7 @@ const db = (n) => { const u = new URL(process.env.DATABASE_URL); if (n) u.pathna
     const k = `${x.scopeCompanyId}|${x.value.toLowerCase()}`;
     jeAdresse.set(k, (jeAdresse.get(k) || new Set()).add(x.personId));
   }
-  const weg = r.rows.filter((x) => istFunktion(x.value) || jeAdresse.get(`${x.scopeCompanyId}|${x.value.toLowerCase()}`).size > 1);
+  const weg = r.rows.filter((x) => istFunktion(x.value) || (DUBLETTEN && jeAdresse.get(`${x.scopeCompanyId}|${x.value.toLowerCase()}`).size > 1));
   const jeFirma = new Map();
   for (const x of weg) { const k = `${x.name || x.scopeCompanyId} · ${x.value.toLowerCase()}`; jeFirma.set(k, (jeFirma.get(k) || 0) + 1); }
   for (const [k, n] of [...jeFirma.entries()].sort((a, b) => b[1] - a[1])) console.log(`${ANWENDEN ? "deaktiviert" : "würde deaktivieren"}: ${k} — ${n} Person(en)`);
