@@ -1116,5 +1116,9 @@
   {
     "frage": "Warum stehen auf einmal zehn Firmen in meiner Liste, die ich nicht importiert habe?",
     "erwartet": "start-top10"
+  },
+  {
+    "frage": "Ich habe mich mit einem zweiten Konto angemeldet, muss ich die Einrichtung nochmal machen?",
+    "erwartet": "einrichtungsassistent"
   }
 ]

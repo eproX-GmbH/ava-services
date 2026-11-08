@@ -20,6 +20,45 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { OllamaUpdateBanner } from "./components/OllamaUpdateBanner";
 import type { LlmProviderKind } from "../../shared/types";
 import { usePolicyStore } from "./store/policy";
+import { gatewayFetch } from "./api/gateway";
+
+// Kontobezogene Einrichtung (Befund Joyce 2026-11-08): Der Einrichtungsassistent
+// (Organisation anlegen/beitreten, KI-Anbieter) haengt am KONTO, nicht am Rechner.
+// Vorher entschieden nur Ollama-Modelle und Anbieter-Konfiguration; auf einem
+// Rechner mit vorhandenen Modellen (anderes Konto) sprang ein neues Konto direkt
+// in die App, ohne Organisation und ohne KI-Wahl. Die Marke liegt im localStorage,
+// der wie alle Daten je Konto getrennt ist (Account-Space = eigenes userData).
+const EINRICHTUNG_MARKE = "ava.einrichtung.fertig";
+
+function einrichtungMarkeLesen(): boolean {
+  try {
+    return !!window.localStorage.getItem(EINRICHTUNG_MARKE);
+  } catch {
+    return false;
+  }
+}
+
+function einrichtungMarkeSetzen(): void {
+  try {
+    window.localStorage.setItem(EINRICHTUNG_MARKE, new Date().toISOString());
+  } catch {
+    // ohne Speicher: der Assistent erscheint beim naechsten Start erneut
+  }
+}
+
+/** Organisation oder offene Beitrittsanfrage? null = Gateway nicht erreichbar. */
+async function organisationsStand(): Promise<{ inOrg: boolean; anfrageOffen: boolean } | null> {
+  try {
+    const signal = AbortSignal.timeout(15_000);
+    const [org, who] = await Promise.all([
+      gatewayFetch<{ kind?: string }>("/v1/tenants/me", { signal }),
+      gatewayFetch<{ openJoinRequest?: unknown }>("/v1/whoami", { signal }),
+    ]);
+    return { inOrg: org.kind === "organisation", anfrageOffen: !!who.openJoinRequest };
+  } catch {
+    return null;
+  }
+}
 
 interface MemoryProbe {
   writable: boolean;
@@ -82,6 +121,42 @@ export function App({ children }: PropsWithChildren) {
   // pure UI gate — the source of truth for "is the agent actually
   // usable" stays `status.missing` + provider config.
   const [pathChosen, setPathChosen] = useState(false);
+
+  // pruefen → offen (Assistent zeigen) | fertig. Bestehende Konten (in einer
+  // Organisation und mit Verlauf) bekommen die Marke einmalig still gesetzt.
+  const [einrichtung, setEinrichtung] = useState<"pruefen" | "offen" | "fertig">(() => (einrichtungMarkeLesen() ? "fertig" : "pruefen"));
+  useEffect(() => {
+    if (!signedIn || einrichtung !== "pruefen") return;
+    let alive = true;
+    void (async () => {
+      const [stand, verlauf] = await Promise.all([organisationsStand(), window.api.agent.listConversations().catch(() => [])]);
+      if (!alive) return;
+      if (!stand) {
+        // Gateway nicht erreichbar: App nicht sperren, beim naechsten Start erneut pruefen.
+        setEinrichtung("fertig");
+        return;
+      }
+      if (stand.inOrg && verlauf.length > 0) {
+        einrichtungMarkeSetzen();
+        setEinrichtung("fertig");
+        return;
+      }
+      setEinrichtung("offen");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [signedIn, einrichtung]);
+
+  // Assistent abgeschlossen: Marke nur mit Organisation oder offener Beitrittsanfrage
+  // (Organisation ist Pflicht); sonst kommt der Assistent beim naechsten Start wieder.
+  const einrichtungAbschliessen = () => {
+    setPathChosen(true);
+    setEinrichtung("fertig");
+    void organisationsStand().then((s) => {
+      if (s && (s.inOrg || s.anfrageOffen)) einrichtungMarkeSetzen();
+    });
+  };
 
   // v0.1.386 — Plattform an <html> annotieren, damit die integrierte
   // Titelleiste (CSS in styles.css) die System-Buttons freihält: macOS die
@@ -162,6 +237,9 @@ export function App({ children }: PropsWithChildren) {
   if (!signedIn) {
     return <SignIn />;
   }
+  if (einrichtung === "pruefen") {
+    return <div className="loading">Lädt…</div>;
+  }
   // Show the wizard whenever the supervisor isn't fully ready or any
   // *blocking* required model is missing. State transitions
   // (starting → ready → missing-models-pulled) are pushed as IPC events,
@@ -207,12 +285,12 @@ export function App({ children }: PropsWithChildren) {
   // detects `cloudOk` and renders "Almost ready" with just a Download
   // button for the remaining embedding row).
   const needsFirstRunChoice = !pathChosen && blockingMissing.length > 0;
-  if (supervisorHardBlock || needsFirstRunChoice) {
+  if (supervisorHardBlock || needsFirstRunChoice || einrichtung === "offen") {
     return (
       <>
         <FirstRunWizard
           memoryProbe={memoryProbe}
-          onPathChosen={() => setPathChosen(true)}
+          onPathChosen={einrichtungAbschliessen}
           onProviderConfigChanged={(b) => setProviderKind(b.config.kind)}
         />
         <DownloadDock />

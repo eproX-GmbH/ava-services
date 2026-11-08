@@ -485,13 +485,16 @@ export function FirstRunWizard({
           ) : (
             <button
               type="button"
-              onClick={onDownloadAll}
-              disabled={running || visibleMissing.length === 0}
+              className={visibleMissing.length === 0 ? "primary" : undefined}
+              // Alles schon auf dem Rechner (z. B. von einem anderen Konto):
+              // dann schliesst der Knopf die Einrichtung ab, statt zu sperren.
+              onClick={visibleMissing.length === 0 ? () => onPathChosen?.() : onDownloadAll}
+              disabled={running}
             >
               {running
                 ? "Lädt…"
                 : visibleMissing.length === 0
-                  ? "Alle Modelle vorhanden ✓"
+                  ? "Alle Modelle vorhanden, los geht’s →"
                   : `${cloudOk ? "Embedding" : "Alle"} herunterladen (${visibleMissing.length})`}
             </button>
           )}
