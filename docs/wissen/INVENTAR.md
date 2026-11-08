@@ -55,8 +55,8 @@ Zwei Fragen der Erfassung habe ich lesend in Produktion geklärt:
 | 4 | verbindungen | 26 (davon 2 aus der Hauptsession) | abgenommen 2026-11-07/08 (7 Fall-Karten am 07., übrige 19 am 08.) |
 | 4 | mail | 10 | abgenommen 2026-11-08 |
 | 4 | telegram | 14 | abgenommen 2026-11-08 |
-| 5 | linkedin | 17 | offen; Leads-Änderungen aus 2ac245fd (Firmenauswahl, „Firma bestätigt“, neue Ignoriergründe) vor der Abnahme nachziehen |
-| 5 | meldungen | 17 | offen |
+| 5 | linkedin | 17 | abgenommen 2026-11-08 (Leads nach 2ac245fd) |
+| 5 | meldungen | 17 | abgenommen 2026-11-08 |
 | 6 | ki | 20 | offen |
 | 6 | chat | 15 (davon 1 aus der Hauptsession) | offen |
 | 7 | workflows | 17 | offen |
