@@ -20,4 +20,4 @@ Du kannst festlegen, wie viel KI ich pro Tag höchstens verbrauche. Gezählt wir
 
 Selbst geht es unter Einstellungen → KI & Kosten → Verbrauch → Tages-Obergrenze. Dort siehst du auch, wie viel heute schon verbraucht ist.
 
-Ist die Grenze erreicht, wird die laufende Anfrage noch fertig, danach pausiere ich neue Anfragen. Oben in der App erscheint dann ein Hinweis mit „Limit anpassen“. Es geht weiter, sobald du die Grenze erhöhst oder entfernst. Diese Grenze betrifft nur die KI-Nutzung über deinen Zugang. Das Ausgabenlimit für Firmen in deinem Plan ist etwas anderes und steht unter Konto → Plan & Abrechnung.
+Ist die Grenze erreicht, wird die laufende Anfrage noch fertig, danach pausiere ich neue Anfragen. Oben in der App erscheint dann ein Hinweis mit „Limit anpassen“. Es geht weiter, sobald du die Grenze erhöhst oder entfernst. Diese Grenze betrifft nur die KI-Nutzung über deinen Zugang. Dein Monatskontingent für Firmen ist etwas anderes und steht unter Konto → Plan & Abrechnung.
