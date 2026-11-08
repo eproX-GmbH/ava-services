@@ -20,4 +20,4 @@ Ich kann dir auf Telegram auch mit meiner Stimme antworten. Sag es einfach in de
 
 Freier gesagt verstehe ich es meist auch, etwa „ich kann gerade nicht lesen“. Den Standard findest du außerdem unter Einstellungen → Verbindungen → Telegram: „Standardmäßig als Sprachnachricht antworten“.
 
-Die Stimme kommt von OpenAI und braucht einen OpenAI-Zugang, deinen eigenen Schlüssel oder den deiner Organisation. Das kostet wenige Cent je Antwort. Ohne Zugang antworte ich als Text und sage dir, warum. Gesprochene Antworten halte ich kurz.
+Die Stimme kommt von OpenAI und braucht einen OpenAI-Zugang, deinen eigenen Schlüssel oder den deiner Organisation. Die Kosten rechnet OpenAI über diesen Zugang ab. Ohne Zugang antworte ich als Text und sage dir, warum. Gesprochene Antworten halte ich kurz.

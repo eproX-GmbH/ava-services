@@ -5,94 +5,6 @@ Rückmeldung am einfachsten im Chat: „ok“ für den ganzen Ast oder je Karte 
 
 ## verbindungen (26 Karten)
 
-**Bereits abgenommen:**
-
-### CompLeadly mit AVA verbinden
-`compleadly-verbinden` · gilt für: [desktop] · Knöpfe: CompLeadly verbinden (Eingabekarte), Weitere Dienste öffnen (öffnet Seite)
-
-> Fragen: verbinde dich mit compleadly · wie bekomme ich complead.ly in ava · wo trage ich den compleadly zugangscode ein · compleadly anbinden geht das · connect compleadly
-
-Ich zeige dir hier im Chat eine sichere Eingabekarte „CompLeadly verbinden“. Adresse und Art des Zugangs sind schon ausgefüllt, du brauchst nur deinen Zugangscode.
-
-So bekommst du ihn: Melde dich bei CompLeadly an, geh zu Einstellungen → Eigene KI verbinden und leg dort einen neuen Zugangscode an. Kopier ihn in das Feld „Zugangscode für CompLeadly“ auf der Karte und klick auf „Verbinden“. Der Code geht direkt in den geschützten Speicher dieses Rechners, ich bekomme ihn nicht zu sehen. Schick ihn bitte nie als normale Nachricht.
-
-Steht die Verbindung, sage ich dir, was ich jetzt in CompLeadly für dich tun kann, zum Beispiel die Kontakte einer Firma mit LinkedIn-Profil in eine Zielgruppe legen. Alles, was in CompLeadly etwas ändert, bestätigst du vorher. Dasselbe geht auch unter Einstellungen → Verbindungen → Weitere Dienste mit der Vorlage CompLeadly.
-
-Das geht nur in der Desktop-App und nur, wenn deine Organisation „Weitere Dienste“ erlaubt.
-
-### Was AVA mit CompLeadly für mich tun kann
-`compleadly-nutzen` · gilt für: alle Kanäle · Knöpfe: Vorlagen zeigen (Chat-Vorschlag), CompLeadly verbinden (öffnet Seite)
-
-> Fragen: was kannst du mit compleadly machen · übergib die kontakte von firma x an compleadly · linkedin ansprache über compleadly starten · leads in meine compleadly zielgruppe · wie weit sind meine compleadly sequenzen
-
-Mit verbundenem CompLeadly arbeite ich direkt in deinem CompLeadly-Konto, zum Beispiel: Kontakte mit LinkedIn-Profil in eine Zielgruppe legen oder den Stand deiner Sequenzen abfragen. Welche Funktionen es genau gibt, bestimmt CompLeadly; ich nutze, was der Dienst anbietet.
-
-Für die Ansprache je Firma gibt es die Workflow-Vorlage „LinkedIn-Ansprache über CompLeadly“: Ich hole die Kontakte der Firma mit LinkedIn-Profil, du gibst frei, wer an CompLeadly geht, und ich lege sie in deine Zielgruppe. Kontaktanfragen und Nachfassen laufen in CompLeadly und werden dort freigegeben. Ich selbst schicke nichts über LinkedIn.
-
-Was in CompLeadly etwas anlegt oder ändert, bestätigst du vorher. Workflows gibt es, wenn deine Organisation sie freigeschaltet hat. Ist CompLeadly noch nicht verbunden, öffne ich dir die Seite dafür.
-
-### Rückmeldungen aus CompLeadly in AVA bekommen (Lead hat geantwortet)
-`compleadly-rueckmeldungen` · gilt für: [desktop] · Knöpfe: Letzte Ereignisse zeigen (Chat-Vorschlag), Rückkanal einrichten (öffnet Seite)
-
-> Fragen: sagst du mir wenn ein lead in compleadly antwortet · compleadly webhook einrichten · rückkanal für compleadly · hat jemand auf meine linkedin nachricht geantwortet · compleadly antworten als notiz nach close
-
-CompLeadly kann mir melden, was in deinen Sequenzen passiert: Kontaktanfrage gesendet oder angenommen, Nachricht gesendet, Lead hat geantwortet. Dafür richtest du einmal den Rückkanal ein.
-
-Unter Einstellungen → Verbindungen → Weitere Dienste klickst du an der Karte von CompLeadly bei „Rückkanal“ auf „Adresse anlegen“ und dann auf „Kopieren“. In CompLeadly trägst du die Adresse unter Einstellungen → Webhooks ein. Das gibt es bei CompLeadly ab dem Premium-Tarif.
-
-Danach schaue ich alle drei Minuten nach neuen Ereignissen und melde sie dir als Benachrichtigung, etwa „CompLeadly: Lead hat geantwortet“ mit Name und Firma. Kenne ich die Person aus deinem Bestand, ordne ich das Ereignis über ihr LinkedIn-Profil zu. Mit der Workflow-Vorlage „CompLeadly-Rückmeldung als Notiz in Close“ schreibe ich daraus eine Notiz an den Lead in Close, bei einer Antwort zusätzlich eine Aufgabe zum Nachfassen.
-
-Ohne Rückkanal frage ich den Stand bei Bedarf direkt in CompLeadly ab.
-
-### Close CRM mit AVA verbinden
-`close-verbinden` · gilt für: [desktop] · Knöpfe: Close verbinden (Eingabekarte), Close als CRM verbinden (öffnet Seite)
-
-> Fragen: verbinde dich mit close · close crm anbinden · wo trage ich den close api key ein · close.com mit ava verbinden · warum gibt es close zweimal in den einstellungen
-
-Close verbindest du an zwei Stellen, jeweils mit demselben persönlichen Schlüssel. Den erzeugst du in Close unter Einstellungen → Entwickler (API-Schlüssel).
-
-1. Für die Arbeit in Close (Kontakte, Aktivitäten, Chancen, Aufgaben) zeige ich dir hier im Chat eine sichere Eingabekarte „Close verbinden“. Du trägst den Schlüssel ins Feld „Close-API-Key“ ein und klickst auf „Verbinden“. Er geht direkt in den geschützten Speicher dieses Rechners, ich bekomme ihn nicht zu sehen.
-2. Damit ich Leads aus Close als Firmen übernehme und deine AVA-Firmen mit dem passenden Lead verknüpfe, trägst du den Schlüssel zusätzlich unter Einstellungen → Verbindungen → CRM an der Karte Close ein.
-
-Schick den Schlüssel bitte nie als normale Nachricht. Eine Anmeldung bei Close über ein Anmeldefenster statt Schlüssel gibt es noch nicht. Die Eingabekarte gibt es nur in der Desktop-App und wenn deine Organisation „Weitere Dienste“ erlaubt.
-
-### Was AVA in Close lesen und ändern kann
-`close-nutzen` · gilt für: [desktop] · Knöpfe: Close verbinden (öffnet Seite)
-
-> Fragen: was kannst du in close machen · leg eine aufgabe in close an · schreib eine notiz an den lead in close · warum kannst du in close nichts löschen · zeig mir die chancen in close
-
-Ist Close unter „Weitere Dienste“ verbunden, arbeite ich mit dem, was Close dort anbietet: Kontakte, Aktivitäten, Chancen und Aufgaben lesen, Notizen und Aufgaben anlegen. Vor jeder Änderung in Close zeige ich dir, was ich vorhabe, und du bestätigst.
-
-Vorbelegt ist Lesen und sicheres Schreiben, Löschen geht damit bewusst nicht. Brauchst du es, trägst du in der Kopfzeile „Close-Scope“ den Zugriffsbereich für destruktives Schreiben ein, wie ihn Close beschreibt. Ändern lässt sich der Zugang an der bestehenden Karte nicht: Dienst entfernen und mit der Vorlage neu verbinden.
-
-Über die CRM-Karte von Close übernehme ich außerdem Leads als Firmen in deine Firmenliste und verknüpfe Firmen mit ihrem Lead. Sag mir einfach, was in Close passieren soll.
-
-### Salesforce oder Microsoft Dynamics mit AVA verbinden
-`salesforce-dynamics` · gilt für: alle Kanäle · Knöpfe: Liste importieren (Chat-Vorschlag)
-
-> Fragen: salesforce anbinden · geht dynamics 365 · verbinde mein salesforce · microsoft crm verbinden · warum steht bei salesforce demnächst verfügbar
-
-Salesforce und Microsoft Dynamics 365 stehen in den Einstellungen unter Verbindungen → CRM, sind aber noch nicht freigeschaltet. Dort steht „Demnächst verfügbar“, und auch ich kann die Verbindung noch nicht herstellen. Heute direkt verbinden lassen sich HubSpot und Close.
-
-Was du stattdessen tun kannst: Exportier deine Firmen aus Salesforce oder Dynamics als Excel- oder CSV-Datei und zieh sie in den Chat. Ich nehme sie auf und bereite sie auf. Was ich herausfinde, gebe ich dir als Übersicht oder Mail-Entwurf; ins CRM überträgst du es dann selbst.
-
-Wenn du Salesforce oder Dynamics einsetzt, gib dem AVA-Team kurz Bescheid. Dann kommst du zuerst in die Testphase.
-
-### AVA in Microsoft Copilot nutzen (Outlook, Teams, Dynamics)
-`ava-in-copilot` · gilt für: alle Kanäle · Knöpfe: keine
-
-> Fragen: geht ava mit microsoft copilot · kann ich ava in teams nutzen · ava als agent in copilot studio · kann copilot auf ava zugreifen · ava im dynamics sales copilot
-
-Über Copilot Studio kann der Copilot deines Unternehmens AVA nutzen, auf demselben Weg wie Claude und ChatGPT. Der Copilot fragt dann in Outlook, Teams oder Dynamics Firmen und Meldungen bei mir ab, auf Wunsch auch Ansprechpartner, und kann eine Firma bei mir aufnehmen lassen.
-
-Einrichten muss das die IT: Ein Admin deines Microsoft-Tenants richtet AVA in Copilot Studio ein. Ein Admin deiner AVA-Organisation schaltet in der AVA Konsole unter admin.ava.bi den Zugang frei und kann dort die kleine Funktionsliste für Copilot wählen. Die Verbindungsdaten zum Kopieren stehen in der Konsole unter „Agenten-Zugang“.
-
-Wichtig: Ich schreibe nichts in deine Microsoft-Systeme und lege dort keine Leads an. Ins CRM schreibt, wenn überhaupt, der Copilot mit deinen Rechten. Die Anmeldung mit dem Microsoft-Konto ist noch in Vorbereitung, heute meldest du dich mit dem AVA-Konto an.
-
----
-
-**Offen:**
-
 ### Einen fremden KI-Agenten an AVA anbinden
 `agent-verbinden` · gilt für: [desktop] · Knöpfe: Agent verbinden (öffnet Seite)
 
@@ -138,6 +50,77 @@ So verbindest du sie: Leg in der App einen eigenen Connector mit der Adresse htt
 Voraussetzung: Deine Organisation hat den Zugang für Claude, ChatGPT und Copilot freigeschaltet, standardmäßig ist er aus. Verarbeitet wird weiter in deiner AVA, auf diesem Rechner oder deinem Server. Was du abfragst, geht dabei an das Modell des jeweiligen Anbieters.
 
 Welche Apps verbunden sind, siehst und trennst du unter Einstellungen → Konto → Verbundene Apps.
+
+### AVA in Microsoft Copilot nutzen (Outlook, Teams, Dynamics)
+`ava-in-copilot` · gilt für: alle Kanäle · Knöpfe: keine
+
+> Fragen: geht ava mit microsoft copilot · kann ich ava in teams nutzen · ava als agent in copilot studio · kann copilot auf ava zugreifen · ava im dynamics sales copilot
+
+Über Copilot Studio kann der Copilot deines Unternehmens AVA nutzen, auf demselben Weg wie Claude und ChatGPT. Der Copilot fragt dann in Outlook, Teams oder Dynamics Firmen und Meldungen bei mir ab, auf Wunsch auch Ansprechpartner, und kann eine Firma bei mir aufnehmen lassen.
+
+Einrichten muss das die IT: Ein Admin deines Microsoft-Tenants richtet AVA in Copilot Studio ein. Ein Admin deiner AVA-Organisation schaltet in der AVA Konsole unter admin.ava.bi den Zugang frei und kann dort die kleine Funktionsliste für Copilot wählen. Die Verbindungsdaten zum Kopieren stehen in der Konsole unter „Agenten-Zugang“.
+
+Wichtig: Ich schreibe nichts in deine Microsoft-Systeme und lege dort keine Leads an. Ins CRM schreibt, wenn überhaupt, der Copilot mit deinen Rechten. Die Anmeldung mit dem Microsoft-Konto ist noch in Vorbereitung, heute meldest du dich mit dem AVA-Konto an.
+
+### Was AVA in Close lesen und ändern kann
+`close-nutzen` · gilt für: [desktop] · Knöpfe: Close verbinden (öffnet Seite)
+
+> Fragen: was kannst du in close machen · leg eine aufgabe in close an · schreib eine notiz an den lead in close · warum kannst du in close nichts löschen · zeig mir die chancen in close
+
+Ist Close unter „Weitere Dienste“ verbunden, arbeite ich mit dem, was Close dort anbietet: Kontakte, Aktivitäten, Chancen und Aufgaben lesen, Notizen und Aufgaben anlegen. Vor jeder Änderung in Close zeige ich dir, was ich vorhabe, und du bestätigst.
+
+Vorbelegt ist Lesen und sicheres Schreiben, Löschen geht damit bewusst nicht. Brauchst du es, trägst du in der Kopfzeile „Close-Scope“ den Zugriffsbereich für destruktives Schreiben ein, wie ihn Close beschreibt. Ändern lässt sich der Zugang an der bestehenden Karte nicht: Dienst entfernen und mit der Vorlage neu verbinden.
+
+Über die CRM-Karte von Close übernehme ich außerdem Leads als Firmen in deine Firmenliste und verknüpfe Firmen mit ihrem Lead. Sag mir einfach, was in Close passieren soll.
+
+### Close CRM mit AVA verbinden
+`close-verbinden` · gilt für: [desktop] · Knöpfe: Close verbinden (Eingabekarte), Close als CRM verbinden (öffnet Seite)
+
+> Fragen: verbinde dich mit close · close crm anbinden · wo trage ich den close api key ein · close.com mit ava verbinden · warum gibt es close zweimal in den einstellungen
+
+Close verbindest du an zwei Stellen, jeweils mit demselben persönlichen Schlüssel. Den erzeugst du in Close unter Einstellungen → Entwickler (API-Schlüssel).
+
+1. Für die Arbeit in Close (Kontakte, Aktivitäten, Chancen, Aufgaben) zeige ich dir hier im Chat eine sichere Eingabekarte „Close verbinden“. Du trägst den Schlüssel ins Feld „Close-API-Key“ ein und klickst auf „Verbinden“. Er geht direkt in den geschützten Speicher dieses Rechners, ich bekomme ihn nicht zu sehen.
+2. Damit ich Leads aus Close als Firmen übernehme und deine AVA-Firmen mit dem passenden Lead verknüpfe, trägst du den Schlüssel zusätzlich unter Einstellungen → Verbindungen → CRM an der Karte Close ein.
+
+Schick den Schlüssel bitte nie als normale Nachricht. Eine Anmeldung bei Close über ein Anmeldefenster statt Schlüssel gibt es noch nicht. Die Eingabekarte gibt es nur in der Desktop-App und wenn deine Organisation „Weitere Dienste“ erlaubt.
+
+### Was AVA mit CompLeadly für mich tun kann
+`compleadly-nutzen` · gilt für: alle Kanäle · Knöpfe: Vorlagen zeigen (Chat-Vorschlag), CompLeadly verbinden (öffnet Seite)
+
+> Fragen: was kannst du mit compleadly machen · übergib die kontakte von firma x an compleadly · linkedin ansprache über compleadly starten · leads in meine compleadly zielgruppe · wie weit sind meine compleadly sequenzen
+
+Mit verbundenem CompLeadly arbeite ich direkt in deinem CompLeadly-Konto, zum Beispiel: Kontakte mit LinkedIn-Profil in eine Zielgruppe legen oder den Stand deiner Sequenzen abfragen. Welche Funktionen es genau gibt, bestimmt CompLeadly; ich nutze, was der Dienst anbietet.
+
+Für die Ansprache je Firma gibt es die Workflow-Vorlage „LinkedIn-Ansprache über CompLeadly“: Ich hole die Kontakte der Firma mit LinkedIn-Profil, du gibst frei, wer an CompLeadly geht, und ich lege sie in deine Zielgruppe. Kontaktanfragen und Nachfassen laufen in CompLeadly und werden dort freigegeben. Ich selbst schicke nichts über LinkedIn.
+
+Was in CompLeadly etwas anlegt oder ändert, bestätigst du vorher. Workflows gibt es, wenn deine Organisation sie freigeschaltet hat. Ist CompLeadly noch nicht verbunden, öffne ich dir die Seite dafür.
+
+### Rückmeldungen aus CompLeadly in AVA bekommen (Lead hat geantwortet)
+`compleadly-rueckmeldungen` · gilt für: [desktop] · Knöpfe: Letzte Ereignisse zeigen (Chat-Vorschlag), Rückkanal einrichten (öffnet Seite)
+
+> Fragen: sagst du mir wenn ein lead in compleadly antwortet · compleadly webhook einrichten · rückkanal für compleadly · hat jemand auf meine linkedin nachricht geantwortet · compleadly antworten als notiz nach close
+
+CompLeadly kann mir melden, was in deinen Sequenzen passiert: Kontaktanfrage gesendet oder angenommen, Nachricht gesendet, Lead hat geantwortet. Dafür richtest du einmal den Rückkanal ein.
+
+Unter Einstellungen → Verbindungen → Weitere Dienste klickst du an der Karte von CompLeadly bei „Rückkanal“ auf „Adresse anlegen“ und dann auf „Kopieren“. In CompLeadly trägst du die Adresse unter Einstellungen → Webhooks ein. Das gibt es bei CompLeadly ab dem Premium-Tarif.
+
+Danach schaue ich alle drei Minuten nach neuen Ereignissen und melde sie dir als Benachrichtigung, etwa „CompLeadly: Lead hat geantwortet“ mit Name und Firma. Kenne ich die Person aus deinem Bestand, ordne ich das Ereignis über ihr LinkedIn-Profil zu. Mit der Workflow-Vorlage „CompLeadly-Rückmeldung als Notiz in Close“ schreibe ich daraus eine Notiz an den Lead in Close, bei einer Antwort zusätzlich eine Aufgabe zum Nachfassen.
+
+Ohne Rückkanal frage ich den Stand bei Bedarf direkt in CompLeadly ab.
+
+### CompLeadly mit AVA verbinden
+`compleadly-verbinden` · gilt für: [desktop] · Knöpfe: CompLeadly verbinden (Eingabekarte), Weitere Dienste öffnen (öffnet Seite)
+
+> Fragen: verbinde dich mit compleadly · wie bekomme ich complead.ly in ava · wo trage ich den compleadly zugangscode ein · compleadly anbinden geht das · connect compleadly
+
+Ich zeige dir hier im Chat eine sichere Eingabekarte „CompLeadly verbinden“. Adresse und Art des Zugangs sind schon ausgefüllt, du brauchst nur deinen Zugangscode.
+
+So bekommst du ihn: Melde dich bei CompLeadly an, geh zu Einstellungen → Eigene KI verbinden und leg dort einen neuen Zugangscode an. Kopier ihn in das Feld „Zugangscode für CompLeadly“ auf der Karte und klick auf „Verbinden“. Der Code geht direkt in den geschützten Speicher dieses Rechners, ich bekomme ihn nicht zu sehen. Schick ihn bitte nie als normale Nachricht.
+
+Steht die Verbindung, sage ich dir, was ich jetzt in CompLeadly für dich tun kann, zum Beispiel die Kontakte einer Firma mit LinkedIn-Profil in eine Zielgruppe legen. Alles, was in CompLeadly etwas ändert, bestätigst du vorher. Dasselbe geht auch unter Einstellungen → Verbindungen → Weitere Dienste mit der Vorlage CompLeadly.
+
+Das geht nur in der Desktop-App und nur, wenn deine Organisation „Weitere Dienste“ erlaubt.
 
 ### Das CRM mit AVA verbinden (HubSpot oder Close)
 `crm-verbinden` · gilt für: [desktop] · Knöpfe: CRM verbinden (öffnet Seite)
@@ -280,6 +263,17 @@ Obsidian verbinde ich über das Plugin „Local REST API“. So geht es:
 3. In AVA unter Einstellungen → Verbindungen → Notizen bei Obsidian auf „Verbinden“ klicken und den Schlüssel einfügen. Die Base-URL http://127.0.0.1:27123 ist vorbelegt und passt meist.
 
 Danach kann ich deine Notizen lesen, durchsuchen, nach Tags finden, neue anlegen und bestehende ergänzen. Obsidian muss dafür auf diesem Rechner laufen. Meldet die Verbindung „verweigert“, ist Obsidian zu oder das Plugin aus.
+
+### Salesforce oder Microsoft Dynamics mit AVA verbinden
+`salesforce-dynamics` · gilt für: alle Kanäle · Knöpfe: Liste importieren (Chat-Vorschlag)
+
+> Fragen: salesforce anbinden · geht dynamics 365 · verbinde mein salesforce · microsoft crm verbinden · warum steht bei salesforce demnächst verfügbar
+
+Salesforce und Microsoft Dynamics 365 stehen in den Einstellungen unter Verbindungen → CRM, sind aber noch nicht freigeschaltet. Dort steht „Demnächst verfügbar“, und auch ich kann die Verbindung noch nicht herstellen. Heute direkt verbinden lassen sich HubSpot und Close.
+
+Was du stattdessen tun kannst: Exportier deine Firmen aus Salesforce oder Dynamics als Excel- oder CSV-Datei und zieh sie in den Chat. Ich nehme sie auf und bereite sie auf. Was ich herausfinde, gebe ich dir als Übersicht oder Mail-Entwurf; ins CRM überträgst du es dann selbst.
+
+Wenn du Salesforce oder Dynamics einsetzt, gib dem AVA-Team kurz Bescheid. Dann kommst du zuerst in die Testphase.
 
 ### Telegram, E-Mail oder Weitere Dienste fehlen in den Einstellungen
 `verbindung-abschnitt-fehlt` · gilt für: [desktop] · Knöpfe: keine
@@ -592,7 +586,7 @@ Ich kann dir auf Telegram auch mit meiner Stimme antworten. Sag es einfach in de
 
 Freier gesagt verstehe ich es meist auch, etwa „ich kann gerade nicht lesen“. Den Standard findest du außerdem unter Einstellungen → Verbindungen → Telegram: „Standardmäßig als Sprachnachricht antworten“.
 
-Die Stimme kommt von OpenAI und braucht einen OpenAI-Zugang, deinen eigenen Schlüssel oder den deiner Organisation. Das kostet wenige Cent je Antwort. Ohne Zugang antworte ich als Text und sage dir, warum. Gesprochene Antworten halte ich kurz.
+Die Stimme kommt von OpenAI und braucht einen OpenAI-Zugang, deinen eigenen Schlüssel oder den deiner Organisation. Die Kosten rechnet OpenAI über diesen Zugang ab. Ohne Zugang antworte ich als Text und sage dir, warum. Gesprochene Antworten halte ich kurz.
 
 ### AVA auf Telegram Sprachnachrichten schicken
 `telegram-sprachnachrichten` · gilt für: alle Kanäle · Knöpfe: keine
