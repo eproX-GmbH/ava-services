@@ -2,6 +2,9 @@
 
 Stand 2026-11-08. Anlass: Sprachnachricht Joyce vom 2026-11-06 (6:41 Min., lokal
 transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Strategic IT.
+Ergänzt am selben Tag nach Joyces Rückmeldung: Plan passt; Start-Analyse sofort beim
+Registrieren mit Wiederholungen, ICP genau **einmal** in die App, Referenzkunden mit
+eigenem Kurzprofil (ohne deren Referenzen), Workflow-Bausteine vollständig (O9).
 
 ## 1. Was Joyce will (Kern der Sprachnachricht)
 
@@ -29,8 +32,12 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
   nichts. Tenant und Mitglied entstehen erst beim ersten `/v1/whoami`
   (`lib/tenants.ts:141-218`), die Organisation im Einrichtungsassistenten
   (`createOrganisation`, `lib/tenants.ts:292-330`).
-- Über die Konsole kann man sich auch auf der Keycloak-Seite registrieren; diese Nutzer
-  laufen nie über `/v1/auth/register`, wohl aber über `/whoami`.
+- **Die Website registriert an uns vorbei:** `ava-website/app/api/register/route.ts`
+  (Vercel) legt den Nutzer direkt per Keycloak-Admin-API an und holt Tokens. Gateway und
+  `/v1/auth/register` sehen davon nichts, der Nutzer hat AVA dann oft noch gar nicht
+  installiert. Über die Konsole kann man sich zusätzlich auf der Keycloak-Seite
+  registrieren; beide Wege erreichen das Gateway erst mit dem ersten `/whoami`.
+- Das Gateway läuft auf **einer** Fly-Maschine (`ava-db-gateway`, Stand 2026-11-08).
 - E-Mail-Adressen sind **unbestätigt** (`keycloak-admin.ts:149-163` setzt
   `emailVerified: true`).
 - Eine Freemail-Liste gibt es nicht; nur die Baukasten-Regel
@@ -46,8 +53,10 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
   nicht (`suggestions/nutzerstand.ts:111-118`).
 
 **ICP**
-- Liegt nur lokal (`userData/agent/icp.json`, `agent/icp-store.ts`), wird nie
-  synchronisiert. Der Radar braucht Orte, Branchen und Beschreibung oder Angebot
+- Liegt nur lokal (`userData/agent/icp.json`, `agent/icp-store.ts`) auf dem Rechner, auf
+  dem AVA läuft. Bei einer gebuchten AVA in der Cloud (`headless-ava`, Fly) ist das deren
+  Volume, also ebenfalls „lokal“ in dieser Instanz. Er wird nie synchronisiert; das
+  Gateway liest ihn nur live über das Relais (`mcp-kontext.ts:145`). Der Radar braucht Orte, Branchen und Beschreibung oder Angebot
   (`fehlendeFelder`, `icp-store.ts:148-157`).
 - „ICP aus meiner Website“ geht lokal nur halb: `runIcpAnalysis` liest bei der eigenen
   Website keine Referenzen, und die Beschreibung bleibt leer
@@ -126,9 +135,9 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
 1. **Rechnen beim Nutzer.** Eine Analyse auf dem Server vor dem ersten Start ist eine neue
    Betreiber-Ausnahme. Sie ist begrenzt, betrifft nur öffentliche Daten und kostet etwa
    einen KI-Aufruf je neuer Domain. Trotzdem gehört sie ausdrücklich in DECISIONS.
-2. **Stilles Speichern des ICP.** Der ICP-Plan verbietet das. Vorschlag: still
-   *analysieren*, aber mit einem Klick *bestätigen* lassen. Das ist genauso schnell und
-   bleibt ehrlich.
+2. **Stilles Speichern des ICP.** Der ICP-Plan verbietet das. Entschieden (Joyce
+   2026-11-08): Beim ersten Anmelden wird der Vorschlag **einmalig** übernommen, der erste
+   Chat lädt zum Prüfen ein. Er überschreibt nie einen vorhandenen ICP (Sperren in O2).
 3. **Zehn Firmen automatisch übernehmen.** Das widerspricht Regel A10 und kostet bei Free
    40 % des Lebenskontingents. Vorschlag: Die zehn Besten stehen fertig im ersten Chat,
    mit einem Knopf „Alle 10 übernehmen“ (ein Klick statt zehn), und zählen als Startpaket
@@ -159,8 +168,8 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
 
 | # | Frage | Empfehlung |
 |---|---|---|
-| E1 | Start-Analyse auf dem Server als neue Betreiber-Ausnahme (je Domain einmal, Deckel je Tag)? | Ja, als D14 in DECISIONS |
-| E2 | ICP still speichern oder mit einem Klick bestätigen? | Ein Klick „Passt so“; der Radar startet direkt danach |
+| E1 | Start-Analyse auf dem Server als neue Betreiber-Ausnahme (je Domain einmal, Deckel je Tag)? | **Entschieden (Joyce 2026-11-08): ja**, sofort beim Registrieren, auf vorhandener Fly-Instanz (Gateway); D14 in DECISIONS |
+| E2 | ICP still speichern oder mit einem Klick bestätigen? | **Entschieden (Joyce 2026-11-08):** wird beim ersten Anmelden einmalig in die App übertragen und gespeichert; der erste Chat zeigt ihn und lädt zum Prüfen ein. Ersetzt für diesen einen Fall die Regel „kein stilles Speichern“ aus dem ICP-Plan |
 | E3 | Top 10 automatisch übernehmen (Abweichung von A10) oder ein Klick „Alle 10 übernehmen“? | Ein Klick; bei Bedarf später automatisch |
 | E4 | Zählt die Startliste aufs Kontingent? | Nein, „Startpaket“ (10 Firmen, Kennzeichen an der Aktivierung) |
 | E5 | Versanddienst für Mails an Nutzer | Microsoft 365 der eproX über Graph (kein neuer Anbieter, Absender z. B. ava@ava.bi) oder ein EU-Transaktionsdienst; beides geht |
@@ -182,45 +191,108 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
 - Kennzahl: Zeit bis zum ersten sichtbaren Ergebnis (Ziel unter 5 Minuten nach dem
   Assistenten).
 
-### O1 — Start-Analyse aus der E-Mail-Domain (Server, ≈2–3 Tage)
-- Auslöser: nach erfolgreichem `POST /v1/auth/register` (fire-and-forget), als Rückfall
-  beim ersten Anlegen des Mitglieds in `ensureTenantForAuth` (erfasst auch
-  Keycloak-Registrierungen).
-- Domain aus der Adresse. Ausgeschlossen wird über eine neue gemeinsame Freemail-Liste:
-  gmail, googlemail, outlook, hotmail, live, msn, yahoo, icloud, me, aol, gmx, web.de,
-  t-online, freenet, arcor, posteo, mailbox.org, proton/protonmail, online.de, 1und1
-  und weitere, plus die Baukasten-Regel. Dazu ein Website-Gate: Domain erreichbar, keine
-  geparkte Seite (`firmen-web/domain-gate` wiederverwenden).
-- Tabelle `StartAnalyse` je Domain (öffentliche Daten, 90 Tage zwischengespeichert,
-  mehrere Nutzer derselben Firma teilen sie). Sie enthält:
-  - den ICP-Vorschlag aus `icpAusWebsite` mit Referenzen;
-  - die eigene Firma im Bestand über die Domain: Register-Treffer oder `WEB_`-Firma, für
-    den Steckbrief;
-  - den Status (läuft / fertig / keine Website / Freemail).
-- Ablauf im Gateway nach dem Muster des Vorabanalyse-Läufers: DB-Polling mit SKIP LOCKED,
-  damit es bei mehreren Maschinen nicht doppelt läuft. Kein `setInterval` ohne Sperre.
-- Grenzen: eine Analyse je Domain, Deckel je Tag (Umgebungsvariable), Ratenlimit je IP
-  über die bestehende Register-Bremse.
-- Route `GET /v1/onboarding/start-analyse` für die App. Bei Freemail-Nutzern oder
-  abweichender Website zusätzlich `POST /v1/onboarding/start-analyse { website }`, mit
-  Deckel je Nutzer.
-- Optionales Feld „Firmenwebsite“ in `SignUpForm.tsx` (E7), geht an die Registrierung mit.
-- Der bestätigte und bearbeitete ICP bleibt wie bisher nur lokal. Auf dem Server liegt nur
-  der Vorschlag aus öffentlichen Daten. Das gehört in die Datenschutzerklärung.
+### O1 — Start-Analyse sofort beim Registrieren (Gateway, ≈3–4 Tage)
+**Auslöser: alle Registrierungswege laufen im Gateway zusammen.**
+- Desktop: nach erfolgreichem `POST /v1/auth/register` einen Auftrag anlegen und sofort
+  zurückkehren; die Registrierung wartet nie auf die Analyse.
+- Website: `ava-website/app/api/register` ruft künftig das Gateway
+  (`POST /v1/auth/register`) statt Keycloak direkt. Dann gibt es eine Stelle für
+  Anlegen, Ratenlimit und Auftrag. Die TODO-Ratenbremse der Website entfällt damit. Push
+  der Website macht Joyce.
+- Rückfall für alle anderen Wege (Keycloak-Seite der Konsole): Beim ersten Anlegen des
+  Mitglieds in `ensureTenantForAuth` einen Auftrag anlegen, falls es noch keinen gibt.
+- Kein neuer Fly-Server: Die Arbeit ist leicht (Seitenabrufe und wenige KI-Aufrufe) und
+  läuft im Gateway nach dem Muster des Vorabanalyse-Läufers. Ein eigener Server erst, wenn
+  die Last das zeigt.
 
-### O2 — Erster Chat mit fertigem Ergebnis (Desktop, ≈2–3 Tage)
-- Nach dem Assistenten holt die App die Start-Analyse und eröffnet den ersten Chat selbst
-  (fester Text plus Daten, keine KI nötig):
+**Auftrag und Wiederholungen.**
+- Tabelle `StartAuftrag` (actorId eindeutig, E-Mail-Domain, status, versuch,
+  `naechsterVersuchAm`, letzterFehler). Der Läufer holt fällige Aufträge per
+  `FOR UPDATE SKIP LOCKED`. Das hält auch Neustarts und eine zweite Maschine aus, weil
+  die Wartezeiten in der Datenbank stehen und nicht im Speicher.
+- Wiederholungen je Teilschritt (Seite laden, Websuche, KI): **sofort, nach 10 Sekunden,
+  nach 2 Minuten, nach 10 Minuten**, danach `fehlgeschlagen`.
+  - Wiederholt wird bei Netzfehlern, Zeitüberschreitung, 403, 404 (oft nur
+    Bot-Abwehr/kurzzeitig), 408, 429 und 5xx.
+  - Vor dem nächsten Versuch die Varianten durchprobieren: `https://domain`,
+    `https://www.domain`, `http://`, anderer User-Agent.
+  - Nicht wiederholt wird bei endgültigen Befunden: Freemail, Domain ohne DNS, geparkte
+    Seite, zu wenig Text.
+- Fehlgeschlagen heißt nicht verloren: Der erste Chat fragt dann nach der Website (O2),
+  die Konsole zeigt den Fall (O0).
+
+**Ablauf je Auftrag.**
+1. **Domain prüfen:** Freemail-Liste (neu, gemeinsam für Gateway und App: gmail,
+   googlemail, outlook, hotmail, live, msn, yahoo, icloud, me, aol, gmx, web.de,
+   t-online, freenet, arcor, posteo, mailbox.org, proton/protonmail, online.de, 1und1
+   und weitere) plus die Baukasten-Regel. Freemail: Status `freemail`, fertig, keine
+   Verarbeitung.
+2. **Eigene Website lesen und ICP ableiten:** `icpAusWebsite()` mit Referenzkunden.
+3. **Eigenes Firmenprofil:** die Firma des Nutzers im Bestand finden (Register über Name
+   und Ort aus dem Impressum, sonst `WEB_<DOMAIN>`-Firma nach dem Muster von
+   `firma_finden`) und mit Kurzprofil festhalten. Das ist der Steckbrief „So sieht AVA
+   dein Unternehmen“.
+4. **Referenzkunden, bis zu 5:**
+   - Steht ein Link auf der Website, die Domain daraus nehmen. Sonst Namen und Ort per
+     Betreiber-Websuche suchen und mit dem Website-Urteil der Vorabanalyse prüfen
+     (Schwelle wie dort). Bleibt es unsicher, weglassen statt raten.
+   - Je gefundener Website ein **Kurzprofil**: Name, Branche, Größenindiz, Standort,
+     Leistungen, nach dem Muster von `analyzeCustomerSite`
+     (`discovery/icp-assistant.ts:204`), auf den Server portiert.
+   - **Keine Referenzen der Referenzen.** Die Kurzprofil-Funktion hat schon im Schema
+     kein Referenzfeld, und der Ablauf kennt nur Tiefe 1: Referenzen werden ausschließlich
+     aus der Website des Nutzers gelesen, nie aus einer Kunden-Website. Ein Test sichert
+     das ab.
+5. **Synthese:** ICP aus eigener Website plus Kurzprofilen der Referenzen, nach dem Muster
+   von `synthesizeIcp` (`icp-assistant.ts:238`). Die Kundenbeispiele tragen die
+   gefundenen Domains, damit der Radar die Ähnlichkeit zu echten Kunden nutzen kann.
+6. Ergebnis in `StartAnalyse` je Domain (90 Tage zwischengespeichert, Kollegen derselben
+   Firma teilen sie) und am Auftrag des Nutzers als Vorschlag zum einmaligen Abholen (O2).
+
+**Grenzen.**
+- Eine Analyse je Domain, Deckel je Tag (Umgebungsvariable), Kosten je Auftrag
+  mitschreiben (`LlmUsage`, quelle `start-analyse`).
+- Optionales Feld „Firmenwebsite“ in der Registrierung (Desktop und Website, E7). Es geht
+  vor der E-Mail-Domain und wird auch bei Freemail-Adressen verarbeitet.
+- Auf dem Server liegen nur Daten aus öffentlichen Websites, keine Eingaben des Nutzers.
+  Das gehört in die Datenschutzerklärung.
+
+### O2 — Einmalige Übernahme in die App und erster Chat (Desktop + Gateway, ≈2–3 Tage)
+**Die Übernahme passiert genau einmal je Konto, nie wieder.** Abmelden und wieder
+anmelden, App neu installieren, „Zurücksetzen“ oder ein zweiter Rechner dürfen einen
+erarbeiteten ICP nie überschreiben. Drei Sperren:
+1. **Server, atomar:**
+   - `POST /v1/onboarding/start-icp/abholen` setzt
+     `UPDATE … SET abgeholtAm = now(), abgeholtVon = <Instanz> WHERE actorId = … AND abgeholtAm IS NULL RETURNING vorschlag`.
+   - Nur der allererste Aufruf bekommt den Vorschlag. Jeder spätere bekommt
+     „schon übernommen“, auch von anderen Geräten und nach Neuinstallation.
+2. **Lokal leer:** Die App holt nur ab, wenn lokal noch kein ICP existiert (keine
+   `icp.json` oder alle Felder leer). Hat der Nutzer schon einen ICP, meldet die App
+   `POST …/verwerfen`. Damit ist der Vorschlag auch serverseitig verbraucht und kommt nie
+   mehr.
+3. **Lokale Marke:** Nach dem ersten Prüfen setzt die App `startIcpGeprueft` in ihren
+   Einstellungen und fragt nie wieder, selbst wenn der Server einmal falsch antworten
+   sollte.
+
+Danach speichert die App den ICP mit `quelle: "start-analyse"`. Der Server löscht den
+Vorschlag am Auftrag nach dem Abholen; der Domain-Zwischenspeicher bleibt. Ist die Analyse
+beim ersten Anmelden noch nicht fertig, fragt die App bei jedem Start erneut, aber nur bis
+zum ersten Abholen oder Verwerfen. Tests decken genau diese Fälle ab: Abmelden/Anmelden,
+zweites Gerät, Zurücksetzen, ICP schon vorhanden, Analyse noch läuft, Analyse
+fehlgeschlagen.
+
+**Erster Chat.**
+- Eröffnet die App selbst, als fester Text mit den Daten, ohne KI:
   „Ich habe mir **eprox.de** angesehen: Ihr bietet …. Deine idealen Kunden sind ….
-  Referenzen, die ich gefunden habe: …“ Darunter die ICP-Karte mit den Knöpfen
-  **Passt so**, **Anpassen** (ICP-Assistent, vorbefüllt) und **Später**.
-- Gleich daneben der Steckbrief der eigenen Firma („So sieht AVA dein Unternehmen“).
-- Gibt es keine Analyse (Freemail, keine Website): Der Chat fragt in einem Satz nach der
-  Website und startet O1 per POST. Als Rückfall kann der Nutzer sein Angebot in eigenen
-  Worten beschreiben oder diktieren, daraus wird `icp_aus_dokument`.
-- „Passt so“ speichert lokal (`icp_set`, quelle „assistent“), samt Kundenbeispielen.
-- Ist die Analyse noch nicht fertig, wenn der Chat aufgeht: kurzer Fortschritt, dann
-  nachladen. Nie leere Startseite.
+  Referenzen, die ich gefunden habe: … Ich habe das als dein Idealkundenprofil
+  angelegt.“
+- Darunter die Knöpfe **Passt so** (startet den Radar), **Anpassen** (öffnet den
+  ICP-Assistenten, vorbefüllt) und **Später**.
+- Daneben der Steckbrief der eigenen Firma („So sieht AVA dein Unternehmen“).
+- Ohne Analyse (Freemail, keine Website, fehlgeschlagen) fragt der Chat in einem Satz
+  nach der Website und startet O1 per `POST /v1/onboarding/start-analyse { website }`,
+  mit Deckel je Nutzer. Rückfall: Angebot in eigenen Worten beschreiben oder diktieren,
+  daraus wird `icp_aus_dokument`.
 
 ### O3 — Erster Radar-Lauf automatisch (Desktop, ≈1–2 Tage)
 - Direkt nach „Passt so“ startet der Rückstands-Lauf (Pro-Parameter, nicht aufs
@@ -282,6 +354,53 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
 - Mit Alessandros echtem Zugang prüfen: CompLeadly-Werkzeugnamen und ob Webhooks
   (Premium) gehen. Ohne Webhook stündlich abfragen.
 
+### O9 — Workflow-Bausteine vollständig (Desktop, ≈2–3 Tage)
+Joyce: Alles, was man für echte Abläufe braucht, muss da sein, auch „es gibt keinen Lead“.
+
+**Vorhanden** (`workflows/runner.ts:783-962`, `store.ts`):
+
+| Baustein | Stand |
+|---|---|
+| Wenn/Sonst | `if` (Ja- und Nein-Ausgang) |
+| Mehrfachverzweigung | `switch` mit Standard-Ausgang |
+| Filter | `filter` |
+| Schleife | `loop` in Paketen (`batchSize`), dazu `subworkflow` je Firma |
+| Zusammenführen | `merge` |
+| Warten | `wait`: Minuten bis 7 Tage oder bis ein Import fertig ist |
+| Abbrechen | `stop` |
+| Freigabe durch den Menschen | `human` |
+| KI-Schritt | `ai` |
+| Werkzeuge, auch MCP-Dienste | `tool` |
+| Felder umbauen | `transform` |
+| Fehler | je Node `onError` (stop, continue, errorOutput = eigener Fehler-Ausgang), Wiederholungen `maxTries` bis 5 mit `waitBetweenTriesSec` bis 600 |
+| Auslöser | manuell, Chat, Zeitplan (`intervalMinutes`, Uhrzeit `at`, Wochentage), Ereignisse (`alert.created`, `radar.newHot`, `mail.inbound`, `import.finished`, `linkedin.lead`, `dienst.ereignis`) |
+
+**Lücken, die O9 schließt:**
+1. **„Alle 5 Minuten“ geht nicht.** `intervalMinutes` hat das Minimum 15
+   (`store.ts:41`); der Takt prüft jede Minute (`index.ts:28`). Minimum auf 5 senken.
+   Bei kurzen Abständen keine KI-Schritte ohne Not, also im Entwurf erst prüfen, ob es
+   Neues gibt (`if`), dann rechnen. Vorgaben in Klartext „alle 5 Minuten / stündlich /
+   alle 24 Stunden / werktags um 8“ als feste Abbildung im Werkzeugtext, damit das Modell
+   nicht rät.
+2. **Kein Zweig für „nichts gefunden“.** Liefert ein Schritt keine Einträge, laufen alle
+   folgenden Nodes nicht (wie in n8n). Ein `if` sieht den Fall gar nicht, weil es keine
+   Einträge zum Prüfen gibt. Neu:
+   - Option `wennLeer` an jedem Node mit den Werten `nichts` (wie heute), `leerer Eintrag`
+     und `eigener Ausgang`. Damit gibt es Zweige wie „kein neuer Lead → nur
+     Tagesnotiz“ oder „Lead da → recherchieren“.
+   - Dazu im Ausdrucksumfang `$items.length`, damit `if` auf Anzahlen prüfen kann.
+3. **Ereignis ohne Firma** (CompLeadly-Lead einer unbekannten Firma): siehe O7. Das
+   Ereignis bleibt ein Eintrag mit den Lead-Daten statt stillschweigend zu entfallen.
+4. **Modell kennt die Bausteine:** Die `workflow_save`-Beschreibung nennt `wennLeer`,
+   den Fehler-Ausgang und die Zeitplan-Abbildung. `workflow_erklaeren` (O6) sagt auch,
+   was im Leer- und Fehlerfall passiert.
+5. **Abnahme an echten Abläufen:** je ein Test-Workflow für
+   - „CompLeadly-Lead → Firma importieren → recherchieren → in Close anlegen“,
+   - denselben Ablauf ohne neuen Lead,
+   - „Fehler bei Close → Meldung statt Abbruch“,
+   - „alle 5 Minuten Posteingang prüfen“.
+   Jeweils als Probelauf (`dryRun`) und einmal echt.
+
 ### O8 — Begleitetes Onboarding durch das Team (kein Code, ≈½ Tag)
 - Leitfaden für einen 30-Minuten-Termin bei Schlüsselkunden. Er folgt den Schritten aus
   O6, der Kunde diktiert seinen Ablauf selbst, am Ende steht ein laufender Workflow.
@@ -292,12 +411,12 @@ transkribiert) nach den Erfahrungen mit Alessandro (Close + CompLeadly) und Stra
 1. Zuerst **O1 + O2 + O3**: der Wow-Moment für alle neuen Nutzer, ≈1 Woche.
 2. Parallel **O8** für Alessandro: der Mensch hilft sofort, und dabei sammeln wir, was O6
    und O7 brauchen.
-3. Danach **O0 + O6 + O7**.
+3. Danach **O9 + O0 + O6 + O7** (O9 zuerst, weil O7 und der Begleiter darauf bauen).
 4. **O5** zuletzt, wenn E5/E6 entschieden sind: neuer Anbieter, Double-Opt-in und
    Datenschutzerklärung brauchen Vorlauf.
 5. **O4** mit O3, sobald E3/E4 entschieden sind.
 
-Gesamt grob 3–4 Wochen.
+Gesamt grob 4–5 Wochen.
 
 ## 7. Risiken
 
@@ -309,3 +428,9 @@ Gesamt grob 3–4 Wochen.
 - **Lokale Modelle sind langsam** (O3): erst messen, den Onboarding-Lauf kleiner fahren.
 - **Workflows laufen nur bei geöffneter App:** immer dazusagen, später `headless-ava`
   anbieten.
+- **ICP überschrieben:** die größte Sorge (Joyce). Gegenmittel sind die drei Sperren aus O2
+  und Tests für jeden Wiedereinstieg. Es gibt keinen Weg, die Start-Analyse später
+  erneut in die App zu schreiben; ein neuer Vorschlag ginge nur über den ICP-Assistenten
+  und dessen Bestätigung.
+- **Fremde Websites blocken Abrufe (403):** Wiederholungen mit Varianten; bleibt es dabei,
+  fragt der Chat statt zu raten.
