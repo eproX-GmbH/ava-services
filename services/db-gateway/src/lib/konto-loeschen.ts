@@ -252,6 +252,19 @@ export async function kontoLoeschen(pool: pg.Pool, auth: AuthContext, deps: { ma
   return { geloeschteZeilen, keycloak, fehler };
 }
 
+/** Deaktiviertes Konto: E-Mail in Mitgliedschaften/Beitrittsanfragen auf <sub><Adresse>. */
+export async function emailDeaktivierenInDb(pool: pg.Pool, sub: string): Promise<number> {
+  let n = 0;
+  for (const tabelle of ["TenantMember", "TenantMembership", "TenantJoinRequest"]) {
+    const r = await pool.query(
+      `UPDATE "${tabelle}" SET "email" = $1 || "email" WHERE "actorId" = $1 AND "email" IS NOT NULL AND position($1 in "email") <> 1`,
+      [sub],
+    );
+    n += r.rowCount ?? 0;
+  }
+  return n;
+}
+
 /**
  * Allein in der Organisation: Konto deaktivieren statt loeschen. Keine
  * Anonymisierung (Rechnungsansprechpartner der Organisation bleibt erhalten),
@@ -281,6 +294,13 @@ export async function kontoDeaktivieren(pool: pg.Pool, auth: AuthContext): Promi
     keycloak = true;
   } catch (err) {
     fehler.push(`Keycloak: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // 2026-11-09 (Joyce): Adresse auch hier freigeben (<sub><Adresse>), Namen bleiben;
+  // Rechnungsdaten (SeatInvoiceSeat) behalten die Adresse fuer die Aufbewahrung.
+  try {
+    await emailDeaktivierenInDb(pool, auth.actorId);
+  } catch (err) {
+    fehler.push(`Datenbank: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (fehler.length) await pool.query(`UPDATE "KontoStatus" SET "fehler" = $2 WHERE "actorId" = $1`, [auth.actorId, fehler.join(" | ")]).catch(() => undefined);
   logger.info({ actorId: auth.actorId, keycloak }, "[konto-loeschen] Konto deaktiviert (allein in der Organisation)");
