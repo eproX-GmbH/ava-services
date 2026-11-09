@@ -1,5 +1,6 @@
 import { useFeature } from "../store/policy";
 import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
+import { GenUiAktionenContext, GenUiBlock } from "../components/chat/gen-ui/GenUiBlock";
 import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
 import { KartenKnoepfe } from "../components/chat/KartenKnoepfe";
 import { schrittText } from "../components/chat/schritt-text";
@@ -1529,6 +1530,9 @@ export function Chat() {
   }, [isEmpty, messages.length]);
 
   /** L4: Kartenvorschlag als ganz normale Nachricht (Nutzersprache, kein Kontextsatz). */
+  // Generative UI: Knoepfe mit Aktion „auftrag“ schicken eine Nutzernachricht.
+  const genUiAktionen = { auftrag: (text: string) => void sendKartenAuftrag(text) };
+
   async function sendKartenAuftrag(text: string) {
     const id = conversationIdRef.current;
     if (!id || thinking) return;
@@ -1954,6 +1958,7 @@ export function Chat() {
   );
 
   return (
+    <GenUiAktionenContext.Provider value={genUiAktionen}>
     <div
       className={`chat-route${sidebarCollapsed ? " chat-route--sidebar-collapsed" : ""}${dragOver ? " chat-route--drag" : ""}`}
     >
@@ -2208,6 +2213,7 @@ export function Chat() {
       )}
       </div>
     </div>
+    </GenUiAktionenContext.Provider>
   );
 }
 
@@ -3458,7 +3464,41 @@ const BC_OPEN_RE = /```buying-center\b/;
 
 // Mail-Entwurf (docs/PLAN_MAIL_ENTWURF.md): aeusserster Durchgang, Karte mit
 // „Im Mail-Programm oeffnen“; Text davor/danach laeuft durch Buying Center und Charts.
+// Generative UI (docs/PLAN_GENERATIVE_UI.md): aeusserster Durchgang, ```spec-Zaeune
+// werden zu Oberflaechen; offener Zaun beim Streamen rendert schon die fertigen Zeilen.
+const SPEC_FENCE_RE = /```spec\s*\n([\s\S]*?)\n```/g;
+const SPEC_OPEN_RE = /```spec\b/;
+
 function renderChatContent(text: string): ReactNode {
+  if (!text) return null;
+  if (!SPEC_OPEN_RE.test(text)) return renderOhneSpec(text);
+  const nodes: ReactNode[] = [];
+  let segKey = 0;
+  let cursor = 0;
+  const re = new RegExp(SPEC_FENCE_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const davor = text.slice(cursor, m.index);
+    if (davor) nodes.push(<span key={`specseg-${segKey++}`}>{renderOhneSpec(davor)}</span>);
+    nodes.push(<GenUiBlock key={`spec-${segKey++}`} raw={m[1] ?? ""} />);
+    cursor = m.index + m[0].length;
+  }
+  const rest = text.slice(cursor);
+  if (rest) {
+    const at = rest.search(SPEC_OPEN_RE);
+    if (at >= 0 && chartFenceStateFuer(rest, SPEC_OPEN_RE) === "open") {
+      const head = rest.slice(0, at);
+      if (head) nodes.push(<span key={`specseg-${segKey++}`}>{renderOhneSpec(head)}</span>);
+      const body = rest.slice(at).replace(/^```spec\s*\n?/, "");
+      nodes.push(<GenUiBlock key={`spec-${segKey++}`} raw={body} offen />);
+    } else {
+      nodes.push(<span key={`specseg-${segKey++}`}>{renderOhneSpec(rest)}</span>);
+    }
+  }
+  return nodes;
+}
+
+function renderOhneSpec(text: string): ReactNode {
   if (!text) return null;
   if (!MAIL_ENTWURF_OPEN_RE.test(text)) return renderBcUndCharts(text);
   const nodes: ReactNode[] = [];

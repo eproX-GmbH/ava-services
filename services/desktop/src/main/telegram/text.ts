@@ -2,6 +2,7 @@
 // Rein, ohne Electron — damit scripts/test-telegram-text.mjs es prueft.
 
 import { mailEntwurfAlsText, mailEntwuerfeErsetzen } from "../../shared/mail-entwurf";
+import { specZaeuneAlsText } from "../../shared/gen-ui/text";
 
 /** v0.1.522 — Meldungs-Beschreibungen sind Markdown (Meldungs-Seite);
  *  Telegram bekommt lesbaren Text: Links als "Label: URL", Listen mit
@@ -14,7 +15,8 @@ import { mailEntwurfAlsText, mailEntwuerfeErsetzen } from "../../shared/mail-ent
  *  Text, aber ein Modell haelt sich nicht immer daran. */
 export function markdownZuText(md: string): string {
   // Mail-Entwurf (docs/PLAN_MAIL_ENTWURF.md): kein Knopf auf dem Handy, also lesbar als An/Betreff/Text.
-  return mailEntwuerfeErsetzen(md, (e, raw) => (e ? `E-Mail-Entwurf\n${mailEntwurfAlsText(e)}` : raw))
+  // Generative UI: ```spec-Oberflaechen als Text (Titel, Kennzahlen, Zeilen), nie rohes JSON.
+  return mailEntwuerfeErsetzen(specZaeuneAlsText(md), (e, raw) => (e ? `E-Mail-Entwurf\n${mailEntwurfAlsText(e)}` : raw))
     .replace(/```[a-z]*\n?([\s\S]*?)```/g, (_, c: string) => c.trim()) // Codezaeune: Inhalt behalten
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, "$1") // Ueberschriften → Zeile

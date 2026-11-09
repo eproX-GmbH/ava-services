@@ -95,7 +95,23 @@ export default defineConfig({
     // Vite plugin scans the renderer's source for utility classes at
     // build time and emits exactly the CSS that's used. Token layer and
     // any global rules live in `src/renderer/src/styles.css`.
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      // Generative UI (docs/PLAN_GENERATIVE_UI.md): json-render braucht die
+      // zod-4-Schnittstelle; der Desktop nutzt zod 3.25, das sie unter
+      // "zod/v4" mitbringt. Nur Importe AUS json-render umleiten, sonst
+      // wechselten KI-Pakete im Hauptprozess mit (Lockdatei-Versuch 2026-11-09).
+      {
+        name: "ava-json-render-zod4",
+        enforce: "pre" as const,
+        async resolveId(id: string, importer?: string) {
+          if (!importer || !importer.includes("@json-render")) return null;
+          if (id !== "zod" && !(id.startsWith("zod/") && !id.startsWith("zod/v4"))) return null;
+          return this.resolve(id === "zod" ? "zod/v4" : `zod/v4/${id.slice(4)}`, importer, { skipSelf: true });
+        },
+      },
+      react(),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
         "@": resolve(__dirname, "src/renderer/src"),

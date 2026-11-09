@@ -9440,3 +9440,107 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .zugang-karte__kopf { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
 .zugang-karte__hinweis { margin: 8px 0 0; }
 .zugang-karte--fertig { color: var(--muted); font-size: 13px; }
+
+/* Generative UI (docs/PLAN_GENERATIVE_UI.md) -------------------------------
+ * Bausteine aus components/chat/gen-ui/bausteine.tsx. Nur Theme-Variablen,
+ * damit hell und dunkel ohne Extra-Regeln passen. */
+.gu-block { margin: 0.75rem 0; max-width: 100%; }
+.gu-karte {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-bg-1);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.gu-karte + .gu-karte { margin-top: 12px; }
+.gu-karte__kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.gu-karte__titel { margin: 0; font-size: 15px; font-weight: 600; color: var(--color-fg); line-height: 1.3; }
+.gu-karte__aktion { display: flex; gap: 8px; flex-shrink: 0; }
+.gu-karte__inhalt { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gu-gedaempft { color: var(--color-fg-muted); font-size: 12px; }
+.gu-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg); }
+.gu-text.gu-gedaempft { font-size: 12px; color: var(--color-fg-muted); }
+.gu-raster { display: grid; grid-template-columns: repeat(var(--gu-spalten, 2), minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .gu-raster { grid-template-columns: minmax(0, 1fr); } }
+.gu-raster > .gu-karte + .gu-karte { margin-top: 0; }
+.gu-abschnitt { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gu-abschnitt__titel { margin: 0; font-size: 13px; font-weight: 600; color: var(--color-fg); }
+.gu-diagramm-titel { font-size: 13px; font-weight: 600; color: var(--color-fg); margin-bottom: 8px; }
+.gu-hinweis {
+  font-size: 13px; line-height: 1.45; padding: 10px 12px; border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border); background: var(--color-bg-0); color: var(--color-fg);
+}
+.gu-hinweis--warnung { border-color: color-mix(in srgb, var(--color-warn) 45%, transparent); background: color-mix(in srgb, var(--color-warn) 10%, transparent); }
+.gu-hinweis--erfolg { border-color: color-mix(in srgb, var(--color-ok) 45%, transparent); background: color-mix(in srgb, var(--color-ok) 10%, transparent); }
+.gu-hinweis--info { border-color: color-mix(in srgb, var(--color-brand-500) 35%, transparent); background: color-mix(in srgb, var(--color-brand-500) 8%, transparent); }
+.gu-marke {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 500; white-space: nowrap; line-height: 1;
+  background: var(--color-bg-0); color: var(--color-fg-muted); border: 1px solid var(--color-border);
+}
+.gu-marke--gut { color: var(--color-ok); border-color: color-mix(in srgb, var(--color-ok) 40%, transparent); background: color-mix(in srgb, var(--color-ok) 10%, transparent); }
+.gu-marke--warnung { color: var(--color-warn); border-color: color-mix(in srgb, var(--color-warn) 40%, transparent); background: color-mix(in srgb, var(--color-warn) 10%, transparent); }
+.gu-marke--schlecht { color: var(--color-err); border-color: color-mix(in srgb, var(--color-err) 40%, transparent); background: color-mix(in srgb, var(--color-err) 10%, transparent); }
+.gu-marke--marke { color: var(--color-brand-700); border-color: color-mix(in srgb, var(--color-brand-500) 40%, transparent); background: color-mix(in srgb, var(--color-brand-500) 10%, transparent); }
+:root.dark .gu-marke--marke { color: var(--color-brand-300); }
+.gu-kennzahlen { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.gu-kennzahl {
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; min-width: 0;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); background: var(--color-bg-0);
+}
+.gu-kennzahl__label { font-size: 12px; color: var(--color-fg-muted); }
+.gu-kennzahl__wert { font-size: 20px; font-weight: 600; color: var(--color-fg); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.gu-kennzahl__fuss { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gu-sparkline { width: 100%; height: 26px; margin-top: 2px; }
+.gu-delta {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.gu-delta--gut { color: var(--color-ok); background: color-mix(in srgb, var(--color-ok) 12%, transparent); }
+.gu-delta--schlecht { color: var(--color-err); background: color-mix(in srgb, var(--color-err) 12%, transparent); }
+.gu-delta--neutral { color: var(--color-fg-muted); background: var(--color-bg-0); }
+.gu-rangliste { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gu-rangliste__zeile { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.gu-rangliste__label { color: var(--color-fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gu-rangliste__label--hervor { color: var(--color-fg); font-weight: 600; }
+.gu-rangliste__spur { height: 8px; border-radius: 999px; background: var(--color-bg-0); overflow: hidden; }
+.gu-rangliste__balken { display: block; height: 100%; border-radius: 999px; background: var(--color-fg-faint); }
+.gu-rangliste__balken--marke { background: var(--color-brand-500); }
+.gu-rangliste__wert { font-variant-numeric: tabular-nums; color: var(--color-fg); text-align: right; white-space: nowrap; }
+.gu-ring { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.gu-ring__grafik { width: 112px; height: 112px; flex-shrink: 0; }
+.gu-ring__legende { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 160px; flex: 1; }
+.gu-ring__legende li { display: grid; grid-template-columns: 10px 1fr auto auto; align-items: center; gap: 8px; }
+.gu-ring__farbe { width: 10px; height: 10px; border-radius: 3px; }
+.gu-ring__label { color: var(--color-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gu-ring__wert { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-fg); }
+.gu-ring__abs { font-variant-numeric: tabular-nums; }
+.gu-tabelle { min-width: 0; }
+.gu-tabelle__rahmen { border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); overflow: hidden; }
+.gu-tabelle td, .gu-tabelle th { white-space: normal; overflow-wrap: break-word; }
+/* Die Chat-Blase vererbt word-break: break-word; das bricht kurze Spalten mitten im Wort. */
+.gu-block { word-break: normal; }
+.gu-tabelle table { display: table; width: 100%; margin: 0; overflow: visible; border-collapse: collapse; font-size: 13px; }
+.gu-tabelle th { text-align: left; font-weight: 500; font-size: 12px; color: var(--color-fg-muted); padding: 8px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-bg-0); }
+.gu-tabelle td.gu-rechts, .gu-tabelle th.gu-rechts { white-space: nowrap; }
+.gu-tabelle td { padding: 8px 12px; border-bottom: 1px solid var(--color-border); color: var(--color-fg); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.gu-tabelle tr:last-child td { border-bottom: none; }
+.gu-tabelle .gu-rechts { text-align: right; }
+.gu-link {
+  background: none; border: none; padding: 0; margin: 0; font: inherit; cursor: pointer; text-align: left;
+  color: var(--color-brand-700); font-weight: 500;
+}
+:root.dark .gu-link { color: var(--color-brand-300); }
+.gu-link:hover { text-decoration: underline; }
+.gu-firma {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; min-width: 0;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); background: var(--color-bg-1);
+}
+.gu-firma__kopf { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gu-firma__name { font-size: 14px; font-weight: 600; }
+.gu-firma__grund { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--color-fg); }
+.gu-knopfreihe { display: flex; gap: 8px; flex-wrap: wrap; }
+.gu-block .chat-chart { margin: 0; }

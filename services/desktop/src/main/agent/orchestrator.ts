@@ -1271,6 +1271,12 @@ export class AgentOrchestrator extends EventEmitter {
               // "ask_user_* verboten"-Ansage).
               hasRemoteAsk: conversation.remoteAsk != null,
               autonomyLevel: this.effectiveAutonomyLevel(conversation),
+              // Generative UI nur, wo eine Oberflaeche sie zeichnet (Desktop-Chat)
+              // und mit Cloud-Modellen; lokale Modelle bleiben bei ```chart.
+              generativeUi:
+                conversation.autonomousMode !== true &&
+                !conversation.id.startsWith("telegram-") &&
+                this.providers.getStatus().kind !== "ollama",
             },
           ),
           createdAt: 0,

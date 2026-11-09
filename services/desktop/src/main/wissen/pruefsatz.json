@@ -1168,5 +1168,9 @@
   {
     "frage": "Ich habe Müller GmbH aus dem Radar importiert und es wurde eine ganz andere Firma übernommen",
     "erwartet": "radar-uebernehmen-verwerfen"
+  },
+  {
+    "frage": "Warum zeigt AVA mir plötzlich Kacheln und Tabellen statt nur Text?",
+    "erwartet": "chat-diagramme"
   }
 ]

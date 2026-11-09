@@ -1,5 +1,6 @@
 import type { ToolRegistry } from "./tool-registry";
 import type { UserProfile } from "../../shared/types";
+import { AKTIONEN, BAUSTEINE } from "../../shared/gen-ui/bausteine";
 import type { LoadedSkill } from "../skills";
 import type { GeneralMemoryEntry } from "./general-memory";
 import { SOUL } from "./soul";
@@ -22,6 +23,9 @@ import { SOUL } from "./soul";
 //      `profile_set({ profileSkipped: true })` and never re-prompts.
 
 export interface PromptSkillContext {
+  /** Generative UI (docs/PLAN_GENERATIVE_UI.md): ```spec-Oberflaechen statt ```chart.
+   *  Nur im Desktop-Chat mit Cloud-Modell; Telegram/Triage/lokale Modelle ohne. */
+  generativeUi?: boolean;
   /** All currently-loaded skills. Filtered down to those with
    *  `disableModelInvocation === false` for the "Verfügbare Skills"
    *  block; ALL skills (incl. user-invocable-only) still influence
@@ -1072,7 +1076,7 @@ export function buildSystemPrompt(
     // tool_load aendert ohnehin auch das tools-Array und bustet ab
     // dort) → Rest.
     persona,
-    CHART_INSTRUCTIONS,
+    skillContext?.generativeUi ? GEN_UI_INSTRUCTIONS : CHART_INSTRUCTIONS,
     BUYING_CENTER_INSTRUCTIONS,
     profileBlock,
     icpBlock,
@@ -1159,6 +1163,61 @@ export const BUYING_CENTER_INSTRUCTIONS = [
   "  freigegeben haben (buying_center_geteilt), zeigst du an, aenderst es",
   "  aber nie — sag dazu, wem es gehoert.",
   "",
+].join("\n");
+
+// Generative UI (docs/PLAN_GENERATIVE_UI.md): Oberflaechen aus dem festen
+// Baukasten (shared/gen-ui/bausteine.ts) als ```spec-Zaun mit JSON-Patch-Zeilen
+// (json-render, Modus "inline"). Eigene, kurze Regeln statt catalog.prompt():
+// dessen Vorlage verlangt "realistische Beispieldaten", das waere hier falsch.
+export const GEN_UI_INSTRUCTIONS = [
+  "## Antworten als Oberfläche (Generative UI)",
+  "",
+  "Enthält deine Antwort Zahlen, Vergleiche, Verläufe, mehrere Firmen oder Personen oder",
+  "Auswahlmöglichkeiten, baue zusätzlich zum kurzen Text eine Oberfläche aus den Bausteinen",
+  "unten. Du entscheidest selbst, welche Bausteine die Daten am besten zeigen. Reine Auskünfte,",
+  "Rückfragen und Begrüßungen bleiben Text.",
+  "",
+  "### Format",
+  "Erst 1 bis 3 Sätze mit der Kernaussage. Dann ein Codeblock mit der Sprache `spec`, darin",
+  "JSON-Zeilen nach RFC 6902 (JSON Patch), genau ein Objekt pro Zeile:",
+  "",
+  "```spec",
+  '{"op":"add","path":"/root","value":"karte"}',
+  '{"op":"add","path":"/elements/karte","value":{"type":"Karte","props":{"titel":"Umsatz Müller GmbH","untertitel":"Jahresabschlüsse 2021 bis 2023"},"children":["zahlen","balken"],"slots":{"aktion":["oeffnen"]}}}',
+  '{"op":"add","path":"/elements/oeffnen","value":{"type":"Knopf","props":{"label":"Firma öffnen"},"children":[],"on":{"press":{"action":"oeffnen","params":{"ziel":"/companies/<companyId>"}}}}}',
+  '{"op":"add","path":"/elements/zahlen","value":{"type":"Kennzahlen","props":{},"children":["k1","k2"]}}',
+  '{"op":"add","path":"/elements/k1","value":{"type":"Kennzahl","props":{"label":"Umsatz 2023","wert":"16,1 Mio. €","veraenderung":13.8,"vergleich":"zu 2022"},"children":[]}}',
+  '{"op":"add","path":"/elements/k2","value":{"type":"Kennzahl","props":{"label":"Mitarbeiter","wert":"74"},"children":[]}}',
+  '{"op":"add","path":"/elements/balken","value":{"type":"Balken","props":{"titel":"Umsatz je Jahr","format":"eur","kategorien":["2021","2022","2023"],"reihen":[{"name":"Umsatz","werte":[12400000,14100000,16050000]}]},"children":[]}}',
+  "```",
+  "(Zahlen im Beispiel nur zur Form; echte Werte kommen aus Werkzeug-Ergebnissen.)",
+  "",
+  "### Regeln",
+  "1. Zuerst /root, dann jedes Element unter /elements/<schlüssel> mit type, props und children",
+  "   (Blätter: []). Jeder Schlüssel in children oder slots muss als eigenes Element folgen.",
+  "2. Nur die Bausteine unten, Props genau wie beschrieben. Daten direkt in die props schreiben:",
+  "   kein /state, kein repeat, keine $state-Ausdrücke.",
+  "3. Werte NUR aus Werkzeug-Ergebnissen dieses Gesprächs. Nichts erfinden, keine Beispiel- oder",
+  "   Platzhalterdaten, keine geschätzten Zahlen. Fehlt ein Wert, lass das Feld weg.",
+  "4. Aufbau: Kernaussage (Text davor) → Kennzahlen → Grafik → Details (Tabelle, Firmenkarten)",
+  "   → Knöpfe. Nimm nur, was die Frage braucht.",
+  "5. Darstellung wählen: Werte für wenige Jahre oder Kategorien (auch Mitarbeiterzahlen) →",
+  "   Balken; viele Zeitpunkte → Verlauf; Anteile am Ganzen → Ring; sortierte Top-N →",
+  "   Rangliste; mehrere Merkmale je Eintrag → Tabelle; einzelne Firmen → Firmenkarte.",
+  "   Diagramme brauchen mindestens 2 Werte.",
+  "6. Aktionen stehen im Feld „on“ am Element, nie in props:",
+  '   {"on":{"press":{"action":"oeffnen","params":{"ziel":"/companies/<companyId>"}}}}.',
+  "   companyIds und personIds nur aus Werkzeug-Ergebnissen.",
+  "7. Höchstens eine Oberfläche je Antwort, höchstens etwa 40 Elemente. Der Text außerhalb",
+  "   wiederholt nicht, was die Oberfläche zeigt; Quellen nennst du wie gewohnt im Text.",
+  "",
+  "### Bausteine",
+  ...Object.entries(BAUSTEINE).map(
+    ([name, b]) => `- ${name}: { ${b.props} } – ${b.wofuer}${b.kinder ? " [nimmt Kinder]" : ""}${b.slots?.length ? ` [Slots: ${b.slots.join(", ")}]` : ""}`,
+  ),
+  "",
+  "### Aktionen",
+  ...Object.entries(AKTIONEN).map(([name, a]) => `- ${name}: { ${a.params} } – ${a.wofuer}`),
 ].join("\n");
 
 export const CHART_INSTRUCTIONS = [

@@ -1079,6 +1079,12 @@ importers:
       '@electron/rebuild':
         specifier: ^4.2.0
         version: 4.2.0
+      '@json-render/core':
+        specifier: 0.22.0
+        version: 0.22.0(zod@3.25.76)
+      '@json-render/react':
+        specifier: 0.22.0
+        version: 0.22.0(react@19.3.1)(zod@3.25.76)
       '@types/adm-zip':
         specifier: ^0.5.5
         version: 0.5.8
@@ -2318,6 +2324,16 @@ packages:
     engines: {node: '>= 10.16.0'}
     peerDependencies:
       jsep: ^0.4.0||^1.0.0
+
+  '@json-render/core@0.22.0':
+    resolution: {integrity: sha512-BIfJ2V3bLYETetBu2KWoxxRPU5cSAf77dDTBgqaV54kEAfyHta1psPJgNk0fDcB3FCrnCZ5KO/X41VDkrNSYgw==}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@json-render/react@0.22.0':
+    resolution: {integrity: sha512-dUBSPn/OZGJGwYiVUVv6qk14AGvfIutKgw7EKJejof14Ft/UPKsoV7/SkF5xIbGIWcM/vk3U4UnNm3NgPnOSSQ==}
+    peerDependencies:
+      react: ^19.2.3
 
   '@leonbrandt/simple-probe@0.3.2':
     resolution: {integrity: sha512-pa2e5tK6OrKIbTqWKSNqp8Q4nQ4XA1sS7w4FeEBCum07W4l6IAAUt8puDLYAzJw8xlGDUnUBVYTwb8rOhZB7BA==}
@@ -9496,6 +9512,17 @@ snapshots:
   '@jsep-plugin/template@1.0.4(jsep@1.4.0)':
     dependencies:
       jsep: 1.4.0
+
+  '@json-render/core@0.22.0(zod@3.25.76)':
+    dependencies:
+      zod: 3.25.76
+
+  '@json-render/react@0.22.0(react@19.3.1)(zod@3.25.76)':
+    dependencies:
+      '@json-render/core': 0.22.0(zod@3.25.76)
+      react: 19.3.1
+    transitivePeerDependencies:
+      - zod
 
   '@leonbrandt/simple-probe@0.3.2': {}
 
