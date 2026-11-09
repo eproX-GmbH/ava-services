@@ -5,13 +5,8 @@
 //   3. The auto-activation heuristic.
 //   4. The gate evaluator against fake CRM + Ollama deps.
 
-import {
-  checkSkillAllowlist,
-  parseSlashInvocation,
-  renderSkillBody,
-  autoActivateSkill,
-  buildGateEvaluator,
-} from "../src/main/skills/index.ts";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { checkSkillAllowlist, parseSlashInvocation, renderSkillBody, autoActivateSkill, buildGateEvaluator } = await load("../src/main/skills/index.ts");
 
 const failures = [];
 function assert(cond, msg) {

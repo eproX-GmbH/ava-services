@@ -12,11 +12,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { SkillsTrustStore } from "../src/main/skills/trust-store.ts";
-import {
-  initSkills,
-  vendorBundledSkills,
-} from "../src/main/skills/index.ts";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { SkillsTrustStore } = await load("../src/main/skills/trust-store.ts");
+const { initSkills, vendorBundledSkills } = await load("../src/main/skills/index.ts");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const failures = [];

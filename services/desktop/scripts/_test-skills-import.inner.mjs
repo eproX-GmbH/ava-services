@@ -25,14 +25,9 @@ import {
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
-import {
-  exportSkillToZipFile,
-  exportAllSkillsToZipFile,
-  stageImportZip,
-  stageImportMarkdown,
-  commitImport,
-} from "../src/main/skills/import-export.ts";
-import { SkillsTrustStore } from "../src/main/skills/trust-store.ts";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { exportSkillToZipFile, exportAllSkillsToZipFile, stageImportZip, stageImportMarkdown, commitImport } = await load("../src/main/skills/import-export.ts");
+const { SkillsTrustStore } = await load("../src/main/skills/trust-store.ts");
 
 const failures = [];
 function assert(cond, msg) {

@@ -9,16 +9,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import {
-  buildSkillFile,
-  saveSkillToDisk,
-} from "../src/main/skills/save.ts";
-import { parseSkillFile } from "../src/main/skills/parser.ts";
-import { frontmatterSchema } from "../src/main/skills/schema.ts";
-import {
-  initSkills,
-  SkillsTrustStore,
-} from "../src/main/skills/index.ts";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { buildSkillFile, saveSkillToDisk } = await load("../src/main/skills/save.ts");
+const { parseSkillFile } = await load("../src/main/skills/parser.ts");
+const { frontmatterSchema } = await load("../src/main/skills/schema.ts");
+const { initSkills, SkillsTrustStore } = await load("../src/main/skills/index.ts");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const failures = [];

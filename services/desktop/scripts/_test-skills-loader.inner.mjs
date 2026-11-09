@@ -3,7 +3,8 @@
 
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { initSkills } from "../src/main/skills/index.ts";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { initSkills } = await load("../src/main/skills/index.ts");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "..", "src", "main", "skills", "__fixtures__");

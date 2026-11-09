@@ -29,7 +29,7 @@ const text = F.faehigkeitenText(alle);
 // kostet mehr, als die paar hundert Token je Aufruf einsparen. Die Grenze
 // bleibt trotzdem stehen: Sie soll gegen Wildwuchs schuetzen, nicht gegen
 // Wachstum.
-const BUDGET_TOKEN = 1400;
+const BUDGET_TOKEN = 1500; // 2026-11-09: 1400 → 1500 (Neuigkeiten-Sammelmail, Erlaubnisse)
 check(text.length / 3.5 < BUDGET_TOKEN, `Prompt-Text ${text.length} Zeichen (≈ ${Math.round(text.length / 3.5)} Token) unter ${BUDGET_TOKEN} Token`);
 
 console.log("Nutzerstand");

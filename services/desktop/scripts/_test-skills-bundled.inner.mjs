@@ -6,7 +6,8 @@
 
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { initSkills } from "../src/main/skills/index.ts";
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { initSkills } = await load("../src/main/skills/index.ts");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bundledDir = join(here, "..", "resources", "skills");
@@ -40,10 +41,17 @@ const errors = store.getErrors();
 console.log(`[test:skills:bundled] geladen: ${names.join(", ") || "(keine)"}`);
 console.log(`[test:skills:bundled] Fehler: ${errors.length}`);
 
+// Drei Starter-Skills fuer Nutzer plus die internen Skills (b2b-scope internal),
+// die AVA selbst fuer CRM-Abgleich, Mail-Triage und wiederkehrende Mails nutzt.
 const expected = [
   "outreach-draft-de",
   "qualifying-fragebogen",
   "wettbewerber-uebersicht",
+  "hubspot-crm-update",
+  "notion-crm-update",
+  "obsidian-crm-update",
+  "mail-triage",
+  "scheduled-mail-loop",
 ];
 
 assert(
