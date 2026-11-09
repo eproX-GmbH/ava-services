@@ -128,7 +128,7 @@ export function KontoLoeschenSection() {
               <AvaTeam titel="Konto löschen (einzige Person in der Organisation)" />
               <p className="small">
                 Du kannst dein Konto aber <strong>deaktivieren</strong>: Du kannst dich dann nicht mehr anmelden, deine Daten bleiben
-                gespeichert, und nur das AVA-Team kann das Konto wieder einschalten.
+                gespeichert, und nur das AVA-Team kann das Konto wieder einschalten. Deine E-Mail-Adresse wird frei, du kannst damit ein neues Konto anlegen.
               </p>
               <AboHinweis abo={pruefung.abo} />
               <p className="small">Zur Bestätigung tippe DEAKTIVIEREN ein.</p>
