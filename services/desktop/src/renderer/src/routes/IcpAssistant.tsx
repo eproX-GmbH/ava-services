@@ -5,6 +5,7 @@
 // generierten Entwurf vorbefuellt.
 
 import { useEffect, useRef, useState } from "react";
+import type { JSX } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 /** Dritter Weg (2026-10-14): bestehendes ICP aus Datei (PDF, Word, Text, Markdown)

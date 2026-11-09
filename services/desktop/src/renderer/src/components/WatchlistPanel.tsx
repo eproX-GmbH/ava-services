@@ -10,6 +10,7 @@
 // Datenschutz-Einordnung (§5) bleibt sichtbar, aber kurz.
 
 import { useCallback, useEffect, useState } from "react";
+import type { JSX } from "react";
 import { linkedinLimitSicherstellen } from "./LinkedinLimitDialog";
 import { Link } from "react-router-dom";
 

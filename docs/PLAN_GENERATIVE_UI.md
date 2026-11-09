@@ -111,9 +111,21 @@ Beispiele:
 
 Grobe Schätzung: G0 1–2 Tage, G1–G3 4–6 Tage, G4–G6 3–4 Tage.
 
-## 7. Offene Entscheidungen (Joyce)
+## 7. Entscheidungen
 
-1. Variante A (React 19 im Desktop) oder B (eigener Renderer)?
+- **Entschieden 2026-11-09 (Joyce):** Variante A, Desktop auf React 19 („muss ja eh
+  irgendwann passieren“, auf Breaking Changes achten). Upgrade umgesetzt 2026-11-09:
+  react/react-dom 19.3.1, @types 19.3; einzige Bruchstelle war der globale `JSX`-Typ
+  (17 Dateien, jetzt `import type { JSX } from "react"`); alle Bibliotheken mit
+  React-Abhängigkeit erlauben 19.
+- **Vercel Chat SDK** (chat-sdk.dev) ist ein Bot-Rahmen für Slack, Teams, Google Chat,
+  Discord, Telegram und WhatsApp mit Webhooks auf einem Server, keine Chat-Oberfläche
+  für Desktop/PWA. Für den AVA-Chat nicht nötig; interessant erst für einen
+  Teams-/Slack-Bot (dann `@json-render/chat` mit demselben Katalog → Adaptive Cards /
+  Block Kit). Telegram läuft bewusst lokal über die Desktop-App (Rechenlokalität).
+
+Offen:
+
 2. Erste Anwendungsfälle: welche drei zuerst? Vorschlag: Firmenkarten (Radar,
    Bestand), Finanz-Kennzahlen, Rückfrage-Formulare.
 3. Lokale Modelle: Generative UI dort aus, oder Minimalkatalog?

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, X } from "lucide-react";
 import { gatewayFetch } from "../api/gateway";

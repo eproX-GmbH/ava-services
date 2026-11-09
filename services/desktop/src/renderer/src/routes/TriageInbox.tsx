@@ -16,6 +16,7 @@
 // erhalten.
 
 import { useEffect, useMemo, useState } from "react";
+import type { JSX } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { MailMessage, MailSnapshot } from "../../../shared/types";
 

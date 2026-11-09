@@ -12,6 +12,7 @@
 // im Store (in-place-edit von Intervall/Empfänger wäre fragil).
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { JSX } from "react";
 import type { ScheduledJob } from "../../../../shared/types";
 import { bestaetigen } from "../../components/Bestaetigung";
 

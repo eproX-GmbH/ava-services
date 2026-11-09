@@ -6,6 +6,7 @@
 // Entschiedene Firmen verschwinden aus der Tabelle.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { JSX } from "react";
 import { Link } from "react-router-dom";
 import { useUsage } from "../api/usage";
 import type { OrgShareRow } from "../../../shared/types";

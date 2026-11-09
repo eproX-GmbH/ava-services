@@ -5,6 +5,7 @@
 // normalen Firmen-Radar. Teilt sich den Apify-Key mit der Watchlist.
 
 import { useCallback, useEffect, useState } from "react";
+import type { JSX } from "react";
 import { linkedinLimitSicherstellen } from "./LinkedinLimitDialog";
 
 interface PrState {

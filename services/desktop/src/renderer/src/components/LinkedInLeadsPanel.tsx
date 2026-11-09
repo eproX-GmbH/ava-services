@@ -4,6 +4,7 @@
 // Ansprache öffnet den Chat vorbefüllt. Der ICP-Score ist hier nur ein Hinweis.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { JSX } from "react";
 import { useNavigate } from "react-router-dom";
 import type { LinkedInLead, LinkedInLeadPost } from "../../../shared/types";
 

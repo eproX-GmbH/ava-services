@@ -6,6 +6,7 @@
 // bleibt dauerhaft ueber Firmen → Radar erreichbar).
 
 import { useEffect, useState } from "react";
+import type { JSX } from "react";
 import { useNavigate } from "react-router-dom";
 
 const DISMISS_KEY = "ava.icpProposalDismissed";

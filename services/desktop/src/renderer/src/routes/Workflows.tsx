@@ -3,6 +3,7 @@
 // Freigaben entscheiden, in den Editor wechseln.
 
 import { useCallback, useEffect, useState } from "react";
+import type { JSX } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { OrgWorkflowRow, WorkflowApproval, WorkflowListEntry, WorkflowProgressFrame, WorkflowTrigger } from "../../../shared/workflow-types";
 

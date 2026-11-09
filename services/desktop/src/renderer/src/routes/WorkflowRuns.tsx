@@ -3,6 +3,7 @@
 // mit Ein-/Ausgaben je Schritt.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { JSX } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { WorkflowExecution, WorkflowListEntry, WorkflowProgressFrame } from "../../../shared/workflow-types";
 import { statusPill, triggerText } from "./Workflows";

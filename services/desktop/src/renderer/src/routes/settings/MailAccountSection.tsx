@@ -14,6 +14,7 @@
 // AUS; der User muss aktiv freigeben.
 
 import { useEffect, useState, type FormEvent } from "react";
+import type { JSX } from "react";
 import type {
   MailAccount,
   MailAllowlistEntry,

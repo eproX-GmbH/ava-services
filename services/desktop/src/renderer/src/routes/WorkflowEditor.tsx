@@ -4,6 +4,7 @@
 // kleine Korrekturen. Positionen ohne Wert werden per dagre gelegt.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { JSX } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dauerText, firmaText } from "./WorkflowRuns";
 import {

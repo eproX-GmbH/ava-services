@@ -9,6 +9,7 @@ import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { VerflechtungenTab } from "../components/VerflechtungenTab";
 import { KundenTab, type Kunde } from "../components/KundenTab";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { JSX } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";

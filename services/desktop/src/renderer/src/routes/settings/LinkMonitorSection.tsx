@@ -6,6 +6,7 @@
 // zustand-Store nötig. Reuse der scheduler-*/pill-CSS-Klassen.
 
 import { useEffect, useState, type FormEvent } from "react";
+import type { JSX } from "react";
 import type {
   LinkMonitor,
   LinkMonitorFrequencyPreset,
