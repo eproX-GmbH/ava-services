@@ -3,7 +3,7 @@
 // Node-Färbung. Zum Bauen ist der Chat gedacht; hier: Kontrolle und
 // kleine Korrekturen. Positionen ohne Wert werden per dagre gelegt.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dauerText, firmaText } from "./WorkflowRuns";
@@ -62,8 +62,12 @@ function outputsOf(n: WorkflowNode): string[] {
   return OUTPUTS[n.type] ?? [""];
 }
 
+/** Workflow laeuft selbststaendig: jeder Schreib-Schritt gilt als freigegeben. */
+const SelbststaendigContext = createContext(false);
+
 function WfNode({ data, selected }: NodeProps<WfFlowNode>): JSX.Element {
   const n = data.wf;
+  const frei = useContext(SelbststaendigContext) || n.confirmed === true;
   const outs = outputsOf(n);
   const status = data.run?.status;
   const cls = ["wf-node", `wf-node--${n.type}`, selected ? "wf-node--selected" : "", n.disabled ? "wf-node--aus" : "", status ? `wf-node--${status}` : ""].filter(Boolean).join(" ");
@@ -74,7 +78,7 @@ function WfNode({ data, selected }: NodeProps<WfFlowNode>): JSX.Element {
       <div className="wf-node__title">{n.name}</div>
       <div className="wf-node__sub">{subtitle}</div>
       <div className="wf-node__badges">
-        {data.write && <span className={`wf-badge ${n.confirmed ? "wf-badge--ok" : "wf-badge--warn"}`}>{n.confirmed ? "freigegeben" : "Schreib-Schritt"}</span>}
+        {data.write && <span className={`wf-badge ${frei ? "wf-badge--ok" : "wf-badge--warn"}`}>{frei ? "freigegeben" : "Schreib-Schritt"}</span>}
         {n.type === "ai" && <span className="wf-badge">KI</span>}
         {nodeRequirementsMitSub(n, () => null).slice(0, 3).map((r) => (
           <span key={r.stage} className="wf-badge" title={`Braucht ${STAGE_LABELS[r.stage]}: ${r.grund}`}>
@@ -936,6 +940,7 @@ export function WorkflowEditor(): JSX.Element {
       )}
       <div className="wf-editor__body">
         <div className="wf-canvas">
+          <SelbststaendigContext.Provider value={def.settings.autonomous === true}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -956,6 +961,7 @@ export function WorkflowEditor(): JSX.Element {
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable />
           </ReactFlow>
+          </SelbststaendigContext.Provider>
         </div>
         <aside className="wf-panel">
           <div className="wf-panel__tabs">
@@ -1035,13 +1041,15 @@ export function WorkflowEditor(): JSX.Element {
                   <option value="errorOutput">auf Fehler-Ausgang</option>
                 </select>
               </label>
-              <label className="org-check">
-                <input type="checkbox" checked={selectedNode.confirmed === true} onChange={(e) => updateNode(selectedNode.name, { confirmed: e.target.checked })} />
-                <span>
-                  Für unbeaufsichtigte Läufe freigegeben
-                  <span className="org-check__hint">Schreib-Schritte laufen im Zeitplan sonst nur mit passender Vollmacht; Mail-Versand nur mit dieser Freigabe oder einem Freigabe-Schritt davor.</span>
-                </span>
-              </label>
+              {def.settings.autonomous !== true && (
+                <label className="org-check">
+                  <input type="checkbox" checked={selectedNode.confirmed === true} onChange={(e) => updateNode(selectedNode.name, { confirmed: e.target.checked })} />
+                  <span>
+                    Für unbeaufsichtigte Läufe freigegeben
+                    <span className="org-check__hint">Ohne diese Freigabe fragt ein Schreib-Schritt in jedem Lauf einmal nach, bevor er etwas ändert. Die Freigabe gilt dann für alle Einträge des Laufs.</span>
+                  </span>
+                </label>
+              )}
               <label className="org-check">
                 <input type="checkbox" checked={selectedNode.disabled === true} onChange={(e) => updateNode(selectedNode.name, { disabled: e.target.checked })} />
                 <span>Deaktiviert (Items werden durchgereicht)</span>
@@ -1263,6 +1271,13 @@ export function WorkflowEditor(): JSX.Element {
                 <input type="checkbox" checked={def.enabled} onChange={(e) => { setDef({ ...def, enabled: e.target.checked }); setDirty(true); }} />
                 <span>Workflow aktiv (Trigger greifen)</span>
               </label>
+              <label className="org-check">
+                <input type="checkbox" checked={def.settings.autonomous === true} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, autonomous: e.target.checked } }); setDirty(true); }} />
+                <span>
+                  Läuft selbstständig
+                  <span className="org-check__hint">Alle Schritte laufen ohne Rückfrage, auch Löschen und Mail-Versand, und ohne Obergrenze für Einträge oder Mails. Ausgeschaltet fragt jeder Schreib-Schritt in jedem Lauf einmal nach.</span>
+                </span>
+              </label>
               <label className="field">
                 <span>Firmenbezug</span>
                 <select value={def.settings.scope ?? "company"} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, scope: e.target.value as "company" | "none" } }); setDirty(true); }}>
@@ -1324,11 +1339,13 @@ export function WorkflowEditor(): JSX.Element {
                   ))}
                 </select>
               </label>
-              <label className="field">
-                <span>Mails je Tag höchstens</span>
-                <small className="muted">Ist die Grenze erreicht, bricht der Lauf ab und weitere Mails gehen erst am nächsten Tag raus. 0 = keine Grenze.</small>
-                <input type="number" min={0} value={def.settings.maxMailsPerDay} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, maxMailsPerDay: Number(e.target.value) } }); setDirty(true); }} />
-              </label>
+              {def.settings.autonomous !== true && (
+                <label className="field">
+                  <span>Mails je Tag höchstens</span>
+                  <small className="muted">Ist die Grenze erreicht, bricht der Lauf ab und weitere Mails gehen erst am nächsten Tag raus. 0 = keine Grenze.</small>
+                  <input type="number" min={0} value={def.settings.maxMailsPerDay} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, maxMailsPerDay: Number(e.target.value) } }); setDirty(true); }} />
+                </label>
+              )}
             </div>
           )}
 

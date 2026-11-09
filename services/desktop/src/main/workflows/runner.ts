@@ -7,8 +7,10 @@
 //
 // Schreib-Nodes laufen unbeaufsichtigt nur, wenn die Vollmacht die Klasse
 // deckt oder der Node freigegeben ist (`confirmed`); sonst haelt der Lauf
-// an und legt eine Freigabe an (Human-in-the-Loop). `mail_send` braucht
-// IMMER Freigabe oder `confirmed` und unterliegt dem Tages-Deckel.
+// an und legt eine Freigabe an (Human-in-the-Loop), EINMAL je Schritt und
+// Lauf. `mail_send` braucht IMMER Freigabe oder `confirmed` und unterliegt
+// dem Tages-Deckel. Ausnahme `settings.autonomous` („laeuft selbststaendig“,
+// Joyce 2026-11-09): alles ohne Rueckfrage, auch Loeschendes, ohne Deckel.
 
 import { bewertePipeline, fetchPipeline, type VorgangsBefund } from "../transaction-pipeline";
 import { PIPELINE_STAGES, STAGE_LABELS, downstreamNodes, nodeRequirementsMitSub, waitStages, type PipelineStage } from "../../shared/workflow-dependencies";
@@ -316,6 +318,7 @@ export class WorkflowRunner {
       warten: opts.continueAt?.warten ?? null,
       itemKontexte: new Map(),
       itemPlatzhalter: new Map(),
+      freigegebeneSchritte: new Set(),
     };
     try {
       const trigger = def.nodes.find((n) => n.type === "trigger");
@@ -575,7 +578,7 @@ export class WorkflowRunner {
     run.output = outputs.map((o) => truncateItems(o));
     run.finishedAt = new Date().toISOString();
     ctx.itemsProduced += outputs.reduce((s, o) => s + o.length, 0);
-    if (ctx.itemsProduced > ctx.def.settings.maxItemsPerRun) {
+    if (!ctx.def.settings.autonomous && ctx.itemsProduced > ctx.def.settings.maxItemsPerRun) {
       throw new Error(`Item-Grenze je Lauf ueberschritten (${ctx.def.settings.maxItemsPerRun}).`);
     }
     this.deps.store.saveExecution(execution);
@@ -1158,12 +1161,14 @@ export class WorkflowRunner {
       if (isMail) {
         const today = new Date().toISOString().slice(0, 10);
         if (ctx.state.mailsToday.day !== today) ctx.state.mailsToday = { day: today, count: 0 };
-        if (ctx.def.settings.maxMailsPerDay > 0 && ctx.state.mailsToday.count >= ctx.def.settings.maxMailsPerDay) {
+        if (!ctx.def.settings.autonomous && ctx.def.settings.maxMailsPerDay > 0 && ctx.state.mailsToday.count >= ctx.def.settings.maxMailsPerDay) {
           throw new Error(`${MAIL_CAP_FEHLER} (${ctx.def.settings.maxMailsPerDay} je Tag). Die Grenze steht in den Einstellungen dieses Workflows unter „Mails je Tag höchstens“ (im Chat: settings.maxMailsPerDay); 0 = keine Grenze. Weitere Mails gehen erst morgen wieder raus.`);
         }
       }
       const parsed = tool.parseArgs(args);
-      const result = await withAbort(ctx.signal, tool.run(parsed, this.toolContext(ctx, node, level, kind, [ectx.inputItems[ectx.itemIndex] ?? { json: ectx.json }])));
+      // Vorschau der Freigabe: alle Eintraege des Schritts, die Freigabe gilt fuer alle.
+      const vorschau = ectx.inputItems.length > 0 ? ectx.inputItems : [{ json: ectx.json }];
+      const result = await withAbort(ctx.signal, tool.run(parsed, this.toolContext(ctx, node, level, kind, vorschau)));
       if (isMail) {
         ctx.state.mailsToday.count++;
         ctx.mailsSent++;
@@ -1218,6 +1223,8 @@ export class WorkflowRunner {
 
   /** Vollmacht-Stufe fuer diesen Node: Workflow-Deckel, Node-Freigabe, mail_send-Regel. */
   private effectiveLevel(ctx: RunContext, node: WorkflowNode, kind: ActionKind | "read"): AutonomyLevel {
+    // Selbststaendig: unabhaengig vom Chat-Modus; Loeschendes beantwortet remoteAsk.
+    if (ctx.def.settings.autonomous) return "mutating";
     const global = this.deps.getAutonomyLevel();
     const cap = ctx.def.settings.autonomy;
     let level: AutonomyLevel = cap === "inherit" ? global : (["none", "additive", "mutating"].indexOf(cap) <= ["none", "additive", "mutating"].indexOf(global) ? cap : global);
@@ -1231,10 +1238,19 @@ export class WorkflowRunner {
   private toolContext(ctx: RunContext, node: WorkflowNode, level: AutonomyLevel, kind: ActionKind | "read", items: WorkflowItem[]): ToolContext {
     const remoteAsk: RemoteAskHandler = {
       askChoice: async (prompt: string, options: AgentChoiceOption[]) => {
-        const r = await this.requestApproval(ctx, node.name, prompt, items, []);
-        if (!r.approved) throw new Error(`Freigabe abgelehnt${r.note ? `: ${r.note}` : ""}`);
         // Die „Ja“-Option ist per Konvention die erste Nicht-Abbruch-Option.
         const yes = options.find((o) => !/abbrech|verwerf|nein|cancel/i.test(`${o.value} ${o.label}`)) ?? options[0]!;
+        // Selbststaendig: beim Anlegen fuer alles freigegeben, auch Loeschendes.
+        if (ctx.def.settings.autonomous) {
+          this.deps.audit({ action: "workflow.autonom.bestaetigt", severity: "info", summary: `Selbststaendig bestaetigt: ${prompt.slice(0, 300)}`, metadata: { workflowId: ctx.def.id, executionId: ctx.execution.id, node: node.name, kind } });
+          return yes.value;
+        }
+        // Eine Freigabe gilt je Schritt und Lauf, nicht je Eintrag.
+        if (ctx.freigegebeneSchritte.has(node.name)) return yes.value;
+        const anzahl = items.length === 1 ? "1 Eintrag" : `${items.length} Einträge`;
+        const r = await this.requestApproval(ctx, node.name, `${prompt}\n\nDie Freigabe gilt für diesen Schritt in diesem Lauf (${anzahl}).`, items, []);
+        if (!r.approved) throw new Error(`Freigabe abgelehnt${r.note ? `: ${r.note}` : ""}`);
+        ctx.freigegebeneSchritte.add(node.name);
         return yes.value;
       },
       askText: async () => {
@@ -1253,7 +1269,6 @@ export class WorkflowRunner {
       remoteAsk,
       level,
     );
-    void kind;
     return {
       signal: ctx.signal,
       log: (msg) => console.log(`[workflow ${ctx.def.name}/${node.name}] ${msg}`),
@@ -1293,6 +1308,8 @@ interface RunContext {
   stufenFertig: Set<PipelineStage>;
   /** Gesetzt vom Warten-Node: Lauf pausiert nach diesem Durchgang passiv. */
   warten: WorkflowWaiting | null;
+  /** Schritte, die in diesem Lauf schon freigegeben wurden (eine Freigabe je Schritt und Lauf). */
+  freigegebeneSchritte: Set<string>;
   /** v0.1.625 — Firmen-Kontext je Item (Laeufe ohne feste Firma, z. B. nach dem Warten-Node). */
   itemKontexte: Map<string, CompanyContext | null>;
   /** Platzhalter-Werte je Firma (Item-Kontext). */

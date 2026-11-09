@@ -93,6 +93,26 @@ const abl = abgelegt.at(-1);
 const geparst = await simpleParser(abl.inhalt);
 ok(r2.ordner === "Drafts" && abl.flags.includes("\\Draft") && abl.flags.includes("\\Seen"), "Entwurf mit \\Draft und \\Seen im Entwürfe-Ordner");
 ok(geparst.from?.text.includes("joyce@firma.de") && geparst.attachments.length === 1 && !geparst.headers.get("x-unsent"), "Entwurf mit Absender und Anhang, ohne X-Unsent");
+// Sammel-Werkzeug (Feedback Patrick 2026-11-09): eine Bestätigung für alle Entwürfe.
+const { buildMailEntwurfTools } = await load("../src/main/agent/tools/mail-entwurf.ts");
+const sammel = buildMailEntwurfTools({ attachments: store, imapFabrik: fabrik("richtig") }).find((t) => t.name === "mail_entwuerfe_ablegen");
+const fragen = [];
+const sammelCtx = { conversationId: "c1", ui: { confirmAction: async (f) => { fragen.push(f); return "ablegen"; } } };
+const vorher = abgelegt.length;
+const sammelArgs = sammel.parseArgs({
+  entwuerfe: [
+    { an: ["a@firma.de"], betreff: "Ihr Kommentar zu KI", text: "Hallo Frau A,\n\n…\n\nViele Grüße" },
+    { an: ["b@firma.de"], betreff: "Kurze Frage", text: "Hallo Herr B,\n\n…" },
+    { an: ["keine-adresse"], betreff: "Kaputt", text: "x" },
+    { an: ["c@firma.de"], betreff: "Danke für die Reaktion", text: "Hallo C" },
+  ],
+});
+const sr = await sammel.run(sammelArgs, sammelCtx);
+ok(fragen.length === 1 && fragen[0].options[0].label === "Alle 3 in die Entwürfe legen", "Sammel-Entwürfe: genau eine Bestätigung für alle gültigen");
+ok(fragen[0].prompt.includes("Nicht dabei (ungültig)") && fragen[0].prompt.includes("Kaputt"), "ungültiger Entwurf wird in der Bestätigung genannt");
+ok(sr.abgelegt === 3 && abgelegt.length - vorher === 3 && sr.ungueltig.length === 1, "drei Entwürfe im Postfach, der ungültige nicht");
+const nein = await sammel.run(sammelArgs, { conversationId: "c1", ui: { confirmAction: async () => "nein" } });
+ok(nein.abgebrochen === true && abgelegt.length - vorher === 3, "Abbrechen legt nichts ab");
 postfach.postfachEntfernen();
 ok(!postfach.postfachStand().eingerichtet, "Postfach entfernt");
 

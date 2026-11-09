@@ -366,7 +366,7 @@ export class WorkflowService {
         connections: d.connections,
         variables: d.variables ?? {},
         trigger: { kind: "manual" },
-        settings: { ...DEFAULT_WORKFLOW_SETTINGS, ...(d.settings ?? {}), errorWorkflowId: undefined },
+        settings: { ...DEFAULT_WORKFLOW_SETTINGS, ...(d.settings ?? {}), errorWorkflowId: undefined, autonomous: false },
         origin: { kind: "org" },
         enabled: true,
         sharedFrom: { orgWorkflowId: src.id, sharedBy: src.sharedByName ?? src.sharedBy },

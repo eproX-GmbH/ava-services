@@ -365,5 +365,50 @@ console.log("Firmen-Kontext je Item (flacher Workflow ohne feste Firma)");
   check(/Element veraltet/.test(l) && !/Session info/.test(l), `Selenium-Fehler lesbar: ${l}`);
 }
 
+console.log("Freigaben: einmal je Schritt und Lauf, selbststaendig ohne Rueckfrage und Deckel");
+{
+  const approvals = [];
+  const fStore = { ...store, listApprovals: () => approvals, saveApprovals: (l) => { approvals.splice(0, approvals.length, ...l); } };
+  let geoeffnet = 0;
+  const fTools = new Map([
+    ["liste_lesen", tool("liste_lesen", () => ({ rows: Array.from({ length: 12 }, (_, i) => ({ id: `k${i}` })) }))],
+    ["entwurf_ablegen", tool("entwurf_ablegen", async (a, ctx) => {
+      const v = await ctx.ui.confirmAction({ kind: "additive", prompt: `Entwurf ${a.id} ablegen?`, confirmValue: "ja", options: [{ value: "ja", label: "Ablegen" }, { value: "nein", label: "Abbrechen" }] }, ctx.signal);
+      return v === "ja" ? { ok: true } : { error: "abgelehnt" };
+    })],
+    ["kontakt_loeschen", tool("kontakt_loeschen", async (a, ctx) => {
+      const v = await ctx.ui.confirmAction({ kind: "destructive", prompt: `Kontakt ${a.id} löschen?`, confirmValue: "ja", options: [{ value: "ja", label: "Löschen" }, { value: "nein", label: "Abbrechen" }] }, ctx.signal);
+      return v === "ja" ? { ok: true } : { error: "abgelehnt" };
+    })],
+  ]);
+  const fRunner = new WorkflowRunner({
+    registry: { get: (n) => fTools.get(n), list: () => [...fTools.values()] },
+    store: fStore, providers,
+    getAutonomyLevel: () => "none",
+    emit: (f) => { if (f.kind === "approval-open") { geoeffnet++; setTimeout(() => fRunner.resolveApproval(f.approval.id, true), 5); } },
+    audit: () => {},
+    getDefinition: () => null,
+    gatewayRequest: async () => { throw new Error("kein Gateway"); },
+    notify: () => {},
+  });
+  const mk = (id, settings) => mkDef(id, { name: id, description: "", nodes: [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Liste", type: "tool", mode: "allItems", parameters: { tool: "liste_lesen", args: {}, outputPath: "rows" } },
+    { id: "n2", position: [400, 0], name: "Entwürfe", type: "tool", mode: "perItem", parameters: { tool: "entwurf_ablegen", args: { id: "{{ $json.id }}" }, itemKey: "id" } },
+    { id: "n3", position: [600, 0], name: "Löschen", type: "tool", mode: "perItem", parameters: { tool: "kontakt_loeschen", args: { id: "{{ $json.id }}" }, itemKey: "id" } },
+  ], connections: { Start: { main: [[{ node: "Liste", index: 0 }]] }, Liste: { main: [[{ node: "Entwürfe", index: 0 }]] }, "Entwürfe": { main: [[{ node: "Löschen", index: 0 }]] } }, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none", maxItemsPerRun: 100, ...settings } });
+  calls.length = 0;
+  const ex1 = await fRunner.run(mk("wf_fragen", {}), { trigger: "manual" });
+  check(ex1.status === "success" && geoeffnet === 2, `vorher fragen: 12 Einträge, 2 Schritte → genau 2 Freigaben: ${ex1.status} ${geoeffnet} ${ex1.error ?? ""}`);
+  check(calls.filter((c) => c.name === "kontakt_loeschen").length === 12, `alle 12 Löschungen nach einer Freigabe`);
+  check(/Freigabe gilt für diesen Schritt in diesem Lauf \(12 Einträge\)/.test(approvals[0]?.prompt ?? ""), `Freigabe-Text nennt die Einträge: ${approvals[0]?.prompt}`);
+  geoeffnet = 0; calls.length = 0;
+  const ex2 = await fRunner.run(mk("wf_selbst", { autonomous: true, maxItemsPerRun: 5 }), { trigger: "manual" });
+  check(ex2.status === "success" && geoeffnet === 0, `selbstständig: keine Freigabe, auch nicht fürs Löschen, Chat-Modus „none“ egal: ${ex2.status} ${geoeffnet} ${ex2.error ?? ""}`);
+  check(calls.filter((c) => c.name === "kontakt_loeschen").length === 12, `selbstständig: maxItemsPerRun 5 greift nicht (12 gelöscht)`);
+  const ex3 = await fRunner.run(mk("wf_deckel", { autonomous: false, maxItemsPerRun: 5 }), { trigger: "manual" });
+  check(ex3.status === "error" && /Item-Grenze/.test(ex3.error ?? ""), `ohne selbstständig greift die Item-Grenze weiter: ${ex3.error}`);
+}
+
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
 console.log("\nEngine-Tests ok");

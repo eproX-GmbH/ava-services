@@ -75,6 +75,7 @@ const definitionSchema = yup.object({
     maxItemsPerRun: yup.number().integer().min(1).max(5000).default(500),
     autonomy: yup.string().oneOf(["inherit", "none", "additive", "mutating"]).default("inherit"),
     maxMailsPerDay: yup.number().integer().min(0).max(1000).default(20),
+    autonomous: yup.boolean().default(false),
     notifyOnFinish: yup.boolean().default(true),
     errorWorkflowId: yup.string().optional(),
     scope: yup.string().oneOf(["company", "none"]).optional(),

@@ -16,6 +16,7 @@ import type { AgentMessage } from "../../../shared/types";
 import type { WorkflowDefinition, WorkflowNode, WorkflowTrigger } from "../../../shared/workflow-types";
 import type { WorkflowService } from "../../workflows";
 import { compileConversation } from "../../workflows/compiler";
+import { toolActionKind } from "../../workflows/catalog";
 import { freiesObjekt, normalizeNodeInput, normalizeTrigger, normalizeVariables } from "../../workflows/store";
 import { pruefeModellstufe } from "../../workflows/modellstufe";
 import { STAGE_LABELS, nodeRequirements } from "../../../shared/workflow-dependencies";
@@ -154,7 +155,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     description:
       "Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } " +
       "(Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. " +
-      "Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. " +
+      "Hat der Workflow Schreib-Schritte, fragt dieses Werkzeug den Nutzer beim Anlegen selbst, ob der Workflow sie künftig selbstständig ausführen darf (dann laufen alle Schreib-Schritte ohne Rückfrage, auch löschende, ohne Obergrenze); confirmed, settings.autonomy und settings.autonomous dafür NICHT selbst setzen. " +
       "Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma) oder ein Ereignis. " +
       "MELDUNGEN PER MAIL (Rezept): trigger { kind: 'event', event: 'alert.created', filter: { kind: [...] } } → optional ai (Text formulieren) → tool mail_send (confirmed: true, to = Adresse des Nutzers); " +
       "settings.scope 'none', wenn auch Meldungen ohne Firma (Erinnerungen) mitgehen sollen. NICHT per Zeitplan alerts_list ohne sinceMinutes/unreadOnly abfragen — das schickt dieselben Meldungen immer wieder. " +
@@ -256,20 +257,54 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       );
       const norm = normalizeTrigger(args.trigger);
       const trigger: WorkflowTrigger = norm.trigger;
-      const schritte = nodes.map((n, i) => `${i + 1}. ${n.name} (${n.type === "tool" ? String(n.parameters.tool) : n.type}${n.confirmed ? ", freigegeben" : ""})`).join("\n");
-      const value = await c.ui.confirmAction(
-        {
-          kind: "additive",
-          prompt: `Workflow „${args.name}“ ${args.id ? "ueberschreiben" : "anlegen"}?\n\nTrigger: ${trigger.kind}\n${schritte}`,
-          confirmValue: "ja",
-          options: [
-            { value: "ja", label: "Speichern" },
-            { value: "nein", label: "Abbrechen" },
-          ],
-        },
-        c.signal,
-      );
-      if (value !== "ja") return { ...userDeclined(), abgebrochen: true };
+      const schritte = nodes.map((n, i) => `${i + 1}. ${n.name} (${n.type === "tool" ? String(n.parameters.tool) : n.type})`).join("\n");
+      // Joyce 2026-11-09: Autonomie beim Anlegen abfragen. Einmal bestaetigt, laeuft
+      // der Workflow komplett allein (auch je Eintrag, z. B. fuer jeden Kontakt einen
+      // Entwurf); vorher hielt jeder Schreib-Schritt je Item fuer eine Freigabe an.
+      // askChoice statt confirmAction: die Chat-Vollmacht darf diese Frage nicht
+      // stillschweigend beantworten, es geht um kuenftige Laeufe ohne Aufsicht.
+      const schreibend = nodes.filter((n) => n.type === "tool" && toolActionKind(String(n.parameters.tool ?? "")) !== "read");
+      let selbststaendig = false;
+      if (schreibend.length > 0) {
+        let wahl: string;
+        try {
+          wahl = await c.ui.askChoice(
+            `Workflow „${args.name}“ ${args.id ? "überschreiben" : "anlegen"}?\n\nTrigger: ${trigger.kind}\n${schritte}\n\n` +
+              `Diese Schritte schreiben etwas: ${schreibend.map((n) => n.name).join(", ")}.\n` +
+              `Soll der Workflow sie künftig selbstständig ausführen, ohne zu fragen und ohne Obergrenze, auch löschende Schritte? Sonst fragt er in jedem Lauf einmal je Schritt. Das lässt sich später ändern.`,
+            [
+              { value: "selbst", label: "Speichern, läuft selbstständig" },
+              { value: "fragen", label: "Speichern, vorher fragen" },
+              { value: "nein", label: "Abbrechen" },
+            ],
+            c.signal,
+          );
+        } catch {
+          // Kein Rueckfrage-Kanal (autonomer Lauf): nicht selbststaendig anlegen.
+          wahl = "fragen";
+        }
+        if (wahl === "nein") return { ...userDeclined(), abgebrochen: true };
+        selbststaendig = wahl === "selbst";
+        if (!selbststaendig) for (const n of schreibend) n.confirmed = false;
+      } else {
+        const value = await c.ui.confirmAction(
+          {
+            kind: "additive",
+            prompt: `Workflow „${args.name}“ ${args.id ? "überschreiben" : "anlegen"}?\n\nTrigger: ${trigger.kind}\n${schritte}`,
+            confirmValue: "ja",
+            options: [
+              { value: "ja", label: "Speichern" },
+              { value: "nein", label: "Abbrechen" },
+            ],
+          },
+          c.signal,
+        );
+        if (value !== "ja") return { ...userDeclined(), abgebrochen: true };
+      }
+      const settings = {
+        ...((args.settings ?? {}) as Record<string, unknown>),
+        ...(schreibend.length > 0 ? (selbststaendig ? { autonomous: true } : { autonomous: false, autonomy: "none" }) : {}),
+      };
       try {
         const { workflow, problems } = svc().save(
           {
@@ -280,7 +315,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
             connections: args.connections as WorkflowDefinition["connections"],
             variables: normalizeVariables(args.variables ?? {}),
             trigger,
-            ...(args.settings ? { settings: args.settings as unknown as WorkflowDefinition["settings"] } : {}),
+            ...(Object.keys(settings).length ? { settings: settings as unknown as WorkflowDefinition["settings"] } : {}),
             origin: { kind: "chat" },
           },
           { createdBy: "agent" },
@@ -298,6 +333,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     category: "workflow workflows aendern trigger zeitplan pausieren",
     description:
       "Aendert einen Workflow gezielt: enabled, trigger, variables, settings (z. B. { maxMailsPerDay: 50 } fuer die Mail-Obergrenze je Tag, { notifyOnFinish: false } gegen Meldungen je Lauf) oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). " +
+      "„Lass den Workflow selbststaendig laufen“: settings { autonomous: true } (alle Schreib-Schritte ohne Rueckfrage, auch loeschende, ohne Obergrenzen); „wieder vorher fragen“: settings { autonomous: false } (dann eine Freigabe je Schritt und Lauf). " +
       "Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.",
     parameters: {
       type: "object",

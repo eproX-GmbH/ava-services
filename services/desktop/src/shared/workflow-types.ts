@@ -98,6 +98,10 @@ export interface WorkflowSettings {
   autonomy: "inherit" | "none" | "additive" | "mutating";
   /** Tages-Obergrenze fuer mail_send je Workflow (Entscheidung 2026-09-09: Default 20). */
   maxMailsPerDay: number;
+  /** Joyce 2026-11-09: „laeuft selbststaendig“. Alle Schreib-Schritte ohne Rueckfrage,
+   *  auch loeschende und Mail-Versand; Chat-Modus, maxItemsPerRun und maxMailsPerDay
+   *  gelten dann nicht. */
+  autonomous?: boolean;
   notifyOnFinish: boolean;
   errorWorkflowId?: string;
   /** Grundgedanke 2026-09-09: ein Lauf = EINE Firma mit vollem Kontext (Default).
@@ -293,6 +297,7 @@ export const DEFAULT_WORKFLOW_SETTINGS: WorkflowSettings = {
   maxItemsPerRun: 500,
   autonomy: "inherit",
   maxMailsPerDay: 20,
+  autonomous: false,
   notifyOnFinish: true,
   scope: "company",
 };

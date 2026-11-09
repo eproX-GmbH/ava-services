@@ -1172,5 +1172,29 @@
   {
     "frage": "Warum zeigt AVA mir plötzlich Kacheln und Tabellen statt nur Text?",
     "erwartet": "chat-diagramme"
+  },
+  {
+    "frage": "Muss ich wirklich jeden Mail-Entwurf einzeln bestätigen?",
+    "erwartet": "mail-entwurfs-postfach"
+  },
+  {
+    "frage": "Der Workflow soll einfach für jeden Kontakt selbstständig laufen, ohne dass ich jedes Mal freigebe",
+    "erwartet": "workflow-freigaben"
+  },
+  {
+    "frage": "Ist meine E-Mail-Adresse nach dem Deaktivieren wieder frei für ein neues Konto?",
+    "erwartet": "konto-loeschen"
+  },
+  {
+    "frage": "Mein Workflow soll auch Kontakte löschen, ohne jedes Mal zu fragen",
+    "erwartet": "workflow-freigaben"
+  },
+  {
+    "frage": "Warum bricht mein Workflow mit Item-Grenze ab?",
+    "erwartet": "workflow-freigaben"
+  },
+  {
+    "frage": "Muss ich bei 50 Entwürfen jeden einzeln freigeben?",
+    "erwartet": "workflow-freigaben"
   }
 ]

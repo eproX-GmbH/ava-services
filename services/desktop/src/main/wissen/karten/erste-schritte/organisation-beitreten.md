@@ -8,6 +8,7 @@ fragen:
   - wie lange dauert die freigabe meines beitritts
   - ich warte auf freigabe der organisation
   - ich habe einen einladungslink bekommen
+  - mir hat jemand einen link zur organisation geschickt
   - wie trete ich der organisation meiner firma bei
   - mein kollege hat mich eingeladen
   - beitritt angefragt und jetzt
