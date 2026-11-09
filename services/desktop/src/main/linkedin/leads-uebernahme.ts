@@ -5,6 +5,7 @@
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LinkedInLead } from "../../shared/types";
 import { ortAusImpressum } from "../discovery/ort-impressum";
+import { kernWoerter, namensVerwandt, ortPasst, registerTreffer, stufenHinweis } from "../discovery/namensabgleich";
 
 type Gw = <T>(pfad: string, opts?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown }) => Promise<T>;
 
@@ -78,12 +79,23 @@ export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string |
   if (!companyId && lead.firmaName) {
     try {
       const r = await gw<{ items: Array<{ companyId: string; name: string; location?: string | null; registerStatus?: string | null }> }>(`/v1/companies/search?q=${encodeURIComponent(lead.firmaName)}&limit=10`);
-      kandidaten = (r.items ?? []).map((i) => ({ companyId: i.companyId, name: i.name, location: i.location ?? null, registerStatus: i.registerStatus ?? null }));
-      const ort = (firmaOrt ?? "").toLowerCase();
-      const treffer = ort ? kandidaten.find((i) => (i.location ?? "").toLowerCase().includes(ort)) : kandidaten.length === 1 ? kandidaten[0] : undefined;
-      if (treffer) {
-        companyId = treffer.companyId;
-        hinweise.push(`Register-Firma ${treffer.name}${treffer.location ? ` (${treffer.location})` : ""} zugeordnet.`);
+      // Nur Kandidaten mit passendem Namen; die Suche ist unscharf und liefert sonst
+      // auch Firmen, die nur im Ort oder in „GmbH“ uebereinstimmen (2026-11-09).
+      const gesucht = kernWoerter(lead.firmaName);
+      kandidaten = (r.items ?? [])
+        .map((i) => ({ companyId: i.companyId, name: i.name, location: i.location ?? null, registerStatus: i.registerStatus ?? null }))
+        .filter((k) => namensVerwandt(gesucht, kernWoerter(k.name)));
+      // Stufe 1 exakt (Name + Ort), dann gleicher Kernname, dann aehnlicher Name, jeweils am Ort.
+      const exakt = firmaOrt ? kandidaten.filter((k) => k.name.trim().toLowerCase() === lead.firmaName!.trim().toLowerCase() && ortPasst(k.location, firmaOrt)) : [];
+      if (exakt.length === 1) {
+        companyId = exakt[0]!.companyId;
+        hinweise.push(`Register-Firma ${exakt[0]!.name}${exakt[0]!.location ? ` (${exakt[0]!.location})` : ""} zugeordnet.`);
+      } else if (firmaOrt) {
+        const t = registerTreffer({ name: lead.firmaName, ort: firmaOrt }, kandidaten);
+        if (t.kandidat) {
+          companyId = t.kandidat.companyId;
+          hinweise.push(stufenHinweis(lead.firmaName, t.kandidat, t.stufe));
+        }
       }
     } catch {
       /* Suche nicht entscheidend */
@@ -93,8 +105,9 @@ export async function leadUebernehmen(gw: Gw, id: string, opts: { ort?: string |
   // die Kandidaten zur Auswahl geben statt nach einem unbekannten Ort zu fragen.
   // Mit Ort aus dem Mini-Profil, der keinen Treffer ergibt, ebenfalls, solange kein
   // Website-Weg offen ist und der Nutzer den Ort nicht selbst genannt hat.
-  if (!companyId && kandidaten.length > 1 && (!firmaOrt || (!lead.firmaDomain && !opts.ort?.trim()))) {
-    return { ok: false, auswahlNoetig: true, kandidaten, hinweise, error: `Mehrere Firmen heißen ähnlich wie „${lead.firmaName}“. Bitte die richtige auswählen.` };
+  // Seit 2026-11-09 auch bei nur EINEM Namensverwandten ohne passenden Ort: bestaetigen lassen statt blind nehmen.
+  if (!companyId && kandidaten.length > 0 && (!firmaOrt || (!lead.firmaDomain && !opts.ort?.trim()))) {
+    return { ok: false, auswahlNoetig: true, kandidaten, hinweise, error: kandidaten.length > 1 ? `Mehrere Firmen heißen ähnlich wie „${lead.firmaName}“. Bitte die richtige auswählen.` : `Im Register gibt es eine ähnlich benannte Firma zu „${lead.firmaName}“. Bitte bestätigen, ob sie gemeint ist.` };
   }
   if (!companyId && lead.firmaName && kandidaten.length === 0) hinweise.push(`Keine Register-Firma namens „${lead.firmaName}“ gefunden.`);
   if (!companyId && lead.firmaDomain) {

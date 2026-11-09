@@ -11,6 +11,7 @@
 // A10: Verarbeitung passiert NUR hier — nie automatisch.
 
 import type { GatewayClient } from "../agent/gateway-client";
+import { registerTreffer, stufenHinweis } from "./namensabgleich";
 
 /** Obergrenze des Gateways fuer POST /v1/discovery/decisions. */
 const DECISIONS_BATCH = 200;
@@ -29,13 +30,23 @@ export interface DecideSummary {
   /** Import gewuenscht, aber kein Ort vorhanden → nicht importierbar. */
   ohneOrt: string[];
   unbekannt: string[];
+  /** Weder im Register sicher gefunden noch ueber die Website anlegbar → bleibt offen. */
+  ohneZuordnung: string[];
+  /** Weiche Zuordnungen und Website-Anlagen, zum Pruefen fuer den Nutzer. */
+  hinweise: string[];
 }
 
 interface CandidateLookupRow {
   discoveryId: string;
   name: string;
   city: string | null;
+  plz?: string | null;
+  domain?: string | null;
   country?: string;
+}
+
+interface ImportVorschau {
+  unmatched?: Array<{ name: string; location: string; candidates?: Array<{ companyId: string; name: string; location: string; score?: number }> }>;
 }
 
 export async function decideCandidates(
@@ -88,7 +99,14 @@ export async function decideCandidates(
 
   // 1. Import ZUERST — schlaegt er fehl, bleiben die Firmen offen
   //    (keine Entscheidung gespeichert) statt still zu verschwinden.
+  //    Zuordnung in Stufen (2026-11-09): exakt (Name + Ort im Register) →
+  //    gleicher Kernname am Ort → aehnlicher Name am Ort (beides mit Hinweis) →
+  //    ueber die Website als Firma ohne Registereintrag. Nie mehr der erste
+  //    unscharfe Elastic-Treffer (isFuzzy), der nur ueber Ort oder „GmbH“ passte.
   let transactionId: string | null = null;
+  const hinweise: string[] = [];
+  const ohneZuordnung: string[] = [];
+  const importiertIds = new Set<string>();
   if (importable.length > 0) {
     try {
       // docs/PLAN_RADAR_LAENDER.md (L6): Abgleich je Land, also eine
@@ -99,23 +117,71 @@ export async function decideCandidates(
         nachLand.set(land, [...(nachLand.get(land) ?? []), d]);
       }
       for (const [land, teil] of nachLand) {
-        const r = await gateway.request<{ transactionId: string }>(
-          "/v1/imports/from-list",
-          {
+        const zeilen = teil.map((d) => ({ d, c: byId.get(d.discoveryId)! }));
+        const vorschau = await gateway.request<ImportVorschau>("/v1/imports/from-list", {
+          method: "POST",
+          body: { companies: zeilen.map(({ c }) => ({ name: c.name, city: (c.city ?? "").trim() })), dryRun: true, isFuzzy: false, country: land },
+        });
+        const offen = new Map((vorschau.unmatched ?? []).map((u) => [`${u.name.trim().toLowerCase()}|${u.location.trim().toLowerCase()}`, u]));
+        const exakt: Array<{ name: string; city: string }> = [];
+        const perId: string[] = [];
+        for (const { d, c } of zeilen) {
+          const city = (c.city ?? "").trim();
+          const u = offen.get(`${c.name.trim().toLowerCase()}|${city.toLowerCase()}`);
+          if (!u) {
+            exakt.push({ name: c.name, city });
+            importiertIds.add(d.discoveryId);
+            continue;
+          }
+          const t = registerTreffer({ name: c.name, ort: city }, u.candidates ?? []);
+          if (t.kandidat) {
+            // Exakter Registername + Sitz → master-data findet ihn ohne Unschaerfe.
+            exakt.push({ name: t.kandidat.name, city: t.kandidat.location });
+            importiertIds.add(d.discoveryId);
+            hinweise.push(stufenHinweis(c.name, t.kandidat, t.stufe));
+            continue;
+          }
+          const domain = c.domain ?? d.discoveryId;
+          if (domain && domain.includes(".")) {
+            try {
+              const w = await gateway.request<{ companyId: string; neu: boolean; konflikt?: Array<{ companyId: string; name: string | null }> }>("/v1/companies/web", {
+                method: "POST",
+                body: { name: c.name, website: domain, ort: city, ...(c.plz ? { plz: c.plz } : {}) },
+              });
+              perId.push(w.konflikt?.[0]?.companyId ?? w.companyId);
+              importiertIds.add(d.discoveryId);
+              hinweise.push(
+                w.konflikt?.length
+                  ? `„${c.name}“: Website gehört zur Register-Firma ${w.konflikt[0]!.name ?? w.konflikt[0]!.companyId}.`
+                  : `„${c.name}“: ${t.mehrdeutig.length > 1 ? `mehrere ähnliche Register-Firmen am Ort (${t.mehrdeutig.map((k) => k.name).slice(0, 3).join(", ")})` : "nicht im Register gefunden"}, über die Website ${domain} angelegt.`,
+              );
+              continue;
+            } catch {
+              /* unten: ohne Zuordnung */
+            }
+          }
+          ohneZuordnung.push(c.name);
+        }
+        if (exakt.length > 0) {
+          const r = await gateway.request<{ transactionId: string }>("/v1/imports/from-list", {
             method: "POST",
             body: {
               ...(opts.startpaket ? { startpaket: true } : {}),
-              companies: teil.map((d) => {
-                const c = byId.get(d.discoveryId)!;
-                return { name: c.name, city: (c.city ?? "").trim() };
-              }),
-              transactionName: `Discovery-Import: ${teil.length} Firmen${land !== "DE" ? ` (${land})` : ""}`,
-              isFuzzy: true,
+              companies: exakt,
+              transactionName: `Discovery-Import: ${exakt.length} Firmen${land !== "DE" ? ` (${land})` : ""}`,
+              isFuzzy: false,
               country: land,
             },
-          },
-        );
-        transactionId = transactionId ?? r.transactionId;
+          });
+          transactionId = transactionId ?? r.transactionId;
+        }
+        if (perId.length > 0) {
+          const r = await gateway.request<{ transactionId: string }>("/v1/imports/by-ids", {
+            method: "POST",
+            body: { companyIds: [...new Set(perId)], transactionName: `Discovery-Import über Website: ${perId.length} Firmen` },
+          });
+          transactionId = transactionId ?? r.transactionId;
+        }
       }
     } catch (err) {
       return {
@@ -129,7 +195,7 @@ export async function decideCandidates(
   const persist = valid.filter(
     (d) =>
       d.decision === "dismissed" ||
-      importable.some((i) => i.discoveryId === d.discoveryId),
+      importiertIds.has(d.discoveryId),
   );
   // v0.1.575 — Das Gateway nimmt hoechstens DECISIONS_BATCH Entscheidungen
   // je Anfrage an (zod max 200). "Alle 300 ignorieren" lief vorher in
@@ -163,10 +229,12 @@ export async function decideCandidates(
 
   return {
     entschieden: saved,
-    importiert: importable.length,
+    importiert: importiertIds.size,
     ignoriert: valid.filter((d) => d.decision === "dismissed").length,
     transactionId,
     ohneOrt,
     unbekannt,
+    ohneZuordnung,
+    hinweise,
   };
 }

@@ -404,9 +404,11 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
         .required(),
     }),
     preview: (r) => {
-      const res = r as { error?: string; importiert?: number; ignoriert?: number };
+      const res = r as { error?: string; importiert?: number; ignoriert?: number; hinweise?: string[]; ohneZuordnung?: string[] };
       if (res.error) return res.error;
-      return `${res.importiert ?? 0} importiert, ${res.ignoriert ?? 0} ignoriert`;
+      const pruefen = (res.hinweise ?? []).length;
+      const ohne = (res.ohneZuordnung ?? []).length;
+      return `${res.importiert ?? 0} importiert, ${res.ignoriert ?? 0} ignoriert${pruefen ? `, ${pruefen} Zuordnungen zum Prüfen` : ""}${ohne ? `, ${ohne} ohne passende Firma` : ""}`;
     },
     run: async (args) =>
       decideCandidates(

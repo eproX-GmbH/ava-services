@@ -400,6 +400,8 @@ const api = {
           ignoriert: number;
           transactionId: string | null;
           ohneOrt: string[];
+          ohneZuordnung: string[];
+          hinweise: string[];
         }
       | { error: string }
     > => ipcRenderer.invoke("discovery:decide", decisions),

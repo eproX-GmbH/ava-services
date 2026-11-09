@@ -101,7 +101,12 @@ export function DiscoveryRadar(): JSX.Element {
           return;
         }
         if (decision === "imported") {
-          setNotice(result.importiert > 0 ? "Firma importiert — Verarbeitung läuft" : result.ohneOrt.length > 0 ? "Nicht importierbar (kein Ort)" : "Keine Änderung.");
+          setNotice(
+            [
+              result.importiert > 0 ? "Firma importiert — Verarbeitung läuft" : result.ohneOrt.length > 0 ? "Nicht importierbar (kein Ort)" : result.ohneZuordnung.length > 0 ? "Nicht importiert: keine passende Firma im Register und keine Website" : "Keine Änderung.",
+              ...result.hinweise,
+            ].join(" · "),
+          );
           setLastImportTx(result.transactionId);
         }
       }
@@ -176,6 +181,9 @@ export function DiscoveryRadar(): JSX.Element {
           parts.push(
             `nicht importierbar (kein Ort): ${result.ohneOrt.join(", ")}`,
           );
+        if (result.ohneZuordnung.length > 0)
+          parts.push(`nicht importiert (keine passende Firma im Register, keine Website): ${result.ohneZuordnung.join(", ")}`);
+        parts.push(...result.hinweise);
         setNotice(parts.join(" · ") || "Keine Änderung.");
         setLastImportTx(result.transactionId);
         setSelected(new Set());

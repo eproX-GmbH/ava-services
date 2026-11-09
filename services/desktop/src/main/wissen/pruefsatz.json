@@ -1164,5 +1164,9 @@
   {
     "frage": "Warum steht bei meinen Leads überall Website gelesen, Firma noch nicht zugeordnet?",
     "erwartet": "linkedin-leads"
+  },
+  {
+    "frage": "Ich habe Müller GmbH aus dem Radar importiert und es wurde eine ganz andere Firma übernommen",
+    "erwartet": "radar-uebernehmen-verwerfen"
   }
 ]

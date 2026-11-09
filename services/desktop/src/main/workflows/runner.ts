@@ -851,6 +851,7 @@ export class WorkflowRunner {
           const details = [
             typeof j.importiert === "number" ? `importiert: ${j.importiert}` : null,
             Array.isArray(j.ohneOrt) && j.ohneOrt.length > 0 ? `ohne Ort (nicht importierbar): ${(j.ohneOrt as unknown[]).slice(0, 5).join(", ")}` : null,
+            Array.isArray(j.ohneZuordnung) && j.ohneZuordnung.length > 0 ? `ohne passende Register-Firma: ${(j.ohneZuordnung as unknown[]).slice(0, 5).join(", ")}` : null,
             typeof j.error === "string" ? j.error : null,
           ].filter(Boolean);
           throw new Error(`Warten-Node: kein Vorgang vorhanden — der vorige Schritt hat keinen Import gestartet${details.length ? ` (${details.join(" · ")})` : ""}.`);
