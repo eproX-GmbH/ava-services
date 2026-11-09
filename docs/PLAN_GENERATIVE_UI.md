@@ -58,15 +58,36 @@ Beispiele:
    die normale Antwort (Text davor/danach bleibt). Gleiches Muster wie ` ```chart `,
    damit Verlauf, Speicherung (`memory.ts`), Kopieren und Telegram-Rückfall wie
    gewohnt funktionieren.
-2. **AVA-Katalog** (eigene Komponenten im AVA-Design, nicht die 41 Standardteile):
-   - `Firmenkarte` (nur `companyId`; Name, Ort, Status, Kennzahlen lädt die Karte
-     **selbst** aus dem Gateway → keine erfundenen Zahlen), `Firmenliste`
-   - `Kennzahl` (Wert + Veränderung; Werte nur aus Tool-Ergebnissen, Regel wie bei
-     Diagrammen), `Diagramm` (bestehendes Chart-Schema wiederverwenden)
-   - `Personenkarte` (über `personId`), `Meldung`/`Zeitleiste`
-   - `Tabelle`, `Hinweis`, `Abschnitt`/`Raster` (Layout)
-   - `Auswahl`, `Eingabe`, `Schalter`, `Formular` (für Rückfragen und Einstellungen)
-   - `Knopf` mit festen Aktionen (unten)
+2. **AVA-Katalog: allgemeine Bausteine, keine Vorlagen je Anwendungsfall** (Joyce
+   2026-11-09: „die KI soll selbst bestimmen, wie sie das sinnvoll einsetzt, nicht für
+   jeden Furz eine Vorlage“). So arbeitet auch die Vercel-Demo: Der Katalog beschreibt
+   je Baustein in ein, zwei Sätzen, **wofür** er da ist, mit einem Beispiel;
+   `catalog.prompt()` macht daraus den Systemprompt. Das Modell wählt und kombiniert
+   selbst. Das Aussehen kommt aus unseren Komponenten, nicht vom Modell. Einmalige
+   Arbeit pro Baustein, danach „funktioniert es einfach“.
+   - **Layout:** `Karte` (Titel, Untertitel, Knopf oben rechts), `Abschnitt`,
+     `Raster` (1–4 Spalten), `Reiter`, `Trenner`
+   - **Text:** `Ueberschrift`, `Text` (Markdown), `Hinweis` (Info/Warnung),
+     `Marke` (Badge)
+   - **Zahlen:** `Kennzahlen` + `Kennzahl` (Wert, Veränderung grün/rot, optional
+     Mini-Verlauf), `Fortschritt`
+   - **Diagramme:** `Verlauf` (Linie/Fläche, viele Zeitpunkte, Bereich hervorheben,
+     Tooltip), `Balken` (Vergleiche und Anzahlen je Jahr/Kategorie, auch gruppiert),
+     `Rangliste` (waagerechte Balken mit Wert, Top-N wie „Umsatz je Region“),
+     `Ring` (Anteile am Ganzen, höchstens 6, mit Legende und Prozent)
+   - **Tabelle:** Spalten mit Typ (Text, Zahl, Geld, Prozent, Veränderung als
+     farbige Pille, Marke, Link auf Firma/Person), Sortierung
+   - **AVA-Objekte:** `Firmenkarte` / `Firmenliste` (nur `companyId`, Daten lädt die
+     Karte selbst), `Personenkarte` (`personId`)
+   - **Interaktion:** `Knopf`, `Knopfreihe`, `Eingabe`, `Auswahl`, `Schalter`,
+     `Formular`
+   - Dazu wenige **allgemeine Darstellungsregeln** im Prompt (keine Fallvorlagen):
+     zuerst die Kernaussage als Text, dann Kennzahlen, dann Grafik, dann Details als
+     Tabelle; Anzahlen über Jahre → Balken, viele Zeitpunkte → Verlauf, Anteile →
+     Ring, Top-N → Rangliste; Werte nur aus Werkzeug-Ergebnissen.
+   - Warum die heutigen ` ```chart `-Diagramme langweilig wirken: nur ein Baustein,
+     fast immer Linie, keine Kennzahlen/Ranglisten/Tabellen daneben. Der Katalog
+     ersetzt ` ```chart ` später (alter Block bleibt lesbar).
 3. **Aktionen (abschließende Liste, alles andere wird abgelehnt):**
    - `oeffnen` (App-Seite, z. B. Firma, Radar, Einstellungen)
    - `auftrag` (schickt einen Text als Nutzernachricht an AVA)
@@ -124,11 +145,9 @@ Grobe Schätzung: G0 1–2 Tage, G1–G3 4–6 Tage, G4–G6 3–4 Tage.
   Teams-/Slack-Bot (dann `@json-render/chat` mit demselben Katalog → Adaptive Cards /
   Block Kit). Telegram läuft bewusst lokal über die Desktop-App (Rechenlokalität).
 
-Offen:
+Vorschlag für die übrigen Punkte (Joyce 2026-11-09: keine Fallvorlagen):
 
-2. Erste Anwendungsfälle: welche drei zuerst? Vorschlag: Firmenkarten (Radar,
-   Bestand), Finanz-Kennzahlen, Rückfrage-Formulare.
-3. Lokale Modelle: Generative UI dort aus, oder Minimalkatalog?
-4. Darf ein Knopf Schreib-Werkzeuge auslösen (immer mit Bestätigung), oder anfangs
-   nur `oeffnen`/`auftrag`?
-5. Soll die Organisation Generative UI abschalten können (Funktionen-Vorgabe)?
+2. Anwendungsfälle: keine Vorauswahl, das Modell entscheidet anhand des Katalogs.
+3. Lokale Modelle (qwen3:8b): Generative UI aus, dort bleibt Markdown/` ```chart `.
+4. Knöpfe dürfen Schreib-Werkzeuge auslösen, immer mit Bestätigung wie im Chat.
+5. Organisations-Schalter „Generative UI“ in den Funktionen (Standard an).
