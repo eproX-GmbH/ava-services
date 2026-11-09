@@ -7,6 +7,7 @@
 
 import { app, BrowserWindow, Notification, powerMonitor, safeStorage, shell } from "electron";
 import { setPlatform, type Platform } from "../core/platform";
+import { neuStarten } from "./neustart";
 
 function hauptfensterNachVorn(): void {
   try {
@@ -94,10 +95,7 @@ export const electronPlatform: Platform = {
     },
   },
   lifecycle: {
-    relaunch: () => {
-      app.relaunch();
-      app.exit(0);
-    },
+    relaunch: neuStarten,
     exit: (code) => app.exit(code),
     onBeforeQuit: (handler) => {
       app.on("before-quit", handler);

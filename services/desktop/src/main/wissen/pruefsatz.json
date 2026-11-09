@@ -1152,5 +1152,9 @@
   {
     "frage": "wie bestell ich die ava mails ab",
     "erwartet": "neuigkeiten-per-mail"
+  },
+  {
+    "frage": "Jedes Mal wenn ich das Konto wechsle kommt ein Absturzbericht von macOS",
+    "erwartet": "konto-wechseln"
   }
 ]

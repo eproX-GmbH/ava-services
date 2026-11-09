@@ -29,6 +29,7 @@
 // fremde Space bleibt unangetastet, wird aber nie sichtbar).
 
 import { app } from "electron";
+import { neuStarten } from "./neustart";
 import { paths } from "../core/platform";
 import {
   existsSync,
@@ -321,8 +322,7 @@ export function readIdentity(): (AccountIdentity & { lastSignInAt?: string }) | 
 }
 
 function relaunch(): void {
-  app.relaunch();
-  app.exit(0);
+  neuStarten();
 }
 
 /**

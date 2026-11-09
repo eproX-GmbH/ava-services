@@ -40,6 +40,7 @@ import "./account-space-init";
 import { setMaxListeners } from "node:events";
 import { join } from "node:path";
 import { quitStep, writeLineSync, setQuitPhase, istQuitAnzeigePhase } from "./file-logger";
+import { istNeustart } from "./neustart";
 import { startWatchdog } from "./watchdog";
 import { beendeVerwaisteBrowser } from "./browser-sweep";
 import { producerLogBuffer } from "./producer-log-buffer";
@@ -93,7 +94,7 @@ app.on("before-quit", (e) => {
   e.preventDefault();
   for (const w of fenster) {
     try {
-      w.webContents.send("app:wird-beendet");
+      w.webContents.send("app:wird-beendet", { neustart: istNeustart() });
     } catch {
       /* Fenster schon weg */
     }

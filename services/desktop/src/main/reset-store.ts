@@ -39,7 +39,6 @@ export function requestResetExceptModels(): void {
   const userDataDir = paths().get("userData");
   writeFileSync(markerPath(userDataDir), new Date().toISOString(), "utf8");
   lifecycle().relaunch();
-  lifecycle().exit(0);
 }
 
 /**

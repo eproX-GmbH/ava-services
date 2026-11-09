@@ -137,7 +137,6 @@ export async function checkTenantChange(grund: string): Promise<boolean> {
   broadcast("org:tenantChanged", { tenantId: who.tenantId, tenantName: name, persoenlich });
   setTimeout(() => {
     lifecycle().relaunch();
-    lifecycle().exit(0);
   }, 2500);
   return true;
 }

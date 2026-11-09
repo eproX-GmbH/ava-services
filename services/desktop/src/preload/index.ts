@@ -277,8 +277,8 @@ const api = {
     return () => ipcRenderer.off("power:resumed", wrapped);
   },
   /** Beenden-Anzeige: Main kuendigt das Beenden an, der Renderer zeigt das Overlay. */
-  onWirdBeendet: (handler: () => void): (() => void) => {
-    const wrapped = (): void => handler();
+  onWirdBeendet: (handler: (info: { neustart: boolean }) => void): (() => void) => {
+    const wrapped = (_e: unknown, info?: { neustart?: boolean }): void => handler({ neustart: info?.neustart === true });
     ipcRenderer.on("app:wird-beendet", wrapped);
     return () => ipcRenderer.off("app:wird-beendet", wrapped);
   },
