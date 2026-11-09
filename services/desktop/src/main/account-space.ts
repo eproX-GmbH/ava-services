@@ -199,6 +199,13 @@ export function initAccountSpace(): void {
             console.warn("[account-space] Umbenennung von _pending fehlgeschlagen:", err);
           }
         }
+        // Befund Joyce 2026-11-09: _pending war laengst weg (strategic-it-Konto seit
+        // 12.10. auf "_pending"), dann blieb der Eintrag fuer immer haengen und der
+        // Kontowechsel brach wortlos ab. Fehlt der Ordner, frischer eigener Space.
+        if (!existsSync(spaceDir(PENDING)) && !existsSync(nach)) {
+          mkdirSync(nach, { recursive: true });
+          log(`_pending von ${eigner!.email ?? eigner!.sub} fehlte → frischer Space accounts/${eigner!.sub}`);
+        }
         if (existsSync(nach)) delete reg.accounts[eigner!.sub]!.dir;
         for (const a of andere) {
           delete reg.accounts[a.sub]!.dir;
@@ -411,8 +418,16 @@ export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: nu
 /** Zu einem bekannten Account wechseln (Neustart). */
 export function switchAccount(sub: string): boolean {
   const reg = readRegistry();
-  if (!reg.accounts[sub] || !existsSync(dirOf(sub, reg))) return false;
+  if (!reg.accounts[sub]) return false;
   if (sub === activeId) return true;
+  // Fehlt der Space (z. B. haengender "_pending"-Eintrag), nicht wortlos abbrechen:
+  // frischer eigener Space, das Konto meldet sich dort einmal neu an (Befund 2026-11-09).
+  if (!existsSync(dirOf(sub, reg))) {
+    if (!/^[A-Za-z0-9._-]+$/.test(sub)) return false;
+    delete reg.accounts[sub]!.dir;
+    mkdirSync(spaceDir(sub), { recursive: true });
+    log(`Space von ${reg.accounts[sub]!.email ?? sub} fehlte → frischer Space`);
+  }
   reg.active = sub;
   reg.accounts[sub] = { ...reg.accounts[sub], lastUsedAt: new Date().toISOString() };
   writeRegistry(reg);
