@@ -63,7 +63,9 @@ primary_region = 'fra'
 # S8 (2026-09-17): refresh-Jobs laden den strukturierten Registerinhalt mit
 # (REGISTER_DELTA_SI, Standard an; jede Firma kostet zwei Abfragen).
 [processes]
-  worker = 'sh -c "REGISTER_DELTA_AT=0 REGISTER_DELTA_UK=0 node dist/cli.js"'
+  # Nur Deutschland (2026-11-09): ohne ausdrueckliche Arten bediente worker auch
+  # CH/NO/FI mit, sobald deren eigene Maschinen gestoppt waren.
+  worker = 'sh -c "REGISTER_DELTA_ARTEN=front,bekanntmachungen,refresh,insolvenz REGISTER_DELTA_AT=0 REGISTER_DELTA_UK=0 node dist/cli.js"'
   # uk_bulk schonend (2026-09-16): 250 Zeilen je Buendel, 20 s Pause; master-data war
   # bei 1000 Zeilen ohne Pause dauerhaft CPU-gedrosselt (Erstimport dauert so ~3 Tage).
   worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz WORKER_ID=betreiber-at node dist/cli.js"'
