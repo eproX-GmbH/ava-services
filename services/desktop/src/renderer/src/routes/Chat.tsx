@@ -2171,7 +2171,7 @@ export function Chat() {
                     {m.role === "assistant" && !m.pending && m.aktionen && m.aktionen.length > 0 && (
                       <KartenKnoepfe aktionen={m.aktionen} onOeffnen={(pfad) => navigate(pfad)} onAuftrag={(t) => void sendKartenAuftrag(t)} gesperrt={thinking} />
                     )}
-                    {m.role === "assistant" && !m.pending && turnChips?.messageId === m.id && (
+                    {m.role === "assistant" && !m.pending && turnChips?.messageId === m.id && !(m.aktionen && m.aktionen.length > 0) && (
                       <VorschlagChips chips={turnChips.chips} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt titel="Nächster Schritt?" />
                     )}
                     {m.pending && <span className="chat-cursor">▍</span>}

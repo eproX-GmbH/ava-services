@@ -1156,5 +1156,9 @@
   {
     "frage": "Jedes Mal wenn ich das Konto wechsle kommt ein Absturzbericht von macOS",
     "erwartet": "konto-wechseln"
+  },
+  {
+    "frage": "Warum zeigst du mir unter der Antwort dreimal fast denselben Knopf?",
+    "erwartet": "vorschlaege-im-chat"
   }
 ]

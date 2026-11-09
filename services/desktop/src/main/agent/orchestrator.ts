@@ -1380,7 +1380,9 @@ export class AgentOrchestrator extends EventEmitter {
             usage: assistantMessage.usage,
             ...(knoepfe.length ? { aktionen: knoepfe } : {}),
           });
-          if (!signal.aborted) this.nachTurn(conversation, requestId, assistantId, assistantContent, turnToolNamen);
+          // Knoepfe aus Loesungskarten ersetzen die frei erzeugten Vorschlaege
+          // (Joyce 2026-11-09: sonst doppelt, z. B. dreimal „Close verbinden").
+          if (!signal.aborted && knoepfe.length === 0) this.nachTurn(conversation, requestId, assistantId, assistantContent, turnToolNamen);
           return;
         }
 
@@ -1679,7 +1681,7 @@ export class AgentOrchestrator extends EventEmitter {
         usage: wrapUpUsage,
         ...(wrapUpKnoepfe.length ? { aktionen: wrapUpKnoepfe } : {}),
       });
-      if (!signal.aborted) this.nachTurn(conversation, requestId, wrapUpId, wrapUpContent, turnToolNamen);
+      if (!signal.aborted && wrapUpKnoepfe.length === 0) this.nachTurn(conversation, requestId, wrapUpId, wrapUpContent, turnToolNamen);
       return;
     } catch (err) {
       const raw =
