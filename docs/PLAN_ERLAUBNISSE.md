@@ -88,11 +88,18 @@ Schätzung: E1–E3 2 Tage, E4–E6 1–2 Tage.
 - **E1** fertig (v0.1.961): „Ablegen (nur dieses Mal) / Immer erlauben / Abbrechen“ in jeder
   `confirmAction`-Rückfrage, auch löschend (mit Hinweis „löscht künftig ohne Rückfrage“);
   nie für eingehende Mails und MCP-Zugriffe.
-- **E3** fertig (v0.1.960): `settings.autonomous`, Abfrage beim Anlegen, Freigabe je Schritt und
-  Lauf. Offen: „Immer freigeben“ direkt an der Workflow-Freigabe.
+- **E3** fertig (v0.1.960/962): `settings.autonomous`, Abfrage beim Anlegen, Freigabe je Schritt und
+  Lauf; „Immer freigeben“ an der Freigabe (App, Chat, Telegram `/immer`) setzt `confirmed`,
+  ein freigegebener Schritt fragt danach gar nicht mehr, auch beim Löschen.
 - **E4** fertig (v0.1.961): Einstellungen → Konto → Erlaubnisse, Chat-Werkzeug `erlaubnisse`
   (zeigen, zurücknehmen, Workflow wieder fragen lassen; erteilen nur über die Rückfrage).
-- **E5** Entwürfe fertig; **E2** offen.
+- **E5** Entwürfe fertig.
+- **E2** fertig (v0.1.962): Erinnerung, Beobachtung, Profil, Notion archivieren, Obsidian löschen,
+  Watchlist entfernen und Skill löschen laufen über `confirmAction`. Bewusst weiter
+  `askChoice` (Joyce 2026-11-09, jedes Mal fragen): Mail senden/antworten/weiterleiten an nicht
+  vertraute Empfänger, Aufnahme in die Allowlist, wiederkehrende Mail-Jobs, Skill anlegen;
+  dazu echte Auswahlfragen (Firma, Intervall, `ask_user_choice`) und die Autonomie-Frage
+  beim Anlegen eines Workflows.
 
 ## 4. Offene Entscheidungen (Joyce)
 

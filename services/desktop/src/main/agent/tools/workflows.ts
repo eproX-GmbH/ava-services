@@ -532,26 +532,27 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     parameters: { type: "object", properties: {} },
     schema: yup.object({}).noUnknown(true),
     preview: (r: { freigaben: unknown[] }) => `${r.freigaben.length} offene Freigaben`,
-    run: async () => ({ freigaben: svc().approvals("open").map((a) => ({ id: a.id, workflow: a.workflowName, schritt: a.nodeName, prompt: a.prompt, items: a.items.length, vorschau: a.items.slice(0, 5).map((i) => i.json), seit: a.createdAt })) }),
+    run: async () => ({ freigaben: svc().approvals("open").map((a) => ({ id: a.id, workflow: a.workflowName, schritt: a.nodeName, prompt: a.prompt, items: a.items.length, vorschau: a.items.slice(0, 5).map((i) => i.json), seit: a.createdAt, immerMoeglich: a.immerMoeglich === true })) }),
   });
 
   const approve = defineTool({
     name: "workflow_approve",
     summary: "Eine offene Freigabe erteilen oder ablehnen; der Workflow laeuft dann weiter bzw. bricht ab.",
     category: "workflow workflows freigabe genehmigen ablehnen",
-    description: "Entscheidet eine offene Freigabe (id aus workflow_approvals). approved=true laesst den Workflow weiterlaufen, false bricht den Lauf ab. Fragt vor der Entscheidung nach.",
-    parameters: { type: "object", required: ["approvalId", "approved"], properties: { approvalId: { type: "string" }, approved: { type: "boolean" }, note: { type: "string" } } },
-    schema: yup.object({ approvalId: yup.string().trim().min(1).required(), approved: yup.boolean().required(), note: yup.string().max(500).optional() }).noUnknown(true),
+    description: "Entscheidet eine offene Freigabe (id aus workflow_approvals). approved=true laesst den Workflow weiterlaufen, false bricht den Lauf ab. immer=true („immer freigeben“, nur wenn der Nutzer das ausdruecklich sagt): der Schritt laeuft kuenftig ohne Rueckfrage. Fragt vor der Entscheidung nach.",
+    parameters: { type: "object", required: ["approvalId", "approved"], properties: { approvalId: { type: "string" }, approved: { type: "boolean" }, immer: { type: "boolean" }, note: { type: "string" } } },
+    schema: yup.object({ approvalId: yup.string().trim().min(1).required(), approved: yup.boolean().required(), immer: yup.boolean().optional(), note: yup.string().max(500).optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.entschieden ? (r.approved ? "freigegeben" : "abgelehnt") : "abgebrochen"),
     run: async (args, c) => {
       const a = svc().approvals("open").find((x) => x.id === args.approvalId);
       if (!a) return { error: "Freigabe nicht gefunden oder bereits entschieden." };
+      const immer = args.approved && args.immer === true && a.immerMoeglich === true;
       const value = await c.ui.confirmAction(
-        { kind: args.approved ? "mutating" : "additive", prompt: `Workflow „${a.workflowName}“, Schritt „${a.nodeName}“: ${a.prompt}\n\n${args.approved ? "FREIGEBEN" : "ABLEHNEN"}?`, confirmValue: "ja", options: [{ value: "ja", label: args.approved ? "Freigeben" : "Ablehnen" }, { value: "nein", label: "Abbrechen" }] },
+        { kind: args.approved ? "mutating" : "additive", prompt: `Workflow „${a.workflowName}“, Schritt „${a.nodeName}“: ${a.prompt}\n\n${immer ? "IMMER FREIGEBEN (Schritt läuft künftig ohne Rückfrage)" : args.approved ? "FREIGEBEN" : "ABLEHNEN"}?`, confirmValue: "ja", options: [{ value: "ja", label: immer ? "Immer freigeben" : args.approved ? "Freigeben" : "Ablehnen" }, { value: "nein", label: "Abbrechen" }] },
         c.signal,
       );
       if (value !== "ja") return { ...userDeclined(), entschieden: false };
-      return { entschieden: svc().decideApproval(a.id, args.approved, args.note), approved: args.approved };
+      return { entschieden: svc().decideApproval(a.id, args.approved, args.note, immer), approved: args.approved, ...(immer ? { immer: true } : {}) };
     },
   });
 

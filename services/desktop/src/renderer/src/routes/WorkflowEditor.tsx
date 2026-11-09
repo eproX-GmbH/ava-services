@@ -1046,7 +1046,7 @@ export function WorkflowEditor(): JSX.Element {
                   <input type="checkbox" checked={selectedNode.confirmed === true} onChange={(e) => updateNode(selectedNode.name, { confirmed: e.target.checked })} />
                   <span>
                     Für unbeaufsichtigte Läufe freigegeben
-                    <span className="org-check__hint">Ohne diese Freigabe fragt ein Schreib-Schritt in jedem Lauf einmal nach, bevor er etwas ändert. Die Freigabe gilt dann für alle Einträge des Laufs.</span>
+                    <span className="org-check__hint">Freigegeben läuft der Schritt ohne Rückfrage, auch wenn er löscht oder Mails verschickt. Ohne Freigabe fragt er in jedem Lauf einmal nach; die Freigabe gilt dann für alle Einträge des Laufs.</span>
                   </span>
                 </label>
               )}

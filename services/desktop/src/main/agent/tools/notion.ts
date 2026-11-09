@@ -470,22 +470,26 @@ export function buildNotionTools(deps: {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Soll ich folgende Notion-Page ARCHIVIEREN?\n\n` +
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "destructive",
+          prompt: `Soll ich folgende Notion-Page ARCHIVIEREN?\n\n` +
           `Titel: ${preview.title}\n` +
           `ID: ${args.pageId}\n` +
           (preview.url ? `URL: ${preview.url}\n` : "") +
           `\nProperties (Auszug):\n${preview.props}${rationaleBlock}\n\n` +
           `Notion hält die Page 30 Tage lang im Trash — bis dahin kann sie ` +
           `ein User-Mitglied wiederherstellen.`,
-        [
-          {
-            value: "archive",
-            label: "Archivieren",
-            description: "PATCH archived=true wird gesendet",
-          },
-          { value: "cancel", label: "Behalten" },
-        ],
+          confirmValue: "archive",
+          options: [
+            {
+              value: "archive",
+              label: "Archivieren",
+              description: "PATCH archived=true wird gesendet",
+            },
+            { value: "cancel", label: "Behalten" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "archive") return userDeclined();

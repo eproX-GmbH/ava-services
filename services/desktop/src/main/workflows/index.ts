@@ -550,8 +550,8 @@ export class WorkflowService {
     return (status === "all" ? all : all.filter((a) => a.status === status)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  decideApproval(approvalId: string, approved: boolean, note?: string): boolean {
-    return this.runner.resolveApproval(approvalId, approved, note);
+  decideApproval(approvalId: string, approved: boolean, note?: string, immer = false): boolean {
+    return this.runner.resolveApproval(approvalId, approved, note, immer);
   }
 
   // ---- Trigger ---------------------------------------------------------------

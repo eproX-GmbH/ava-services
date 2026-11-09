@@ -242,18 +242,20 @@ export class WorkflowRunner {
   }
 
   /** Freigabe entscheiden (Liste „Offene Freigaben“, Chat, Telegram). */
-  resolveApproval(approvalId: string, approved: boolean, note?: string): boolean {
+  resolveApproval(approvalId: string, approved: boolean, note?: string, immer = false): boolean {
     const p = this.pendingApprovals.get(approvalId);
     const list = this.deps.store.listApprovals();
     const idx = list.findIndex((a) => a.id === approvalId);
+    // „Immer freigeben“ nur bei Schreib-Schritten, nie bei einem Freigabe-Schritt.
+    immer = immer && approved && (p?.approval.immerMoeglich ?? list[idx]?.immerMoeglich) === true;
     if (idx >= 0) {
-      list[idx] = { ...list[idx]!, status: approved ? "approved" : "rejected", decidedAt: new Date().toISOString(), ...(note ? { note } : {}) };
+      list[idx] = { ...list[idx]!, status: approved ? "approved" : "rejected", decidedAt: new Date().toISOString(), ...(note ? { note } : {}), ...(immer ? { immer: true } : {}) };
       this.deps.store.saveApprovals(list);
       this.deps.emit({ kind: "approvals-changed" });
     }
     if (!p) return idx >= 0;
     this.pendingApprovals.delete(approvalId);
-    p.resolve({ approved, ...(note ? { note } : {}) });
+    p.resolve({ approved, ...(note ? { note } : {}), ...(immer ? { immer: true } : {}) });
     return true;
   }
 
@@ -1027,7 +1029,7 @@ export class WorkflowRunner {
     return items;
   }
 
-  private async requestApproval(ctx: RunContext, nodeName: string, prompt: string, items: WorkflowItem[], previewFields: string[]): Promise<{ approved: boolean; note?: string }> {
+  private async requestApproval(ctx: RunContext, nodeName: string, prompt: string, items: WorkflowItem[], previewFields: string[], immerMoeglich = false): Promise<{ approved: boolean; note?: string; immer?: boolean }> {
     const approval: WorkflowApproval = {
       id: `ap_${randomUUID().slice(0, 10)}`,
       executionId: ctx.execution.id,
@@ -1038,6 +1040,7 @@ export class WorkflowRunner {
       items: truncateItems(items.map((it) => ({ json: previewFields.length > 0 ? pick(it.json, previewFields) : it.json })), 50),
       createdAt: new Date().toISOString(),
       status: "open",
+      ...(immerMoeglich ? { immerMoeglich: true } : {}),
     };
     const list = this.deps.store.listApprovals();
     list.push(approval);
@@ -1051,13 +1054,13 @@ export class WorkflowRunner {
     this.deps.notify({
       art: "freigabe",
       title: `Workflow „${ctx.def.name}“ wartet auf Freigabe`,
-      body: `${prompt}\nPer Telegram: /ja ${approval.id} oder /nein ${approval.id}`,
+      body: `${prompt}\nPer Telegram: /ja ${approval.id}${immerMoeglich ? `, /immer ${approval.id} (Schritt künftig ohne Rückfrage)` : ""} oder /nein ${approval.id}`,
       workflowId: ctx.def.id,
       executionId: ctx.execution.id,
       approvalId: approval.id,
     });
     this.deps.audit({ action: "workflow.approval.open", severity: "info", summary: `Freigabe offen: ${prompt}`, metadata: { workflowId: ctx.def.id, executionId: ctx.execution.id, approvalId: approval.id, items: items.length } });
-    const result = await new Promise<{ approved: boolean; note?: string }>((resolve, reject) => {
+    const result = await new Promise<{ approved: boolean; note?: string; immer?: boolean }>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingApprovals.delete(approval.id);
         const l = this.deps.store.listApprovals();
@@ -1087,6 +1090,17 @@ export class WorkflowRunner {
     delete ctx.execution.pausedAt;
     this.deps.audit({ action: result.approved ? "workflow.approval.approved" : "workflow.approval.rejected", severity: "info", summary: `Freigabe ${result.approved ? "erteilt" : "abgelehnt"}: ${prompt}`, metadata: { workflowId: ctx.def.id, executionId: ctx.execution.id, approvalId: approval.id } });
     return result;
+  }
+
+  /** „Immer freigeben“: Schritt in der gespeicherten Definition freigeben (confirmed). */
+  private schrittDauerhaftFreigeben(ctx: RunContext, nodeName: string): void {
+    const def = this.deps.store.get(ctx.def.id);
+    if (def) {
+      const nodes = def.nodes.map((n) => (n.name === nodeName ? { ...n, confirmed: true } : n));
+      this.deps.store.save({ ...def, nodes }, { createdBy: def.createdBy });
+    }
+    for (const n of ctx.def.nodes) if (n.name === nodeName) n.confirmed = true;
+    this.deps.audit({ action: "workflow.schritt.immer", severity: "info", summary: `Schritt „${nodeName}“ in „${ctx.def.name}“ dauerhaft freigegeben`, metadata: { workflowId: ctx.def.id, executionId: ctx.execution.id, node: nodeName } });
   }
 
   private async executeAi(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): Promise<WorkflowItem[]> {
@@ -1240,17 +1254,19 @@ export class WorkflowRunner {
       askChoice: async (prompt: string, options: AgentChoiceOption[]) => {
         // Die „Ja“-Option ist per Konvention die erste Nicht-Abbruch-Option.
         const yes = options.find((o) => !/abbrech|verwerf|nein|cancel/i.test(`${o.value} ${o.label}`)) ?? options[0]!;
-        // Selbststaendig: beim Anlegen fuer alles freigegeben, auch Loeschendes.
-        if (ctx.def.settings.autonomous) {
+        // Selbststaendig oder Schritt dauerhaft freigegeben (Editor-Haken / „Immer
+        // freigeben“): ohne Rueckfrage, auch Loeschendes.
+        if (ctx.def.settings.autonomous || node.confirmed === true) {
           this.deps.audit({ action: "workflow.autonom.bestaetigt", severity: "info", summary: `Selbststaendig bestaetigt: ${prompt.slice(0, 300)}`, metadata: { workflowId: ctx.def.id, executionId: ctx.execution.id, node: node.name, kind } });
           return yes.value;
         }
         // Eine Freigabe gilt je Schritt und Lauf, nicht je Eintrag.
         if (ctx.freigegebeneSchritte.has(node.name)) return yes.value;
         const anzahl = items.length === 1 ? "1 Eintrag" : `${items.length} Einträge`;
-        const r = await this.requestApproval(ctx, node.name, `${prompt}\n\nDie Freigabe gilt für diesen Schritt in diesem Lauf (${anzahl}).`, items, []);
+        const r = await this.requestApproval(ctx, node.name, `${prompt}\n\nDie Freigabe gilt für diesen Schritt in diesem Lauf (${anzahl}).`, items, [], true);
         if (!r.approved) throw new Error(`Freigabe abgelehnt${r.note ? `: ${r.note}` : ""}`);
         ctx.freigegebeneSchritte.add(node.name);
+        if (r.immer) this.schrittDauerhaftFreigeben(ctx, node.name);
         return yes.value;
       },
       askText: async () => {

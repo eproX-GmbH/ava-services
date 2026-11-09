@@ -221,6 +221,10 @@ export interface WorkflowApproval {
   items: WorkflowItem[];
   createdAt: string;
   status: "open" | "approved" | "rejected" | "expired";
+  /** Schreib-Schritt (kein Freigabe-Schritt): „Immer freigeben“ moeglich. */
+  immerMoeglich?: boolean;
+  /** Mit „Immer freigeben“ entschieden: Schritt ist seitdem dauerhaft freigegeben. */
+  immer?: boolean;
   decidedAt?: string;
   /** Freitext des Nutzers bei Ablehnung/Freigabe. */
   note?: string;

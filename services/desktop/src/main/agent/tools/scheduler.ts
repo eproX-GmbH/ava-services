@@ -380,12 +380,16 @@ export function buildSchedulerTools(deps: SchedulerToolDeps): Tool[] {
         `${args.companyName ? `Firma: ${args.companyName}\n` : ""}` +
         `\nBotschaft:\n${args.prompt}`;
 
-      const value = await ctx.ui.askChoice(
-        draft,
-        [
-          { value: "create", label: "Reminder anlegen" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: draft,
+          confirmValue: "create",
+          options: [
+            { value: "create", label: "Reminder anlegen" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();

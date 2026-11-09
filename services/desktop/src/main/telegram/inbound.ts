@@ -223,8 +223,8 @@ export class TelegramInbound {
             );
             continue;
           }
-          // W4 — Workflow-Freigaben: /freigaben, /ja <id>, /nein <id>
-          if (/^\/(freigaben|ja|nein)\b/i.test(text)) {
+          // W4 — Workflow-Freigaben: /freigaben, /ja <id>, /immer <id>, /nein <id>
+          if (/^\/(freigaben|ja|nein|immer)\b/i.test(text)) {
             await this.handleWorkflowCommand(text);
             continue;
           }
@@ -268,7 +268,7 @@ export class TelegramInbound {
       await this.reply("Workflows sind gerade nicht verfügbar.");
       return;
     }
-    const m = /^\/(freigaben|ja|nein)\b\s*(\S+)?\s*([\s\S]*)$/i.exec(text);
+    const m = /^\/(freigaben|ja|nein|immer)\b\s*(\S+)?\s*([\s\S]*)$/i.exec(text);
     const cmd = (m?.[1] ?? "").toLowerCase();
     if (cmd === "freigaben") {
       const offen = svc.approvals("open");
@@ -279,7 +279,7 @@ export class TelegramInbound {
       await this.reply(
         offen
           .slice(0, 10)
-          .map((a) => `• ${a.workflowName} · „${a.nodeName}“: ${a.prompt}\n  /ja ${a.id}  oder  /nein ${a.id}`)
+          .map((a) => `• ${a.workflowName} · „${a.nodeName}“: ${a.prompt}\n  /ja ${a.id}${a.immerMoeglich ? `  ·  /immer ${a.id}` : ""}  oder  /nein ${a.id}`)
           .join("\n\n"),
       );
       return;
@@ -289,10 +289,19 @@ export class TelegramInbound {
       await this.reply(`Bitte die Freigabe-ID angeben, z. B. „/${cmd} ap_abc123“. Liste: /freigaben`);
       return;
     }
-    const approved = cmd === "ja";
-    const ok = svc.decideApproval(id, approved, m?.[3]?.trim() || undefined);
-    await this.reply(ok ? (approved ? `✅ Freigegeben (${id}) — der Workflow läuft weiter.` : `⛔ Abgelehnt (${id}) — der Workflow-Lauf wird abgebrochen.`) : `Freigabe ${id} nicht gefunden oder bereits entschieden.`);
-    this.onAudit?.({ severity: "info", summary: `Telegram: Workflow-Freigabe ${id} ${approved ? "erteilt" : "abgelehnt"}`, metadata: { approvalId: id, approved } });
+    const approved = cmd === "ja" || cmd === "immer";
+    const immer = cmd === "immer";
+    const ok = svc.decideApproval(id, approved, m?.[3]?.trim() || undefined, immer);
+    await this.reply(
+      ok
+        ? immer
+          ? `✅ Immer freigegeben (${id}) — der Workflow läuft weiter, dieser Schritt fragt künftig nicht mehr.`
+          : approved
+            ? `✅ Freigegeben (${id}) — der Workflow läuft weiter.`
+            : `⛔ Abgelehnt (${id}) — der Workflow-Lauf wird abgebrochen.`
+        : `Freigabe ${id} nicht gefunden oder bereits entschieden.`,
+    );
+    this.onAudit?.({ severity: "info", summary: `Telegram: Workflow-Freigabe ${id} ${immer ? "dauerhaft erteilt" : approved ? "erteilt" : "abgelehnt"}`, metadata: { approvalId: id, approved, immer } });
   }
 
   /** Entzerrt aufeinanderfolgende Anfragen, ohne welche zu verwerfen. */

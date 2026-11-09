@@ -437,8 +437,10 @@ export function buildObsidianTools(deps: {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Soll ich folgende Obsidian-Note PERMANENT LÖSCHEN?\n\n` +
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "destructive",
+          prompt: `Soll ich folgende Obsidian-Note PERMANENT LÖSCHEN?\n\n` +
           `Pfad: ${args.path}\n` +
           `Titel: ${preview.title}\n\n` +
           `Frontmatter (Auszug):\n${preview.fm}\n\n` +
@@ -446,14 +448,16 @@ export function buildObsidianTools(deps: {
           `⚠ ACHTUNG: Obsidian REST-API hat keinen Trash — die Datei ist ` +
           `nach DELETE weg, außer ein externes Backup (Obsidian Sync, ` +
           `iCloud, Git) fängt es ab.`,
-        [
-          {
-            value: "delete",
-            label: "Löschen",
-            description: "DELETE wird gesendet",
-          },
-          { value: "cancel", label: "Behalten" },
-        ],
+          confirmValue: "delete",
+          options: [
+            {
+              value: "delete",
+              label: "Löschen",
+              description: "DELETE wird gesendet",
+            },
+            { value: "cancel", label: "Behalten" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "delete") return userDeclined();

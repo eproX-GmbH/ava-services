@@ -1,6 +1,6 @@
 ---
 id: erlaubnisse-verwalten
-titel: „Immer erlauben“ wählen und dauerhafte Erlaubnisse zurücknehmen
+titel: Was AVA ohne Nachfrage darf („Immer erlauben“ wählen und zurücknehmen)
 fragen:
   - was heißt immer erlauben
   - wie nehme ich immer erlauben zurück
@@ -8,9 +8,11 @@ fragen:
   - was darf ava ohne nachfrage
   - soll nicht jedes mal wieder fragen
   - wo sehe ich was ich erlaubt habe
+  - wo sehe ich was ava ohne nachfrage machen darf
   - nur dieses mal erlauben
   - ava soll wieder vorher fragen
-schlagworte: [immer erlauben, nur dieses mal, erlaubnis, erlaubnisse, dauerhaft, zurücknehmen, widerrufen, rückfrage, nachfragen, bestätigung, nicht mehr fragen, wieder fragen, löschen ohne rückfrage, selbstständig]
+  - warum gibt es beim mail senden kein immer erlauben
+schlagworte: [immer erlauben, nur dieses mal, ohne nachfrage, was darf ava, übersicht erlaubnisse, erlaubnis, erlaubnisse, dauerhaft, zurücknehmen, widerrufen, rückfrage, nachfragen, bestätigung, nicht mehr fragen, wieder fragen, löschen ohne rückfrage, selbstständig]
 aktionen:
   - { art: app_oeffnen, ziel: erlaubnisse, label: "Erlaubnisse öffnen" }
   - { art: chat_vorschlag, ziel: "Was darf AVA bei mir ohne Rückfrage?", label: "Erlaubnisse zeigen" }
@@ -21,4 +23,4 @@ Frage ich vor einer Aktion nach, kannst du bei den meisten Rückfragen zwischen 
 
 Was du dauerhaft erlaubt hast, siehst du unter Einstellungen → Konto → Erlaubnisse, mit Datum und der Rückfrage, bei der du es erlaubt hast. Dort nimmst du jede Erlaubnis einzeln oder alle auf einmal zurück; danach frage ich wieder. Darunter stehen die Workflows, die selbstständig laufen, mit „Wieder vorher fragen“. Du kannst mich auch im Chat fragen, was du erlaubt hast, oder sagen „frag beim CRM wieder nach“.
 
-Neue Erlaubnisse erteilst nur du selbst über „Immer erlauben“ in einer Rückfrage, ich kann mir keine selbst geben. Bei Aufträgen aus eingehenden Mails und bei Anfragen aus Claude oder ChatGPT gelten dauerhafte Erlaubnisse nicht; dort frage ich weiter wie gewohnt. Alles, was ich ohne Rückfrage tue, steht im Verlauf unter Einstellungen → Erweitert → Verlauf.
+Ein paar Rückfragen bieten bewusst kein „Immer erlauben“, weil dort ein Fehler nach außen geht oder AVA selbst verändert wird: Mails, Antworten und Weiterleitungen an Empfänger, die nicht auf deiner Liste vertrauter Absender stehen, das Aufnehmen in diese Liste, wiederkehrende Mail-Aufträge und das Anlegen eines Skills. Dort frage ich jedes Mal. Neue Erlaubnisse erteilst nur du selbst über „Immer erlauben“ in einer Rückfrage, ich kann mir keine selbst geben. Bei Aufträgen aus eingehenden Mails und bei Anfragen aus Claude oder ChatGPT gelten dauerhafte Erlaubnisse nicht; dort frage ich weiter wie gewohnt. Alles, was ich ohne Rückfrage tue, steht im Verlauf unter Einstellungen → Erweitert → Verlauf.

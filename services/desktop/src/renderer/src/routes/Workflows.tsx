@@ -207,10 +207,10 @@ export function Workflows(): JSX.Element {
     }
   };
 
-  const decide = async (a: WorkflowApproval, approved: boolean): Promise<void> => {
+  const decide = async (a: WorkflowApproval, approved: boolean, immer = false): Promise<void> => {
     setBusy(a.id);
     try {
-      await window.api.workflows.approve(a.id, approved);
+      await window.api.workflows.approve(a.id, approved, undefined, immer);
     } finally {
       setBusy(null);
       void reload();
@@ -279,6 +279,11 @@ export function Workflows(): JSX.Element {
                   <button type="button" className="primary" disabled={busy === a.id} onClick={() => void decide(a, true)}>
                     Freigeben
                   </button>
+                  {a.immerMoeglich && (
+                    <button type="button" className="btn" disabled={busy === a.id} title="Dieser Schritt läuft künftig ohne Rückfrage" onClick={() => void decide(a, true, true)}>
+                      Immer freigeben
+                    </button>
+                  )}
                   <button type="button" className="btn" disabled={busy === a.id} onClick={() => void decide(a, false)}>
                     Ablehnen
                   </button>

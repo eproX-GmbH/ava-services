@@ -547,7 +547,7 @@ const api = {
     resolveCompany: (query: string): Promise<{ kandidaten?: Array<{ companyId: string; name: string; ort: string | null }>; error?: string }> =>
       ipcRenderer.invoke("workflows:resolveCompany", query),
     cancel: (executionId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:cancel", executionId),
-    approve: (approvalId: string, approved: boolean, note?: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:approve", approvalId, approved, note),
+    approve: (approvalId: string, approved: boolean, note?: string, immer?: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:approve", approvalId, approved, note, immer),
     onProgress: (cb: (frame: import("../shared/workflow-types").WorkflowProgressFrame) => void): (() => void) => {
       const handler = (_e: unknown, frame: import("../shared/workflow-types").WorkflowProgressFrame): void => cb(frame);
       ipcRenderer.on("workflows:progress", handler);

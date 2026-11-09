@@ -747,7 +747,8 @@
     "frage": "Du sollst nicht bei jeder Notiz fragen",
     "erwartet": [
       "chat-autonomie-modus",
-      "chat-rueckfragen"
+      "chat-rueckfragen",
+      "erlaubnisse-verwalten"
     ]
   },
   {
@@ -1215,6 +1216,24 @@
   },
   {
     "frage": "Kann AVA auch dauerhaft löschen ohne zu fragen?",
+    "erwartet": "erlaubnisse-verwalten"
+  },
+  {
+    "frage": "Mein Workflow fragt jeden Morgen wieder nach Freigabe, wie stelle ich das ab?",
+    "erwartet": [
+      "workflow-freigaben",
+      "workflow-aendern-pausieren"
+    ]
+  },
+  {
+    "frage": "Was macht /immer bei Telegram?",
+    "erwartet": [
+      "telegram-freigaben",
+      "telegram-befehle"
+    ]
+  },
+  {
+    "frage": "Warum kann ich beim Mail senden an Kunden nicht immer erlauben wählen?",
     "erwartet": "erlaubnisse-verwalten"
   }
 ]

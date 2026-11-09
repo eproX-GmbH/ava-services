@@ -142,20 +142,24 @@ export function buildWatchesTools(deps: WatchesToolDeps): Tool[] {
         cadence: args.cadence as WatchCadence,
         trigger,
       });
-      const value = await ctx.ui.askChoice(
-        `Ich würde folgenden Watch einrichten:\n\n${draft}\n\nSoll ich starten?`,
-        [
-          {
-            value: "accept",
-            label: "Ja, einrichten",
-            description: "Watch wird ab dem nächsten Heartbeat-Tick geprüft",
-          },
-          {
-            value: "decline",
-            label: "Verwerfen",
-            description: "Nichts persistieren",
-          },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich würde folgenden Watch einrichten:\n\n${draft}\n\nSoll ich starten?`,
+          confirmValue: "accept",
+          options: [
+            {
+              value: "accept",
+              label: "Ja, einrichten",
+              description: "Watch wird ab dem nächsten Heartbeat-Tick geprüft",
+            },
+            {
+              value: "decline",
+              label: "Verwerfen",
+              description: "Nichts persistieren",
+            },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "accept") return userDeclined();

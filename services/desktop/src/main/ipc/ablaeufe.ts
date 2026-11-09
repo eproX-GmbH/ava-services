@@ -132,5 +132,5 @@ export function registerAblaeufeIpc(deps: AblaeufeIpcDeps): void {
 
   ipcMain.handle("workflows:cancel", (_e, executionId: string) => ({ ok: wf().cancel(String(executionId)) }));
 
-  ipcMain.handle("workflows:approve", (_e, approvalId: string, approved: boolean, note?: string) => ({ ok: wf().decideApproval(String(approvalId), approved === true, note) }));
+  ipcMain.handle("workflows:approve", (_e, approvalId: string, approved: boolean, note?: string, immer?: boolean) => ({ ok: wf().decideApproval(String(approvalId), approved === true, note, immer === true) }));
 }

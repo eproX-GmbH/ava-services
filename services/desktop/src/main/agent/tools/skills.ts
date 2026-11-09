@@ -360,12 +360,16 @@ export function buildSkillsTools(deps: {
         };
       }
 
-      const choice = await ctx.ui.askChoice(
-        `Soll ich den Skill **${args.name}** wirklich löschen?\n\n${target.description}`,
-        [
-          { value: "yes", label: "Ja, löschen" },
-          { value: "no", label: "Nein, behalten" },
-        ],
+      const choice = await ctx.ui.confirmAction(
+        {
+          kind: "destructive",
+          prompt: `Soll ich den Skill **${args.name}** wirklich löschen?\n\n${target.description}`,
+          confirmValue: "yes",
+          options: [
+            { value: "yes", label: "Ja, löschen" },
+            { value: "no", label: "Nein, behalten" },
+          ],
+        },
         ctx.signal,
       );
       if (choice !== "yes") {

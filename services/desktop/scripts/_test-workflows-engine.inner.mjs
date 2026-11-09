@@ -408,6 +408,35 @@ console.log("Freigaben: einmal je Schritt und Lauf, selbststaendig ohne Rueckfra
   check(calls.filter((c) => c.name === "kontakt_loeschen").length === 12, `selbstständig: maxItemsPerRun 5 greift nicht (12 gelöscht)`);
   const ex3 = await fRunner.run(mk("wf_deckel", { autonomous: false, maxItemsPerRun: 5 }), { trigger: "manual" });
   check(ex3.status === "error" && /Item-Grenze/.test(ex3.error ?? ""), `ohne selbstständig greift die Item-Grenze weiter: ${ex3.error}`);
+
+  // „Immer freigeben“: erster Schritt dauerhaft, zweiter (Löschen) nur für den Lauf.
+  const gespeichert = new Map();
+  const iStore = { ...fStore, get: (id) => gespeichert.get(id) ?? null, save: (d) => { gespeichert.set(d.id, structuredClone(d)); return d; } };
+  let geoeffnet2 = 0;
+  const iRunner = new WorkflowRunner({
+    registry: { get: (n) => fTools.get(n), list: () => [...fTools.values()] },
+    store: iStore, providers,
+    getAutonomyLevel: () => "none",
+    emit: (f) => { if (f.kind === "approval-open") { geoeffnet2++; const immer = f.approval.nodeName === "Entwürfe"; check(f.approval.immerMoeglich === true, `Schreib-Schritt bietet „Immer freigeben“ (${f.approval.nodeName})`); setTimeout(() => iRunner.resolveApproval(f.approval.id, true, undefined, immer), 5); } },
+    audit: () => {},
+    getDefinition: () => null,
+    gatewayRequest: async () => { throw new Error("kein Gateway"); },
+    notify: () => {},
+  });
+  const def = mk("wf_immer", {});
+  gespeichert.set(def.id, structuredClone(def));
+  const ex4 = await iRunner.run(structuredClone(def), { trigger: "manual" });
+  check(ex4.status === "success" && geoeffnet2 === 2, `Lauf 1: zwei Freigaben (eine mit „immer“): ${ex4.status} ${geoeffnet2} ${ex4.error ?? ""}`);
+  const nachher = gespeichert.get(def.id);
+  check(nachher.nodes.find((n) => n.name === "Entwürfe")?.confirmed === true && !nachher.nodes.find((n) => n.name === "Löschen")?.confirmed, "„Immer freigeben“ speichert nur diesen Schritt als freigegeben");
+  geoeffnet2 = 0;
+  const ex5 = await iRunner.run(structuredClone(nachher), { trigger: "manual" });
+  check(ex5.status === "success" && geoeffnet2 === 1, `Lauf 2: nur noch der Lösch-Schritt fragt: ${ex5.status} ${geoeffnet2}`);
+  geoeffnet2 = 0;
+  const alleFrei = structuredClone(nachher);
+  for (const n of alleFrei.nodes) if (n.type === "tool") n.confirmed = true;
+  const ex6 = await iRunner.run(alleFrei, { trigger: "manual" });
+  check(ex6.status === "success" && geoeffnet2 === 0, `freigegebener Lösch-Schritt fragt nicht: ${ex6.status} ${geoeffnet2}`);
 }
 
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }

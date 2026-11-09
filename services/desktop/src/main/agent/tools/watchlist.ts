@@ -191,12 +191,16 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
     run: async (args, c) => {
       const store = deps.getStore();
       if (!store) return { error: "Watchlist nicht initialisiert." };
-      const value = await c.ui.askChoice(
-        `${args.profileUrl} von der Watchlist entfernen?`,
-        [
-          { value: "remove", label: "Entfernen" },
-          { value: "cancel", label: "Behalten" },
-        ],
+      const value = await c.ui.confirmAction(
+        {
+          kind: "destructive",
+          prompt: `${args.profileUrl} von der Watchlist entfernen?`,
+          confirmValue: "remove",
+          options: [
+            { value: "remove", label: "Entfernen" },
+            { value: "cancel", label: "Behalten" },
+          ],
+        },
         c.signal,
       );
       if (value !== "remove") return userDeclined();

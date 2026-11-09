@@ -221,20 +221,24 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
     run: async (args, ctx) => {
       const summary = renderPatch(args.patch);
       const prompt = `${args.reason}\n\nVorschlag:\n${summary}`;
-      const value = await ctx.ui.askChoice(
-        prompt,
-        [
-          {
-            value: "accept",
-            label: "Übernehmen",
-            description: "In das Profil schreiben",
-          },
-          {
-            value: "decline",
-            label: "Verwerfen",
-            description: "Nicht ins Profil aufnehmen",
-          },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt,
+          confirmValue: "accept",
+          options: [
+            {
+              value: "accept",
+              label: "Übernehmen",
+              description: "In das Profil schreiben",
+            },
+            {
+              value: "decline",
+              label: "Verwerfen",
+              description: "Nicht ins Profil aufnehmen",
+            },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "accept") {
