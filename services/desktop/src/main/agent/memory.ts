@@ -559,13 +559,19 @@ export class MemoryStore {
  * which already touched stat — adding a readFile per entry is fine
  * for typical session counts (< 100).
  */
-function peekFirstUserMessage(path: string): string {
+export function peekFirstUserMessage(path: string): string {
   try {
     const raw = readFileSync(path, "utf8");
     const lines = raw.split(/\r?\n/);
+    const kuerzen = (t: string) => (t.length > 60 ? t.slice(0, 57) + "…" : t);
+    // Begruessungs-Chats (Start-Analyse, begruessungAnlegen) haben nur eine
+    // Antwort von AVA; ohne Nutzernachricht stand links „(leer) 6a97b335“
+    // (Befund Joyce 2026-11-09). Dann die erste Zeile der Antwort, ohne Markdown.
+    let ersteAntwort = "";
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
-      if (!line.startsWith("## user")) continue;
+      const istUser = line.startsWith("## user");
+      if (!istUser && !(line.startsWith("## assistant") && !ersteAntwort)) continue;
       // Skip the blank line after the header, then take the first
       // non-empty content line.
       for (let j = i + 1; j < lines.length; j++) {
@@ -576,13 +582,19 @@ function peekFirstUserMessage(path: string): string {
         // v0.1.578 — Meta-Zeilen wie "[Nachricht des Nutzers über
         // Telegram]" ueberspringen: das Label soll den Inhalt zeigen.
         if (/^\[.*\]$/.test(candidate)) continue;
-        return candidate.length > 60
-          ? candidate.slice(0, 57) + "…"
-          : candidate;
+        if (istUser) return kuerzen(candidate);
+        if (candidate.startsWith("```")) break;
+        ersteAntwort = candidate
+          .replace(/\*\*|__|`/g, "")
+          .replace(/^#+\s*/, "")
+          .replace(/\p{Extended_Pictographic}\uFE0F?/gu, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        break;
       }
-      return "";
+      if (istUser) return "";
     }
-    return "";
+    return ersteAntwort ? kuerzen(ersteAntwort) : "";
   } catch {
     return "";
   }
