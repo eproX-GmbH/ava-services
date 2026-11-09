@@ -7,11 +7,13 @@ fragen:
   - lead als kontakt übernehmen
   - linkedin lead ignorieren
   - warme leads aus linkedin
+  - was heißt website gelesen firma noch nicht zugeordnet
+  - warum steht bei allen leads derselbe status
 schlagworte: [linkedin, leads, lead, übernehmen, ignorieren, kontakt, anlass, kommentar, reaktion, kollegen, ansprache, warm]
 aktionen:
   - { art: chat_vorschlag, ziel: "Zeig mir meine offenen LinkedIn-Leads mit Kommentar", label: "Offene Leads zeigen" }
   - { art: app_oeffnen, ziel: linkedin, label: "Leads öffnen" }
-stand: 2026-11-08
+stand: 2026-11-09
 ---
 Leads sind Personen, die auf einen deiner beobachteten Posts reagiert oder ihn kommentiert haben, mit Firma, Rolle, Anlass und Kommentar. Hier zählt der Anlass, nicht dein Idealkundenprofil: Wer reagiert, ist warm.
 
@@ -21,6 +23,6 @@ Frag mich einfach „Welche Leads habe ich?“ oder „Wer hat kommentiert?“. 
 - „Ansprache vorschlagen“: Ich entwerfe dir im Chat eine kurze, persönliche Nachricht zum Kommentar. Abschicken tust du sie selbst.
 - „Ignorieren“ mit Grund, etwa „Kein Entscheider“, „Falsche Branche“, „Wettbewerber“, „Kenne ich schon“, „Mini-Profil fehlt“ oder „Unklare Zuordnung“; „Zurück zu offen“ holt den Lead wieder.
 
-Am Lead steht „Firma bestätigt“, wenn die Firma feststeht, oder „Firma erkannt, noch nicht eindeutig“, wenn nur der Name aus dem Profil bekannt ist. Welche Firma genau gemeint ist, klärt sich dann bei der Übernahme.
+Am Lead steht, wie weit die Firma erkannt ist: „Nur Firmenname aus dem Profil“, „Website gefunden, noch nicht gelesen“, „Website gelesen, Firma noch nicht zugeordnet“ oder „Firma bestätigt“, wenn sie feststeht. Welche Firma im Register genau gemeint ist, klärt sich bei der Übernahme. „Mini-Profil folgt“ heißt, dass die Website noch gelesen wird; „Ort noch unbekannt“, dass das Profil da ist, aber kein Sitz gefunden wurde. Gehört eine gefundene Website erkennbar zu einer anderen Firma, lege ich dazu kein Mini-Profil an.
 
 Du siehst die Leads deiner eigenen beobachteten Posts. Hat eine Kollegin dieselbe Person schon übernommen, steht das am Lead; stimmt euch dann vor der Ansprache ab. Offene Leads verfallen nach 90 Tagen.

@@ -1160,5 +1160,9 @@
   {
     "frage": "Warum zeigst du mir unter der Antwort dreimal fast denselben Knopf?",
     "erwartet": "vorschlaege-im-chat"
+  },
+  {
+    "frage": "Warum steht bei meinen Leads überall Website gelesen, Firma noch nicht zugeordnet?",
+    "erwartet": "linkedin-leads"
   }
 ]

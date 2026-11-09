@@ -31,6 +31,25 @@ function datum(iso: string): string {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
+
+/** Mini-Profil vorhanden = Website gelesen (Branche oder Kurzbeschreibung da). */
+function hatMiniProfil(l: LinkedInLead): boolean {
+  return Boolean(l.firmaKurz || l.firmaBranche);
+}
+
+function erkennungsStand(l: LinkedInLead): string {
+  if (l.companyId || l.masterCompanyId) return "Firma bestätigt";
+  if (hatMiniProfil(l)) return "Website gelesen, Firma noch nicht zugeordnet";
+  if (l.firmaDomain) return "Website gefunden, noch nicht gelesen";
+  return "Nur Firmenname aus dem Profil";
+}
+
+function erkennungsTitel(l: LinkedInLead): string {
+  if (l.companyId || l.masterCompanyId) return "Die Firma steht fest und kann direkt übernommen werden";
+  const name = `Firmenname aus dem LinkedIn-Profil ${l.konfidenz !== null && l.konfidenz >= 0.9 ? "sicher" : "wahrscheinlich"} erkannt`;
+  return `${name}; welche Firma im Register gemeint ist, klärt sich bei der Übernahme`;
+}
+
 export function LinkedInLeadsPanel(): JSX.Element {
   const navigate = useNavigate();
   const [posts, setPosts] = useState<LinkedInLeadPost[] | null>(null);
@@ -213,16 +232,14 @@ export function LinkedInLeadsPanel(): JSX.Element {
                           ) : (
                             <span>{l.firmaName}</span>
                           )}
-                          {/* PM-2026-0007: Firmenname erkannt (Person → Firma) und Firma bestätigt (Register/Website-Firma feststehend) getrennt zeigen. */}
-                          {l.companyId || l.masterCompanyId ? (
-                            <span className="muted small" title="Die Firma steht fest und kann direkt übernommen werden">Firma bestätigt</span>
-                          ) : (
-                            <span className="muted small" title={`Firmenname aus dem Profil erkannt (${l.konfidenz !== null && l.konfidenz >= 0.9 ? "sicher" : "wahrscheinlich"}); welche Firma genau gemeint ist, klärt sich bei der Übernahme`}>Firma erkannt, noch nicht eindeutig</span>
-                          )}
+                          {/* PM-2026-0007/0012: Stand je Lead aus den Daten ableiten (Name → Website → gelesen → bestätigt). */}
+                          <span className="muted small" title={erkennungsTitel(l)}>{erkennungsStand(l)}</span>
                         </div>
                         <div className="muted small">{[l.firmaOrt, l.firmaDomain, l.firmaBranche].filter(Boolean).join(" · ")}</div>
                         {l.firmaKurz && <p className="leads__kurz">{l.firmaKurz}</p>}
-                        {!l.firmaOrt && <div className="muted small">Mini-Profil folgt (Ort noch unbekannt).</div>}
+                        {/* PM-2026-0012: fehlendes Profil und fehlender Ort getrennt ausweisen. */}
+                        {!hatMiniProfil(l) && l.firmaDomain && <div className="muted small">Mini-Profil folgt.</div>}
+                        {hatMiniProfil(l) && !l.firmaOrt && <div className="muted small">Ort noch unbekannt.</div>}
                       </>
                     ) : (
                       <div className="muted small">Ohne Firma</div>

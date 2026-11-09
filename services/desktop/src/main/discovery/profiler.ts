@@ -67,6 +67,9 @@ const profileSchema = yup.object({
   /** docs/PLAN_STELLEN_SIGNALE.md — Leistungen fuer Beschaeftigte laut Karriereseite, woertlich
    *  (nicht zu verwechseln mit `leistungen` = Angebot der Firma). */
   mitarbeiterLeistungen: yup.array().of(yup.string().trim().min(2).max(80).required()).max(20).default([]),
+  /** PM-2026-0012 — gehoert die Website erkennbar zu dieser Firma? false = andere Firma,
+   *  Plattform, Verzeichnis oder Domain-Parkplatz: dann kein Profil (falsche Zuordnung). */
+  websitePasst: yup.boolean().default(true),
 });
 
 export type MiniProfile = yup.InferType<typeof profileSchema>;
@@ -381,7 +384,10 @@ export async function buildProfile(
     'falls erkennbar, sonst leer", "keywords": ["..."], "systeme": ["..."], ' +
     '"ort": "Sitz der Firma laut Impressum oder Kontaktseite, nur der Ortsname (z. B. Bielefeld), sonst leer", ' +
     '"plz": "Postleitzahl des Sitzes, falls im Text, sonst leer", ' +
-    '"mitarbeiterLeistungen": ["was die Firma Beschaeftigten bietet, NUR woertlich aus Karriere-/Jobs-Seiten (z. B. betriebliche Altersvorsorge, Jobrad, Homeoffice), sonst leer"]}' +
+    '"mitarbeiterLeistungen": ["was die Firma Beschaeftigten bietet, NUR woertlich aus Karriere-/Jobs-Seiten (z. B. betriebliche Altersvorsorge, Jobrad, Homeoffice), sonst leer"], ' +
+    '"websitePasst": true oder false}' +
+    "\n\nZu \"websitePasst\": false, wenn der Website-Text erkennbar NICHT die genannte Firma beschreibt " +
+    "(andere Firma, Plattform oder Marktplatz, Branchenverzeichnis, Domain zu verkaufen). Im Zweifel true." +
     "\n\nZu \"systeme\": NUR aus einem mitgelieferten Abschnitt " +
     "[Datenschutzerklaerung ...] die dort NAMENTLICH genannten " +
     "Dienstleister und Software-Anbieter uebernehmen (z. B. CRM, " +
@@ -411,7 +417,13 @@ export async function buildProfile(
       console.warn(`[discovery] Mini-Profil ${candidate.name}: ${letzterProfilFehler}`);
       return null;
     }
-    return profileSchema.validateSync(parsed, { abortEarly: true });
+    const profil = profileSchema.validateSync(parsed, { abortEarly: true });
+    if (!profil.websitePasst) {
+      letzterProfilFehler = "Website gehört erkennbar nicht zu dieser Firma";
+      console.warn(`[discovery] Mini-Profil ${candidate.name}: ${letzterProfilFehler}`);
+      return null;
+    }
+    return profil;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     letzterProfilFehler = /abort/i.test(msg) ? "KI-Zeitüberschreitung (60 s)" : `KI: ${msg.slice(0, 160)}`;
