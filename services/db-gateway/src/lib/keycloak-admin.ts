@@ -686,11 +686,28 @@ export async function kontoInKeycloakAnonymisieren(sub: string, anonEmail: strin
   await sitzungenBeenden(sub);
 }
 
-/** Nur deaktivieren (allein in der Organisation): Daten bleiben, Anmeldung gesperrt. */
+/** E-Mail eines deaktivierten Kontos: <sub><urspruengliche Adresse>. Gibt die Adresse fuer
+ *  eine neue Registrierung frei und zeigt in Keycloak trotzdem, wem das Konto gehoerte. */
+export function deaktivierteEmail(sub: string, email: string): string {
+  return email.startsWith(sub) ? email : `${sub}${email}`;
+}
+
+/** Nur deaktivieren (allein in der Organisation): Daten bleiben, Anmeldung gesperrt.
+ *  Seit 2026-11-09 (Befund Joyce) wird die E-Mail-Adresse frei: E-Mail und Benutzername
+ *  werden <sub><Adresse>, die alte Adresse steht im Attribut ava_email_vorher (zum
+ *  Wiedereinschalten durch das AVA-Team). */
 export async function kontoInKeycloakDeaktivieren(sub: string): Promise<void> {
   const u = await keycloakUser(sub);
-  const attribute = { ...((u.attributes as Record<string, string[]> | undefined) ?? {}), ava_deaktiviert: [new Date().toISOString()] };
-  const r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify({ enabled: false, attributes: attribute }) });
+  const alt = typeof u.email === "string" ? u.email : "";
+  const attribute = {
+    ...((u.attributes as Record<string, string[]> | undefined) ?? {}),
+    ava_deaktiviert: [new Date().toISOString()],
+    ...(alt && !alt.startsWith(sub) ? { ava_email_vorher: [alt] } : {}),
+  };
+  const basis = { enabled: false, attributes: attribute, ...(alt ? { email: deaktivierteEmail(sub, alt) } : {}) };
+  let r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify(alt ? { ...basis, username: deaktivierteEmail(sub, alt) } : basis) });
+  // Erlaubt der Realm keinen Benutzernamen-Wechsel, bleibt es bei E-Mail und Sperre.
+  if (!r.ok && alt) r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify(basis) });
   if (!r.ok) throw new Error(`Keycloak-Nutzer nicht deaktiviert (${r.status}: ${(await r.text()).slice(0, 200)})`);
   await sitzungenBeenden(sub);
 }
