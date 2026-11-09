@@ -69,11 +69,17 @@ anpassen oder löschen. Dazu gehören:
 3. **Suche prüfen**, beide Wege:
    - `../../node_modules/.bin/tsx scripts/test-wissen.mts` (Volltext/BM25, muss 0 kaputte Karten melden)
    - `../../node_modules/.bin/tsx scripts/test-wissen.mts --vektoren` (mit Vektoren über das lokale Ollama, embeddinggemma)
-   Die Trefferquote darf nicht sinken (Stand 2026-11-08: 294 Karten, Volltext 241/246, mit Vektoren 237/246).
-4. **Vektoren**: Es gibt keinen gespeicherten Vektorbestand, der von Hand erneuert werden müsste.
-   Die Karten werden beim Bauen in die App gebacken (Vite-Glob); der BM25-Index und die
-   Vektoren (Titel + Fragen je Karte) entstehen beim ersten Zugriff in der laufenden App neu
-   (`suche.ts`, `vektorenSicherstellen`). Eine geänderte Karte ist also nach dem nächsten
-   Release automatisch neu indiziert und vektorisiert; Schritt 3 prüft vorab, dass das gelingt.
+   Die Trefferquote darf nicht sinken (Stand 2026-11-09: 295 Karten, Volltext 252/257, mit Vektoren 248/257).
+   Beide Läufe melden veraltete Kartenvektoren als FEHLER.
+4. **Vektoren vorberechnen** (Pflicht nach jeder Kartenänderung, vor Schritt 3):
+   `../../node_modules/.bin/tsx scripts/wissen-vektoren.mts --ollama http://127.0.0.1:11555`
+   Die Kartenvektoren (Titel + Fragen) entstehen beim Entwickeln, nie auf dem Gerät des Nutzers,
+   und liegen der App als `../vektoren.json` bei (`vektoren-datei.ts`). Gerechnet wird mit
+   demselben Modell wie in der App: `embeddinggemma:latest`, Manifest-Digest in
+   `VEKTOR_MODELL_DIGEST`; das Skript lehnt einen anderen Stand ab. Am besten mit AVAs eigenem
+   Ollama (Pin aus `ollama-pin.ts`), z. B. auf Port 11555:
+   `OLLAMA_HOST=127.0.0.1:11555 ~/Library/Application\ Support/@ava/desktop/shared/ollama-managed/v0.40.5/ollama serve`.
+   Unveränderte Karten behalten ihren Vektor, nur geänderte werden neu eingebettet. Auf dem
+   Gerät wird nur die Frage eingebettet (4 s Frist, danach 10 Minuten nur Volltext).
 5. **Keine Release-Bündelung ohne Karten**: Karten gehören in denselben Commit wie die Änderung,
    damit App und Wissen im selben Release zusammenpassen.

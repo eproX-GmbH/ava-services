@@ -1,9 +1,12 @@
 // Loesungskarten (docs/PLAN_LOESUNGSKARTEN.md, L3): Suche.
 // Volltext nach BM25 ueber gewichtete Felder (Titel > Fragen/Schlagworte >
-// Loesung), optional nachsortiert mit lokalen Vektoren (Ollama, Titel + Fragen
-// je Karte, einmal je Kartenstand berechnet). Ohne Ollama bleibt es beim
-// Volltext. Die Zusammenfuehrung laeuft ueber Rangfusion (RRF).
+// Loesung), optional nachsortiert mit Vektoren. Die Kartenvektoren (Titel +
+// Fragen) sind VORBERECHNET und liegen der App bei (vektoren.json, erzeugt mit
+// scripts/wissen-vektoren.mts und demselben Modell wie in der App); auf dem
+// Geraet wird nur die Frage eingebettet. Karten ohne passenden Vektor (Text
+// geaendert) laufen nur ueber den Volltext. Zusammenfuehrung per Rangfusion (RRF).
 
+import { createHash } from "node:crypto";
 import type { Karte } from "./format";
 
 const GEWICHT = { titel: 3, fragen: 2, schlagworte: 2, loesung: 1 } as const;
@@ -40,8 +43,24 @@ interface Dok {
   karte: Karte;
   tf: Map<string, number>;
   laenge: number;
-  vektorText: string;
+  vektor: number[] | null;
 }
+
+/** Text, aus dem der Kartenvektor entsteht (Titel + Fragen). */
+export function vektorText(k: Karte): string {
+  return [k.titel, ...k.fragen].join("\n");
+}
+
+/** Kurzer Fingerabdruck des Vektortexts: passt er nicht, ist der Vektor veraltet. */
+export function vektorHash(k: Karte): string {
+  return createHash("sha256").update(vektorText(k)).digest("hex").slice(0, 16);
+}
+
+/** Vorberechnete Kartenvektoren je Karten-id. */
+export type Vorberechnet = Record<string, { hash: string; vektor: number[] }>;
+
+/** Frage ohne Antwort in dieser Zeit → diese Weile nur Volltext (langsame Rechner). */
+const FRAGE_PAUSE_MS = 10 * 60_000;
 
 export interface Treffer {
   karte: Karte;
@@ -51,18 +70,20 @@ export interface Treffer {
   kosinus?: number;
 }
 
+/** Bettet die Frage ein (nur sie, nie die Karten). */
 export type Einbetter = (texte: string[]) => Promise<number[][] | null>;
 
 export class WissensIndex {
   private readonly doks: Dok[];
   private readonly df = new Map<string, number>();
   private readonly mittlereLaenge: number;
-  private vektoren: number[][] | null = null;
-  private vektorenLaden: Promise<void> | null = null;
+  private readonly mitVektoren: boolean;
+  private frageGesperrtBis = 0;
 
   constructor(
     readonly karten: Karte[],
     private readonly einbetten?: Einbetter,
+    vorberechnet?: Vorberechnet,
   ) {
     this.doks = karten.map((k) => {
       const tf = new Map<string, number>();
@@ -78,9 +99,16 @@ export class WissensIndex {
       feld(k.schlagworte.join(" "), GEWICHT.schlagworte);
       feld(k.loesung, GEWICHT.loesung);
       for (const w of tf.keys()) this.df.set(w, (this.df.get(w) ?? 0) + 1);
-      return { karte: k, tf, laenge, vektorText: [k.titel, ...k.fragen].join("\n") };
+      const v = vorberechnet?.[k.id];
+      return { karte: k, tf, laenge, vektor: v && v.hash === vektorHash(k) ? v.vektor : null };
     });
     this.mittlereLaenge = this.doks.reduce((s, d) => s + d.laenge, 0) / Math.max(1, this.doks.length);
+    this.mitVektoren = this.doks.some((d) => d.vektor);
+  }
+
+  /** Karten, deren beigelegter Vektor fehlt oder nicht zum Text passt. */
+  get ohneVektor(): string[] {
+    return this.doks.filter((d) => !d.vektor).map((d) => d.karte.id);
   }
 
   get anzahl(): number {
@@ -102,29 +130,16 @@ export class WissensIndex {
     });
   }
 
-  /** Kartenvektoren einmal je Index berechnen; Fehler = ohne Vektoren weiter. */
-  private async vektorenSicherstellen(): Promise<void> {
-    if (this.vektoren || !this.einbetten || this.doks.length === 0) return;
-    this.vektorenLaden ??= (async () => {
-      const v = await this.einbetten!(this.doks.map((d) => d.vektorText)).catch(() => null);
-      if (v && v.length === this.doks.length) this.vektoren = v;
-      else this.vektorenLaden = null; // spaeter erneut versuchen (Ollama startet evtl. noch)
-    })();
-    await this.vektorenLaden;
-  }
-
   async suchen(frage: string, opts: { limit?: number; kanal?: "desktop" | "telegram" | "app" } = {}): Promise<Treffer[]> {
     const limit = opts.limit ?? 3;
     const passt = (k: Karte) => !opts.kanal || k.gilt_fuer.includes("alle") || k.gilt_fuer.includes(opts.kanal);
     const bm = this.bm25(tokens(frage));
 
     let kos: number[] | null = null;
-    if (this.einbetten) {
-      await this.vektorenSicherstellen();
-      if (this.vektoren) {
-        const q = await this.einbetten([frage]).catch(() => null);
-        if (q?.[0]) kos = this.vektoren.map((v) => kosinus(q[0]!, v));
-      }
+    if (this.einbetten && this.mitVektoren && Date.now() >= this.frageGesperrtBis) {
+      const q = await this.einbetten([frage]).catch(() => null);
+      if (q?.[0]) kos = this.doks.map((d) => (d.vektor ? kosinus(q[0]!, d.vektor) : 0));
+      else this.frageGesperrtBis = Date.now() + FRAGE_PAUSE_MS;
     }
 
     const idx = this.doks.map((_, i) => i).filter((i) => passt(this.doks[i]!.karte));

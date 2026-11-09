@@ -22,6 +22,7 @@ const AUSNAHMEN = new Map([
   ["index.ts", "Electron-Einstieg; wird mit R2 (bootstrapCore) dünn"],
   ["platform-electron.ts", "die Electron-Umsetzung der Plattform-Schicht selbst"],
   ["account-space.ts", "Konto-Spaces setzen app.setPath vor dem Start (R2)"],
+  ["neustart.ts", "Neustart ueber app.relaunch + app.quit fuer die Electron-Plattform (platform-electron, account-space)"],
   ["file-logger.ts", "Beenden-Spuren über app-/Fenster-Ereignisse (R2)"],
   ["billing.ts", "ava://-Protokoll, open-url, second-instance (R2)"],
   ["updater.ts", "electron-updater, Neustart-Dialog; im Server ersetzt docker pull den Updater"],

@@ -24,6 +24,11 @@ import { wissensIndex } from "../wissen";
 import { MarkierungsFilter, aktionenAufloesen, kartenAusErgebnis, knopfAusErgebnis, markierungEntfernen, type AusgefuehrteAktion } from "../wissen/aktionen";
 import { zielAufloesen } from "./tools/app-oeffnen";
 import { embedQueries } from "./tools/publications";
+
+// Loesungskarten: nur die Frage wird lokal eingebettet (Kartenvektoren liegen
+// der App bei). Kurze Frist, sonst wartet jede Chat-Frage auf langsamen
+// Rechnern (PM-2026-0011: Intel-Mac, 20 s je Frage); danach reicht der Volltext.
+const frageEinbetten = (texte: string[]) => embedQueries(texte, 4_000);
 import { isUserDeclined } from "./define-tool";
 import { welcomeMessage, isWelcomeTrigger } from "./welcome";
 import type { AgentKartenAktion, AgentMessageImage } from "../../shared/types";
@@ -313,7 +318,7 @@ export class AgentOrchestrator extends EventEmitter {
       registry: this.registry,
       coreToolNames: ALWAYS_ON_CORE_TOOL_NAMES,
       currentLoadState: () => this.currentLoadState(),
-      wissen: () => wissensIndex(embedQueries),
+      wissen: () => wissensIndex(frageEinbetten),
     })) {
       this.registry.register(t);
     }
@@ -1764,7 +1769,7 @@ export class AgentOrchestrator extends EventEmitter {
   ): import("../../shared/types").AgentKartenAktion[] {
     if ((ids.length === 0 && angeboten.length === 0) || convo.autonomousMode === true || convo.id.startsWith("telegram-")) return [];
     try {
-      const karten = wissensIndex(embedQueries).karten;
+      const karten = wissensIndex(frageEinbetten).karten;
       return aktionenAufloesen({
         ids,
         geliefert,

@@ -89,13 +89,13 @@ async function decomposeQuestion(
 }
 
 /** Queries lokal einbetten. null, wenn Ollama/Modell nicht verfuegbar. */
-export async function embedQueries(queries: string[]): Promise<number[][] | null> {
+export async function embedQueries(queries: string[], timeoutMs = 20_000): Promise<number[][] | null> {
   try {
     const res = await fetch(`${OLLAMA_URL}/api/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: "embeddinggemma:latest", input: queries }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { embeddings?: number[][] };

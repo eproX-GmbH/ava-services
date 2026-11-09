@@ -1,14 +1,18 @@
 // Loesungskarten (docs/PLAN_LOESUNGSKARTEN.md, L3/L8): alle Karten lesen und den
 // Pruefsatz gegen den echten Index laufen lassen. Treffer = erwartete id unter
-// den ersten drei. Mit --vektoren zusaetzlich ueber lokales Ollama (embeddinggemma).
+// den ersten drei. Mit --vektoren zusaetzlich mit den beigelegten Kartenvektoren
+// (vektoren.json) und lokal eingebetteter Frage (Ollama, embeddinggemma). Veraltete
+// oder fehlende Kartenvektoren sind immer ein Fehler → scripts/wissen-vektoren.mts.
 // Aufruf in services/desktop: ../../node_modules/.bin/tsx scripts/test-wissen.mts [--vektoren]
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import * as F0 from "../src/main/wissen/format.ts";
 import * as S0 from "../src/main/wissen/suche.ts";
+import * as V0 from "../src/main/wissen/vektoren-datei.ts";
 
 const F = ((F0 as any).kartenLesen ? F0 : (F0 as any).default) as typeof import("../src/main/wissen/format.ts");
 const S = ((S0 as any).WissensIndex ? S0 : (S0 as any).default) as typeof import("../src/main/wissen/suche.ts");
+const V = ((V0 as any).vektorenAusDatei ? V0 : (V0 as any).default) as typeof import("../src/main/wissen/vektoren-datei.ts");
 
 // --basis <dir>: anderes Verzeichnis mit karten/ und pruefsatz.json (z. B. Stand einer anderen Session).
 const bi = process.argv.indexOf("--basis");
@@ -31,12 +35,20 @@ for (const f of fehler) console.log(`FEHLER ${f}`);
 const mitVektoren = process.argv.includes("--vektoren");
 const einbetten = mitVektoren
   ? async (texte: string[]) => {
-      const r = await fetch("http://127.0.0.1:11434/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "embeddinggemma:latest", input: texte }) });
+      const r = await fetch("http://127.0.0.1:11434/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: V.VEKTOR_MODELL, input: texte }) });
       if (!r.ok) return null;
       return ((await r.json()) as { embeddings?: number[][] }).embeddings ?? null;
     }
   : undefined;
-const index = new S.WissensIndex(karten, einbetten);
+let vektorDatei: import("../src/main/wissen/vektoren-datei.ts").VektorDatei | null = null;
+try {
+  vektorDatei = JSON.parse(readFileSync(join(basis, "vektoren.json"), "utf8"));
+} catch {
+  /* fehlt → unten als Fehler */
+}
+const index = new S.WissensIndex(karten, einbetten, V.vektorenAusDatei(vektorDatei));
+const ohneVektor = index.ohneVektor;
+if (ohneVektor.length) console.log(`FEHLER ${ohneVektor.length} Karten ohne aktuellen Vektor (${ohneVektor.slice(0, 8).join(", ")}${ohneVektor.length > 8 ? " …" : ""}) → scripts/wissen-vektoren.mts laufen lassen`);
 
 const satz = JSON.parse(readFileSync(join(basis, satzDatei), "utf8")) as Array<{ frage: string; erwartet: string | string[] }>;
 const ids = new Set(karten.map((k) => k.id));
@@ -51,4 +63,4 @@ for (const p of satz) {
 }
 const quote = satz.length ? treffer / satz.length : 1;
 console.log(`${karten.length} Karten, ${fehler.length} kaputt; Prüfsatz ${treffer}/${satz.length} (${Math.round(quote * 100)} %)${mitVektoren ? " mit Vektoren" : " nur Volltext"}`);
-if (fehler.length > 0 || quote < 0.9) process.exit(1);
+if (fehler.length > 0 || ohneVektor.length > 0 || quote < 0.9) process.exit(1);
