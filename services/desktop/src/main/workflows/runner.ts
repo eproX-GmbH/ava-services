@@ -1262,6 +1262,8 @@ export class WorkflowRunner {
         emit: () => {},
         pending: new Map(),
         audit: (e) => this.deps.audit({ action: e.action, severity: "info", summary: e.summary, metadata: { ...e.metadata, workflowId: ctx.def.id, executionId: ctx.execution.id } }),
+        // „Immer erlauben“ aus dem Chat gilt auch im Workflow (je Werkzeug).
+        werkzeug: String(node.parameters.tool ?? "") || undefined,
       },
       ctx.execution.id,
       `workflow:${ctx.def.id}`,

@@ -197,6 +197,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "profile-section", label: "Profil" },
     { anchor: "plan-section", label: "Plan & Abrechnung" },
     { anchor: "general-memory", label: "Langzeitgedächtnis" },
+    { anchor: "erlaubnisse-section", label: "Erlaubnisse" },
     { anchor: "organisation", label: "Organisation" },
     { anchor: "instanzen", label: "Deine AVAs" },
     { anchor: "verbindungen", label: "Verbundene Apps" },

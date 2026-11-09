@@ -2641,6 +2641,15 @@ export type MailTrustLevel = "trusted" | "known" | "unknown";
  */
 export type AutonomyLevel = "none" | "additive" | "mutating";
 
+/** „Immer erlauben“ je Werkzeug (Einstellungen → Konto → Erlaubnisse). */
+export interface DauerErlaubnis {
+  werkzeug: string;
+  seit: string;
+  /** Erste Zeile der Rueckfrage, bei der erlaubt wurde. */
+  beispiel?: string;
+  loeschend: boolean;
+}
+
 export interface MailAccount {
   /** AVAs eigene Adresse (z. B. "ava@firma.de"). */
   address: string;

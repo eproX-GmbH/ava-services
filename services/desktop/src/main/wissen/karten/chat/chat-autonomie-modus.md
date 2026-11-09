@@ -11,13 +11,13 @@ schlagworte: [autonomie, autonomie-modus, manuell, halb-auto, voll-auto, bestät
 aktionen:
   - { art: app_oeffnen, ziel: chat, label: "Zum Eingabefeld springen" }
 gilt_fuer: [desktop]
-stand: 2026-11-07
+stand: 2026-11-09
 ---
 Am Eingabefeld im Chat wählst du, wie selbstständig ich handle:
 - „Manuell“ (Standard): Jede Aktion, die etwas anlegt oder ändert, bestätigst du vorher.
 - „Halb-auto“: Neues wie Notizen, Aufgaben oder Neuanlagen lege ich ohne Rückfrage an.
 - „Voll-auto“: Ich ändere auch Bestehendes ohne Rückfrage.
 
-Löschen fragt in jedem Modus nach. Was ich ohne Rückfrage tue, wird protokolliert, du findest es unter Einstellungen → Erweitert → Verlauf. Der Modus gilt auch für Telegram und Mail, bei Mail höchstens wie „Halb-auto“.
+Löschen fragt in jedem Modus nach. Einzelne Aktionen kannst du unabhängig vom Modus mit „Immer erlauben“ dauerhaft freigeben, auch Löschen; zurücknehmen kannst du das unter Einstellungen → Konto → Erlaubnisse. Was ich ohne Rückfrage tue, wird protokolliert, du findest es unter Einstellungen → Erweitert → Verlauf. Der Modus gilt auch für Telegram und Mail, bei Mail höchstens wie „Halb-auto“.
 
 Den Modus stellst du selbst am Eingabefeld um, das kann ich im Chat nicht für dich tun. Fahre am Auswahlfeld mit der Maus darüber, dann steht dort, was der Modus gerade erlaubt.

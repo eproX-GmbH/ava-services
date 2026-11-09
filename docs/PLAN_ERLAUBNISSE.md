@@ -84,6 +84,16 @@ soll sie gesammelt aufrufen statt in einer Schleife (Prompt-Regel).
 
 Schätzung: E1–E3 2 Tage, E4–E6 1–2 Tage.
 
+### Stand 2026-11-09
+- **E1** fertig (v0.1.961): „Ablegen (nur dieses Mal) / Immer erlauben / Abbrechen“ in jeder
+  `confirmAction`-Rückfrage, auch löschend (mit Hinweis „löscht künftig ohne Rückfrage“);
+  nie für eingehende Mails und MCP-Zugriffe.
+- **E3** fertig (v0.1.960): `settings.autonomous`, Abfrage beim Anlegen, Freigabe je Schritt und
+  Lauf. Offen: „Immer freigeben“ direkt an der Workflow-Freigabe.
+- **E4** fertig (v0.1.961): Einstellungen → Konto → Erlaubnisse, Chat-Werkzeug `erlaubnisse`
+  (zeigen, zurücknehmen, Workflow wieder fragen lassen; erteilen nur über die Rückfrage).
+- **E5** Entwürfe fertig; **E2** offen.
+
 ## 4. Offene Entscheidungen (Joyce)
 
 1. **Mail-Triage:** Klammer behalten (Vorschlag), also keine dauerhaft erlaubten Lösch-

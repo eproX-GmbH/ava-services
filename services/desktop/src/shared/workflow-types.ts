@@ -255,6 +255,8 @@ export interface WorkflowListEntry {
   lastRun?: { id: string; status: WorkflowExecutionStatus; startedAt: string; summary?: string } | null;
   nextRunAt?: string | null;
   openApprovals: number;
+  /** Laeuft selbststaendig (settings.autonomous). */
+  autonomous?: boolean;
   /** Nicht ausfuehrbar (z. B. Node zu abgeschalteter Funktion) — Grund. */
   blocked?: string | null;
 }

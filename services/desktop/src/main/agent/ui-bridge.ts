@@ -6,6 +6,7 @@ import type {
   AutonomyLevel,
 } from "../../shared/types";
 import { notifier } from "../../core/platform";
+import { IMMER_ERLAUBEN, dauerErlaubnis } from "./dauer-erlaubnis";
 
 // UiBridge — the seam between tools and the renderer.
 //
@@ -113,6 +114,8 @@ export interface UiBridgeDeps {
     summary: string;
     metadata: Record<string, unknown>;
   }) => void;
+  /** Werkzeug dieses Aufrufs: fuer „Immer erlauben“ (dauer-erlaubnis.ts). */
+  werkzeug?: string;
 }
 
 export class UiBridge {
@@ -156,6 +159,17 @@ export class UiBridge {
     // Deckt die Stufe die Klasse, wird auch im INTERAKTIVEN Chat ohne
     // Dialog bestaetigt (mit Audit) — der Nutzer hat den Modus ja
     // sichtbar am Eingabefeld gewaehlt.
+    // „Immer erlauben“ (Joyce 2026-11-09): dauerhaft erlaubtes Werkzeug fragt nicht
+    // mehr, auch Loeschendes, wenn der Nutzer es dort ausdruecklich gewaehlt hat.
+    const werkzeug = this.deps.werkzeug;
+    if (werkzeug && dauerErlaubnis.hat(werkzeug)) {
+      this.deps.audit?.({
+        action: "agent.erlaubnis.dauerhaft",
+        summary: `Aktion dauerhaft erlaubt (${werkzeug})`,
+        metadata: { conversationId: this.conversationId, requestId: this.requestId, werkzeug, kind: input.kind, prompt: input.prompt.slice(0, 2000) },
+      });
+      return input.confirmValue;
+    }
     if (autonomyCovers(this.autonomyLevel, input.kind)) {
       this.deps.audit?.({
         action: "agent.autonomy.autoConfirm",
@@ -171,11 +185,27 @@ export class UiBridge {
       });
       return input.confirmValue;
     }
+    // Neben der einmaligen Zustimmung „Immer erlauben“ anbieten; bei Loeschendem
+    // steht dabei, dass kuenftig ohne Rueckfrage geloescht wird.
+    const immer = { value: IMMER_ERLAUBEN, label: input.kind === "destructive" ? "Immer erlauben (löscht künftig ohne Rückfrage)" : "Immer erlauben" };
+    const ja = Math.max(0, input.options.findIndex((o) => o.value === input.confirmValue));
+    const einmal = input.options[ja] ? { ...input.options[ja]!, label: `${input.options[ja]!.label} (nur dieses Mal)` } : null;
+    const optionen = werkzeug && einmal ? [...input.options.slice(0, ja), einmal, immer, ...input.options.slice(ja + 1)] : input.options;
+    const antwort = (wert: string): string => {
+      if (wert !== IMMER_ERLAUBEN || !werkzeug) return wert;
+      dauerErlaubnis.erteilen(werkzeug, { beispiel: input.prompt, loeschend: input.kind === "destructive" });
+      this.deps.audit?.({
+        action: "agent.erlaubnis.erteilt",
+        summary: `Dauerhafte Erlaubnis erteilt (${werkzeug})`,
+        metadata: { conversationId: this.conversationId, requestId: this.requestId, werkzeug, kind: input.kind },
+      });
+      return input.confirmValue;
+    };
     if (!this.autonomousMode) {
-      return this.askChoice(input.prompt, input.options, signal);
+      return antwort(await this.askChoice(input.prompt, optionen, signal));
     }
     if (this.remoteAsk && input.options.length > 0) {
-      return this.remoteAsk.askChoice(input.prompt, input.options, signal);
+      return antwort(await this.remoteAsk.askChoice(input.prompt, optionen, signal));
     }
     throw new Error(
       input.kind === "destructive"

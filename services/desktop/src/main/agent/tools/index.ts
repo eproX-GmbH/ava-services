@@ -68,6 +68,7 @@ import { buildWorkflowTools } from "./workflows";
 import { buildEmailMusterTools } from "./email-muster";
 import { buildPersonenZusammenfuehrenTools } from "./personen-zusammenfuehren";
 import { buildVorschlaegeTools } from "./vorschlaege";
+import { buildErlaubnisseTools } from "./erlaubnisse";
 import { buildThemenTools } from "./themen";
 import { buildRegisterDeltaTools } from "./register-delta";
 import { buildWatchlistTools } from "./watchlist";
@@ -468,6 +469,7 @@ export function buildReadOnlyRegistry(deps: {
       browserLaden: () => deps.browserLaden?.() ?? Promise.resolve({ zustand: "aus" }),
     })) registry.register(t);
   for (const t of buildThemenTools({ get: () => deps.getThemen?.() ?? null })) registry.register(t);
+  for (const t of buildErlaubnisseTools({ getWorkflows: () => deps.getWorkflows?.() ?? null })) registry.register(t);
   for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name), settings: () => deps.getVorschlaegeSettings?.() ?? null })) registry.register(t);
   for (const t of buildSkillsTools({
     getSkillStore: deps.getSkillStore,

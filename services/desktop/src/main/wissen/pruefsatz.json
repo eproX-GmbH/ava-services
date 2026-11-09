@@ -1196,5 +1196,25 @@
   {
     "frage": "Muss ich bei 50 Entwürfen jeden einzeln freigeben?",
     "erwartet": "workflow-freigaben"
+  },
+  {
+    "frage": "Wie mache ich „Immer erlauben“ wieder rückgängig?",
+    "erwartet": "erlaubnisse-verwalten"
+  },
+  {
+    "frage": "Ich hab aus Versehen immer erlauben gedrückt",
+    "erwartet": "erlaubnisse-verwalten"
+  },
+  {
+    "frage": "Wo sehe ich, was AVA ohne Nachfrage machen darf?",
+    "erwartet": "erlaubnisse-verwalten"
+  },
+  {
+    "frage": "AVA soll beim Löschen im CRM wieder nachfragen",
+    "erwartet": "erlaubnisse-verwalten"
+  },
+  {
+    "frage": "Kann AVA auch dauerhaft löschen ohne zu fragen?",
+    "erwartet": "erlaubnisse-verwalten"
   }
 ]

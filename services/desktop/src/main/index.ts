@@ -20,6 +20,7 @@ import { registerCrmIpc } from "./ipc/crm";
 import { registerMcpDiensteIpc } from "./ipc/mcp-dienste";
 import { registerStammdatenIpc } from "./ipc/stammdaten";
 import { registerVorschlaegeIpc } from "./ipc/vorschlaege";
+import { registerErlaubnisseIpc } from "./ipc/erlaubnisse";
 import { registerThemenIpc } from "./ipc/themen";
 import { registerKontoIpc } from "./ipc/konto";
 import { registerLaufzeitIpc } from "./ipc/laufzeit";
@@ -422,6 +423,7 @@ app.whenReady().then(async () => {
   registerVorschlaegeIpc({ agentRegistry, chipErzeugung: core.chipErzeugung, hintergrundAufgaben, nutzerstand: core.nutzerstand, vorschlaegeSettings: core.vorschlaegeSettings });
   registerPersonenIpc({ apifyZugangInfo, audit, cycleCompanyContact, getTenantTierCached, personenRadarStore: core.personenRadarStore, personenRadarSupervisor: core.personenRadarSupervisor, resolveApifyAccess, watchlistKeyStore: core.watchlistKeyStore, watchlistStore: core.watchlistStore, watchlistSupervisor: core.watchlistSupervisor });
   registerLeadsIpc({ audit, gatewayClient });
+  registerErlaubnisseIpc({ audit });
   registerAblaeufeIpc({ wf });
   registerDiscoveryIpc({ agent, audit, customerProfiles, discoveryMatches, gatewayClient, icpAnalysisRunning: core.icpAnalysisRunning, icpStore, profileWorker: core.profileWorker, providers, radarAlertEmitter: core.radarAlertEmitter, radarSupervisor: core.radarSupervisor, userProfile });
   registerKontoIpc({ auth });

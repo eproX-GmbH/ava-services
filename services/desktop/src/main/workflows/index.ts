@@ -146,6 +146,7 @@ export class WorkflowService {
         lastRun: last ? { id: last.id, status: last.status, startedAt: last.startedAt, summary: last.summary } : null,
         nextRunAt: this.nextRunAt(w, last?.startedAt ?? null),
         openApprovals: approvals.filter((a) => a.workflowId === w.id).length,
+        autonomous: w.settings.autonomous === true,
         blocked: this.blockedReason(w),
       };
     });

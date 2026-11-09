@@ -22,7 +22,7 @@ const NOT_ALLOWED_RE = new RegExp(
     "_config$", "_set_prefs$", "_set_fokus$", "^icp_set$", "^radar_share$", "^transaction_share$", "^transaction_adopt$",
     "^mail_allowlist_", "^mail_triage_config$", "^publication_analysis_config$",
     "^person_(delete|informed)$", "_delete(_|$)", "_remove$", "^crm_disassociate_", "^linkedin_(scan|signals)_cancel$", "^freshness_(un)?pin_",
-    "^linkedin_connect$", "_freigeben$", "_get_prefs$",
+    "^linkedin_connect$", "_freigeben$", "_get_prefs$", "^erlaubnisse$", "^erlaubnisse$",
   ].join("|"),
 );
 

@@ -48,6 +48,7 @@ const ZIELE: Record<string, Ziel> = {
   konto_loeschen: { pfad: "/settings/konto#konto-loeschen", text: "Einstellungen → Konto → Konto löschen (ganz unten)" },
   deine_avas: { pfad: "/settings/konto#instanzen", text: "Einstellungen → Konto → Deine AVAs" },
   langzeitgedaechtnis: { pfad: "/settings/konto#general-memory", text: "Einstellungen → Konto → Langzeitgedächtnis" },
+  erlaubnisse: { pfad: "/settings/konto#erlaubnisse-section", text: "Einstellungen → Konto → Erlaubnisse" },
   lokale_modelle: { pfad: "/settings/ki#installed-models", text: "Einstellungen → KI & Kosten → Modelle auf diesem Rechner" },
   verbrauch_limit: { pfad: "/settings/ki#verbrauch-limit", text: "Einstellungen → KI & Kosten → Verbrauch" },
   sprachmodus: { pfad: "/settings/ki#sprachmodus-section", text: "Einstellungen → KI & Kosten → Mit AVA sprechen", feature: "sprachmodus" },

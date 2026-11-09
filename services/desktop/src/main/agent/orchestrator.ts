@@ -1993,6 +1993,8 @@ export class AgentOrchestrator extends EventEmitter {
         emit: (f) => this.emitFrame(f),
         pending: this.pendingChoices,
         audit: this.onAudit,
+        // Dauer-Erlaubnisse nie fuer eingehende Mails (Prompt-Injection) und MCP-Zugriffe.
+        werkzeug: convoForTool?.sourceMailId || convoForTool?.ohneVollmacht ? undefined : call.name,
       },
       requestId,
       conversationId,

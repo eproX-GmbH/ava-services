@@ -1822,6 +1822,12 @@ const api = {
   // `onPrefsChanged` push is fired by main after every successful
   // `set` so the Settings panel can re-sync without polling.
   // v0.1.646 — Nutzerstand + Faehigkeitsliste (Chat-Vorschlaege).
+  // Dauerhafte Erlaubnisse („Immer erlauben“): Uebersicht und Widerruf.
+  erlaubnisse: {
+    liste: (): Promise<import("../shared/types").DauerErlaubnis[]> => ipcRenderer.invoke("erlaubnisse:liste"),
+    widerrufen: (werkzeug: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("erlaubnisse:widerrufen", werkzeug),
+    alleWiderrufen: (): Promise<{ anzahl: number }> => ipcRenderer.invoke("erlaubnisse:alleWiderrufen"),
+  },
   suggestions: {
     nutzerstand: (opts?: { frisch?: boolean }): Promise<import("../shared/nutzerstand-types").Nutzerstand> => ipcRenderer.invoke("suggestions:nutzerstand", opts ?? {}),
     faehigkeiten: (): Promise<{ gruppen: import("../shared/nutzerstand-types").Faehigkeit[]; text: string; nichtZugeordnet: string[] }> =>
