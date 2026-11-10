@@ -395,7 +395,7 @@ export class Updater extends EventEmitter {
             title: "AVA-Update wird installiert",
             message: `Update auf v${this.latestVersion ?? "neue Version"} wird jetzt installiert.`,
             detail:
-              "Das kann 1–3 Minuten dauern. Bitte warte — AVA schliesst sich automatisch und startet danach von selbst wieder. Das Fenster kann währenddessen unresponsive wirken, bitte NICHT Beenden erzwingen.",
+              "Das kann 1–3 Minuten dauern. AVA schließt sich und startet danach von selbst wieder. Bitte in dieser Zeit AVA nicht selbst öffnen und nicht „Beenden erzwingen“, sonst bricht das Update ab.",
             buttons: ["OK, installieren"],
             defaultId: 0,
           })

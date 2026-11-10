@@ -45,11 +45,12 @@ export function getUpdatingFlagPath(): string {
   return join(paths().get("userData"), "ava-updating.flag");
 }
 
-/** Schreibt das Update-Flag synchron. Idempotent. */
+/** Schreibt das Update-Flag synchron. Idempotent. Die Version braucht die
+ *  Startsperre (update-start-sperre.ts): nur die alte Version wird abgewiesen. */
 export function writeUpdatingFlag(): void {
   const p = getUpdatingFlagPath();
   mkdirSync(paths().get("userData"), { recursive: true });
-  writeFileSync(p, String(Date.now()), "utf8");
+  writeFileSync(p, JSON.stringify({ ts: Date.now(), version: paths().version() }), "utf8");
 }
 
 // The watchdog program text. Materialised to <userData>/ava-watchdog.cjs

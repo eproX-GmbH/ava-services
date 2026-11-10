@@ -38,6 +38,7 @@ import { guardAllKnownSessions, setDownloadBlockedListener } from "./download-gu
 import { app, BrowserWindow, protocol, session } from "electron";
 import "./file-logger-init";
 import "./account-space-init";
+import "./update-start-sperre-init";
 import { setMaxListeners } from "node:events";
 import { join } from "node:path";
 import { quitStep, writeLineSync, setQuitPhase, istQuitAnzeigePhase } from "./file-logger";
