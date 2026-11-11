@@ -4,10 +4,10 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-08
-Anzahl Tools: 313
+Stand: 2026-11-11
+Anzahl Tools: 317
 
-## Firmen (30)
+## Firmen (31)
 
 ### `bestand_suchen`
 
@@ -27,7 +27,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Kontakte einer Firma, kompakt: Firmen-E-Mails/-Telefon/-Adresse und je Person Name, Rolle, Abteilung, E-Mail, Telefon, Profil-URLs, seit wann dabei, Kurzbeschreibung und Quelle (LinkedIn, Firmenwebsite, Websuche). Ausgeschiedene sind nicht enthalten. Belegketten (einzelne Beobachtungen mit Fundstelle) und den Verlauf (Signale, fruehere Stationen) NUR laden, wenn der Nutzer ausdruecklich nach Belegen, Herkunft oder Verlauf fragt: dann ansicht: 'voll'. Das ist bei grossen Firmen sehr umfangreich.
+Kontakte einer Firma, kompakt: Firmen-E-Mails/-Telefon/-Adresse und je Person Name, Rolle, Abteilung, E-Mail, Telefon, Profil-URLs, seit wann dabei, Kurzbeschreibung und Quelle (LinkedIn, Firmenwebsite, Websuche). Ausgeschiedene sind nicht enthalten.
 
 _Parameter:_ keine.
 
@@ -208,6 +208,17 @@ Get the crawled website summary for a company (homepage URL, scraped sections, l
 _Parameter:_
 - `companyId: string` (required)
 
+### `company_website_festlegen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Nutze es, wenn der Nutzer sagt, AVA habe die Website einer Firma nicht gefunden oder eine falsche, und die richtige Adresse nennt ("die Website ist valianttms.com"). Prueft die Adresse (erreichbar, eigene Domain, kein Verzeichnis), fragt nach, speichert sie als Vorgabe fuer alle kuenftigen Laeufe und laesst die Website-Stufe neu laufen; Profil, Kontakte und E-Mail-Adressen folgen danach von selbst. companyId vorher per company_search aufloesen. entfernen=true nimmt eine frueher festgelegte Website zurueck (AVA sucht dann wieder selbst).
+
+_Parameter:_
+- `companyId: string` (required)
+- `website: string` — Adresse oder Domain der Firmen-Website, z. B. valianttms.com
+- `entfernen: boolean` — true = festgelegte Website zuruecknehmen
+
 ### `contact_linkedin_lookup`
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
@@ -224,7 +235,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Sucht Personen nach Name in den Kontakten aller eigenen Firmen (Meine Firmen), ohne vorher eine Firma zu bestimmen. Schreibweisen mit Umlaut (Tölle/Toelle) werden gefunden. PFLICHT als ERSTER Schritt, sobald der Nutzer eine Person nennt ('E-Mail von X', 'Kontakt X bei Y', 'wer ist X'): firma und ort nur als Filter mitgeben. Erst ohne Treffer company_search/company_contacts, CRM oder Web — und dann mit dem Nutzer abstimmen. Treffer: personId, name, rolle, companyId, firma, ort, email, emailHerkunft, emailAbgeleitet. Mehrere Treffer → Tabelle Name | Rolle | Firma | Ort | E-Mail | Herkunft und nach der richtigen Person fragen. emailAbgeleitet=true heisst: aus dem Adressmuster der Firma gebildet, nicht bestaetigt — so benennen. Keine E-Mail vorhanden → das sagen, nie eine Adresse erfinden. bereich 'pool' NUR auf ausdrueckliche Nachfrage nach Personen AUSSERHALB der Firmenliste: hoechstens 5 Treffer mit Name, Firma und Ort, ohne Rolle und ohne E-Mail; mehr erst nach Aufnahme der Firma (import_companies mit companyIds, nur auf Wunsch).
+Sucht Personen nach Name in den Kontakten aller eigenen Firmen (Meine Firmen), ohne vorher eine Firma zu bestimmen. Schreibweisen mit Umlaut (Tölle/Toelle) werden gefunden. PFLICHT als ERSTER Schritt, sobald der Nutzer eine Person nennt ('E-Mail von X', 'Kontakt X bei Y', 'wer ist X'): firma und ort nur als Filter mitgeben. Erst ohne Treffer company_search/company_contacts, CRM oder Web — und dann mit dem Nutzer abstimmen. Treffer: personId, name, rolle, companyId, firma, ort, email, emailStatus, emailHerkunft. Mehrere Treffer → Tabelle Name | Rolle | Firma | Ort | E-Mail | Herkunft und nach der richtigen Person fragen.
 
 _Parameter:_
 - `name: string` (required) — Name der Person, Vor- und/oder Nachname
@@ -1535,7 +1546,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Prueft bis zu 10 Lokalteile (ohne @) an der Domain der Firma per SMTP-Anfrage, ohne eine Mail zu senden. Ergebnis je Adresse: existiert, existiert_nicht, unbekannt, catch_all (Server nimmt alles an, kein Beleg), gesperrt. Nutze es, wenn der Nutzer eine Adresse braucht, die nicht vorliegt (Rechnung, Buchhaltung, Bewerbung, Presse). Dauert einige Sekunden. Nichts wird gespeichert.
+Prueft bis zu 10 Lokalteile (ohne @) an der Domain der Firma per SMTP-Anfrage, ohne eine Mail zu senden. Ergebnis je Adresse: existiert, existiert_nicht, unbekannt, catch_all (Server nimmt alles an, kein Beleg), gesperrt. Nutze es, wenn der Nutzer eine Adresse braucht, die nicht vorliegt (Rechnung, Buchhaltung, Bewerbung, Presse). Ebenso von dir aus vor einem Mail-Entwurf, wenn die gespeicherte Adresse des Empfaengers emailStatus 'ungeprüft' hat: Lokalteil dieser Adresse pruefen und das Ergebnis nur werten, wenn die gepruefte Adresse der gespeicherten entspricht. Dauert einige Sekunden. Nichts wird gespeichert.
 
 _Parameter:_
 - `companyId: string` (required)
@@ -1557,7 +1568,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Zeigt die Schalter der E-Mail-Ableitung: ein/aus, Zuordnung von Firmenadressen, unverifizierte Ableitungen anzeigen. Die Ableitung selbst laeuft je Firma als Pipeline-Stufe „E-Mail“ direkt nach dem Kontaktlauf (lokal, Producer company-email): Adressmuster aus Belegen/KI-Urteil, dann wird JEDE abgeleitete Adresse einzeln per Mail-Server-Anfrage geprueft (ohne Zustellung, ohne Tages-Deckel). Ergebnis je Adresse: „abgeleitet · verifiziert“ (gruen), „unbestaetigt“ (Catch-all), „unverifiziert“ (Pruefung nicht moeglich) oder „vom Server abgelehnt“. pruefungenJeStunde = Verifizierungsrate dieser Person (RCPT-TO-Anfragen je Stunde, Standard 300, 10–3600); ist sie erreicht, wartet der Lauf. Stand je Firma: Status-Matrix (company_get bereich aenderungen bzw. retry_stage fuer eine Wiederholung).
+Zeigt die Schalter der E-Mail-Ableitung: ein/aus, Zuordnung von Firmenadressen, unverifizierte Ableitungen anzeigen. Die Ableitung selbst laeuft je Firma als Pipeline-Stufe „E-Mail“ direkt nach dem Kontaktlauf (lokal, Producer company-email): Adressmuster aus Belegen/KI-Urteil, dann wird JEDE abgeleitete Adresse einzeln per Mail-Server-Anfrage geprueft (ohne Zustellung, ohne Tages-Deckel). Ergebnis je Adresse (emailStatus in den Kontakten): bestätigt (an der Personenkarte gruen „verifiziert“), wahrscheinlich (Catch-all: Server nimmt jede Adresse an), ungeprüft (Pruefung nicht moeglich) oder abgelehnt (Server kennt die Adresse nicht). pruefungenJeStunde = Verifizierungsrate dieser Person (RCPT-TO-Anfragen je Stunde, Standard 300, 10–3600); ist sie erreicht, wartet der Lauf. Stand je Firma: Status-Matrix (company_get bereich aenderungen bzw. retry_stage fuer eine Wiederholung).
 
 _Parameter:_ keine.
 
@@ -1569,6 +1580,16 @@ Trockenlauf ohne Netzverkehr: erkennt aus den bekannten Personen-E-Mails der Fir
 
 _Parameter:_
 - `companyId: string` (required)
+
+## erlaubnisse (1)
+
+### `erlaubnisse`
+
+_Datei:_ `services/desktop/src/main/agent/tools/erlaubnisse.ts`
+
+Ohne Argumente: listet, was AVA dauerhaft ohne Rueckfrage darf (vom Nutzer per „Immer erlauben“ gewaehlt, je Werkzeug, mit Datum und Beispiel) und welche Workflows selbststaendig laufen. widerrufen: Werkzeugname aus der Liste oder 'alle' → AVA fragt dort wieder nach. workflowVorherFragen: Workflow-ID → der Workflow fragt wieder je Schritt und Lauf. Neue Erlaubnisse kann dieses Werkzeug NICHT erteilen; das geht nur ueber „Immer erlauben“ in einer Rueckfrage. Fragt vor dem Zuruecknehmen nach.
+
+_Parameter:_ keine.
 
 ## firma-finden (1)
 
@@ -1825,13 +1846,21 @@ Liefert das Ergebnis des letzten Personen-Radar-Laufs im Detail: Zusammenfassung
 
 _Parameter:_ keine.
 
-## mail-entwurf (1)
+## mail-entwurf (2)
+
+### `mail_entwuerfe_ablegen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail-entwurf.ts`
+
+Legt bis zu 50 Mails auf einmal als Entwürfe in den Entwürfe-Ordner des eingerichteten Entwurfs-Postfachs (IMAP). Der Nutzer bestätigt EINMAL für alle, prüft sie dann im Mail-Programm und verschickt selbst. Nutzen, sobald es um mehr als einen Entwurf geht (z. B. „schreib allen offenen Leads eine Mail und leg sie in die Entwürfe“): erst alle Texte schreiben, dann EIN Aufruf mit allen. Je Entwurf gelten dieselben Regeln wie bei mail_entwurf_ablegen: `an` nur mit gespeicherten Adressen, keine selbst gebildete; Entwürfe ohne Adresse weglassen und im Text nennen. Im Workflow als Schritt mit Modus „alle Items“, z. B. entwuerfe: {{ $input.all().map(i => ({ an: [i.json.an], betreff: i.json.betreff, text: i.json.text })) }}.
+
+_Parameter:_ keine.
 
 ### `mail_entwurf_ablegen`
 
 _Datei:_ `services/desktop/src/main/agent/tools/mail-entwurf.ts`
 
-Legt eine Mail als Entwurf in den Entwürfe-Ordner des eingerichteten Entwurfs-Postfachs (IMAP). Der Nutzer sieht sie in seinem Mail-Programm, auf dem Handy und im Webmail, prüft sie und verschickt sie selbst. Nutzen, wenn der Nutzer Entwürfe direkt im Postfach will („leg mir das in die Entwürfe“), bei mehreren Entwürfen auf einmal und in Workflows; sonst reicht der Block ```mail-entwurf im Chat. `an` nur mit bekannten Adressen (Kontakte, company_get), nie erfinden; ohne Adresse nicht aufrufen, sondern sagen, dass sie fehlt. `text` ist Klartext mit Anrede und Grußformel. Ist kein Entwurfs-Postfach eingerichtet, kommt ein Fehler mit Hinweis auf die Einstellung.
+Legt eine Mail als Entwurf in den Entwürfe-Ordner des eingerichteten Entwurfs-Postfachs (IMAP). Der Nutzer sieht sie in seinem Mail-Programm, auf dem Handy und im Webmail, prüft sie und verschickt sie selbst. Nutzen, wenn der Nutzer Entwürfe direkt im Postfach will („leg mir das in die Entwürfe“), bei mehreren Entwürfen auf einmal und in Workflows; sonst reicht der Block ```mail-entwurf im Chat. Für MEHRERE Entwürfe (z. B. eine Mail je Lead) stattdessen mail_entwuerfe_ablegen: eine Bestätigung für alle. `an` nur mit gespeicherten Adressen (kontakt_suchen, company_contacts, company_get; emailStatus bestätigt, wahrscheinlich oder ungeprüft zaehlen alle, eine abgeleitete und vom Mailserver bestaetigte Adresse ist belegt), keine selbst gebildete; ohne Adresse nicht aufrufen, sondern sagen, dass sie fehlt. `text` ist Klartext mit Anrede und Grußformel. Ist kein Entwurfs-Postfach eingerichtet, kommt ein Fehler mit Hinweis auf die Einstellung.
 
 _Parameter:_
 - `an: array` — Empfänger (E-Mail-Adressen). Leer erlaubt, dann trägt der Nutzer sie im Mail-Programm ein.
@@ -2708,7 +2737,16 @@ _Parameter:_
 - `signalton: boolean`
 - `wachwort: boolean`
 
-## start-analyse (2)
+## start-analyse (3)
+
+### `neuigkeiten_mail`
+
+_Datei:_ `services/desktop/src/main/agent/tools/start-analyse.ts`
+
+Neuigkeiten-Mails von AVA (höchstens eine Sammelmail am Tag mit neuen Meldungen zu den Firmen des Nutzers, an seine Registrierungsadresse). aktion=stand zeigt Adresse und ob sie an sind. aktion=an schickt eine Bestätigungsmail; erst der Klick darin schaltet sie ein (Double-Opt-in), das dem Nutzer sagen. aktion=aus bestellt sofort ab. An und aus fragen vorher nach Bestätigung.
+
+_Parameter:_
+- `aktion: string (enum: stand, an, aus)` (required) — stand, an oder aus
 
 ### `onboarding_startliste`
 
@@ -3019,11 +3057,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Entscheidet eine offene Freigabe (id aus workflow_approvals). approved=true laesst den Workflow weiterlaufen, false bricht den Lauf ab. Fragt vor der Entscheidung nach.
+Entscheidet eine offene Freigabe (id aus workflow_approvals). approved=true laesst den Workflow weiterlaufen, false bricht den Lauf ab. immer=true („immer freigeben“, nur wenn der Nutzer das ausdruecklich sagt): der Schritt laeuft kuenftig ohne Rueckfrage. Fragt vor der Entscheidung nach.
 
 _Parameter:_
 - `approvalId: string` (required)
 - `approved: boolean` (required)
+- `immer: boolean`
 - `note: string`
 
 ### `workflow_catalog`
@@ -3098,7 +3137,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma) oder ein Ereignis. MELDUNGEN PER MAIL (Rezept): trigger { kind: 'event', event: 'alert.created', filter: { kind: [...] } } → optional ai (Text formulieren) → tool mail_send (confirmed: true, to = Adresse des Nutzers); settings.scope 'none', wenn auch Meldungen ohne Firma (Erinnerungen) mitgehen sollen. NICHT per Zeitplan alerts_list ohne sinceMinutes/unreadOnly abfragen — das schickt dieselben Meldungen immer wieder. Bei vielen Meldungen lieber sammeln: Zeitplan (z. B. taeglich 08:00, scope 'none') → alerts_list(sinceMinutes: 1440, kinds: [...], mode allItems) → ai (Zusammenfassung) → eine mail_send. settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? "kein Kassenbestand bekannt") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.
+Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Hat der Workflow Schreib-Schritte, fragt dieses Werkzeug den Nutzer beim Anlegen selbst, ob der Workflow sie künftig selbstständig ausführen darf (dann laufen alle Schreib-Schritte ohne Rückfrage, auch löschende, ohne Obergrenze); confirmed, settings.autonomy und settings.autonomous dafür NICHT selbst setzen. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma) oder ein Ereignis. MELDUNGEN PER MAIL (Rezept): trigger { kind: 'event', event: 'alert.created', filter: { kind: [...] } } → optional ai (Text formulieren) → tool mail_send (confirmed: true, to = Adresse des Nutzers); settings.scope 'none', wenn auch Meldungen ohne Firma (Erinnerungen) mitgehen sollen. NICHT per Zeitplan alerts_list ohne sinceMinutes/unreadOnly abfragen — das schickt dieselben Meldungen immer wieder. Bei vielen Meldungen lieber sammeln: Zeitplan (z. B. taeglich 08:00, scope 'none') → alerts_list(sinceMinutes: 1440, kinds: [...], mode allItems) → ai (Zusammenfassung) → eine mail_send. settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? "kein Kassenbestand bekannt") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.
 
 _Parameter:_ keine.
 
@@ -3125,7 +3164,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Aendert einen Workflow gezielt: enabled, trigger, variables, settings (z. B. { maxMailsPerDay: 50 } fuer die Mail-Obergrenze je Tag, { notifyOnFinish: false } gegen Meldungen je Lauf) oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.
+Aendert einen Workflow gezielt: enabled, trigger, variables, settings (z. B. { maxMailsPerDay: 50 } fuer die Mail-Obergrenze je Tag, { notifyOnFinish: false } gegen Meldungen je Lauf) oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). „Lass den Workflow selbststaendig laufen“: settings { autonomous: true } (alle Schreib-Schritte ohne Rueckfrage, auch loeschende, ohne Obergrenzen); „wieder vorher fragen“: settings { autonomous: false } (dann eine Freigabe je Schritt und Lauf). Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.
 
 _Parameter:_
 - `workflow: string` (required) — id oder Name

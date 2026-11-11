@@ -22,6 +22,7 @@ import { platform } from "../../core/platform";
 import type { GatewayClient } from "../agent/gateway-client";
 import { radarActivity } from "./activity";
 import { ortAusImpressum } from "./ort-impressum";
+import { keineFirmenDomain } from "./keine-firmenseite";
 import { hardenBackgroundWindow } from "../download-guard";
 import type { LlmProviderManager } from "../agent/providers";
 import {
@@ -52,7 +53,9 @@ const MAX_PRIVACY_TEXT = 10_000;
 const profileSchema = yup.object({
   branche: yup.string().trim().min(2).max(120).required(),
   kurzbeschreibung: yup.string().trim().min(20).max(500).required(),
-  leistungen: yup.array().of(yup.string().trim().min(2).max(120).required()).min(1).max(10).required(),
+  // PM-2026-0046: eine leere Liste verwarf das ganze Profil (Berater, Freiberufler,
+  // knappe Startseiten); Branche und Kurzbeschreibung tragen das Profil auch allein.
+  leistungen: yup.array().of(yup.string().trim().min(2).max(120).required()).max(10).default([]),
   zielkunden: yup.string().trim().max(300).default(""),
   region: yup.string().trim().max(160).default(""),
   groessenIndiz: yup.string().trim().max(200).default(""),
@@ -453,8 +456,8 @@ export function renderProfileText(name: string, city: string | null, p: MiniProf
   const lines = [
     `${name}${city ? ` (${city})` : ""} — ${p.branche}.`,
     p.kurzbeschreibung,
-    `Leistungen: ${p.leistungen.join(", ")}.`,
   ];
+  if (p.leistungen.length > 0) lines.push(`Leistungen: ${p.leistungen.join(", ")}.`);
   if (p.zielkunden) lines.push(`Zielkunden: ${p.zielkunden}.`);
   if (p.region) lines.push(`Region: ${p.region}.`);
   if (p.groessenIndiz) lines.push(`Groesse: ${p.groessenIndiz}.`);
@@ -513,6 +516,21 @@ function prioritize<T extends { name: string; category: string | null }>(
   const rest: T[] = [];
   for (const c of candidates) (matches(c) ? hit : rest).push(c);
   return [...hit, ...rest];
+}
+
+/** PM-2026-0046 — Grund am Kandidaten merken, damit Leads ihn zeigen und dauerhafte
+ *  Gruende (robots.txt, keine Firmen-Website) nicht jeden Neustart neu versucht werden.
+ *  Aeltere Gateways kennen den Weg nicht: dann bleibt es beim lokalen Backoff. */
+const DAUERHAFT_RE = /robots\.txt|statt (eigener )?Firmen-Website|gehört erkennbar nicht zu dieser Firma/;
+async function profilFehlerMelden(gateway: GatewayClient, discoveryId: string, grund: string): Promise<void> {
+  try {
+    await gateway.request(`/v1/discovery/candidates/${encodeURIComponent(discoveryId)}/profil-fehler`, {
+      method: "PUT",
+      body: { grund: grund.slice(0, 200), dauerhaft: DAUERHAFT_RE.test(grund) },
+    });
+  } catch {
+    // best effort
+  }
 }
 
 export async function runProfiler(
@@ -598,20 +616,24 @@ export async function runProfiler(
       }
       radarActivity.profilePausiert(false);
       radarActivity.profileFirma(cand.name, "start");
-      const siteText = await crawlSite(cand.domain);
+      const keineFirma = keineFirmenDomain(cand.domain);
+      const siteText = keineFirma ? null : await crawlSite(cand.domain);
       if (!siteText) {
         summary.crawlFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
-        const grund = crawlFehlerGrund();
+        const grund = keineFirma ?? crawlFehlerGrund();
         console.warn(`[discovery] Mini-Profil ${cand.name}: ${cand.domain}: ${grund}`);
         radarActivity.profileFirma(cand.name, "fehler", { art: "website", text: `${cand.domain}: ${grund}` });
+        await profilFehlerMelden(gateway, cand.discoveryId, grund);
         continue;
       }
       const profile = await buildProfile(providers, cand, siteText);
       if (!profile) {
         summary.llmFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
-        radarActivity.profileFirma(cand.name, "fehler", { art: "ki", text: profilFehlerGrund() });
+        const grund = profilFehlerGrund();
+        radarActivity.profileFirma(cand.name, "fehler", { art: "ki", text: grund });
+        await profilFehlerMelden(gateway, cand.discoveryId, grund);
         continue;
       }
       // Kein Ort von der KI (z. B. Impressum nur mit Schraegstrich erreichbar): Impressum direkt lesen.

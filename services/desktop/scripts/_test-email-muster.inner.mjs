@@ -37,6 +37,24 @@ check(P.bildeAdresse("v.nachname", "Anna-Lena Schmidt", "example.de") === "a.sch
 check(P.bildeAdresse("vorname.nachname", "Prof. Dr. Klaus von Berg", "example.de") === "klaus.berg@example.de", "Titel weg, Partikel weg (Kurzform zuerst)");
 check(P.bildeAdresse("vorname.nachname", "Madonna", "example.de") === null, "Einwort-Name → null");
 
+console.log("Umschrift fremder Buchstaben (kein Buchstabe faellt weg)");
+const b = (name) => P.bildeAdresse("vorname.nachname", name, "x.de");
+const alle = (name) => P.nameVarianten(name).map((n) => `${n.vorname}.${n.nachname}`);
+check(b("Łukasz Majewski") === "lukasz.majewski@x.de", "Ł → l: " + b("Łukasz Majewski"));
+check(b("René Müller") === "rene.mueller@x.de" && alle("René Müller").includes("rene.muller"), "Akzent weg, Umlaut ausgeschrieben; Variante ohne Umlaut bleibt: " + alle("René Müller").join(" | "));
+check(b("Søren Kjær") === "soren.kjaer@x.de" && alle("Søren Kjær").includes("soeren.kjaer"), "ø → o, nordische Variante oe: " + alle("Søren Kjær").join(" | "));
+check(b("Åsa Öberg") === "asa.oeberg@x.de" && alle("Åsa Öberg").includes("aasa.oeberg") && alle("Åsa Öberg").includes("asa.oberg"), "Å → a, Variante aa: " + alle("Åsa Öberg").join(" | "));
+check(b("José García") === "jose.garcia@x.de", "spanische Akzente: " + b("José García"));
+check(b("Đorđe Đoković") === "dorde.dokovic@x.de", "Đ → d, ć → c: " + b("Đorđe Đoković"));
+check(b("François Lemaître") === "francois.lemaitre@x.de", "ç und î: " + b("François Lemaître"));
+check(b("Jiří Drnovský") === "jiri.drnovsky@x.de", "tschechische Hatschek: " + b("Jiří Drnovský"));
+check(b("Zoë Weiß") === "zoe.weiss@x.de", "Trema und ß: " + b("Zoë Weiß"));
+check(b("Ju\u0308rgen Mu\u0308ller") === "juergen.mueller@x.de", "zerlegte Umlaute (NFD) wie zusammengesetzte");
+check(alle("Jürgen Müller").join("|") === "juergen.mueller|jurgen.muller", "deutsche Namen unveraendert: " + alle("Jürgen Müller").join("|"));
+for (const name of ["Łukasz Majewski", "Søren Kjær", "Đorđe Đoković", "Þór Ægisson", "Mesut Sözüçok", "Dawid Lisiński"]) check(alle(name).every((l) => /^[a-z0-9.-]+$/.test(l)) && alle(name).every((l) => l.split(".")[0].length >= name.split(" ")[0].length), `${name}: rein ASCII, nichts verloren (${alle(name).join(" | ")})`);
+const bU = P.erkenneMuster("u.de", [{ fullName: "René Müller", email: "rene.mueller@u.de" }, { fullName: "Łukasz Majewski", email: "lukasz.majewski@u.de" }, { fullName: "Anna Meier", email: "anna.meier@u.de" }]);
+check(bU.muster === "vorname.nachname" && bU.konfidenz === 0.95, `Belege mit fremden Buchstaben erklaeren das Muster: ${bU.muster} ${bU.konfidenz}`);
+
 console.log("Rueckmeldung (Bounce/Antwort)");
 const R = await load("../src/main/contacts/email-muster/rueckmeldung.ts");
 const bounce = R.bounceAdressen({ from: { address: "MAILER-DAEMON@mx.example.de", name: null }, subject: "Undelivered Mail Returned to Sender", bodyText: "The following address failed: a.tepe@basecom.de\nReporting-MTA: mx.example.de" }, new Set(["joyce@quikk.de"]));

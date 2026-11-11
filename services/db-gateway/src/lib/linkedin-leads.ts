@@ -64,6 +64,8 @@ export interface LeadZeile {
   firmaPlz: string | null;
   firmaBranche: string | null;
   firmaKurz: string | null;
+  /** Warum das Mini-Profil fehlt (robots.txt, keine Firmen-Website …), falls bekannt. */
+  firmaProfilFehler: string | null;
   masterCompanyId: string | null;
   /** Wie oft dieselbe Person insgesamt reagiert hat (ueber alle Posts). */
   reaktionen: number;
@@ -177,6 +179,7 @@ export async function leadsListe(pool: Pool, tenantId: string, q: { status?: Lea
   const rows = await pool.query<Record<string, unknown>>(
     `SELECT l.*, dc."city" AS "firmaOrt", dc."plz" AS "firmaPlz", dc."masterCompanyId",
             dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz",
+            dc."metaJson"->'profilFehler'->>'grund' AS "firmaProfilFehler",
             (SELECT COUNT(*) FROM "LinkedInLead" x WHERE x."tenantId" = l."tenantId" AND x."profileUrl" = l."profileUrl")::int AS "reaktionen",
             COALESCE(mu."name", mu."email") AS "uebernommenVonName", COALESCE(mi."name", mi."email") AS "ignoriertVonName",
             (SELECT COALESCE(m2."name", m2."email", y."uebernommenVon") FROM "LinkedInLead" y LEFT JOIN "TenantMember" m2 ON m2."actorId" = y."uebernommenVon"
@@ -225,6 +228,7 @@ function zeile(r: Record<string, unknown>): LeadZeile {
     firmaPlz: s("firmaPlz"),
     firmaBranche: s("firmaBranche"),
     firmaKurz: s("firmaKurz"),
+    firmaProfilFehler: s("firmaProfilFehler"),
     masterCompanyId: s("masterCompanyId"),
     reaktionen: Number(r.reaktionen ?? 1),
   };
@@ -280,7 +284,8 @@ async function leadsListeNachId(pool: Pool, tenantId: string, id: string): Promi
   await ensureLeadsSchema(pool);
   const rows = await pool.query<Record<string, unknown>>(
     `SELECT l.*, dc."city" AS "firmaOrt", dc."plz" AS "firmaPlz", dc."masterCompanyId",
-            dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz", 1 AS reaktionen,
+            dc."profileJson"->>'branche' AS "firmaBranche", dc."profileJson"->>'kurzbeschreibung' AS "firmaKurz",
+            dc."metaJson"->'profilFehler'->>'grund' AS "firmaProfilFehler", 1 AS reaktionen,
             COALESCE(mu."name", mu."email") AS "uebernommenVonName", COALESCE(mi."name", mi."email") AS "ignoriertVonName"
        FROM "LinkedInLead" l LEFT JOIN "DiscoveredCompany" dc ON dc."discoveryId" = l."firmaDomain"
        LEFT JOIN "TenantMember" mu ON mu."actorId" = l."uebernommenVon"

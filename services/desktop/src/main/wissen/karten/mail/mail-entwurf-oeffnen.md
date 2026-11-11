@@ -12,10 +12,10 @@ aktionen:
   - { art: app_oeffnen, ziel: mail_verbinden, label: "Öffnen-Weg einstellen" }
   - { art: chat_vorschlag, ziel: "Schreib mir einen Mail-Entwurf für eine Erstansprache.", label: "Entwurf schreiben" }
 gilt_fuer: [desktop, app]
-stand: 2026-11-07
+stand: 2026-11-10
 ---
 Schreibe ich eine Mail, die du selbst verschickst, steht sie im Chat als „E-Mail-Entwurf“ mit Empfänger, Betreff und Text. Darunter öffnet ein Knopf sie fertig in deinem Mail-Programm. Mit „Kopieren“ nimmst du den Text mit, „Anders öffnen“ bietet die übrigen Wege.
 
 Wohin der Knopf führt, stellst du unter Einstellungen → Verbindungen → E-Mail → Entwürfe bei „Öffnen in“ ein, oder ich stelle es für dich um. „Automatisch (empfohlen)“ heißt: Outlook bekommt einen fertigen Entwurf mit Anhängen, andere Mail-Programme öffnen die Mail ohne Anhänge, ohne Mail-Programm geht es zu Gmail oder Outlook im Web. Fest wählen kannst du auch Gmail, Outlook im Web, Outlook.com oder den Outlook-Entwurf als Datei.
 
-Öffnet sich die Mail nur zum Lesen, wähle dort „Erneut senden“ oder „Als neu bearbeiten“. Kenne ich die Adresse nicht, sage ich es dir vorher.
+Öffnet sich die Mail nur zum Lesen, wähle dort „Erneut senden“ oder „Als neu bearbeiten“. Den Empfänger trage ich ein, sobald ich eine Adresse des Ansprechpartners habe. Fehlt sie, sage ich es dir vorher.

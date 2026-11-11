@@ -34,7 +34,7 @@ export function buildMailEntwurfTools(deps: MailEntwurfToolDeps): Tool[] {
       "Legt eine Mail als Entwurf in den Entwürfe-Ordner des eingerichteten Entwurfs-Postfachs (IMAP). Der Nutzer sieht sie in seinem Mail-Programm, auf dem Handy und im Webmail, prüft sie und verschickt sie selbst. " +
       "Nutzen, wenn der Nutzer Entwürfe direkt im Postfach will („leg mir das in die Entwürfe“), bei mehreren Entwürfen auf einmal und in Workflows; sonst reicht der Block ```mail-entwurf im Chat. " +
       "Für MEHRERE Entwürfe (z. B. eine Mail je Lead) stattdessen mail_entwuerfe_ablegen: eine Bestätigung für alle. " +
-      "`an` nur mit bekannten Adressen (Kontakte, company_get), nie erfinden; ohne Adresse nicht aufrufen, sondern sagen, dass sie fehlt. `text` ist Klartext mit Anrede und Grußformel. " +
+      "`an` nur mit gespeicherten Adressen (kontakt_suchen, company_contacts, company_get; emailStatus bestätigt, wahrscheinlich oder ungeprüft zaehlen alle, eine abgeleitete und vom Mailserver bestaetigte Adresse ist belegt), keine selbst gebildete; ohne Adresse nicht aufrufen, sondern sagen, dass sie fehlt. `text` ist Klartext mit Anrede und Grußformel. " +
       "Ist kein Entwurfs-Postfach eingerichtet, kommt ein Fehler mit Hinweis auf die Einstellung.",
     parameters: {
       type: "object",
@@ -98,7 +98,7 @@ export function buildMailEntwurfTools(deps: MailEntwurfToolDeps): Tool[] {
     description:
       "Legt bis zu 50 Mails auf einmal als Entwürfe in den Entwürfe-Ordner des eingerichteten Entwurfs-Postfachs (IMAP). Der Nutzer bestätigt EINMAL für alle, prüft sie dann im Mail-Programm und verschickt selbst. " +
       "Nutzen, sobald es um mehr als einen Entwurf geht (z. B. „schreib allen offenen Leads eine Mail und leg sie in die Entwürfe“): erst alle Texte schreiben, dann EIN Aufruf mit allen. " +
-      "Je Entwurf gelten dieselben Regeln wie bei mail_entwurf_ablegen: `an` nur mit bekannten Adressen, nie erfinden; Entwürfe ohne Adresse weglassen und im Text nennen. " +
+      "Je Entwurf gelten dieselben Regeln wie bei mail_entwurf_ablegen: `an` nur mit gespeicherten Adressen, keine selbst gebildete; Entwürfe ohne Adresse weglassen und im Text nennen. " +
       "Im Workflow als Schritt mit Modus „alle Items“, z. B. entwuerfe: {{ $input.all().map(i => ({ an: [i.json.an], betreff: i.json.betreff, text: i.json.text })) }}.",
     parameters: {
       type: "object",

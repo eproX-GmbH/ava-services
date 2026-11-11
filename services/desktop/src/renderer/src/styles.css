@@ -9519,7 +9519,9 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .gu-ring__wert { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-fg); }
 .gu-ring__abs { font-variant-numeric: tabular-nums; }
 .gu-tabelle { min-width: 0; }
-.gu-tabelle__rahmen { border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); overflow: hidden; }
+/* PM-2026-0048: breite Tabellen (lange Adressen, URLs) wurden rechts abgeschnitten;
+   der Rahmen scrollt jetzt waagerecht, die runden Ecken bleiben. */
+.gu-tabelle__rahmen { border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); overflow-x: auto; overflow-y: hidden; }
 .gu-tabelle td, .gu-tabelle th { white-space: normal; overflow-wrap: break-word; }
 /* Die Chat-Blase vererbt word-break: break-word; das bricht kurze Spalten mitten im Wort. */
 .gu-block { word-break: normal; }

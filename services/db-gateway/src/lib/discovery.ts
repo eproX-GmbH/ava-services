@@ -794,7 +794,8 @@ export async function saveProfile(
        tsv = to_tsvector('german', left($3, 20000)),
        embedding = $4,
        "profiledAt" = NOW(),
-       "updatedAt" = NOW()
+       "updatedAt" = NOW(),
+       "metaJson" = "metaJson" - 'profilFehler'
      WHERE "discoveryId" = $1
        AND ("profiledAt" IS NULL OR "profiledAt" < NOW() - INTERVAL '6 months')`,
     [
@@ -812,6 +813,32 @@ export async function saveProfile(
   if (existing.rows.length === 0) return { error: "not_found" };
   const at = existing.rows[0].profiledAt;
   return { skipped: "fresh", profiledAt: at ? at.toISOString() : "" };
+}
+
+/** Wie lange ein dauerhafter Profil-Fehler (robots.txt, keine Firmen-Website)
+ *  den Kandidaten aus dem Profil-Backlog nimmt. Danach wird er neu versucht. */
+export const PROFIL_FEHLER_SPERRE_TAGE = 30;
+
+/**
+ * PM-2026-0046 (Patrick): Kandidaten, deren Website sich nicht lesen laesst,
+ * standen in den Leads ewig auf "noch nicht gelesen", und jeder Rechner
+ * versuchte es nach jedem Neustart erneut. Der Grund liegt jetzt am Kandidaten
+ * (metaJson.profilFehler); dauerhafte Gruende sperren den Backlog fuer
+ * PROFIL_FEHLER_SPERRE_TAGE. updatedAt bleibt unberuehrt (Sortierung der Liste).
+ */
+export async function profilFehlerMerken(
+  pool: Pool,
+  args: { discoveryId: string; grund: string; dauerhaft: boolean },
+): Promise<boolean> {
+  await ensureSchema(pool);
+  const r = await pool.query(
+    `UPDATE "DiscoveredCompany"
+        SET "metaJson" = COALESCE("metaJson", '{}'::jsonb)
+              || jsonb_build_object('profilFehler', jsonb_build_object('grund', $2::text, 'dauerhaft', $3::boolean, 'am', NOW()))
+      WHERE "discoveryId" = $1 AND "profiledAt" IS NULL`,
+    [args.discoveryId, args.grund.slice(0, 200), args.dauerhaft],
+  );
+  return (r.rowCount ?? 0) > 0;
 }
 
 export interface CandidateRow {
@@ -920,6 +947,10 @@ export async function listCandidates(
   }
   if (args.withoutProfiles && !args.withProfiles) {
     conditions.push(`dc."profiledAt" IS NULL`);
+    conditions.push(
+      `NOT (COALESCE((dc."metaJson"->'profilFehler'->>'dauerhaft')::boolean, FALSE)
+            AND (dc."metaJson"->'profilFehler'->>'am')::timestamptz > NOW() - INTERVAL '${PROFIL_FEHLER_SPERRE_TAGE} days')`,
+    );
   }
   if (
     args.lat !== undefined &&

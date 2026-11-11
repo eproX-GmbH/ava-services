@@ -281,7 +281,7 @@ export function buildFirmaFindenTools(deps: { gateway: GatewayClient; providers:
   return [finden];
 }
 
-function gateHinweis(grund: string | null): string {
+export function gateHinweis(grund: string | null): string {
   switch (grund) {
     case "social": return "Die angegebene Adresse ist eine Social-Media-Seite, keine eigene Website — AVA nimmt die Firma so nicht auf.";
     case "linkseite": return "Die Adresse ist eine Link-Sammelseite (Linktree o. ae.), keine eigene Website.";

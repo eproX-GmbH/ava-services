@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
+import { vorgabeLesen } from "../../lib/website-vorgabe";
 import { ladeWebsiteRecherche } from "../../lib/website-research";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
@@ -424,6 +425,8 @@ companiesRouter.openapi(websiteRoute, async (c) => {
   payload.deepResearches = recherche.deepResearches;
   if (recherche.karriere) payload.karriere = recherche.karriere;
   payload.themen = recherche.themen;
+  const vorgabe = await vorgabeLesen(companyId, pool).catch(() => null);
+  payload.websiteVorgabe = vorgabe ? { url: vorgabe.url, domain: vorgabe.domain, updatedAt: vorgabe.updatedAt } : null;
   return c.json(payload, 200);
 });
 

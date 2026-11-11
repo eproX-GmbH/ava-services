@@ -108,7 +108,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
             "Anlass: die Person hat {{ $('Start').first().json.aktivitaet === 'comment' ? 'diesen Post kommentiert' : 'auf diesen Post reagiert' }}: {{ $('Start').first().json.postUrl }}. " +
             "Kommentar: {{ $('Start').first().json.kommentar ?? '(keiner)' }}. " +
             "Geh auf das Thema des Posts bzw. den Kommentar ein, nenne einen konkreten Bezug zur Firma aus dem Kontext, kein Verkaufsdruck, höchstens 120 Wörter, Sie-Form (Du nur, wenn der Kommentar es nahelegt), mit Anrede und Grußformel ohne Signatur. " +
-            "Suche im Firmen-Kontext die E-Mail-Adresse GENAU dieser Person (Kontakte, auch abgeleitete Adressen). Gib sie als `an` zurück; gibt es keine, `an` = null und `grund` nennt, warum. Nie eine Adresse erfinden.",
+            "Suche im Firmen-Kontext die E-Mail-Adresse GENAU dieser Person (Kontakte; jede dort als `email` gespeicherte Adresse zählt, auch eine abgeleitete, gleich welcher `emailStatus`). Gib sie als `an` zurück; gibt es keine oder nur eine abgelehnte (`emailAbgelehnt`), `an` = null und `grund` nennt, warum. Bilde selbst keine Adresse.",
           outputSchema: {
             type: "object",
             required: ["betreff", "text"],

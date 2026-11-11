@@ -24,7 +24,7 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterDienst | nul
       "Zeigt die Schalter der E-Mail-Ableitung: ein/aus, Zuordnung von Firmenadressen, unverifizierte Ableitungen anzeigen. " +
       "Die Ableitung selbst laeuft je Firma als Pipeline-Stufe „E-Mail“ direkt nach dem Kontaktlauf (lokal, Producer company-email): " +
       "Adressmuster aus Belegen/KI-Urteil, dann wird JEDE abgeleitete Adresse einzeln per Mail-Server-Anfrage geprueft (ohne Zustellung, ohne Tages-Deckel). " +
-      "Ergebnis je Adresse: „abgeleitet · verifiziert“ (gruen), „unbestaetigt“ (Catch-all), „unverifiziert“ (Pruefung nicht moeglich) oder „vom Server abgelehnt“. " +
+      "Ergebnis je Adresse (emailStatus in den Kontakten): bestätigt (an der Personenkarte gruen „verifiziert“), wahrscheinlich (Catch-all: Server nimmt jede Adresse an), ungeprüft (Pruefung nicht moeglich) oder abgelehnt (Server kennt die Adresse nicht). " +
       "pruefungenJeStunde = Verifizierungsrate dieser Person (RCPT-TO-Anfragen je Stunde, Standard 300, 10–3600); ist sie erreicht, wartet der Lauf. " +
       "Stand je Firma: Status-Matrix (company_get bereich aenderungen bzw. retry_stage fuer eine Wiederholung).",
     parameters: { type: "object", properties: {} },
@@ -92,11 +92,12 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterDienst | nul
   // V5 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Funktionsadressen pruefen.
   const adressePruefen = defineTool({
     name: "email_adresse_pruefen",
-    summary: "Frei gewaehlte Adressen an der Firmendomain per Mail-Server-Anfrage pruefen (z. B. rechnung@, buchhaltung@, bewerbung@).",
+    summary: "Adressen an der Firmendomain per Mail-Server-Anfrage pruefen (z. B. rechnung@, buchhaltung@, bewerbung@ oder die ungepruefte Adresse eines Ansprechpartners).",
     category: "kontakte email adresse rechnung buchhaltung pruefen",
     description:
       "Prueft bis zu 10 Lokalteile (ohne @) an der Domain der Firma per SMTP-Anfrage, ohne eine Mail zu senden. Ergebnis je Adresse: existiert, existiert_nicht, unbekannt, catch_all (Server nimmt alles an, kein Beleg), gesperrt. " +
-      "Nutze es, wenn der Nutzer eine Adresse braucht, die nicht vorliegt (Rechnung, Buchhaltung, Bewerbung, Presse). Dauert einige Sekunden. Nichts wird gespeichert.",
+      "Nutze es, wenn der Nutzer eine Adresse braucht, die nicht vorliegt (Rechnung, Buchhaltung, Bewerbung, Presse). " +
+      "Ebenso von dir aus vor einem Mail-Entwurf, wenn die gespeicherte Adresse des Empfaengers emailStatus 'ungeprüft' hat: Lokalteil dieser Adresse pruefen und das Ergebnis nur werten, wenn die gepruefte Adresse der gespeicherten entspricht. Dauert einige Sekunden. Nichts wird gespeichert.",
     parameters: {
       type: "object",
       required: ["companyId", "lokalteile"],

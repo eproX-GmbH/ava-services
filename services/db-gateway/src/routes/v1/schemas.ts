@@ -148,6 +148,8 @@ export const WebsiteShape = z
   .object({
     website: WebsiteCoreShape.optional(),
     companySerp: CompanySerpShape.optional(),
+    /** PM-2026-0045 — von Hand vorgegebene Website; die Website-Stufe nutzt sie ohne Suche. */
+    websiteVorgabe: z.object({ url: z.string(), domain: z.string(), updatedAt: z.string() }).nullable().optional(),
     deepResearches: z.array(DeepResearchShape).default([]),
     jobPostings: z.array(JobPostingShape).default([]),
     /** Karriereseite: Leistungen fuer Beschaeftigte (docs/PLAN_STELLEN_SIGNALE.md). */

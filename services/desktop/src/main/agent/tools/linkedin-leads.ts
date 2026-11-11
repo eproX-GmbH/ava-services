@@ -53,6 +53,7 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
           ort: l.firmaOrt,
           branche: l.firmaBranche,
           kurzprofil: l.firmaKurz,
+          ...(!l.firmaKurz && l.firmaProfilFehler ? { websiteNichtLesbar: l.firmaProfilFehler } : {}),
           companyId: l.companyId ?? l.masterCompanyId,
           aktivitaet: l.aktivitaet === "comment" ? "Kommentar" : `Reaktion${l.reactionType ? ` (${l.reactionType})` : ""}`,
           kommentar: l.kommentar,

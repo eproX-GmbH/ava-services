@@ -43,9 +43,26 @@ export function umlauteAusschreiben(s: string): string {
   return s.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue");
 }
 
-/** Diakritika entfernen (ä→a, é→e) — Variante 2. */
+// Buchstaben, die Unicode nicht in Grundbuchstabe + Zeichen zerlegt (Ł, Ø, Đ …).
+// Ohne diese Tabelle fielen sie ersatzlos weg: „Łukasz“ wurde zu „ukasz“.
+const SONDERBUCHSTABEN: Record<string, string> = {
+  ł: "l", Ł: "L", ø: "o", Ø: "O", đ: "d", Đ: "D", ð: "d", Ð: "D", þ: "th", Þ: "Th",
+  æ: "ae", Æ: "Ae", œ: "oe", Œ: "Oe", ı: "i", ħ: "h", Ħ: "H", ŧ: "t", Ŧ: "T", ĸ: "k", ŀ: "l", Ŀ: "L",
+};
+const SONDER_RE = new RegExp(`[${Object.keys(SONDERBUCHSTABEN).join("")}]`, "g");
+
+/** Diakritika entfernen (ä→a, é→e, ł→l, ø→o) — Variante 2. */
 export function diakritikaEntfernen(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss");
+  return s
+    .replace(SONDER_RE, (c) => SONDERBUCHSTABEN[c] ?? c)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/ß/g, "ss");
+}
+
+/** Nordische Schreibweise (ø→oe, å→aa) — Variante 3, nur bei solchen Namen. */
+export function nordischAusschreiben(s: string): string {
+  return s.replace(/ø/g, "oe").replace(/Ø/g, "Oe").replace(/å/g, "aa").replace(/Å/g, "Aa");
 }
 
 const PARTIKEL = new Set(["von", "van", "de", "der", "den", "zu", "zum", "zur", "vom", "und", "y", "da", "di", "del", "della", "le", "la", "du", "des", "af", "ten", "ter"]);
@@ -59,13 +76,18 @@ function tokens(fullName: string): string[] {
 }
 
 /**
- * Name in Vor-/Nachname zerlegen. Liefert je Schreibvariante (Umlaute
- * ausgeschrieben / Diakritika entfernt) eine Teilung; die Musterpruefung
- * probiert alle Varianten.
+ * Name in Vor-/Nachname zerlegen. Liefert je Schreibvariante eine Teilung; die
+ * Musterpruefung probiert alle Varianten. Reihenfolge:
+ *   1. Umlaute ausgeschrieben, uebrige Akzente entfernt (René Müller → rene mueller)
+ *   2. alle Diakritika entfernt (rene muller)
+ *   3. nordisch ausgeschrieben (Søren → soeren), nur wenn der Name ø/å enthaelt
+ * Jede Variante endet in reinem ASCII; kein Buchstabe faellt ersatzlos weg.
  */
 export function nameVarianten(fullName: string): NameTeile[] {
   const out: NameTeile[] = [];
-  for (const variante of [umlauteAusschreiben(fullName), diakritikaEntfernen(fullName)]) {
+  const name = fullName.normalize("NFC");
+  const schreibweisen = [diakritikaEntfernen(umlauteAusschreiben(name)), diakritikaEntfernen(name), diakritikaEntfernen(nordischAusschreiben(umlauteAusschreiben(name)))];
+  for (const variante of schreibweisen) {
     const t = tokens(variante.toLowerCase());
     if (t.length < 2) continue;
     // Bindestrich-Doppelnamen: "anna-lena" bleibt als Vorname zusammen; im
@@ -194,7 +216,7 @@ export function erkenneMuster(domain: string, belege: MusterBeleg[]): MusterBefu
   };
 }
 
-/** Adresse fuer eine Person nach Muster bilden (erste Namensvariante = Umlaute ausgeschrieben). */
+/** Adresse fuer eine Person nach Muster bilden (erste Namensvariante = Umlaute ausgeschrieben, Akzente entfernt). */
 export function bildeAdresse(musterId: string, fullName: string, domain: string): string | null {
   const m = MUSTER.find((x) => x.id === musterId);
   if (!m) return null;

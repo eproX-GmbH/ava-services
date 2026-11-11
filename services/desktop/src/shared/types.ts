@@ -2396,6 +2396,8 @@ export interface LinkedInLead {
   firmaPlz: string | null;
   firmaBranche: string | null;
   firmaKurz: string | null;
+  /** Warum das Mini-Profil fehlt (z. B. robots.txt), falls bekannt; aeltere Gateways liefern nichts. */
+  firmaProfilFehler?: string | null;
   masterCompanyId: string | null;
   reaktionen: number;
 }

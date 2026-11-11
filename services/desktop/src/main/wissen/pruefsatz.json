@@ -1235,5 +1235,47 @@
   {
     "frage": "Warum kann ich beim Mail senden an Kunden nicht immer erlauben wählen?",
     "erwartet": "erlaubnisse-verwalten"
+  },
+  {
+    "frage": "ava findet die website von tms turnkey nicht, die ist valianttms.com",
+    "erwartet": "falsche-website"
+  },
+  {
+    "frage": "kann ich die website einer firma selbst eintragen",
+    "erwartet": "falsche-website"
+  },
+  {
+    "frage": "warum steht beim lead website gefunden noch nicht gelesen",
+    "erwartet": "linkedin-leads"
+  },
+  {
+    "frage": "was heisst website nicht lesbar bei meinen leads",
+    "erwartet": "linkedin-leads"
+  },
+  {
+    "frage": "Warum hast du im Entwurf an Herrn Buck keinen Empfänger eingetragen?",
+    "erwartet": "mail-entwurf-empfaenger"
+  },
+  {
+    "frage": "die adresse ist doch vom server bestätigt, wieso steht sie nicht in der mail",
+    "erwartet": [
+      "mail-entwurf-empfaenger",
+      "email-status-verstehen"
+    ]
+  },
+  {
+    "frage": "Nimmst du für Entwürfe auch Adressen, die du nur abgeleitet hast?",
+    "erwartet": [
+      "mail-entwurf-empfaenger",
+      "email-status-verstehen"
+    ]
+  },
+  {
+    "frage": "Was ist der Unterschied zwischen wahrscheinlich und ungeprüft bei einer Mailadresse?",
+    "erwartet": "email-status-verstehen"
+  },
+  {
+    "frage": "Wie bildest du die Adresse bei einem Namen wie Łukasz oder Søren?",
+    "erwartet": "email-adressen-ableiten"
   }
 ]

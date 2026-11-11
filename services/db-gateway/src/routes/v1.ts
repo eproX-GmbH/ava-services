@@ -7,6 +7,7 @@ import { rateLimitMiddleware } from "../middleware/rate-limit";
 import { auditMiddleware } from "../middleware/audit";
 import { companiesRouter } from "./v1/companies";
 import { companyWritesRouter } from "./v1/company-writes";
+import { websiteVorgabeRouter } from "./v1/website-vorgabe";
 import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
@@ -103,6 +104,8 @@ v1.route("/", buyingCenterRouter);
 // Kunden/Referenzen (docs/PLAN_KUNDEN.md) — vor dem generischen companiesRouter (Glob).
 v1.route("/", companiesKundenRouter);
 v1.route("/", verbindungenRouter);
+// PM-2026-0045 — Website von Hand vorgeben; vor dem generischen companiesRouter.
+v1.route("/", websiteVorgabeRouter);
 v1.route("/", companiesRouter);
 
 // §4.2 Transaction reads (W2-W5) + §6 SSE bridge (W4).

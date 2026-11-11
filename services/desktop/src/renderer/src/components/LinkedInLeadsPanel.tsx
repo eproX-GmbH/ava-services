@@ -38,9 +38,21 @@ function hatMiniProfil(l: LinkedInLead): boolean {
   return Boolean(l.firmaKurz || l.firmaBranche);
 }
 
+/** PM-2026-0046: Grund fuer ein fehlendes Mini-Profil in Nutzersprache. null = nichts
+ *  Dauerhaftes bekannt, das Profil folgt noch. */
+function profilHinderungsgrund(l: LinkedInLead): string | null {
+  const g = l.firmaProfilFehler ?? "";
+  if (!g || hatMiniProfil(l)) return null;
+  if (/robots\.txt/.test(g)) return "Die Website lässt sich nicht auslesen, der Betreiber erlaubt es nicht.";
+  if (/statt (eigener )?Firmen-Website/.test(g)) return `Keine Firmen-Website: ${g.replace(/ statt (eigener )?Firmen-Website/, "")}.`;
+  if (/gehört erkennbar nicht/.test(g)) return "Die gefundene Website gehört zu einer anderen Firma.";
+  return null;
+}
+
 function erkennungsStand(l: LinkedInLead): string {
   if (l.companyId || l.masterCompanyId) return "Firma bestätigt";
   if (hatMiniProfil(l)) return "Website gelesen, Firma noch nicht zugeordnet";
+  if (l.firmaDomain && profilHinderungsgrund(l)) return "Website nicht lesbar";
   if (l.firmaDomain) return "Website gefunden, noch nicht gelesen";
   return "Nur Firmenname aus dem Profil";
 }
@@ -239,7 +251,7 @@ export function LinkedInLeadsPanel(): JSX.Element {
                         <div className="muted small">{[l.firmaOrt, l.firmaDomain, l.firmaBranche].filter(Boolean).join(" · ")}</div>
                         {l.firmaKurz && <p className="leads__kurz">{l.firmaKurz}</p>}
                         {/* PM-2026-0012: fehlendes Profil und fehlender Ort getrennt ausweisen. */}
-                        {!hatMiniProfil(l) && l.firmaDomain && <div className="muted small">Mini-Profil folgt.</div>}
+                        {!hatMiniProfil(l) && l.firmaDomain && <div className="muted small">{profilHinderungsgrund(l) ?? "Mini-Profil folgt."}</div>}
                         {hatMiniProfil(l) && !l.firmaOrt && <div className="muted small">Ort noch unbekannt.</div>}
                       </>
                     ) : (

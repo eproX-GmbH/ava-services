@@ -6,9 +6,12 @@ import type { Tool } from "../types";
 import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
 import { landText, statusWarnungText } from "../../firmen-status";
-import { kompakteKontakte, quellenGruppe } from "./kontakte-kompakt";
+import { kompakteKontakte, emailStatus, emailHerkunft, EMAIL_STATUS_HINWEIS } from "./kontakte-kompakt";
 import { ladeFirmenliste } from "../real-candidate-source";
 import { verarbeitungsstand, type MatrixZeile } from "../verarbeitungsstand";
+import { pruefeFirmenDomain } from "../../firmen-web/domain-gate";
+import { gateHinweis } from "./firma-finden";
+import { isProcessingPaused, PROCESSING_PAUSED_MESSAGE } from "../../processing-control";
 
 /** P10 — Felder des Steckbriefs (Register-Grunddaten), die auch fuer ruhende Firmen sichtbar sind. */
 const STECKBRIEF_FELDER = ["id", "name", "legalName", "legalForm", "registerType", "registerNumber", "districtCourt", "location", "city", "street", "zipCode", "country", "registerStatus", "closedAt", "insolvencyStatus", "insolvencyAt", "uid"] as const;
@@ -550,6 +553,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     name: "company_contacts",
     description:
       "Kontakte einer Firma, kompakt: Firmen-E-Mails/-Telefon/-Adresse und je Person Name, Rolle, Abteilung, E-Mail, Telefon, Profil-URLs, seit wann dabei, Kurzbeschreibung und Quelle (LinkedIn, Firmenwebsite, Websuche). Ausgeschiedene sind nicht enthalten. " +
+      EMAIL_STATUS_HINWEIS + " emailAbgelehnt = einzige bekannte Adresse, vom Mailserver abgelehnt: nicht verwenden, nur auf Nachfrage nennen. " +
       "Belegketten (einzelne Beobachtungen mit Fundstelle) und den Verlauf (Signale, fruehere Stationen) NUR laden, wenn der Nutzer ausdruecklich nach Belegen, Herkunft oder Verlauf fragt: dann ansicht: 'voll'. Das ist bei grossen Firmen sehr umfangreich.",
     parameters: {
       type: "object",
@@ -579,13 +583,13 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   // Personensuche geht direkt ueber die AVA-Kontakte, firmenuebergreifend.
   const kontaktSuchen = defineTool({
     name: "kontakt_suchen",
-    summary: "Ansprechpartner nach Name finden, firmenuebergreifend in den AVA-Kontakten (mit Firma, Ort, Rolle und vorhandener E-Mail samt Herkunft).",
+    summary: "Ansprechpartner nach Name finden, firmenuebergreifend in den AVA-Kontakten (mit Firma, Ort, Rolle und vorhandener E-Mail samt Status und Herkunft).",
     category: "kontakte ansprechpartner person suchen name email",
     description:
       "Sucht Personen nach Name in den Kontakten aller eigenen Firmen (Meine Firmen), ohne vorher eine Firma zu bestimmen. Schreibweisen mit Umlaut (Tölle/Toelle) werden gefunden. " +
       "PFLICHT als ERSTER Schritt, sobald der Nutzer eine Person nennt ('E-Mail von X', 'Kontakt X bei Y', 'wer ist X'): firma und ort nur als Filter mitgeben. Erst ohne Treffer company_search/company_contacts, CRM oder Web — und dann mit dem Nutzer abstimmen. " +
-      "Treffer: personId, name, rolle, companyId, firma, ort, email, emailHerkunft, emailAbgeleitet. Mehrere Treffer → Tabelle Name | Rolle | Firma | Ort | E-Mail | Herkunft und nach der richtigen Person fragen. " +
-      "emailAbgeleitet=true heisst: aus dem Adressmuster der Firma gebildet, nicht bestaetigt — so benennen. Keine E-Mail vorhanden → das sagen, nie eine Adresse erfinden. " +
+      "Treffer: personId, name, rolle, companyId, firma, ort, email, emailStatus, emailHerkunft. Mehrere Treffer → Tabelle Name | Rolle | Firma | Ort | E-Mail | Herkunft und nach der richtigen Person fragen. " +
+      EMAIL_STATUS_HINWEIS + " Keine E-Mail vorhanden → das sagen; selbst keine Adresse bilden oder raten. " +
       "bereich 'pool' NUR auf ausdrueckliche Nachfrage nach Personen AUSSERHALB der Firmenliste: hoechstens 5 Treffer mit Name, Firma und Ort, ohne Rolle und ohne E-Mail; mehr erst nach Aufnahme der Firma (import_companies mit companyIds, nur auf Wunsch).",
     parameters: {
       type: "object",
@@ -616,8 +620,10 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       return {
         ...r,
         treffer: r.treffer.map((t) => {
-          const { emailQuelle, emailKonfidenz, ...rest } = t as { emailQuelle?: string | null; emailKonfidenz?: number | null };
-          return { ...rest, ...(t.email ? { emailHerkunft: quellenGruppe(emailQuelle) ?? emailQuelle ?? null } : {}) };
+          // emailAbgeleitet faellt weg: „abgeleitet“ klang wie „unsicher“, auch bei
+          // einer vom Mailserver bestaetigten Adresse. Der Status sagt es genau.
+          const { emailQuelle, emailKonfidenz, emailAbgeleitet, ...rest } = t as { emailQuelle?: string | null; emailKonfidenz?: number | null; emailAbgeleitet?: boolean };
+          return { ...rest, ...(t.email ? { emailStatus: emailStatus(emailQuelle), emailHerkunft: emailHerkunft(emailQuelle) } : {}) };
         }),
         ...(r.anzahl === 0 && r.bereich === "bestand" ? { hinweis: "Keine Person dieses Namens in den eigenen Firmen. Mit dem Nutzer den naechsten Suchweg abstimmen (Firma suchen und verarbeiten, CRM, Personen ausserhalb der Firmenliste)." } : {}),
       };
@@ -1474,7 +1480,89 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // PM-2026-0045 (Patrick, TMS Turnkey Manufacturing Solutions, Linz): die Suche fand nur
+  // Drittseiten, weil die Firma unter dem Namen ihrer Gruppe auftritt (valianttms.com).
+  // Der Nutzer kennt die Website: festlegen, Website-Stufe neu laufen lassen.
+  const websiteFestlegen = defineTool({
+    name: "company_website_festlegen",
+    summary: "Website einer Firma festlegen, wenn AVA keine oder die falsche gefunden hat und der Nutzer die richtige kennt; die Website-Stufe läuft danach neu.",
+    category: "firma website homepage domain festlegen setzen korrigieren falsch fehlt nicht gefunden",
+    description:
+      "Nutze es, wenn der Nutzer sagt, AVA habe die Website einer Firma nicht gefunden oder eine falsche, und die richtige Adresse nennt (\"die Website ist valianttms.com\"). " +
+      "Prueft die Adresse (erreichbar, eigene Domain, kein Verzeichnis), fragt nach, speichert sie als Vorgabe fuer alle kuenftigen Laeufe und laesst die Website-Stufe neu laufen; " +
+      "Profil, Kontakte und E-Mail-Adressen folgen danach von selbst. companyId vorher per company_search aufloesen. " +
+      "entfernen=true nimmt eine frueher festgelegte Website zurueck (AVA sucht dann wieder selbst).",
+    parameters: {
+      type: "object",
+      required: ["companyId"],
+      properties: {
+        companyId: { type: "string" },
+        website: { type: "string", description: "Adresse oder Domain der Firmen-Website, z. B. valianttms.com" },
+        entfernen: { type: "boolean", description: "true = festgelegte Website zuruecknehmen" },
+      },
+    },
+    schema: yup
+      .object({
+        companyId: yup.string().trim().min(1).required(),
+        website: yup.string().trim().max(300).optional(),
+        entfernen: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { abgebrochen?: boolean; abgelehnt?: string; domain?: string; entfernt?: boolean; neuLauf?: boolean }) =>
+      r.abgebrochen ? "abgebrochen" : r.abgelehnt ? `abgelehnt: ${r.abgelehnt}` : r.entfernt !== undefined ? (r.entfernt ? "Vorgabe entfernt" : "keine Vorgabe vorhanden") : `${r.domain ?? "?"} festgelegt${r.neuLauf ? ", Website-Stufe läuft neu" : ""}`,
+    run: async (args, c) => {
+      if (args.entfernen) {
+        const value = await c.ui.confirmAction(
+          {
+            kind: "mutating",
+            prompt: "Die festgelegte Website dieser Firma zurücknehmen? AVA sucht die Website beim nächsten Lauf wieder selbst.",
+            confirmValue: "entfernen",
+            options: [{ value: "entfernen", label: "Zurücknehmen" }, { value: "nein", label: "Abbrechen" }],
+          },
+          c.signal,
+        );
+        if (value !== "entfernen") return { ok: false, abgebrochen: true };
+        const r = await gateway.request<{ entfernt: boolean }>(`/v1/companies/${encodeURIComponent(args.companyId)}/website-vorgabe`, { method: "DELETE", signal: c.signal });
+        return { ok: true, entfernt: r.entfernt };
+      }
+      if (!args.website) return { ok: false, abgelehnt: "keine Adresse", hinweis: "Den Nutzer nach der Adresse der Firmen-Website fragen." };
+      const gate = await pruefeFirmenDomain(args.website);
+      if (!gate.ok) return { ok: false, abgelehnt: gate.grund ?? "abgelehnt", hinweis: gateHinweis(gate.grund) };
+      const domain = gate.domain ?? args.website;
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `${domain} als Website dieser Firma festlegen${gate.titel ? ` („${gate.titel.slice(0, 80)}“)` : ""}? AVA liest dann diese Website und nutzt sie auch bei allen späteren Läufen.`,
+          confirmValue: "festlegen",
+          options: [{ value: "festlegen", label: "Festlegen" }, { value: "nein", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "festlegen") return { ok: false, abgebrochen: true };
+      await gateway.request(`/v1/companies/${encodeURIComponent(args.companyId)}/website-vorgabe`, { method: "PUT", body: { url: gate.url ?? args.website }, signal: c.signal });
+      // Website-Stufe im juengsten Vorgang der Firma neu anstossen (die Vorgabe hat die
+      // Frische der Stufe geloescht, der Lauf wird also nicht als "frisch" uebersprungen).
+      let transactionId: string | null = null;
+      try {
+        const m = await gateway.request<{ companies?: MatrixZeile[] }>("/v1/companies/matrix", { query: { companyId: args.companyId, pageNumber: 1, pageSize: 1 }, signal: c.signal });
+        transactionId = verarbeitungsstand(args.companyId, (m.companies ?? []).find((z) => z.companyId === args.companyId) ?? null).transactionId;
+      } catch {
+        transactionId = null;
+      }
+      if (!transactionId || isProcessingPaused()) {
+        return { ok: true, domain, neuLauf: false, hinweis: isProcessingPaused() ? PROCESSING_PAUSED_MESSAGE : "Festgelegt. Die Firma ist noch nicht aufbereitet: mit import_companies aufnehmen, dann nutzt AVA diese Website." };
+      }
+      try {
+        await gateway.request(`/v1/transactions/${encodeURIComponent(transactionId)}/entities/${encodeURIComponent(args.companyId)}/retry`, { method: "POST", body: { stage: "website" }, signal: c.signal });
+        return { ok: true, domain, neuLauf: true, transactionId, hinweis: "Dem Nutzer sagen, dass AVA die Website jetzt liest und sich meldet; mit aufgabe_beobachten(transactionId) dranbleiben." };
+      } catch (err) {
+        return { ok: true, domain, neuLauf: false, hinweis: `Festgelegt, der Neustart der Website-Stufe schlug fehl (${err instanceof Error ? err.message.slice(0, 120) : String(err)}); retry_stage website mit transactionId ${transactionId} versuchen.` };
+      }
+    },
+  });
+
   return [
+    websiteFestlegen,
     personHerkunft,
     personHinweis,
     personInformed,

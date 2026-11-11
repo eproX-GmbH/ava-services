@@ -21,6 +21,7 @@ import {
   addDirectCandidates,
   startScan,
   saveProfile,
+  profilFehlerMerken,
   saveDecisions,
   clearDecisions,
   findRegisterCandidates,
@@ -440,6 +441,40 @@ discoveryRouter.openapi(saveProfileRoute, async (c) => {
     );
   }
   return c.json({ saved: true }, 200);
+});
+
+// PM-2026-0046 — Grund fuer ein fehlendes Mini-Profil am Kandidaten merken.
+const profilFehlerRoute = createRoute({
+  method: "put",
+  path: "/discovery/candidates/{discoveryId}/profil-fehler",
+  tags: ["discovery"],
+  summary:
+    "Grund fuer ein fehlgeschlagenes Mini-Profil merken. dauerhaft=true (robots.txt, keine Firmen-Website) nimmt den Kandidaten 30 Tage aus dem Profil-Backlog.",
+  request: {
+    params: z.object({ discoveryId: z.string().min(4).max(100) }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ grund: z.string().trim().min(3).max(200), dauerhaft: z.boolean() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ gemerkt: z.boolean() }) } }, description: "gemerkt (false: unbekannt oder schon profiliert)" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+  },
+});
+
+discoveryRouter.openapi(profilFehlerRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const { discoveryId } = c.req.valid("param");
+  const { grund, dauerhaft } = c.req.valid("json");
+  const gemerkt = await profilFehlerMerken(getGatewayPool(), { discoveryId, grund, dauerhaft });
+  return c.json({ gemerkt }, 200);
 });
 
 // ---- GET /discovery/candidates ---------------------------------------------

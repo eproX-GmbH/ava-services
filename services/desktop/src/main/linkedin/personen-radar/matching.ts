@@ -15,6 +15,7 @@
 
 import type { GatewayClient } from "../../agent/gateway-client";
 import { domainFromUrl } from "../../discovery/scan";
+import { keineFirmenDomain } from "../../discovery/keine-firmenseite";
 import {
   fetchCompanyWebsite,
   fetchCurrentPositions,
@@ -101,7 +102,7 @@ export async function resolveEngagerCompanies(args: {
         );
         kosten += c.kosteneinheiten;
         const domain = domainFromUrl(c.website);
-        if (domain && !DIRECTORY_RE.test(domain) && !seenDomains.has(domain)) {
+        if (domain && !DIRECTORY_RE.test(domain) && !keineFirmenDomain(domain) && !seenDomains.has(domain)) {
           seenDomains.add(domain);
           out.push({
             konfidenz: "hart",
@@ -170,7 +171,7 @@ async function serpDomainLookup(
     });
     const domains = (body.organic_results ?? [])
       .map((o) => domainFromUrl(o.link ?? o.domain))
-      .filter((d): d is string => !!d && !DIRECTORY_RE.test(d));
+      .filter((d): d is string => !!d && !DIRECTORY_RE.test(d) && !keineFirmenDomain(d));
     // Konservativ: nur wenn das beste Nicht-Verzeichnis-Ergebnis auch
     // wirklich vorn steht (Position 1 oder 2 der Gesamtliste).
     const all = (body.organic_results ?? []).map((o) => domainFromUrl(o.link ?? o.domain));
