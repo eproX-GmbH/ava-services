@@ -13,6 +13,8 @@ import { authMiddleware } from "../middleware/auth";
 import { AppStrom } from "../lib/app-strom";
 import { kopfRelais } from "../lib/kopf-relais";
 import { logger } from "../lib/logger";
+import { getGatewayPool } from "../lib/producer-pools";
+import { vermerkeNutzung } from "../lib/nutzer-aktivitaet";
 
 /** Erlaubte Anfragen und ihre Frist. */
 const ARTEN: Record<string, number> = {
@@ -120,6 +122,8 @@ appRouter.post("/v1/app/anfrage/:art", async (c) => {
   } catch {
     /* leerer Body */
   }
+  // Konsole „Aktive Nutzer“: eine Chat-Nachricht aus der App ist Nutzung (Abrufe wie stand/gespraeche nicht).
+  if (art === "senden" || art === "bild") vermerkeNutzung(getGatewayPool(), { actorId: auth.actorId, tenantId: auth.tenantId ?? null, art: "Chat (App)" });
   const r = await kopfRelais.appAnfrage(auth.actorId, art, daten, { instanzId: c.req.query("instanz") ?? null, timeoutMs: frist });
   if (!r) return c.json({ code: "ava_offline", message: "Deine AVA ist gerade nicht verbunden (Desktop-App oder Server läuft nicht)." }, 409);
   let inhalt: unknown;

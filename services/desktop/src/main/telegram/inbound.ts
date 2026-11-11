@@ -139,10 +139,22 @@ export class TelegramInbound {
     this.getWorkflows = deps.getWorkflows;
   }
 
+  /**
+   * 2026-11-11: Abgemeldet (auch: Zugang vom AVA-Team gesperrt) nimmt AVA keine
+   * Telegram-Nachrichten an. Vorher lief das Long-Polling weiter und AVA antwortete
+   * mit eigenem KI-Schluessel, ohne an Daten zu kommen. Beim Anmelden ruft der
+   * Aufrufer wieder sync() (dort haengt auch die Organisationsvorgabe).
+   */
+  private angemeldet = true;
+  setAngemeldet(an: boolean): void {
+    this.angemeldet = an;
+    if (!an) this.stop();
+  }
+
   /** Startet/stoppt anhand der aktuellen Konfiguration. Idempotent. */
   sync(): void {
     const cfg = this.store.getConfig();
-    const should = cfg.inboundEnabled && cfg.chatId !== null;
+    const should = this.angemeldet && cfg.inboundEnabled && cfg.chatId !== null;
     if (should && !this.running) this.start();
     else if (!should && this.running) this.stop();
   }

@@ -711,3 +711,12 @@ export async function kontoInKeycloakDeaktivieren(sub: string): Promise<void> {
   if (!r.ok) throw new Error(`Keycloak-Nutzer nicht deaktiviert (${r.status}: ${(await r.text()).slice(0, 200)})`);
   await sitzungenBeenden(sub);
 }
+
+/** Sperre durch das AVA-Team (Betreiber-Konsole): Anmeldung aus- bzw. wieder einschalten.
+ *  Anders als Loeschen/Deaktivieren bleiben E-Mail und Namen unveraendert; beim Sperren
+ *  werden alle Sitzungen beendet, damit die App sofort abgemeldet ist. */
+export async function kontoInKeycloakSperren(sub: string, gesperrt: boolean): Promise<void> {
+  const r = await adminFetch(`/users/${encodeURIComponent(sub)}`, { method: "PUT", body: JSON.stringify({ enabled: !gesperrt }) });
+  if (!r.ok) throw new Error(`Keycloak-Nutzer nicht ${gesperrt ? "gesperrt" : "entsperrt"} (${r.status}: ${(await r.text()).slice(0, 200)})`);
+  if (gesperrt) await sitzungenBeenden(sub);
+}

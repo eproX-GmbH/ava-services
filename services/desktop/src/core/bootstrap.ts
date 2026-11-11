@@ -1961,6 +1961,10 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
 
   const agent = new AgentOrchestrator({
     providers,
+    // Betreiber-Konsole „Aktive Nutzer“: Kanal je Chat-Nachricht (kein Inhalt).
+    meldeNutzung: (kanal) => {
+      void gatewayClient.request("/v1/nutzung", { method: "POST", body: { art: "chat", kanal } }).catch(() => undefined);
+    },
     // v0.1.468 — EIN Modus fuer Chat, Telegram und Mail; der
     // Orchestrator klammert Mail selbst auf max. "additive".
     getAutonomyLevel: () => autonomyStore.asLevel(),
@@ -2175,6 +2179,13 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     },
   });
   telegramInbound.onKonflikt = () => mcpRelais.zustandMelden();
+  // Abgemeldet (auch: Zugang vom AVA-Team gesperrt) kein Telegram-Empfang (2026-11-11).
+  telegramInbound.setAngemeldet(auth.getStatus().signedIn === true);
+  auth.on("status", (st: AuthStatus) => {
+    const an = st.signedIn === true;
+    telegramInbound?.setAngemeldet(an);
+    if (an && featureEnabled("telegram")) telegramInbound?.sync();
+  });
   if (featureEnabled("telegram")) telegramInbound.sync();
   else console.log("[telegram] nicht gestartet — Organisationsvorgabe: Telegram aus");
   lifecycle().onBeforeQuit(() => quitStep("telegramInbound.stop", () => telegramInbound?.stop()));
@@ -2473,6 +2484,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       supervisor: mailSupervisor,
       store: mailSupervisor.getStore(),
       orchestrator: agent,
+      angemeldet: () => auth.getStatus().signedIn === true,
     });
     bridge.start();
   } catch (err) {

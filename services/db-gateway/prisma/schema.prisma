@@ -1470,8 +1470,12 @@ model NutzerAktivitaet {
   zuletztAt DateTime @default(now()) @db.Timestamptz(6)
   erstesAt  DateTime @default(now()) @db.Timestamptz(6)
   anfragen  Int      @default(0)
+  genutztAt      DateTime? @db.Timestamptz(6)
+  genutztArt     String?
+  nutzungMinuten Int       @default(0)
 
   @@index([zuletztAt(sort: Desc)], map: "NutzerAktivitaet_zuletzt_idx")
+  @@index([genutztAt(sort: Desc)], map: "NutzerAktivitaet_genutzt_idx")
 }
 
 /// Vorgangsname, den der Nutzer beim Import vergeben hat (Gateway-Overlay ueber master-data).
@@ -1544,6 +1548,7 @@ model KontoStatus {
   domain  String?
   fehler  String?
   am      DateTime @default(now()) @db.Timestamptz(6)
+  von     String?
 }
 
 /// Onboarding O4: Startpaket — bis zu 10 Firmen des Start-Workflows zaehlen nicht aufs Kontingent (einmal je Abrechnungskonto).

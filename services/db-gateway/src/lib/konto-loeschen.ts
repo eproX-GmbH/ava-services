@@ -94,23 +94,33 @@ export async function pruefen(pool: pg.Pool, actorId: string): Promise<Pruefung>
 
 // ---- gesperrte Konten (Anmeldepruefung) ------------------------------------
 
-let geloescht: Set<string> | null = null;
+let gesperrteKonten: Map<string, string> | null = null;
 let geladenAm = 0;
 const NEU_LADEN_MS = 60_000;
 
-export async function istGeloescht(pool: pg.Pool, actorId: string): Promise<boolean> {
-  if (!geloescht || Date.now() - geladenAm > NEU_LADEN_MS) {
+/** Art der Sperre ("geloescht", "deaktiviert", "gesperrt" vom AVA-Team) oder null. Je Prozess 60 s gemerkt. */
+export async function kontoSperre(pool: pg.Pool, actorId: string): Promise<string | null> {
+  if (!gesperrteKonten || Date.now() - geladenAm > NEU_LADEN_MS) {
     try {
-      const r = await pool.query<{ actorId: string }>(`SELECT "actorId" FROM "KontoStatus"`);
-      // geloescht UND deaktiviert: beide duerfen sich nicht mehr anmelden
-      geloescht = new Set(r.rows.map((x) => x.actorId));
+      const r = await pool.query<{ actorId: string; art: string }>(`SELECT "actorId", art FROM "KontoStatus"`);
+      // alle drei Arten duerfen sich nicht mehr anmelden
+      gesperrteKonten = new Map(r.rows.map((x) => [x.actorId, x.art]));
       geladenAm = Date.now();
     } catch {
       // Tabelle fehlt (Migration ausstehend): niemanden aussperren
-      return false;
+      return null;
     }
   }
-  return geloescht.has(actorId);
+  return gesperrteKonten.get(actorId) ?? null;
+}
+
+export async function istGeloescht(pool: pg.Pool, actorId: string): Promise<boolean> {
+  return (await kontoSperre(pool, actorId)) !== null;
+}
+
+/** Nach dem Sperren/Entsperren: sofort neu laden (andere Gateway-Maschinen nach spaetestens 60 s). */
+export function sperrenNeuLaden(): void {
+  gesperrteKonten = null;
 }
 
 /** Welche der genannten Konten sind geloescht oder deaktiviert? (Kontowechsler) */
@@ -168,7 +178,7 @@ export async function kontoLoeschen(pool: pg.Pool, auth: AuthContext, deps: { ma
      ON CONFLICT ("actorId") DO UPDATE SET "art" = 'geloescht', "domain" = EXCLUDED."domain", "am" = NOW()`,
     [sub, anon.slice(anon.indexOf("@") + 1)],
   );
-  geloescht?.add(sub);
+  gesperrteKonten?.set(sub, "geloescht");
 
   // 2. Organisation verlassen (Sitz frei, Mitgliedschaft geschlossen, Abrechnungsereignis).
   if (p.organisation !== null) {
@@ -277,7 +287,7 @@ export async function kontoDeaktivieren(pool: pg.Pool, auth: AuthContext): Promi
     `INSERT INTO "KontoStatus" ("actorId", "art") VALUES ($1, 'deaktiviert') ON CONFLICT ("actorId") DO NOTHING`,
     [auth.actorId],
   );
-  geloescht?.add(auth.actorId);
+  gesperrteKonten?.set(auth.actorId, "deaktiviert");
   const fehler: string[] = [];
   // Abo der Organisation (nur diese Person) zum Periodenende beenden, keine Erstattung.
   const org = (await pool.query<{ tenantId: string }>(`SELECT "tenantId" FROM "TenantMember" WHERE "actorId" = $1`, [auth.actorId])).rows[0]?.tenantId;

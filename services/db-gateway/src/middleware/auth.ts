@@ -11,7 +11,7 @@ import { logger } from "../lib/logger";
 import { getGatewayPool } from "../lib/producer-pools";
 import { resolveTenantByMembership, tenantKind } from "../lib/membership-cache";
 import { vermerkeAktivitaet } from "../lib/nutzer-aktivitaet";
-import { istGeloescht } from "../lib/konto-loeschen";
+import { kontoSperre } from "../lib/konto-loeschen";
 
 const fallbackGeloggt = new Set<string>();
 
@@ -231,7 +231,11 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     }
     // Konto geloescht oder deaktiviert (docs/PLAN_KONTO_LOESCHEN.md): noch gueltige
     // Tokens duerfen nichts mehr tun. Die Liste ist klein und eine Minute zwischengespeichert.
-    if (await istGeloescht(getGatewayPool(), payload.sub)) {
+    const sperre = await kontoSperre(getGatewayPool(), payload.sub);
+    if (sperre === "gesperrt") {
+      return c.json({ error: "konto_gesperrt", message: "Dein Zugang zu AVA ist gesperrt. Bei Fragen: info@eprox-gmbh.de" }, 401);
+    }
+    if (sperre) {
       return c.json({ error: "konto_geloescht", message: "Dieses Konto wurde gelöscht oder deaktiviert." }, 401);
     }
     c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles: [...roles] });

@@ -1277,5 +1277,9 @@
   {
     "frage": "Wie bildest du die Adresse bei einem Namen wie Łukasz oder Søren?",
     "erwartet": "email-adressen-ableiten"
+  },
+  {
+    "frage": "Telegram reagiert nicht mehr, seit ich in AVA abgemeldet wurde",
+    "erwartet": "telegram-antwortet-nicht"
   }
 ]

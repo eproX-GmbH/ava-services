@@ -32,6 +32,7 @@ import {
   type Signal,
 } from "../../lib/relevanz-score";
 import { loadFeatures } from "../../lib/policy-guard";
+import { signalText, vermerkeNutzung } from "../../lib/nutzer-aktivitaet";
 import { ErrorShape } from "./schemas";
 
 export const relevanzRouter = new OpenAPIHono();
@@ -211,6 +212,8 @@ relevanzRouter.openapi(schreibRoute, async (c) => {
 
   let angenommen = 0;
   let doppelt = 0;
+  // Signale entstehen nur durch Handlungen in der App: Konsole „Aktive Nutzer“.
+  let juengstes: { at: Date; art: string } | null = null;
   const betroffen = new Map<string, { zielArt: string; zielId: string }>();
   const gewichte = new Map<string, number>();
 
@@ -230,6 +233,8 @@ relevanzRouter.openapi(schreibRoute, async (c) => {
     );
     if (r.rowCount === 0) { doppelt++; continue; }
     angenommen++;
+    const zp = new Date(s.zeitpunkt);
+    if (!juengstes || zp > juengstes.at) juengstes = { at: zp, art: s.art };
     betroffen.set(schluessel, { zielArt: s.zielArt, zielId: s.zielId });
     if (s.gewicht !== undefined) gewichte.set(schluessel, s.gewicht);
   }
@@ -252,6 +257,7 @@ relevanzRouter.openapi(schreibRoute, async (c) => {
     }
   }
 
+  if (juengstes) vermerkeNutzung(pool, { actorId, tenantId, art: signalText(juengstes.art), at: juengstes.at });
   return c.json({ angenommen, doppelt }, 200);
 });
 

@@ -26,6 +26,7 @@ import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { kopfRelais } from "../lib/kopf-relais";
 import { getGatewayPool } from "../lib/producer-pools";
+import { mcpClient, vermerkeNutzung } from "../lib/nutzer-aktivitaet";
 import { loadFeatures } from "../lib/policy-guard";
 import { istMcpHost, mcpBasis } from "./mcp-oauth";
 import { avaKontext, KONTEXT_BESCHREIBUNG, KONTEXT_WERKZEUG } from "../lib/mcp-kontext";
@@ -521,6 +522,8 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
   async function bearbeite(c: Context) {
     const auth = c.get("auth");
     const token = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    // Konsole „Aktive Nutzer“: nur tools/call zaehlt als Nutzung (Connector-Abfragen wie tools/list nicht).
+    const ua = c.req.header("user-agent") ?? null;
     let payload: unknown;
     try {
       payload = await c.req.json();
@@ -567,11 +570,13 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
             const start = Date.now();
             const erg = await kopfRelais.aufrufen(auth.actorId, name, args);
             logger.info({ actorId: auth.actorId, tenantId: auth.tenantId, tool: name, ms: Date.now() - start, fehler: erg.isError === true, kopf: true }, "[mcp] tools/call");
+            vermerkeNutzung(getGatewayPool(), { actorId: auth.actorId, tenantId: auth.tenantId ?? null, art: `${mcpClient(ua)}: ${name}` });
             antworten.push({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: erg.text }], ...(erg.isError ? { isError: true } : {}) } });
           } else if (name === KONTEXT_WERKZEUG) {
             const start = Date.now();
             const text = await avaKontext(auth, schalter, 20_000);
             logger.info({ actorId: auth.actorId, tenantId: auth.tenantId, tool: name, ms: Date.now() - start }, "[mcp] tools/call");
+            vermerkeNutzung(getGatewayPool(), { actorId: auth.actorId, tenantId: auth.tenantId ?? null, art: `${mcpClient(ua)}: ${name}` });
             antworten.push({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }] } });
           } else if (!tool || !sichtbareTools(schalter).includes(tool)) {
             antworten.push(rpcFehler(id, -32602, `Unbekanntes oder abgeschaltetes Werkzeug: ${name}`));
@@ -579,6 +584,7 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
             const start = Date.now();
             const erg = await fuehreAus(app, token, name, args);
             logger.info({ actorId: auth.actorId, tenantId: auth.tenantId, tool: name, ms: Date.now() - start, fehler: erg.isError === true }, "[mcp] tools/call");
+            vermerkeNutzung(getGatewayPool(), { actorId: auth.actorId, tenantId: auth.tenantId ?? null, art: `${mcpClient(ua)}: ${name}` });
             antworten.push({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: erg.text }], ...(erg.isError ? { isError: true } : {}) } });
           }
         } else {

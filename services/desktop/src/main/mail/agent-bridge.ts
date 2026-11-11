@@ -35,6 +35,8 @@ export interface MailAgentBridgeOptions {
   supervisor: MailSupervisor;
   store: MailStore;
   orchestrator: AgentOrchestrator;
+  /** false = abgemeldet/gesperrt: keine Antworten auf Mails. */
+  angemeldet?: () => boolean;
 }
 
 export class MailAgentBridge {
@@ -55,11 +57,13 @@ export class MailAgentBridge {
    * von vorne an, was OK ist (Quota im DB-Store fängt Loops).
    */
   private readonly triggeredMailIds = new Set<string>();
+  private readonly angemeldet?: () => boolean;
 
   constructor(opts: MailAgentBridgeOptions) {
     this.supervisor = opts.supervisor;
     this.store = opts.store;
     this.orchestrator = opts.orchestrator;
+    this.angemeldet = opts.angemeldet;
   }
 
   start(): void {
@@ -98,6 +102,11 @@ export class MailAgentBridge {
     // erfolgreich getriggert hat, soll der updated-Fallback ignorieren.
     if (this.triggeredMailIds.has(msg.id)) {
       console.log(`[mail-agent-bridge] skip ${msg.id} (${source}): already triggered`);
+      return;
+    }
+    // 2026-11-11: Abgemeldet (auch: Zugang gesperrt) beantwortet AVA keine Mails.
+    if (this.angemeldet && !this.angemeldet()) {
+      console.log(`[mail-agent-bridge] skip ${msg.id} (${source}): nicht angemeldet`);
       return;
     }
     // v0.1.332 — Archivierte Mails NIE triggern. Der User hat sie

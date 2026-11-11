@@ -16,6 +16,7 @@
 // firma_suchen.
 
 import { Hono } from "hono";
+import { vermerkeNutzung } from "../lib/nutzer-aktivitaet";
 import type { Context } from "hono";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createMiddleware } from "hono/factory";
@@ -345,6 +346,7 @@ async function sendeNachricht(u: Umfeld, params: Record<string, unknown>): Promi
   const bekannt = bekannteSkills(u);
   const absicht = absichtErmitteln(nachricht, bekannt);
   const z = await taskAnlegen(pool, { tenantId: u.tenantId, actorId: u.actorId, skill: absicht.skill || (bekannt.has(FRAGEN_SKILL) ? FRAGEN_SKILL : "firma_suchen"), eingabe: nachricht, contextId: nachricht.contextId ?? null, push });
+  vermerkeNutzung(pool, { actorId: u.actorId, tenantId: u.tenantId, art: `A2A: ${z.skill}` });
   return taskAusfuehren(u, z, absicht);
 }
 

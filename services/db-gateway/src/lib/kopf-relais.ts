@@ -25,6 +25,8 @@ import type { Duplex } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { logger } from "./logger";
+import { getGatewayPool } from "./producer-pools";
+import { vermerkeAppVersion } from "./nutzer-aktivitaet";
 
 export interface KopfWerkzeug {
   name: string;
@@ -225,6 +227,8 @@ export class KopfRelais {
       k.flyApp = k.art === "server" && typeof n.instanz?.flyApp === "string" ? n.instanz.flyApp.trim().toLowerCase().slice(0, 63) || null : null;
       this.zustandSetzen(k, n.zustand);
       logger.info({ actorId: k.actorId, instanz: k.instanzId, art: k.art, version: k.version, werkzeuge: k.werkzeuge.length }, "[kopf-relais] Instanz verbunden");
+      // Konsole „Aktive Nutzer“: Version auch von Apps, die x-ava-version noch nicht mitsenden.
+      vermerkeAppVersion(getGatewayPool(), { actorId: k.actorId, version: k.version });
       this.verteileListe(k.actorId);
       this.instanzVerbundenHandler?.(k.actorId, k.instanzId);
       return;
@@ -334,6 +338,19 @@ export class KopfRelais {
     const ids = new Set(live.map((i) => i.id));
     const alt = [...(this.vergangen.get(actorId)?.values() ?? [])].filter((i) => !ids.has(i.id));
     return [...live, ...alt].sort((a, b) => (a.verbunden === b.verbunden ? a.art.localeCompare(b.art) : a.verbunden ? -1 : 1));
+  }
+
+  /** Alle Verbindungen eines Nutzers schliessen (Sperre durch das AVA-Team); ein Neuaufbau scheitert an der Anmeldepruefung. */
+  trennenAlle(actorId: string): number {
+    const liste = [...(this.koepfe.get(actorId)?.values() ?? [])];
+    for (const k of liste) {
+      try {
+        k.ws.close(4003, "konto_gesperrt");
+      } catch {
+        /* schon zu */
+      }
+    }
+    return liste.length;
   }
 
   verbunden(actorId: string): boolean {

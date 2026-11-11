@@ -200,6 +200,12 @@ export interface AgentOrchestratorOptions {
    * kanal-spezifische Vollmacht aus v0.1.462.
    */
   getAutonomyLevel?: () => AutonomyLevel;
+  /**
+   * Betreiber-Konsole „Aktive Nutzer“ (2026-11-11): je Nachricht eines Menschen den
+   * Kanal melden (nur Kanal, kein Inhalt). Notizen des Aufgaben-Waechters, Mails und
+   * Hintergrundlaeufe zaehlen nicht. Nie blockierend.
+   */
+  meldeNutzung?: (kanal: "desktop" | "telegram" | "app" | "stimme") => void;
 }
 
 export interface AgentOrchestratorEvents {
@@ -259,6 +265,7 @@ export class AgentOrchestrator extends EventEmitter {
    *  sobald ein Turn beendet ist und der Provider Token-Counts
    *  geliefert hat. */
   private readonly onUsage?: AgentOrchestratorOptions["onUsage"];
+  private readonly meldeNutzung?: AgentOrchestratorOptions["meldeNutzung"];
   private readonly estimateCost?: AgentOrchestratorOptions["estimateCost"];
   /** v0.1.405 — Tages-Token-Limit-Gate (siehe Options-Doc). */
   private readonly checkDailyLimit?: AgentOrchestratorOptions["checkDailyLimit"];
@@ -304,6 +311,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.vorschlaegeNachTurn = opts.vorschlaegeNachTurn;
     this.skillsPrefs = opts.skillsPrefs;
     this.onUsage = opts.onUsage;
+    this.meldeNutzung = opts.meldeNutzung;
     this.estimateCost = opts.estimateCost;
     this.checkDailyLimit = opts.checkDailyLimit;
     this.onAudit = opts.onAudit;
@@ -530,6 +538,13 @@ export class AgentOrchestrator extends EventEmitter {
     }
 
     const requestId = randomUUID();
+    // send() kommt immer von einem Menschen (Chat, App, Sprache); Notizen des
+    // Aufgaben-Waechters laufen ueber meldeAufgabe, nicht hierueber.
+    try {
+      this.meldeNutzung?.(input.quelle === "sprache" ? "stimme" : input.quelle === "app" ? "app" : "desktop");
+    } catch {
+      /* Beiwerk */
+    }
     const convo = this.getOrCreateConversation(input.conversationId);
     // v0.1.579 — Eine ueber Telegram/Mail gestartete Konversation wird am
     // Rechner fortgesetzt: Der Nutzer sitzt jetzt VOR der App, also gelten
@@ -771,6 +786,13 @@ export class AgentOrchestrator extends EventEmitter {
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
     source?: "telegram" | "mail" | "aufgabe" | "mcp";
   }): { conversationId: string; requestId: string } | null {
+    if (input.source === "telegram") {
+      try {
+        this.meldeNutzung?.("telegram");
+      } catch {
+        /* Beiwerk */
+      }
+    }
     const status = this.getStatus();
     if (!status.ready) {
       console.warn(

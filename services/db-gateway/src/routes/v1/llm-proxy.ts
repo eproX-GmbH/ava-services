@@ -12,6 +12,7 @@
 // NUR gespeichert, wenn TenantPolicy.promptAudit gesetzt ist.
 
 import { azureBaseURL, azureDeployment } from "../../lib/azure-openai";
+import { vermerkeNutzung } from "../../lib/nutzer-aktivitaet";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import type { Context } from "hono";
@@ -450,6 +451,9 @@ async function recordUsage(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [id, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel, e.quelle ?? null, e.kontext ?? null, e.preisCents ?? null],
     );
+    // Konsole „Aktive Nutzer“: Chat ueber den Organisationsschluessel ist Nutzung (Apps mit eigenem
+    // Schluessel melden ihre Chat-Nachrichten ueber POST /v1/nutzung).
+    if (e.channel === "chat") vermerkeNutzung(pool, { actorId: e.actorId, tenantId: e.tenantId, art: "Chat" });
     return id;
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage insert failed");
@@ -515,6 +519,7 @@ llmProxyRouter.openapi(usageRoute, async (c) => {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage (sprachmodus) insert failed");
     return c.json({ ok: false, costMicroUsd: cost }, 200);
   }
+  if ((b.channel ?? "chat") === "chat") vermerkeNutzung(getGatewayPool(), { actorId: auth.actorId, tenantId: auth.tenantId ?? null, art: "Sprachmodus" });
   return c.json({ ok: true, costMicroUsd: cost }, 200);
 });
 
