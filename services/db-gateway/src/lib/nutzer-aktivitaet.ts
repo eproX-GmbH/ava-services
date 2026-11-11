@@ -92,7 +92,7 @@ const zuletztGezaehlt = new Map<string, number>();
  * der Text fuer die Konsole ("Chat (Telegram)", "MCP (Claude): firma_lesen").
  * nutzungMinuten zaehlt hoechstens einmal je Minute und Nutzer. Nie blockierend.
  */
-export function vermerkeNutzung(pool: Pool, e: { actorId: string; tenantId: string | null; art: string; at?: Date }): void {
+export function vermerkeNutzung(pool: Pool, e: { actorId: string; tenantId: string | null; art: string; at?: Date; schwach?: boolean }): void {
   const jetzt = Date.now();
   const at = e.at && e.at.getTime() < jetzt ? e.at : new Date(jetzt);
   const letzte = zuletztGezaehlt.get(e.actorId) ?? 0;
@@ -104,10 +104,13 @@ export function vermerkeNutzung(pool: Pool, e: { actorId: string; tenantId: stri
       `INSERT INTO "NutzerAktivitaet" ("actorId", "tenantId", geraet, "zuletztAt", anfragen, "erstesAt", "genutztAt", "genutztArt", "nutzungMinuten")
        VALUES ($1, $2, 'unbekannt', NOW(), 0, NOW(), $3, $4, $5)
        ON CONFLICT ("actorId") DO UPDATE SET
-         "genutztArt" = CASE WHEN "NutzerAktivitaet"."genutztAt" IS NULL OR $3 >= "NutzerAktivitaet"."genutztAt" THEN $4 ELSE "NutzerAktivitaet"."genutztArt" END,
+         -- Eine schwache Angabe ("Chat" aus dem KI-Proxy, folgt jeder Desktop-Nachricht) ersetzt
+         -- keine genauere ("Chat (Desktop)") aus den letzten 10 Minuten.
+         "genutztArt" = CASE WHEN $6 AND "NutzerAktivitaet"."genutztAt" > $3 - INTERVAL '10 minutes' THEN "NutzerAktivitaet"."genutztArt"
+                             WHEN "NutzerAktivitaet"."genutztAt" IS NULL OR $3 >= "NutzerAktivitaet"."genutztAt" THEN $4 ELSE "NutzerAktivitaet"."genutztArt" END,
          "genutztAt" = GREATEST(COALESCE("NutzerAktivitaet"."genutztAt", $3), $3),
          "nutzungMinuten" = "NutzerAktivitaet"."nutzungMinuten" + $5`,
-      [e.actorId, e.tenantId, at, e.art.slice(0, 120), zaehlen ? 1 : 0],
+      [e.actorId, e.tenantId, at, e.art.slice(0, 120), zaehlen ? 1 : 0, e.schwach === true],
     )
     .catch(() => undefined);
 }

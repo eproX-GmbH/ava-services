@@ -453,7 +453,7 @@ async function recordUsage(
     );
     // Konsole „Aktive Nutzer“: Chat ueber den Organisationsschluessel ist Nutzung (Apps mit eigenem
     // Schluessel melden ihre Chat-Nachrichten ueber POST /v1/nutzung).
-    if (e.channel === "chat") vermerkeNutzung(pool, { actorId: e.actorId, tenantId: e.tenantId, art: "Chat" });
+    if (e.channel === "chat") vermerkeNutzung(pool, { actorId: e.actorId, tenantId: e.tenantId, art: "Chat", schwach: true });
     return id;
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage insert failed");

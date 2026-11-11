@@ -30,6 +30,10 @@ assert.equal(aufrufe[1].p[4], 0, "zweite Nutzung derselben Minute zaehlt nicht d
 assert.equal(aufrufe[1].p[3], "MCP (Claude): firma_lesen");
 assert.ok(aufrufe[2].p[2].getTime() <= Date.now(), "Zeitpunkt aus der Zukunft wird auf jetzt begrenzt");
 assert.match(aufrufe[0].sql, /GREATEST/);
+A.vermerkeNutzung(pool, { actorId: "u3", tenantId: "t1", art: "Chat", schwach: true });
+assert.equal(aufrufe[3].p[5], true, "KI-Proxy-Chat ist eine schwache Angabe");
+assert.equal(aufrufe[0].p[5], false);
+assert.match(aufrufe[3].sql, /INTERVAL '10 minutes'/);
 
 // Version aus der Relais-Anmeldung, "?" (unbekannt) wird ignoriert
 aufrufe.length = 0;
