@@ -17,6 +17,7 @@
 // styles.css plus a couple of local rules already in the LinkedIn
 // modal's overlay vocabulary.
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -141,7 +142,11 @@ export function CrmLinkPicker({
     }
   }
 
-  return (
+  // 2026-11-12 — Portal an document.body (Befund Marc-Antonio, Firmenansicht): Der Dialog
+  // lag in einer .panel-Karte, deren :hover ein transform setzt. Ein transform am Vorfahren
+  // macht ihn zum Bezugsrahmen fuer position: fixed — der Dialog sprang beim Ueberfahren
+  // zwischen Karte und Fenster hin und her und flackerte.
+  return createPortal(
     <div
       className="linkedin-consent-overlay linkedin-consent-overlay--centered"
       role="dialog"
@@ -265,6 +270,7 @@ export function CrmLinkPicker({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -5,6 +5,7 @@
 // and tick the responsibility checkbox; "Aktivieren" stays disabled
 // until both happen. Esc / backdrop click cancels.
 
+import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 
 interface Props {
@@ -56,7 +57,10 @@ export function LinkedInConsentModal({ open, onClose, onAccepted }: Props) {
     }
   };
 
-  return (
+  // 2026-11-12 — Portal an document.body, vorsorglich wie CrmLinkPicker: Liegt der Dialog in
+  // einem Vorfahren mit transform (.panel:hover), richtet sich position: fixed an diesem aus
+  // und der Dialog flackert beim Ueberfahren.
+  return createPortal(
     <div
       className="linkedin-consent-overlay"
       role="dialog"
@@ -138,6 +142,7 @@ export function LinkedInConsentModal({ open, onClose, onAccepted }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
