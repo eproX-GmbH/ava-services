@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-11
+Stand: 2026-11-12
 Anzahl Tools: 317
 
 ## Firmen (31)
@@ -2969,7 +2969,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/vorschlaege.ts`
 
-Zeigt den Nutzerstand, auf dem die naechsten Schritte im Chat beruhen: Verbindungen (Mail, Telegram, HubSpot, Notion, Obsidian, LinkedIn), ICP-Stand, Radar (Automatik, bewertete und heisse Treffer, Top-Treffer), importierte Firmen, Workflows, Skills, Watchlist, E-Mail-Ableitung, Modell und Plan, Organisation, gesperrte Module. Dazu die Faehigkeitsgruppen, die mit den geladenen Tools und der Organisations-Policy verfuegbar sind. Nur lesend. Nutze es, um Erledigtes nicht erneut vorzuschlagen.
+Zeigt den Nutzerstand, auf dem die naechsten Schritte im Chat beruhen: Verbindungen (Mail, Telegram, HubSpot, Notion, Obsidian, LinkedIn), weitere verbundene CRM (crm, z. B. Close) und selbst angebundene Dienste (dienste, MCP/A2A wie CompLeadly). Auf 'womit/mit wem bist du verbunden' ALLE drei Teile nennen, nicht nur die Standard-Verbindungen. ICP-Stand, Radar (Automatik, bewertete und heisse Treffer, Top-Treffer), importierte Firmen, Workflows, Skills, Watchlist, E-Mail-Ableitung, Modell und Plan, Organisation, gesperrte Module. Dazu die Faehigkeitsgruppen, die mit den geladenen Tools und der Organisations-Policy verfuegbar sind. Nur lesend. Nutze es, um Erledigtes nicht erneut vorzuschlagen.
 
 _Parameter:_
 - `frisch: boolean` — Cache umgehen
