@@ -38,7 +38,8 @@ const deps = {
   gatewayRequest: async (p) => (p.startsWith("/v1/companies/matrix") ? { count: 73 } : { candidates: [{ discoveryId: "d1", name: "Muster GmbH" }] }),
   mailVerbunden: async () => true,
   telegramVerbunden: () => false,
-  crmStatus: () => [{ provider: "hubspot", connected: true }],
+  crmStatus: () => [{ provider: "hubspot", connected: true }, { provider: "close", connected: true }, { provider: "salesforce", connected: false }],
+  dienste: () => [{ name: "CompLeadly", art: "mcp", verbunden: true, werkzeuge: 88 }],
   knowledgeStatus: () => [{ kind: "notion", connected: false }, { kind: "obsidian", connected: true }],
   linkedinAktiv: () => true,
   icp: () => ({ gesetzt: true, vollstaendig: false }),
@@ -59,6 +60,10 @@ const svc = new N.NutzerstandService(deps);
 const s = await svc.get();
 check(s.verbindungen.hubspot === "verbunden" && s.verbindungen.notion === "offen" && s.verbindungen.obsidian === "verbunden", "Verbindungen aus CRM/Wissen");
 check(s.verbindungen.telegram === "gesperrt", "gesperrtes Modul → gesperrt (nicht offen)");
+// PM-2026-0049: eigene Dienste und weitere CRM stehen im Nutzerstand und im Prompt-Text.
+check(s.crm.length === 1 && s.crm[0] === "close", "weitere CRM: nur verbundene, ohne HubSpot");
+check(s.dienste.length === 1 && s.dienste[0].name === "CompLeadly", "eigene Dienste im Nutzerstand");
+check(/Eigene Dienste: CompLeadly \(MCP, verbunden, 88 Werkzeuge\)/.test(N.nutzerstandText(s)) && /weitere CRM verbunden: close/.test(N.nutzerstandText(s)), "Dienste und CRM im Prompt-Text");
 check(s.gesperrteModule.join() === "telegram", "gesperrteModule aus Policy");
 check(s.icp === "unvollstaendig", "ICP unvollstaendig");
 check(s.radar.heisseTreffer === 1 && s.radar.topTreffer?.name === "Muster GmbH" && s.radar.topTreffer.score === 88, "Top-Treffer mit Name");

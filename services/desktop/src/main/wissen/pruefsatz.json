@@ -1281,5 +1281,9 @@
   {
     "frage": "Telegram reagiert nicht mehr, seit ich in AVA abgemeldet wurde",
     "erwartet": "telegram-antwortet-nicht"
+  },
+  {
+    "frage": "Mit wem bist du gerade alles verbunden?",
+    "erwartet": "verbindungen-ueberblick"
   }
 ]

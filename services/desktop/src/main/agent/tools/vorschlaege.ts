@@ -14,9 +14,11 @@ export function buildVorschlaegeTools(deps: { get: () => NutzerstandService | nu
   const status = defineTool({
     name: "vorschlaege_status",
     summary: "Nutzerstand fuer Vorschlaege: was ist verbunden, eingerichtet, erledigt; welche Faehigkeiten stehen zur Verfuegung.",
-    category: "vorschlaege nutzerstand naechste schritte einrichtung status onboarding",
+    category: "vorschlaege nutzerstand naechste schritte einrichtung status onboarding verbindungen verbunden dienste mcp crm",
     description:
       "Zeigt den Nutzerstand, auf dem die naechsten Schritte im Chat beruhen: Verbindungen (Mail, Telegram, HubSpot, Notion, Obsidian, LinkedIn), " +
+      "weitere verbundene CRM (crm, z. B. Close) und selbst angebundene Dienste (dienste, MCP/A2A wie CompLeadly). " +
+      "Auf 'womit/mit wem bist du verbunden' ALLE drei Teile nennen, nicht nur die Standard-Verbindungen. " +
       "ICP-Stand, Radar (Automatik, bewertete und heisse Treffer, Top-Treffer), importierte Firmen, Workflows, Skills, Watchlist, E-Mail-Ableitung, " +
       "Modell und Plan, Organisation, gesperrte Module. Dazu die Faehigkeitsgruppen, die mit den geladenen Tools und der Organisations-Policy verfuegbar sind. " +
       "Nur lesend. Nutze es, um Erledigtes nicht erneut vorzuschlagen.",

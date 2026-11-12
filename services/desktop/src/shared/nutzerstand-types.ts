@@ -15,6 +15,11 @@ export interface Nutzerstand {
     obsidian: Verbindung;
     linkedin: Verbindung;
   };
+  /** Verbundene CRMs ausser HubSpot (Close, Salesforce, Dynamics); HubSpot steht oben (Vorschlags-Chips). */
+  crm: string[];
+  /** Selbst angebundene Dienste (MCP/A2A, z. B. CompLeadly). Fehlten bis 2026-11-12 in der
+   *  Uebersicht, AVA verneinte dann bestehende Verbindungen (PM-2026-0049). */
+  dienste: Array<{ name: string; art: "mcp" | "a2a"; verbunden: boolean; werkzeuge: number }>;
   icp: "fehlt" | "unvollstaendig" | "vollstaendig";
   radar: {
     automatik: boolean;

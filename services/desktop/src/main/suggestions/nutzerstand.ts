@@ -12,6 +12,7 @@ export interface NutzerstandDeps {
   crmStatus: () => Array<{ provider: string; connected: boolean }>;
   knowledgeStatus: () => Array<{ kind: string; connected: boolean }>;
   linkedinAktiv: () => boolean;
+  dienste: () => Array<{ name: string; art: "mcp" | "a2a"; verbunden: boolean; werkzeuge: number }>;
   icp: () => { gesetzt: boolean; vollstaendig: boolean };
   radarConfig: () => { enabled: boolean; lastRunAt: string | null };
   matches: () => Record<string, { score: number }>;
@@ -116,6 +117,8 @@ export class NutzerstandService {
         obsidian: this.verbindung(null, wissen.some((w) => w.kind === "obsidian" && w.connected)),
         linkedin: this.verbindung("linkedin.beobachter", d.linkedinAktiv()),
       },
+      crm: crm.filter((c) => c.connected && c.provider !== "hubspot").map((c) => c.provider),
+      dienste: d.featureAn("mcp.dienste") ? d.dienste() : [],
       icp: !icp.gesetzt ? "fehlt" : icp.vollstaendig ? "vollstaendig" : "unvollstaendig",
       radar: {
         automatik: rc.enabled,
@@ -142,8 +145,13 @@ export class NutzerstandService {
 export function nutzerstandText(s: Nutzerstand): string {
   const v = s.verbindungen;
   const verb = (Object.keys(v) as Array<keyof typeof v>).map((k) => `${k}=${v[k]}`).join(", ");
+  const crm = s.crm.length ? `; weitere CRM verbunden: ${s.crm.join(", ")}` : "";
+  const dienste = s.dienste.length
+    ? s.dienste.map((x) => `${x.name} (${x.art === "a2a" ? "Agent" : "MCP"}, ${x.verbunden ? `verbunden, ${x.werkzeuge} Werkzeuge` : "nicht erreichbar"})`).join(", ")
+    : "keine";
   const zeilen = [
-    `Verbindungen: ${verb}`,
+    `Verbindungen: ${verb}${crm}`,
+    `Eigene Dienste: ${dienste}`,
     `ICP: ${s.icp}`,
     `Radar: Automatik ${s.radar.automatik ? "an" : "aus"}, ${s.radar.bewertet} bewertet, ${s.radar.heisseTreffer} heisse Treffer${s.radar.topTreffer?.name ? `, Top: ${s.radar.topTreffer.name} (${s.radar.topTreffer.score})` : ""}`,
     `Firmen importiert: ${s.firmen.importiert ?? "unbekannt"}`,

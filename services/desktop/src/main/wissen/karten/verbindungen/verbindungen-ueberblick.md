@@ -7,12 +7,14 @@ fragen:
   - mit welchen programmen arbeitest du zusammen
   - kannst du dich mit meinen anderen apps verbinden
   - which tools can you connect to
+  - mit wem bist du alles verbunden
+  - womit bist du gerade verbunden
 schlagworte: [integrationen, integration, verbindungen, anbinden, schnittstelle, crm, hubspot, close, compleadly, notion, obsidian, telegram, mail, imap, linkedin, mcp, a2a, claude, chatgpt, copilot, tool]
 aktionen:
   - { art: app_oeffnen, ziel: crm_verbinden, label: "Verbindungen öffnen" }
   - { art: app_oeffnen, ziel: verbundene_apps, label: "Verbundene Apps öffnen" }
 gilt_fuer: [desktop]
-stand: 2026-11-07
+stand: 2026-11-12
 ---
 Unter Einstellungen → Verbindungen hängst du alles an, womit ich für dich arbeiten soll:
 
@@ -24,5 +26,7 @@ Unter Einstellungen → Verbindungen hängst du alles an, womit ich für dich ar
 - Weitere Dienste: zum Beispiel CompLeadly oder Close mit allen Funktionen, dazu fremde Agenten.
 
 Umgekehrt kannst du mich aus Claude, ChatGPT oder Microsoft Copilot heraus nutzen, wenn deine Organisation das freigeschaltet hat. Das findest du unter Konto → Verbundene Apps.
+
+Fragst du mich, womit ich gerade verbunden bin, nenne ich alles: die Verbindungen oben, ein verbundenes CRM und jeden Weiteren Dienst mit der Zahl seiner Werkzeuge.
 
 Sag mir einfach, was du verbinden willst. Für Weitere Dienste zeige ich dir eine sichere Eingabekarte im Chat, für alles andere bekommst du unter meiner Antwort einen Knopf zur richtigen Stelle. Zugangsdaten schickst du nie als normale Nachricht. Fehlt ein Abschnitt, hat deine Organisation ihn abgeschaltet.

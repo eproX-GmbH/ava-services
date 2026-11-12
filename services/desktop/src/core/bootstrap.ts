@@ -4307,6 +4307,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     crmStatus: () => crmManager.getAllStatuses().map((c) => ({ provider: String(c.provider), connected: c.connected })),
     knowledgeStatus: () => KnowledgeProviderStore.shared().snapshot().providers.map((p) => ({ kind: String(p.kind), connected: p.connected })),
     linkedinAktiv: () => readLinkedInSettings().enabled,
+    dienste: () => (mcpDienste?.liste() ?? []).map((x) => ({ name: x.name, art: x.art, verbunden: x.verbunden, werkzeuge: x.werkzeuge })),
     icp: () => ({ gesetzt: icpStore.isSet(), vollstaendig: icpStore.isComplete() }),
     radarConfig: () => {
       const c = radarSupervisor?.getConfig();
