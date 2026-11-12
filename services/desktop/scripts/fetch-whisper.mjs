@@ -32,6 +32,8 @@ import {
   rmSync,
   statSync,
   chmodSync,
+  copyFileSync,
+  readdirSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { mkdir, rename } from "node:fs/promises";
@@ -160,8 +162,12 @@ async function main() {
         } else if (target.source === "brew-cross") {
           await placeCrossBrewArtifacts(target, outDir);
           await cleanupMisplacedDylibs(outDir);
+        } else if (target.id.startsWith("win32") && !placeWindowsDlls(outDir)) {
+          // Alter Cache ohne die DLLs neben der Exe und ohne Release/: neu holen.
+          console.log(`[whisper] ${target.id}: DLLs fehlen → neu laden`);
+          rmSync(outBin, { force: true });
         }
-        continue;
+        if (existsSync(outBin)) continue;
       }
     }
 
@@ -812,6 +818,36 @@ async function extractWindowsZip(zipPath, outDir, exeName) {
   // package on; on Windows-hosted CI you'd swap in Expand-Archive.
   await runCmd("unzip", ["-o", zipPath, "-d", outDir]);
   await ensureBinary(outDir, exeName);
+  if (!placeWindowsDlls(outDir)) throw new Error(`[whisper] DLLs (${WIN_DLLS.join(", ")}) fehlen nach dem Entpacken in ${outDir}`);
+}
+
+// 2026-11-12 (PM-2026-0050): Das Zip legt alles unter Release/ ab, ensureBinary holte nur
+// die Exe nach oben. Ohne whisper.dll/ggml*.dll daneben bricht whisper-cli.exe mit
+// 0xC0000135 (STATUS_DLL_NOT_FOUND) ab, Diktat ging unter Windows nie. Die DLLs muessen
+// neben der Exe liegen; dazu app-lokal die Visual-C++-Laufzeit vom Build-Rechner
+// (windows-2022 hat sie in System32), weil nicht jeder Windows-Rechner sie installiert hat.
+const WIN_DLLS = ["whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll"];
+const VC_LAUFZEIT = ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "vcomp140.dll"];
+
+function placeWindowsDlls(outDir) {
+  const release = join(outDir, "Release");
+  if (existsSync(release)) {
+    for (const f of readdirSync(release)) {
+      if (f.toLowerCase().endsWith(".dll") && f !== "SDL2.dll") copyFileSync(join(release, f), join(outDir, f));
+    }
+    rmSync(release, { recursive: true, force: true });
+  }
+  if (process.platform === "win32") {
+    const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
+    for (const dll of VC_LAUFZEIT) {
+      const ziel = join(outDir, dll);
+      if (existsSync(ziel)) continue;
+      const quelle = join(system32, dll);
+      if (existsSync(quelle)) copyFileSync(quelle, ziel);
+      else console.warn(`[whisper] ${dll} nicht in ${system32} — Diktat braucht dann die VC++-Laufzeit auf dem Nutzerrechner`);
+    }
+  }
+  return WIN_DLLS.every((d) => existsSync(join(outDir, d)));
 }
 
 /**

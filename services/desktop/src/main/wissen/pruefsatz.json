@@ -1285,5 +1285,9 @@
   {
     "frage": "Mit wem bist du gerade alles verbunden?",
     "erwartet": "verbindungen-ueberblick"
+  },
+  {
+    "frage": "Beim Diktieren kommt Transkription fehlgeschlagen, whisper-cli exited",
+    "erwartet": "ki-diktat"
   }
 ]
