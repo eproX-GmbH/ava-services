@@ -460,6 +460,21 @@ const api = {
       ipcRenderer.invoke("discovery:radarRunNow"),
     // v0.1.636 — Live-Aktivitaet (Indikator + Popup auf der Radar-Seite).
     activity: (): Promise<import("../shared/radar-activity-types").RadarActivityState> => ipcRenderer.invoke("discovery:activity"),
+    // 2026-11-12 — Radar-Warteschlange (Importieren/Ignorieren je Zeile, sofort weg).
+    warteschlange: (): Promise<import("../shared/radar-warteschlange-types").RadarWarteStand> => ipcRenderer.invoke("discovery:warteschlange"),
+    warteschlangeHinzufuegen: (kandidaten: import("../shared/radar-warteschlange-types").RadarWarteKandidat[], entscheidung: "imported" | "dismissed"): Promise<import("../shared/radar-warteschlange-types").RadarWarteStand> =>
+      ipcRenderer.invoke("discovery:warteschlange:hinzufuegen", kandidaten, entscheidung),
+    warteschlangeRueckgaengig: (discoveryId: string): Promise<import("../shared/radar-warteschlange-types").RadarWarteStand> => ipcRenderer.invoke("discovery:warteschlange:rueckgaengig", discoveryId),
+    warteschlangeErneut: (discoveryId: string, entscheidung?: "imported" | "dismissed"): Promise<import("../shared/radar-warteschlange-types").RadarWarteStand> =>
+      ipcRenderer.invoke("discovery:warteschlange:erneut", discoveryId, entscheidung),
+    warteschlangeVerwerfen: (discoveryId: string): Promise<import("../shared/radar-warteschlange-types").RadarWarteStand> => ipcRenderer.invoke("discovery:warteschlange:verwerfen", discoveryId),
+    onWarteschlange: (cb: (stand: import("../shared/radar-warteschlange-types").RadarWarteStand) => void): (() => void) => {
+      const h = (_e: Electron.IpcRendererEvent, stand: import("../shared/radar-warteschlange-types").RadarWarteStand): void => cb(stand);
+      ipcRenderer.on("discovery:warteschlange:changed", h);
+      return () => {
+        ipcRenderer.removeListener("discovery:warteschlange:changed", h);
+      };
+    },
     onActivity: (cb: (s: import("../shared/radar-activity-types").RadarActivityState) => void): (() => void) => {
       const h = (_e: unknown, s: import("../shared/radar-activity-types").RadarActivityState) => cb(s);
       ipcRenderer.on("discovery:activity:changed", h);

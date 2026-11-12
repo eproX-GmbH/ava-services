@@ -4,13 +4,17 @@
 // heisseste zuerst (ICP-Match-Score + Warum-Kurztext), Checkbox-Auswahl
 // → Bulk-Import (volle Pipeline, eine Transaktion) ODER Ignorieren.
 // Entschiedene Firmen verschwinden aus der Tabelle.
+// 2026-11-12 (Wunsch Marc-Antonio): Importieren/Ignorieren auch je Zeile. Jeder
+// Klick geht in die Warteschlange im Hauptprozess und die Zeile ist sofort weg;
+// entschieden wird gesammelt nach kurzer Pause (Rückgängig bis dahin).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Link } from "react-router-dom";
 import { useUsage } from "../api/usage";
 import type { OrgShareRow } from "../../../shared/types";
 import { RadarActivityIndicator } from "../components/RadarActivityIndicator";
+import type { RadarWarteKandidat, RadarWarteStand } from "../../../shared/radar-warteschlange-types";
 
 interface RadarRow {
   discoveryId: string;
@@ -32,15 +36,42 @@ interface RadarRow {
  *  Free-Plan KLAR; der Rest ist geblurred (Score bleibt sichtbar). */
 const FREE_VISIBLE_MATCHES = 2;
 
+/** Ergebnis eines Laufs bleibt so lange sichtbar. */
+const ERGEBNIS_SICHTBAR_MS = 15 * 60_000;
+
+function alsKandidat(r: RadarRow): RadarWarteKandidat {
+  return { discoveryId: r.discoveryId, name: r.name, city: r.ort, plz: r.plz, domain: r.website || null, ...(r.land ? { country: r.land } : {}) };
+}
+
 export function DiscoveryRadar(): JSX.Element {
   // Kandidaten aus beobachteten Posts leben seit v0.1.865 im Bereich LinkedIn → Leads;
   // die Liste kommt bereits ohne sie (docs/PLAN_LINKEDIN_LEADS.md L7).
-  const [rows, setRows] = useState<RadarRow[]>([]);
+  const [alleRows, setRows] = useState<RadarRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<"decide" | "match" | "profile" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [warte, setWarte] = useState<RadarWarteStand | null>(null);
+  // Ids, die die Warteschlange erfolgreich verlassen haben: bis zum naechsten
+  // Neuladen ausgeblendet lassen, sonst tauchte die Zeile kurz wieder auf.
+  const [weg, setWeg] = useState<Set<string>>(new Set());
+  const zurueckgeholt = useRef<Set<string>>(new Set());
+  const vorherIds = useRef<Set<string>>(new Set());
+  const warteUebernehmen = useCallback((stand: RadarWarteStand) => {
+    const jetzt = new Set(stand.eintraege.map((e) => e.discoveryId));
+    const fertig = [...vorherIds.current].filter((id) => !jetzt.has(id) && !zurueckgeholt.current.has(id));
+    for (const id of vorherIds.current) if (!jetzt.has(id)) zurueckgeholt.current.delete(id);
+    vorherIds.current = jetzt;
+    if (fertig.length) setWeg((w) => new Set([...w, ...fertig]));
+    setWarte(stand);
+  }, []);
+  useEffect(() => {
+    void window.api.discovery.warteschlange().then(warteUebernehmen);
+    return window.api.discovery.onWarteschlange(warteUebernehmen);
+  }, [warteUebernehmen]);
+  const ausblenden = useMemo(() => new Set([...(warte?.eintraege.map((e) => e.discoveryId) ?? []), ...weg]), [warte, weg]);
+  const rows = useMemo(() => alleRows.filter((r) => !ausblenden.has(r.discoveryId)), [alleRows, ausblenden]);
   const [lastImportTx, setLastImportTx] = useState<string | null>(null);
   const [icpGesetzt, setIcpGesetzt] = useState<boolean>(true);
   // v0.1.574 — Radar-Lauf nur mit vollstaendigem ICP.
@@ -137,6 +168,7 @@ export function DiscoveryRadar(): JSX.Element {
         setRows([]);
       } else {
         setRows(r.candidates);
+        setWeg(new Set());
         setSelected((prev) => {
           const ids = new Set(r.candidates!.map((c) => c.discoveryId));
           return new Set([...prev].filter((id) => ids.has(id)));
@@ -162,37 +194,23 @@ export function DiscoveryRadar(): JSX.Element {
     });
   };
 
-  const decide = async (decision: "imported" | "dismissed"): Promise<void> => {
-    if (selected.size === 0 || busy) return;
-    setBusy("decide");
+  // Bulk-Knoepfe und Knoepfe je Zeile gehen beide ueber die Warteschlange: sofort weg.
+  const entscheiden = (auswahl: RadarRow[], decision: "imported" | "dismissed"): void => {
+    if (auswahl.length === 0) return;
     setNotice(null);
     setLastImportTx(null);
-    try {
-      const result = await window.api.discovery.decide(
-        [...selected].map((discoveryId) => ({ discoveryId, decision })),
-      );
-      if ("error" in result) {
-        setNotice(result.error);
-      } else {
-        const parts: string[] = [];
-        if (result.importiert > 0)
-          parts.push(`${result.importiert} Firmen importiert — Verarbeitung läuft`);
-        if (result.ignoriert > 0) parts.push(`${result.ignoriert} ignoriert`);
-        if (result.ohneOrt.length > 0)
-          parts.push(
-            `nicht importierbar (kein Ort): ${result.ohneOrt.join(", ")}`,
-          );
-        if (result.ohneZuordnung.length > 0)
-          parts.push(`nicht importiert (keine passende Firma im Register, keine Website): ${result.ohneZuordnung.join(", ")}`);
-        parts.push(...result.hinweise);
-        setNotice(parts.join(" · ") || "Keine Änderung.");
-        setLastImportTx(result.transactionId);
-        setSelected(new Set());
-        await reload();
-      }
-    } finally {
-      setBusy(null);
-    }
+    const ids = new Set(auswahl.map((r) => r.discoveryId));
+    setSelected((prev) => new Set([...prev].filter((id) => !ids.has(id))));
+    void window.api.discovery.warteschlangeHinzufuegen(auswahl.map(alsKandidat), decision).then(warteUebernehmen);
+  };
+  const decide = async (decision: "imported" | "dismissed"): Promise<void> => {
+    if (selected.size === 0 || busy) return;
+    entscheiden(rows.filter((r) => selected.has(r.discoveryId)), decision);
+  };
+  const zurueckholen = (id: string, wie: "rueckgaengig" | "verwerfen"): void => {
+    zurueckgeholt.current.add(id);
+    const p = wie === "rueckgaengig" ? window.api.discovery.warteschlangeRueckgaengig(id) : window.api.discovery.warteschlangeVerwerfen(id);
+    void p.then(warteUebernehmen);
   };
 
   const runProfile = async (): Promise<void> => {
@@ -273,8 +291,9 @@ export function DiscoveryRadar(): JSX.Element {
           </div>
           <p className="radar-sub">
             Neue Firmen aus deiner Region, die noch nicht in AVA sind —
-            heißeste Kandidaten oben. Import startet die volle Verarbeitung,
-            Ignorieren blendet dauerhaft aus.
+            heißeste Kandidaten oben. Importieren startet die volle Verarbeitung,
+            Ignorieren blendet dauerhaft aus. Beides geht direkt an der Zeile oder
+            gesammelt über die Auswahl.
           </p>
         </div>
         <div className="radar-actions">
@@ -451,33 +470,38 @@ export function DiscoveryRadar(): JSX.Element {
       )}
       {error && <div className="radar-error">{error}</div>}
 
-      {selected.size > 0 && (
-        <div className="radar-bulkbar">
-          <span>{selected.size} ausgewählt</span>
-          <button
-            className="proc-toggle radar-import"
-            onClick={() => void decide("imported")}
-            disabled={busy !== null}
-          >
-            {busy === "decide" ? "Läuft…" : `Importieren (${selected.size})`}
-          </button>
-          <button
-            className="proc-toggle"
-            onClick={() => void decide("dismissed")}
-            disabled={busy !== null}
-          >
-            Ignorieren ({selected.size})
-          </button>
-          <button
-            className="proc-toggle"
-            onClick={() => void teilen()}
-            disabled={busy !== null}
-            title="Die ausgewählten Firmen erscheinen bei allen Mitgliedern deiner Organisation im Radar"
-          >
-            Mit Organisation teilen ({selected.size})
-          </button>
-        </div>
-      )}
+      {warte && (() => {
+        const gescheitert = warte.eintraege.filter((e) => e.status === "fehler");
+        return (
+          <>
+            {gescheitert.length > 0 && (
+              <section className="radar-gescheitert">
+                <h3>Nicht importiert</h3>
+                <p className="muted small">Diese Firmen sind weiter offen. Versuch es erneut, ignoriere sie oder hol sie zurück in die Liste.</p>
+                {gescheitert.map((e) => (
+                  <div key={e.discoveryId} className="org-row">
+                    <div className="org-row__main">
+                      <span className="org-row__title">{e.name}</span>
+                      <span className="org-row__meta">{[e.city, e.domain].filter(Boolean).join(" · ")}{e.grund ? ` · ${e.grund}` : ""}</span>
+                    </div>
+                    <div className="org-row__actions">
+                      <button type="button" className="btn" onClick={() => void window.api.discovery.warteschlangeErneut(e.discoveryId).then(warteUebernehmen)}>
+                        Erneut versuchen
+                      </button>
+                      <button type="button" className="btn" onClick={() => void window.api.discovery.warteschlangeErneut(e.discoveryId, "dismissed").then(warteUebernehmen)}>
+                        Ignorieren
+                      </button>
+                      <button type="button" className="btn" onClick={() => zurueckholen(e.discoveryId, "verwerfen")}>
+                        Zurück in die Liste
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
+          </>
+        );
+      })()}
 
       {geteilt.length > 0 && (
         <section className="provider-section" style={{ marginTop: "1rem" }}>
@@ -555,6 +579,7 @@ export function DiscoveryRadar(): JSX.Element {
                       aria-label="Alle auswählen"
                     />
                   </th>
+                  <th className="radar-aktionen-kopf" aria-label="Aktionen" />
                   <th>Firma</th>
                   <th>Ort</th>
                   <th>Kategorie</th>
@@ -581,6 +606,31 @@ export function DiscoveryRadar(): JSX.Element {
                         onChange={() => toggle(r.discoveryId)}
                         aria-label={`${r.name} auswählen`}
                       />
+                    </td>
+                    <td className="radar-aktionen">
+                      {!locked && (
+                        <>
+                          <button
+                            type="button"
+                            className="radar-zeile-import"
+                            onClick={() => entscheiden([r], "imported")}
+                            title={`${r.name} importieren`}
+                          >
+                            Importieren
+                          </button>
+                          <button
+                            type="button"
+                            className="radar-zeile-ignorieren"
+                            onClick={() => entscheiden([r], "dismissed")}
+                            title={`${r.name} ignorieren`}
+                            aria-label={`${r.name} ignorieren`}
+                          >
+                            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
                     </td>
                     <td>
                       <div className={locked ? "radar-name radar-blur" : "radar-name"}>
@@ -615,7 +665,7 @@ export function DiscoveryRadar(): JSX.Element {
                       {[r.plz, r.ort].filter(Boolean).join(" ") || "—"}
                       {r.land && r.land !== "DE" && <span className="pill" style={{ marginLeft: 6 }}>{r.land}</span>}
                     </td>
-                    <td className={locked ? "radar-blur" : undefined}>{r.kategorie ?? "—"}</td>
+                    <td className={locked ? "radar-kat radar-blur" : "radar-kat"}>{r.kategorie ?? "—"}</td>
                     <td>
                       {r.matchScore !== null ? (
                         <span
@@ -656,6 +706,65 @@ export function DiscoveryRadar(): JSX.Element {
           </div>
         </>
       )}
+      {/* 2026-11-12 — Dock unten im Fenster (Wunsch Joyce): Sammelknoepfe und Rückgängig
+       *  bleiben sichtbar, auch tief in der Tabelle. */}
+      {(() => {
+        const wartend = warte?.eintraege.filter((e) => e.status === "wartet") ?? [];
+        const unterwegs = warte?.eintraege.filter((e) => e.status === "laeuft") ?? [];
+        const z = warte?.zuletzt ?? null;
+        const zeigeErgebnis = !!z && wartend.length === 0 && unterwegs.length === 0 && Date.now() - new Date(z.am).getTime() < ERGEBNIS_SICHTBAR_MS && z.importiert + z.ignoriert > 0;
+        if (selected.size === 0 && wartend.length === 0 && unterwegs.length === 0 && !zeigeErgebnis) return null;
+        return (
+          <div className="radar-dock">
+            {(wartend.length > 0 || unterwegs.length > 0 || zeigeErgebnis) && (
+              <div className="radar-warte" role="status" aria-live="polite">
+                {wartend.slice(0, 5).map((e) => (
+                  <span key={e.discoveryId} className="radar-warte__eintrag">
+                    {e.name} wird {e.entscheidung === "imported" ? "importiert" : "ignoriert"}
+                    <button type="button" className="link-button" onClick={() => zurueckholen(e.discoveryId, "rueckgaengig")}>
+                      Rückgängig
+                    </button>
+                  </span>
+                ))}
+                {wartend.length > 5 && <span className="radar-warte__eintrag">und {wartend.length - 5} weitere</span>}
+                {unterwegs.length > 0 && (
+                  <span className="radar-warte__eintrag">
+                    {unterwegs.length === 1 ? `${unterwegs[0]!.name} wird verarbeitet …` : `${unterwegs.length} Firmen werden verarbeitet …`}
+                  </span>
+                )}
+                {zeigeErgebnis && z && (
+                  <span className="radar-warte__eintrag">
+                    ✓ {[z.importiert > 0 ? `${z.importiert} importiert, Verarbeitung läuft` : null, z.ignoriert > 0 ? `${z.ignoriert} ignoriert` : null].filter(Boolean).join(" · ")}
+                    {z.transactionId && <Link to={`/transactions/${z.transactionId}`}>Zum Vorgang</Link>}
+                  </span>
+                )}
+                {zeigeErgebnis && z && z.hinweise.length > 0 && (
+                  <span className="radar-warte__hinweise">{z.hinweise.join(" · ")}</span>
+                )}
+              </div>
+            )}
+            {selected.size > 0 && (
+              <div className="radar-bulkbar">
+                <span>{selected.size} ausgewählt</span>
+                <button className="proc-toggle radar-import" onClick={() => void decide("imported")} disabled={busy !== null}>
+                  {`Importieren (${selected.size})`}
+                </button>
+                <button className="proc-toggle" onClick={() => void decide("dismissed")} disabled={busy !== null}>
+                  Ignorieren ({selected.size})
+                </button>
+                <button
+                  className="proc-toggle"
+                  onClick={() => void teilen()}
+                  disabled={busy !== null}
+                  title="Die ausgewählten Firmen erscheinen bei allen Mitgliedern deiner Organisation im Radar"
+                >
+                  Mit Organisation teilen ({selected.size})
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

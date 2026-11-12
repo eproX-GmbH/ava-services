@@ -20,6 +20,9 @@ export interface DecideInput {
   discoveryId: string;
   decision: "imported" | "dismissed";
   reason?: string | null;
+  /** Radar-Tabelle (2026-11-12): Stammdaten gleich mitgeben, dann entfaellt das
+   *  Nachladen der Kandidatenliste (bis 500 Zeilen) vor dem Import. */
+  kandidat?: { name: string; city: string | null; plz?: string | null; domain?: string | null; country?: string };
 }
 
 export interface DecideSummary {
@@ -34,6 +37,9 @@ export interface DecideSummary {
   ohneZuordnung: string[];
   /** Weiche Zuordnungen und Website-Anlagen, zum Pruefen fuer den Nutzer. */
   hinweise: string[];
+  /** Dieselben Faelle als discoveryIds (Import-Warteschlange des Radars). */
+  ohneOrtIds: string[];
+  ohneZuordnungIds: string[];
 }
 
 interface CandidateLookupRow {
@@ -63,7 +69,7 @@ export async function decideCandidates(
   // Ignorieren braucht keine Stammdaten; vorher scheiterte "alle 300
   // ignorieren" zusaetzlich daran, dass die Nachschlag-Liste (limit=500,
   // inkl. bereits entschiedener) irgendwann nicht mehr alle IDs enthielt.
-  const brauchtLookup = decisions.some((d) => d.decision === "imported");
+  const brauchtLookup = decisions.some((d) => d.decision === "imported" && !d.kandidat);
   let byId = new Map<string, CandidateLookupRow>();
   if (brauchtLookup) {
     try {
@@ -76,6 +82,10 @@ export async function decideCandidates(
         error: `Kandidaten-Abruf fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
+  }
+
+  for (const d of decisions) {
+    if (d.decision === "imported" && d.kandidat) byId.set(d.discoveryId, { discoveryId: d.discoveryId, ...d.kandidat });
   }
 
   const unbekannt = decisions
@@ -93,9 +103,10 @@ export async function decideCandidates(
     const c = byId.get(d.discoveryId)!;
     return (c.city ?? "").trim().length > 0;
   });
-  const ohneOrt = toImport
+  const ohneOrtIds = toImport
     .filter((d) => !(byId.get(d.discoveryId)!.city ?? "").trim())
-    .map((d) => byId.get(d.discoveryId)!.name);
+    .map((d) => d.discoveryId);
+  const ohneOrt = ohneOrtIds.map((id) => byId.get(id)!.name);
 
   // 1. Import ZUERST — schlaegt er fehl, bleiben die Firmen offen
   //    (keine Entscheidung gespeichert) statt still zu verschwinden.
@@ -106,6 +117,7 @@ export async function decideCandidates(
   let transactionId: string | null = null;
   const hinweise: string[] = [];
   const ohneZuordnung: string[] = [];
+  const ohneZuordnungIds: string[] = [];
   const importiertIds = new Set<string>();
   if (importable.length > 0) {
     try {
@@ -125,6 +137,7 @@ export async function decideCandidates(
         const offen = new Map((vorschau.unmatched ?? []).map((u) => [`${u.name.trim().toLowerCase()}|${u.location.trim().toLowerCase()}`, u]));
         const exakt: Array<{ name: string; city: string }> = [];
         const perId: string[] = [];
+        const ueberWebsite: Array<{ d: DecideInput; c: CandidateLookupRow; city: string; domain: string; mehrdeutig: Array<{ name: string }> }> = [];
         for (const { d, c } of zeilen) {
           const city = (c.city ?? "").trim();
           const u = offen.get(`${c.name.trim().toLowerCase()}|${city.toLowerCase()}`);
@@ -143,25 +156,40 @@ export async function decideCandidates(
           }
           const domain = c.domain ?? d.discoveryId;
           if (domain && domain.includes(".")) {
+            ueberWebsite.push({ d, c, city, domain, mehrdeutig: t.mehrdeutig });
+            continue;
+          }
+          ohneZuordnung.push(c.name);
+          ohneZuordnungIds.push(d.discoveryId);
+        }
+        // Website-Zuordnungen parallel statt nacheinander (2026-11-12, Radar „anklicken, weg, fertig“).
+        const webErgebnisse = await Promise.all(
+          ueberWebsite.map(async ({ c, city, domain }) => {
             try {
-              const w = await gateway.request<{ companyId: string; neu: boolean; konflikt?: Array<{ companyId: string; name: string | null }> }>("/v1/companies/web", {
+              return await gateway.request<{ companyId: string; neu: boolean; konflikt?: Array<{ companyId: string; name: string | null }> }>("/v1/companies/web", {
                 method: "POST",
                 body: { name: c.name, website: domain, ort: city, ...(c.plz ? { plz: c.plz } : {}) },
               });
-              perId.push(w.konflikt?.[0]?.companyId ?? w.companyId);
-              importiertIds.add(d.discoveryId);
-              hinweise.push(
-                w.konflikt?.length
-                  ? `„${c.name}“: Website gehört zur Register-Firma ${w.konflikt[0]!.name ?? w.konflikt[0]!.companyId}.`
-                  : `„${c.name}“: ${t.mehrdeutig.length > 1 ? `mehrere ähnliche Register-Firmen am Ort (${t.mehrdeutig.map((k) => k.name).slice(0, 3).join(", ")})` : "nicht im Register gefunden"}, über die Website ${domain} angelegt.`,
-              );
-              continue;
             } catch {
-              /* unten: ohne Zuordnung */
+              return null;
             }
+          }),
+        );
+        ueberWebsite.forEach(({ d, c, domain, mehrdeutig }, i) => {
+          const w = webErgebnisse[i];
+          if (!w) {
+            ohneZuordnung.push(c.name);
+            ohneZuordnungIds.push(d.discoveryId);
+            return;
           }
-          ohneZuordnung.push(c.name);
-        }
+          perId.push(w.konflikt?.[0]?.companyId ?? w.companyId);
+          importiertIds.add(d.discoveryId);
+          hinweise.push(
+            w.konflikt?.length
+              ? `„${c.name}“: Website gehört zur Register-Firma ${w.konflikt[0]!.name ?? w.konflikt[0]!.companyId}.`
+              : `„${c.name}“: ${mehrdeutig.length > 1 ? `mehrere ähnliche Register-Firmen am Ort (${mehrdeutig.map((k) => k.name).slice(0, 3).join(", ")})` : "nicht im Register gefunden"}, über die Website ${domain} angelegt.`,
+          );
+        });
         if (exakt.length > 0) {
           const r = await gateway.request<{ transactionId: string }>("/v1/imports/from-list", {
             method: "POST",
@@ -236,5 +264,7 @@ export async function decideCandidates(
     unbekannt,
     ohneZuordnung,
     hinweise,
+    ohneOrtIds,
+    ohneZuordnungIds,
   };
 }

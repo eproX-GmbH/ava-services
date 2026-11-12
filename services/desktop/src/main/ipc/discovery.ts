@@ -6,6 +6,9 @@ import { ipcMain } from "electron";
 import { fillProfileFromIcp } from "../agent/icp-profile-sync";
 import { radarActivity } from "../discovery/activity";
 import { decideCandidates } from "../discovery/decide";
+import { RadarImportWarteschlange } from "../discovery/import-warteschlange";
+import { windows } from "../../core/platform";
+import type { RadarWarteKandidat } from "../../shared/radar-warteschlange-types";
 import { buildCustomerInputs, icpAusText, runIcpAnalysis } from "../discovery/icp-assistant";
 import { listCandidatesWithMatches } from "../discovery/list";
 import { runMatch } from "../discovery/matcher";
@@ -85,6 +88,34 @@ export function registerDiscoveryIpc(deps: DiscoveryIpcDeps): void {
       return result;
     },
   );
+
+  // 2026-11-12 — Radar „anklicken, weg, fertig“: Klicks je Zeile sammeln, nach kurzer
+  // Pause gesammelt entscheiden (siehe discovery/import-warteschlange.ts).
+  const warteschlange = new RadarImportWarteschlange({
+    gateway: gatewayClient,
+    nachLauf: (r) =>
+      audit({
+        actorType: "user",
+        actorId: null,
+        category: "import",
+        action: "discovery.decide",
+        severity: "info",
+        subjectType: null,
+        subjectId: r.transactionId,
+        summary: `Radar: ${r.importiert} Firmen importiert, ${r.ignoriert} ignoriert`,
+        metadata: { importiert: r.importiert, ignoriert: r.ignoriert, ohneOrt: r.ohneOrt, ohneZuordnung: r.ohneZuordnung },
+      }),
+  });
+  warteschlange.on("changed", (stand) => windows().broadcast("discovery:warteschlange:changed", stand));
+  ipcMain.handle("discovery:warteschlange", () => warteschlange.stand());
+  ipcMain.handle("discovery:warteschlange:hinzufuegen", (_e, kandidaten: RadarWarteKandidat[], entscheidung: "imported" | "dismissed") =>
+    warteschlange.hinzufuegen(Array.isArray(kandidaten) ? kandidaten.filter((k) => k && typeof k.discoveryId === "string" && typeof k.name === "string") : [], entscheidung === "dismissed" ? "dismissed" : "imported"),
+  );
+  ipcMain.handle("discovery:warteschlange:rueckgaengig", (_e, id: string) => warteschlange.rueckgaengig(String(id)));
+  ipcMain.handle("discovery:warteschlange:erneut", (_e, id: string, entscheidung?: "imported" | "dismissed") =>
+    warteschlange.erneut(String(id), entscheidung === "dismissed" || entscheidung === "imported" ? entscheidung : undefined),
+  );
+  ipcMain.handle("discovery:warteschlange:verwerfen", (_e, id: string) => warteschlange.verwerfen(String(id)));
 
   ipcMain.handle("discovery:match", async () => {
     const result = await runMatch(
