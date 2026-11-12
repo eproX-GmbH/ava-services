@@ -110,6 +110,14 @@ table{border-collapse:collapse}td,th{text-align:left;padding:.25rem .8rem .25rem
 </style></head><body>${body}</body></html>`;
 }
 
+// Rohmeldungen aus dem Device Flow in Saetze fuer den Nutzer (2026-11-12): ein abgelaufener
+// Code ist der Normalfall, wenn niemand rechtzeitig bestaetigt, und kein Fehler.
+function anmeldeHinweis(roh: string): { text: string; fehler: boolean } {
+  if (/expired_token|Code abgelaufen/.test(roh)) return { text: "Der letzte Code ist abgelaufen, bevor die Anmeldung bestätigt wurde. Hier ist ein neuer.", fehler: false };
+  if (/access_denied/.test(roh)) return { text: "Die Anmeldung wurde im Browser abgelehnt. Gib den neuen Code ein, um es noch einmal zu versuchen.", fehler: true };
+  return { text: `Die Anmeldung hat nicht geklappt: ${roh}`, fehler: true };
+}
+
 function anmeldungAbschnitt(): string {
   const st = core?.auth.getStatus();
   if (st?.signedIn) return `<p class="ok">Angemeldet als ${esc(st.email ?? st.name ?? st.actorId ?? "unbekannt")}.</p>`;
@@ -117,7 +125,8 @@ function anmeldungAbschnitt(): string {
   if (lage.code) {
     const c = lage.code;
     const link = c.verificationUriComplete ?? c.verificationUri;
-    return `${bindung}${lage.fehler && GEBUNDENES_KONTO ? `<p class="fehler">${esc(lage.fehler)}</p>` : ""}<p>Öffne <a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.verificationUri)}</a> und gib diesen Code ein:</p><p><span class="code">${esc(c.userCode)}</span></p><p><small>Gültig bis ${new Date(c.expiresAt).toLocaleTimeString("de-DE")}; danach erscheint hier ein neuer Code.</small></p>`;
+    const hinweis = lage.fehler && GEBUNDENES_KONTO ? anmeldeHinweis(lage.fehler) : null;
+    return `${bindung}${hinweis ? `<p class="${hinweis.fehler ? "fehler" : "ok"}">${esc(hinweis.text)}</p>` : ""}<p>Öffne <a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.verificationUri)}</a> und gib diesen Code ein:</p><p><span class="code">${esc(c.userCode)}</span></p><p><small>Gültig bis ${new Date(c.expiresAt).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr; danach erscheint hier ein neuer Code.</small></p>`;
   }
   return `<p>Phase: ${esc(lage.phase)}${lage.fehler ? `<br><small>${esc(lage.fehler)}</small>` : ""}</p><p><small>Seite neu laden, sobald der Anmelde-Code bereitsteht.</small></p>`;
 }
