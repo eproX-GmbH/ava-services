@@ -236,4 +236,4 @@ Handy (375) im Browser-Pane, `pnpm lint`, `pnpm build`, Commit auf `main` ohne P
 ## 7. Stand
 
 - **2026-11-13:** Befund und Plan geschrieben, Bestandsaufnahme Desktop und App abgeschlossen. Nichts gebaut.
-- **2026-11-13, Abnahme:** Joyce nimmt den Plan mit E1–E6 wie empfohlen ab. Stufe A gebaut (Commit vom selben Tag: Prompt-Kernliste, Finanz-Regel, skill_search nur mit Skills, Bündel „Jahresabschluss“), Desktop-Release steht noch aus. U0 läuft als eigene Session in `ava-app`.
+- **2026-11-13, Abnahme:** Joyce nimmt den Plan mit E1–E6 wie empfohlen ab. Stufe A gebaut (Commit vom selben Tag: Prompt-Kernliste, Finanz-Regel, skill_search nur mit Skills, Bündel „Jahresabschluss“), lokal gegen Prod geprüft (Lagebericht Strategic IT: 2 Aufrufe statt 8, Baukasten gerendert, keine Konsolenfehler), Tag `v0.1.970` gesetzt. U0 läuft als eigene Session in `ava-app`.
