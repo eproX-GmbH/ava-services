@@ -63,6 +63,7 @@ import {
   type FeldAenderung,
   type ManagingDirectorDiff,
 } from "./profile-changes";
+import { registerStandFelder, schreibeRegisterSnapshot, type RegisterStand } from "./register-verlauf";
 import { transactionProgressBus } from "./event-bus";
 import { schreibeKonzernAngaben, type KonzernAngabenEingang } from "./konzern-angaben";
 import { featureEnabledForEventTenant } from "./policy-guard";
@@ -838,24 +839,24 @@ export async function schreibeStructuredContent(
     let stammdatenDiff: FeldAenderung[] = [];
     // Wann der alte Stand zuletzt bestaetigt wurde: Zeitfenster des Wechsels.
     let bestandVon: Date | null = null;
+    // Burggraben 1 (docs/PLAN_BURGGRABEN.md): der ganze alte Stand, damit er
+    // nach dem COMMIT als RegisterSnapshot liegen bleibt, wenn sich etwas aendert.
+    type AltRegisterZeile = {
+      name: string | null; legalForm: string | null; street: string | null; houseNumber: string | null;
+      zipCode: string | null; city: string | null; shareCapital: string | null; corporatePurpose: string | null;
+      foundingYear: number | null; lastRegisterEntry: Date | null; lastRegisterModification: Date | null; updatedAt: Date | null;
+    };
+    let altZeile: AltRegisterZeile | null = null;
     try {
-      const bestand = await client.query<{
-        name: string | null;
-        legalForm: string | null;
-        street: string | null;
-        houseNumber: string | null;
-        zipCode: string | null;
-        city: string | null;
-        shareCapital: string | null;
-        corporatePurpose: string | null;
-        updatedAt: Date | null;
-      }>(
+      const bestand = await client.query<AltRegisterZeile>(
         `SELECT name, "legalForm", street, "houseNumber", "zipCode", city,
-                "shareCapital"::text AS "shareCapital", "corporatePurpose", "updatedAt"
+                "shareCapital"::text AS "shareCapital", "corporatePurpose",
+                "foundingYear", "lastRegisterEntry", "lastRegisterModification", "updatedAt"
            FROM "StructuredContent" WHERE "companyId" = $1`,
         [result.companyId],
       );
       if (bestand.rows[0]) {
+        altZeile = bestand.rows[0];
         stammdatenDiff = diffStammdaten(bestand.rows[0], result);
         bestandVon = bestand.rows[0].updatedAt ? new Date(bestand.rows[0].updatedAt) : null;
       }
@@ -930,18 +931,21 @@ export async function schreibeStructuredContent(
     // nach dem COMMIT ein ProfileChangeEvent (best-effort). Der
     // Desktop-Heartbeat macht daraus einen "profile-change"-Alert.
     let directorDiff: ManagingDirectorDiff | null = null;
+    // Alte Geschaeftsfuehrung immer lesen: fuer den Diff und fuer den Register-Snapshot.
+    await ensureGfSchema(client);
+    const existing = await client.query<{
+      firstName: string;
+      lastName: string;
+      birthDay: Date | null;
+      city: string | null;
+      createdAt: Date;
+      bestelltAm: Date | null;
+    }>(
+      `SELECT "firstName", "lastName", "birthDay", city, "createdAt", "bestelltAm" FROM "ManagingDirector"
+        WHERE "companyId" = $1`,
+      [result.companyId],
+    );
     if (Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0) {
-      await ensureGfSchema(client);
-      const existing = await client.query<{
-        firstName: string;
-        lastName: string;
-        createdAt: Date;
-        bestelltAm: Date | null;
-      }>(
-        `SELECT "firstName", "lastName", "createdAt", "bestelltAm" FROM "ManagingDirector"
-          WHERE "companyId" = $1`,
-        [result.companyId],
-      );
       // "Seit wann kennt AVA die Person als Geschaeftsfuehrer?" ueberlebt den
       // Replace-all: createdAt und ein frueher gelesenes Bestelldatum je Name bewahren.
       const bisher = new Map<string, { createdAt: Date; bestelltAm: Date | null }>();
@@ -996,6 +1000,35 @@ export async function schreibeStructuredContent(
     }
     if (stammdatenDiff.length > 0) {
       await recordStammdatenAenderungen(log, result.companyId, stammdatenDiff, bestandVon);
+    }
+    // Burggraben 1: alten Stand vollstaendig ablegen, wenn irgendein Feld abweicht.
+    if (altZeile) {
+      const iso = (d: Date | string | null | undefined): string | null => (d ? new Date(d).toISOString().slice(0, 10) : null);
+      const altStand: RegisterStand = {
+        name: altZeile.name, legalForm: altZeile.legalForm, street: altZeile.street, houseNumber: altZeile.houseNumber,
+        zipCode: altZeile.zipCode, city: altZeile.city, foundingYear: altZeile.foundingYear ?? null,
+        corporatePurpose: altZeile.corporatePurpose, shareCapital: altZeile.shareCapital,
+        lastRegisterEntry: iso(altZeile.lastRegisterEntry), lastRegisterModification: iso(altZeile.lastRegisterModification),
+        geschaeftsfuehrung: existing.rows.map((m) => ({ firstName: m.firstName, lastName: m.lastName, birthDay: iso(m.birthDay), city: m.city, bestelltAm: iso(m.bestelltAm) })),
+      };
+      // Ohne Geschaeftsfuehrer im Lauf bleibt die alte Liste stehen (Data-loss guard oben).
+      const neueGf = Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0 ? result.managingDirectors : altStand.geschaeftsfuehrung;
+      const neuStand: RegisterStand = {
+        name: result.name ?? null, legalForm: result.legalForm ?? null, street: result.street ?? null, houseNumber: result.houseNumber ?? null,
+        zipCode: result.zipCode ?? null, city: result.city ?? null, foundingYear: result.foundingYear ?? null,
+        corporatePurpose: result.corporatePurpose ?? null, shareCapital: result.shareCapital == null ? null : String(result.shareCapital),
+        lastRegisterEntry: iso(result.lastRegisterEntry), lastRegisterModification: iso(result.lastRegisterModification),
+        geschaeftsfuehrung: neueGf.map((m) => ({ firstName: m.firstName, lastName: m.lastName, birthDay: iso(m.birthDay), city: m.city ?? null, bestelltAm: iso(m.bestelltAm) })),
+      };
+      await schreibeRegisterSnapshot(log, {
+        companyId: result.companyId,
+        quelle: "structured-content",
+        stand: altStand,
+        felder: registerStandFelder(altStand, neuStand),
+        bestandVon,
+        ersetztAm: updatedAt,
+        runId,
+      });
     }
     return true;
   } catch (err) {

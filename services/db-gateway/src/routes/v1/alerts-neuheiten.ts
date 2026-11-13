@@ -618,10 +618,14 @@ async function neueKunden(ids: string[], seit: Date): Promise<NeuheitItem[]> {
   return out;
 }
 
-alertsNeuheitenRouter.openapi(route, async (c) => {
-  const { companyIds, since } = c.req.valid("json");
+/**
+ * Alle Neuheiten einer Firmenliste seit `since` (gedeckelt auf 30 Tage), juengste zuerst.
+ * Gemeinsamer Kern der Route (Desktop-Heartbeat) und des Neuigkeiten-Crons
+ * (lib/neuigkeiten-cron.ts, Burggraben 3), der ohne laufende AVA mailt.
+ */
+export async function sammleNeuheiten(companyIds: string[], since: string | null | undefined, actorId: string | null): Promise<{ seit: Date; items: NeuheitItem[] }> {
   // Fokus-Themen sind je Nutzer (2026-11-06): nur eigene Erstfunde melden.
-  const actorIdThemen = ((c.get("auth") as { actorId?: string | null } | undefined)?.actorId) ?? "-ohne-nutzer-";
+  const actorIdThemen = actorId ?? "-ohne-nutzer-";
   const ids = Array.from(new Set(companyIds));
   const seit = fensterStart(since);
   const quellen = await Promise.allSettled([
@@ -662,5 +666,12 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
   });
   const zeit = (x: NeuheitItem): string => (x.art === "publication" ? x.createdAt : x.occurredAt);
   items.sort((a, b) => (zeit(a) < zeit(b) ? 1 : zeit(a) > zeit(b) ? -1 : 0));
+  return { seit, items };
+}
+
+alertsNeuheitenRouter.openapi(route, async (c) => {
+  const { companyIds, since } = c.req.valid("json");
+  const actorId = ((c.get("auth") as { actorId?: string | null } | undefined)?.actorId) ?? null;
+  const { seit, items } = await sammleNeuheiten(companyIds, since, actorId);
   return c.json({ seit: seit.toISOString(), items }, 200);
 });

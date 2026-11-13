@@ -30,6 +30,7 @@ import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
 import { startBillingCron } from "./lib/billing-cron";
 import { startRelevanzCron } from "./lib/relevanz-cron";
+import { startNeuigkeitenCron } from "./lib/neuigkeiten-cron";
 import { startGfRollenNachtrag } from "./lib/gf-rollen-nachtrag";
 import { startVerflechtungenCron } from "./lib/verflechtungen";
 import { getGatewayPool } from "./lib/producer-pools";
@@ -294,6 +295,10 @@ startGfRollenNachtrag();
 // Relevanz — taegliche Tilgung der Rohsignale (400 Tage), abgelaufene
 // Sperren aufraeumen, verfallene Werte nachrechnen.
 startRelevanzCron();
+
+// Burggraben 3 (docs/PLAN_BURGGRABEN.md) — Neuigkeiten-Mail vom Server, wenn die
+// AVA des Nutzers seit einem Tag nicht lief (sonst mailt der Desktop-Takt mit Urteil).
+startNeuigkeitenCron();
 
 // Register-Delta S3 — Ersteller-Cron: Front-Jobs je Gericht, Bekanntmachungs-
 // Jobs je Tag im 8-Wochen-Fenster (taeglich ab 02:00 UTC, idempotent).

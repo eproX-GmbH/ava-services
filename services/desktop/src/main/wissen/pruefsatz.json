@@ -1151,6 +1151,10 @@
     "erwartet": "neuigkeiten-per-mail"
   },
   {
+    "frage": "bekomme ich die mails auch wenn ava gerade nicht läuft",
+    "erwartet": "neuigkeiten-per-mail"
+  },
+  {
     "frage": "wie bestell ich die ava mails ab",
     "erwartet": "neuigkeiten-per-mail"
   },

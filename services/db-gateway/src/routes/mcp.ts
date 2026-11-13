@@ -82,12 +82,12 @@ export const TOOLS: ToolDef[] = [
     name: "firma_lesen",
     schalter: "lesen",
     description:
-      "Eine Firma lesen: Stammdaten plus gewuenschte Bereiche. bereiche: profil (KI-Kurzprofil, Website), register (Handelsregister: Geschaeftsfuehrung, Kapital, Gegenstand), publikationen (Jahres-/Konzernabschluesse mit Kennzahlen und Lagebericht), kunden (Kunden/Partner laut Website), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut Konzernabschluss), gesellschafter (Gesellschafterliste, nur DE/HRB), aenderungen (Geschaeftsfuehrer-/Stammdatenwechsel). Ohne bereiche nur Stammdaten. `verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig) und was zu tun ist: bei fehlt SOFORT import_anlegen mit der companyId, bei unvollstaendig neu_verarbeiten, ohne Rueckfrage an den Nutzer. Fuer den Nutzer gibt es 'verarbeiten' nicht; leere Bereiche einer nicht aufbereiteten Firma sind kein Befund und nie 'liegt nicht vor'.",
+      "Eine Firma lesen: Stammdaten plus gewuenschte Bereiche. bereiche: profil (KI-Kurzprofil, Website), register (Handelsregister: Geschaeftsfuehrung, Kapital, Gegenstand), publikationen (Jahres-/Konzernabschluesse mit Kennzahlen und Lagebericht), kunden (Kunden/Partner laut Website), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut Konzernabschluss), gesellschafter (Gesellschafterliste, nur DE/HRB), aenderungen (Geschaeftsfuehrer-/Stammdatenwechsel), verlauf (Register-Verlauf: jeder fruehere Registerstand mit Datum und geaenderten Feldern, fuer Fragen wie 'was hat sich seit 2024 geaendert'). Ohne bereiche nur Stammdaten. `verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig) und was zu tun ist: bei fehlt SOFORT import_anlegen mit der companyId, bei unvollstaendig neu_verarbeiten, ohne Rueckfrage an den Nutzer. Fuer den Nutzer gibt es 'verarbeiten' nicht; leere Bereiche einer nicht aufbereiteten Firma sind kein Befund und nie 'liegt nicht vor'.",
     inputSchema: {
       type: "object",
       properties: {
         companyId: { type: "string" },
-        bereiche: { type: "array", items: { type: "string", enum: ["profil", "register", "publikationen", "kunden", "konzern", "gesellschafter", "aenderungen", "notizen"] } },
+        bereiche: { type: "array", items: { type: "string", enum: ["profil", "register", "publikationen", "kunden", "konzern", "gesellschafter", "aenderungen", "verlauf", "notizen"] } },
       },
       required: ["companyId"],
     },
@@ -213,6 +213,7 @@ const BEREICH_ROUTEN: Record<string, string> = {
   konzern: "/konzern-angaben",
   gesellschafter: "/shareholders",
   aenderungen: "/profile-changes",
+  verlauf: "/register-verlauf",
   notizen: "/notizen",
 };
 

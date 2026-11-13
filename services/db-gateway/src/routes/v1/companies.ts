@@ -9,6 +9,7 @@ import { ladeWebsiteRecherche } from "../../lib/website-research";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
 import { listProfileChanges } from "../../lib/profile-changes";
+import { listeRegisterVerlauf } from "../../lib/register-verlauf";
 import { applySingleEmployeeCandidate } from "../../lib/contact-extraction-apply";
 import { normalizeLinkedInProfileUrl } from "../../lib/contact-extraction/employee-contact";
 import { logger } from "../../lib/logger";
@@ -1699,4 +1700,44 @@ companiesRouter.openapi(companyDeleteRoute, async (c) => {
     myTxIds,
   );
   return c.json({ deleted: true, ...res }, 200);
+});
+
+// ---- GET /v1/companies/:companyId/register-verlauf --------------------------
+//
+// Burggraben 1 (docs/PLAN_BURGGRABEN.md): jeder fruehere Registerstand, den der
+// structured-content-Persist ueberschrieben hat (RegisterSnapshot, Gateway-DB),
+// juengster zuerst. Der aktuelle Stand steht in /structured-content.
+
+const RegisterVerlaufShape = z
+  .object({
+    id: z.string(),
+    companyId: z.string(),
+    quelle: z.string(),
+    /** Felder, die sich beim Ersetzen geaendert haben (name, address, shareCapital, geschaeftsfuehrung, ...). */
+    felder: z.array(z.string()),
+    /** Letzte Bestaetigung dieses Stands. */
+    bestandVon: z.string().nullable(),
+    /** Zeitpunkt des neuen Stands, der diesen ersetzt hat. */
+    ersetztAm: z.string(),
+    stand: z.record(z.string(), z.unknown()),
+  })
+  .openapi("RegisterVerlauf");
+
+const registerVerlaufRoute = createRoute({
+  method: "get",
+  path: "/companies/{companyId}/register-verlauf",
+  tags: [tag],
+  summary: "Register-Verlauf: fruehere Registerstaende mit geaenderten Feldern",
+  request: { params: CompanyIdParam, query: z.object({ limit: z.coerce.number().int().min(1).max(500).optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ items: z.array(RegisterVerlaufShape) }) } }, description: "Snapshots, juengster zuerst" },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(registerVerlaufRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const { limit } = c.req.valid("query");
+  const items = await listeRegisterVerlauf(companyId, limit ?? 50);
+  return c.json({ items: items.map((i) => ({ ...i, stand: i.stand as unknown as Record<string, unknown> })) }, 200);
 });

@@ -70,17 +70,24 @@ export function vermerkeAktivitaet(pool: Pool, e: AktivitaetEingang): void {
   const version = (e.version ?? "").trim().slice(0, 40) || null;
   pool
     .query(
-      `INSERT INTO "NutzerAktivitaet" ("actorId", "tenantId", geraet, version, "zuletztAt", anfragen, "erstesAt")
-       VALUES ($1, $2, $3, $4, NOW(), 1, NOW())
+      `INSERT INTO "NutzerAktivitaet" ("actorId", "tenantId", geraet, version, "zuletztAt", anfragen, "erstesAt", "appZuletztAt")
+       VALUES ($1, $2, $3, $4, NOW(), 1, NOW(), $6)
        ON CONFLICT ("actorId") DO UPDATE SET "tenantId" = COALESCE(EXCLUDED."tenantId", "NutzerAktivitaet"."tenantId"),
+         -- Burggraben 3: wann die AVA des Nutzers (Desktop/Server) zuletzt da war; Browser/MCP zaehlen nicht.
+         "appZuletztAt" = COALESCE(EXCLUDED."appZuletztAt", "NutzerAktivitaet"."appZuletztAt"),
          -- Geraet = die AVA-App des Nutzers; Connector/Browser ueberschreiben sie nicht (die stehen in genutztArt).
          geraet = CASE WHEN EXCLUDED.geraet = 'unbekannt' OR (EXCLUDED.geraet = $5 AND "NutzerAktivitaet".geraet LIKE 'Desktop (%')
                          OR (EXCLUDED.geraet NOT LIKE 'Desktop%' AND EXCLUDED.geraet <> 'Server' AND ("NutzerAktivitaet".geraet LIKE 'Desktop%' OR "NutzerAktivitaet".geraet = 'Server'))
                        THEN "NutzerAktivitaet".geraet ELSE EXCLUDED.geraet END,
          version = COALESCE(EXCLUDED.version, "NutzerAktivitaet".version), "zuletztAt" = NOW(), anfragen = "NutzerAktivitaet".anfragen + 1`,
-      [e.actorId, e.tenantId, geraet, version, GERAET_SCHWACH],
+      [e.actorId, e.tenantId, geraet, version, GERAET_SCHWACH, istAppGeraet(geraet) ? new Date() : null],
     )
     .catch(() => undefined);
+}
+
+/** Desktop- oder Server-AVA (auch die schwache Node-Erkennung), nicht Browser, nicht MCP. */
+export function istAppGeraet(geraet: string): boolean {
+  return geraet.startsWith("Desktop") || geraet === "Server";
 }
 
 // ---- Nutzung: was ein Mensch anstoesst ---------------------------------------

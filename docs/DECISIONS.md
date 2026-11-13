@@ -346,6 +346,35 @@ Fehlt Konnektivität: klare Fehlermeldung im UI, App geht nicht in degraded mode
 
 ---
 
+## D14 — Burggraben-Regel: Tiefe vor Breite (Joyce 2026-11-12)
+
+**Kontext:** Challenge-Gespräch zum Abstand gegenüber Wettbewerbern und Frontier-Modellen
+(docs/PLAN_BURGGRABEN.md). Der Chat-Agent mit rund 290 Werkzeugen ist kein Graben; Claude,
+ChatGPT und Copilot bauen Agenten mit mehr Budget. Der Graben ist der Firmengraph mit
+Zeitachse, der Pool, die Compliance und die Beziehung über Meldungen.
+
+**Regel:** Ein neues Chat-Werkzeug, eine neue Fähigkeitsgruppe oder eine neue Oberfläche wird
+nur gebaut, wenn sie mindestens einem dieser fünf Zwecke dient:
+
+1. **Ledger** — Beobachtungen mit Zeitstempel und Quelle, die sich nicht nachträglich
+   beschaffen lassen (Register-Snapshots, Ereignisse, Zeitachse).
+2. **Pool** — mehr Firmen einmal verarbeitet, für alle Nutzer sofort da (Pool-Preis,
+   Mitpflegen, Vorwärmen).
+3. **Push** — AVA meldet sich beim Nutzer, auch ohne laufende App (Mail, Telegram, Push).
+4. **Vertriebsgedächtnis** — strukturiertes Urteil des Nutzers am Firmengraph (Relevanz,
+   Buying Center, Protokolle, Watches), exportierbar.
+5. **Connector-Reichweite** — AVA als Datenschicht in Claude, ChatGPT, Copilot, CRM.
+
+Alles andere (weitere Integrationen, Sprach- und Komfortfunktionen, neue Werkzeuggruppen
+„weil es geht“) wird nur noch gewartet, nicht ausgebaut. Ausnahmen begründet Joyce im
+jeweiligen Plan.
+
+**Folgen:** Infrastruktur (DB-Upgrade, Index-Aufbau) hat Vorrang vor neuen Ländern und
+Features, weil Ledger und Pool darauf stehen. Qualität des Grabens wird gemessen
+(Benchmark gegen North Data / Dealfront), nicht behauptet.
+
+---
+
 ## Offene Rückfragen — geklärt (User 2026-04-21)
 
 1. **D4:** ✅ Embeddings bleiben Cloud/OpenAI. Kein Referenz-Datensatz nötig.

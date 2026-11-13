@@ -1473,6 +1473,8 @@ model NutzerAktivitaet {
   genutztAt      DateTime? @db.Timestamptz(6)
   genutztArt     String?
   nutzungMinuten Int       @default(0)
+  /// Letzte Anfrage der Desktop-/Server-AVA (Burggraben 3: Server-Mail nur, wenn keine AVA laeuft).
+  appZuletztAt   DateTime? @db.Timestamptz(6)
 
   @@index([zuletztAt(sort: Desc)], map: "NutzerAktivitaet_zuletzt_idx")
   @@index([genutztAt(sort: Desc)], map: "NutzerAktivitaet_genutzt_idx")
@@ -1559,4 +1561,20 @@ model StartpaketFirma {
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
 
   @@id([billingAccountId, companyId])
+}
+
+/// Burggraben 1 (docs/PLAN_BURGGRABEN.md): alter Registerstand vor jedem Ueberschreiben,
+/// sobald sich ein Feld geaendert hat (Zeitachse je Firma; nie loeschen).
+model RegisterSnapshot {
+  id         BigInt    @id @default(autoincrement())
+  companyId  String
+  quelle     String
+  stand      Json
+  felder     String[]  @default([])
+  bestandVon DateTime? @db.Timestamptz(6)
+  ersetztAm  DateTime  @db.Timestamptz(6)
+  runId      String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([companyId, ersetztAm(sort: Desc)], map: "RegisterSnapshot_company_idx")
 }
