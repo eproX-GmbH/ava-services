@@ -2,7 +2,7 @@
 // des Nutzers arbeitet Register-Jobs der geteilten Queue ab.
 
 export interface MithelfenSettings {
-  /** Opt-in. Default aus. */
+  /** An/aus. Ohne Entscheidung des Nutzers gilt der Standard des Sitzes: bezahlt = an, Free = aus. */
   aktiv: boolean;
   /** Nur bei Netzbetrieb arbeiten (Akku schonen). Default an. */
   nurNetzbetrieb: boolean;
@@ -20,6 +20,10 @@ export interface MithelfenStatus {
   nurNetzbetrieb: boolean;
   /** Worker-Modus: nur Handelsregister-Verarbeitung, alles andere ruht. */
   nurRegister: boolean;
+  /** Woher `aktiv` stammt: vom Nutzer gesetzt oder Standard des Sitzes (bezahlt = an). */
+  quelle: "standard" | "nutzer";
+  /** Standard des Sitzes (true = bezahlt, false = Free, null = noch unbekannt). */
+  standardAktiv: boolean | null;
   /** Vorgabe der Organisation. */
   orgErlaubt: boolean;
   /** Kindprozess laeuft. */
@@ -53,4 +57,20 @@ export interface MithelfenVerlaufEintrag {
 export interface MithelfenVerlauf {
   eintraege: MithelfenVerlaufEintrag[];
   summe: { jobs: number; abfragen: number; treffer: number; neu: number; geaendert: number; seit: string | null };
+}
+
+/** Burggraben 4: Beitrag der eigenen Rechner (Gateway GET /v1/stammdaten/mein-beitrag). */
+export interface MithelfenBeitragMonat {
+  monat: string;
+  jobs: number;
+  abfragen: number;
+  treffer: number;
+  neu: number;
+  geaendert: number;
+}
+export interface MithelfenBeitrag {
+  geraete: number;
+  monat: MithelfenBeitragMonat;
+  vormonat: MithelfenBeitragMonat;
+  gesamt: { jobs: number; abfragen: number };
 }

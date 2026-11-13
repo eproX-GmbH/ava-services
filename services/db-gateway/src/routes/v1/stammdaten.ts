@@ -1,11 +1,14 @@
 // Betreiber: Stammdatenpflege (Register-Delta) — Uebersicht, Server-Worker, Desktop-Helfer,
 // Aenderungsprotokoll, fehlgeschlagene Jobs. Nur Betreiber (sonst 404).
+// Dazu zwei Nutzer-Routen (Burggraben-Punkt 4): eigener Beitrag und Meldung der
+// Mithelfen-Einstellung des Geraets.
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { istBetreiber } from "../../middleware/auth";
 import { ErrorShape } from "./schemas";
+import { meinBeitrag, mithelfenStandMelden } from "../../lib/mithelfen-beitrag";
 
 export const stammdatenRouter = new OpenAPIHono();
 
@@ -49,3 +52,42 @@ stammdatenRouter.openapi(createRoute({ method: "post", path: "/betreiber/stammda
   return c.json({ ok: true }, 200);
 });
 
+
+// ---- Nutzer: eigener Beitrag und Einstellung (Burggraben-Punkt 4) ---------------
+
+const BeitragMonat = z.object({ monat: z.string(), jobs: z.number(), abfragen: z.number(), treffer: z.number(), neu: z.number(), geaendert: z.number() });
+const MeinBeitragShape = z.object({ geraete: z.number(), monat: BeitragMonat, vormonat: BeitragMonat, gesamt: z.object({ jobs: z.number(), abfragen: z.number() }) });
+
+stammdatenRouter.openapi(
+  createRoute({
+    method: "get", path: "/stammdaten/mein-beitrag", tags: ["stammdaten"], summary: "Was die eigenen Rechner beim Mithelfen beigetragen haben (laufender und voriger Monat)",
+    responses: { 200: { content: { "application/json": { schema: MeinBeitragShape } }, description: "Beitrag" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "nicht angemeldet" } },
+  }),
+  async (c) => {
+    const a = c.get("auth") as { actorId?: string | null } | undefined;
+    if (!a?.actorId) throw new HTTPException(401, { message: "unauthorized" });
+    return c.json(await meinBeitrag(getGatewayPool(), a.actorId), 200);
+  },
+);
+
+const StandBody = z.object({
+  workerId: z.string().trim().min(1).max(120).regex(/^desktop-[A-Za-z0-9.-]+$/),
+  aktiv: z.boolean(),
+  quelle: z.enum(["standard", "nutzer"]),
+});
+
+stammdatenRouter.openapi(
+  createRoute({
+    method: "post", path: "/stammdaten/mithelfen-stand", tags: ["stammdaten"], summary: "Desktop meldet seine Mithelfen-Einstellung (an/aus, Standard oder Nutzerentscheidung)",
+    request: { body: { content: { "application/json": { schema: StandBody } }, required: true } },
+    responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.literal(true) }) } }, description: "gemerkt" }, 400: { content: { "application/json": { schema: ErrorShape } }, description: "ungueltig" }, 401: { content: { "application/json": { schema: ErrorShape } }, description: "nicht angemeldet" } },
+  }),
+  async (c) => {
+    const a = c.get("auth") as { actorId?: string | null; tenantId?: string | null } | undefined;
+    if (!a?.actorId) throw new HTTPException(401, { message: "unauthorized" });
+    const p = StandBody.safeParse(await c.req.json().catch(() => null));
+    if (!p.success) return c.json({ error: "invalid_input", message: "workerId, aktiv, quelle erwartet." }, 400);
+    await mithelfenStandMelden(getGatewayPool(), { workerId: p.data.workerId, tenantId: a.tenantId ?? null, actorId: a.actorId, aktiv: p.data.aktiv, quelle: p.data.quelle });
+    return c.json({ ok: true as const }, 200);
+  },
+);

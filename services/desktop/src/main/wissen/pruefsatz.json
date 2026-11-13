@@ -1297,5 +1297,13 @@
   {
     "frage": "Kann ich eine Firma im Radar direkt mit einem Klick importieren, ohne sie erst anzuhaken?",
     "erwartet": "radar-uebernehmen-verwerfen"
+  },
+  {
+    "frage": "warum hilft mein rechner auf einmal beim handelsregister mit",
+    "erwartet": "stammdaten-mithelfen"
+  },
+  {
+    "frage": "was hat mein rechner diesen monat für ava beigetragen",
+    "erwartet": "stammdaten-mithelfen"
   }
 ]

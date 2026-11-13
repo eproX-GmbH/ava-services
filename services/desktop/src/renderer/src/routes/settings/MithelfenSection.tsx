@@ -1,6 +1,14 @@
 // Register-Delta S6 — Einstellungen: Stammdaten mitpflegen (Mithelfen).
 import { useEffect, useState } from "react";
-import type { MithelfenStatus, MithelfenVerlauf } from "../../../../shared/register-delta-types";
+import type { MithelfenBeitrag, MithelfenStatus, MithelfenVerlauf } from "../../../../shared/register-delta-types";
+
+const zahl = (n: number) => n.toLocaleString("de-DE");
+const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+const monatsName = (k: string) => MONATE[Number(k.slice(5, 7)) - 1] ?? k;
+function beitragText(m: MithelfenBeitrag["monat"]): string {
+  const aend = m.neu + m.geaendert;
+  return `${zahl(m.abfragen)} Abfragen, ${zahl(m.treffer)} Registerblätter gelesen, ${aend === 1 ? "eine Firma" : `${zahl(aend)} Firmen`} neu oder geändert für alle Nutzer`;
+}
 
 const GRUND_TEXT: Record<string, string> = {
   aus: "Ausgeschaltet.",
@@ -37,9 +45,11 @@ export function MithelfenSection() {
   const [s, setS] = useState<MithelfenStatus | null>(null);
   const [queue, setQueue] = useState<Record<string, unknown> | null>(null);
   const [verlauf, setVerlauf] = useState<MithelfenVerlauf | null>(null);
+  const [beitrag, setBeitrag] = useState<MithelfenBeitrag | null>(null);
   const [alleZeigen, setAlleZeigen] = useState(false);
   useEffect(() => {
     void window.api.registerDelta.status().then(setS);
+    void window.api.registerDelta.beitrag().then(setBeitrag).catch(() => setBeitrag(null));
     const off = window.api.registerDelta.onStatus(setS);
     void window.api.registerDelta.verlauf().then(setVerlauf);
     const offV = window.api.registerDelta.onVerlauf(setVerlauf);
@@ -60,6 +70,7 @@ export function MithelfenSection() {
       <h3>Stammdaten mitpflegen</h3>
       <p className="muted">
         Die Firmendaten kommen aus dem Handelsregister. Wenn du mithilfst, fragt dein Rechner das Register im Hintergrund ab, höchstens 60 Mal je Stunde, ohne Downloads. Davon haben alle Nutzer etwas.
+        Mit einem bezahlten Sitz ist das Mithelfen von Anfang an eingeschaltet; hier schaltest du es jederzeit aus.
       </p>
       {!s.orgErlaubt && <p className="muted small">Deine Organisation hat das Mithelfen abgeschaltet.</p>}
       {s.pausenGrund === "nicht_installiert" && <p className="muted small">{GRUND_TEXT.nicht_installiert}</p>}
@@ -69,6 +80,7 @@ export function MithelfenSection() {
           <span>Mithelfen: Register-Jobs auf diesem Rechner abarbeiten</span>
         </label>
       </div>
+      {s.quelle === "standard" && s.aktiv && <p className="muted small">Eingeschaltet durch den Standard deines Sitzes. Deine Entscheidung hier gilt dauerhaft.</p>}
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__check">
           <input type="checkbox" checked={s.nurNetzbetrieb} disabled={!s.orgErlaubt || !s.aktiv} onChange={(e) => setze({ nurNetzbetrieb: e.target.checked })} />
@@ -106,6 +118,16 @@ export function MithelfenSection() {
         <p className="muted small">
           Geteilte Queue: {offen ?? 0} offene Jobs, {String(queue.erledigtHeute ?? 0)} heute erledigt, {String(queue.workerAktiv ?? 0)} Rechner in der letzten Stunde aktiv.
         </p>
+      )}
+      {beitrag && (beitrag.monat.abfragen > 0 || beitrag.vormonat.abfragen > 0) && (
+        <>
+          <h4 className="u-mt-2 u-mb-1">Dein Beitrag</h4>
+          <p className="muted small">
+            {monatsName(beitrag.monat.monat)}: {beitragText(beitrag.monat)}.
+            {beitrag.vormonat.abfragen > 0 ? ` ${monatsName(beitrag.vormonat.monat)}: ${beitragText(beitrag.vormonat)}.` : ""}
+            {beitrag.geraete > 1 ? ` Zusammen über ${beitrag.geraete} Rechner.` : ""}
+          </p>
+        </>
       )}
       {verlauf && verlauf.summe.jobs > 0 && (
         <>

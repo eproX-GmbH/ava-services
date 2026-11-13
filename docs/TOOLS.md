@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-12
+Stand: 2026-11-13
 Anzahl Tools: 317
 
 ## Firmen (31)
@@ -2500,7 +2500,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
 
-Liest oder aendert die Einstellung: aktiv = dieser Rechner arbeitet Register-Jobs der Organisation ab (Handelsregister-Abfragen mit der eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund), nurNetzbetrieb = auf Akku pausieren, nurRegister = Worker-Modus: AVA verarbeitet dann ausschliesslich Handelsregister-Jobs, alles andere (Herzschlag, Vorgaenge, Producer, Ablaeufe, Mail, Radar) ruht. Ohne Argumente: aktuelle Werte. Schaltet die Organisation die Funktion ab, gilt das vorrangig.
+Liest oder aendert die Einstellung: aktiv = dieser Rechner arbeitet Register-Jobs der Organisation ab (Handelsregister-Abfragen mit der eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund; bei bezahltem Sitz standardmaessig an, Free aus; eine ausdrueckliche Entscheidung des Nutzers gilt dauerhaft), nurNetzbetrieb = auf Akku pausieren, nurRegister = Worker-Modus: AVA verarbeitet dann ausschliesslich Handelsregister-Jobs, alles andere (Herzschlag, Vorgaenge, Producer, Ablaeufe, Mail, Radar) ruht. Ohne Argumente: aktuelle Werte. Schaltet die Organisation die Funktion ab, gilt das vorrangig.
 
 _Parameter:_
 - `aktiv: boolean`
@@ -2511,7 +2511,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
 
-Zeigt, ob dieser Rechner Register-Jobs abarbeitet (Nummernfront neuer Firmen, Registerbekanntmachungen, Auffrischung bekannter Firmen), warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), und den Stand der geteilten Queue (offene und erledigte Jobs, aktive Worker). Nur lesend.
+Zeigt, ob dieser Rechner Register-Jobs abarbeitet (Nummernfront neuer Firmen, Registerbekanntmachungen, Auffrischung bekannter Firmen), warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), den Stand der geteilten Queue (offene und erledigte Jobs, aktive Worker) und den eigenen Beitrag (beitrag: Abfragen, gelesene Registerblaetter, neue und geaenderte Firmen im laufenden und vorigen Monat). quelle = standard heisst: an durch den bezahlten Sitz, nie vom Nutzer eingeschaltet; Opt-out jederzeit ueber register_delta_config. Nur lesend.
 
 _Parameter:_ keine.
 

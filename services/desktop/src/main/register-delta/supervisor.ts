@@ -18,6 +18,9 @@ import { producerLogBuffer } from "../producer-log-buffer";
 import { featureEnabled, onOrgPolicyChange } from "../org-policy";
 import { resolveProducerDirUnder } from "../producer-dirs";
 import { power, spawner } from "../../core/platform";
+import { MithelfenSettingsStore, type MithelfenQuelle } from "./settings-store";
+
+export { MithelfenSettingsStore };
 
 const LOG_NAME = "register-delta";
 const STATUS_MARKER = "__AVA_RD_STATUS__";
@@ -52,32 +55,6 @@ function beschreibeJob(art: string, payload: Record<string, unknown>): string {
 }
 const TOKEN_INTERVAL_MS = 5 * 60_000;
 
-export class MithelfenSettingsStore {
-  private readonly file: string;
-  private cache: MithelfenSettings | null = null;
-  constructor(dir: string) {
-    mkdirSync(dir, { recursive: true });
-    this.file = join(dir, "settings.json");
-  }
-  get(): MithelfenSettings {
-    if (this.cache) return this.cache;
-    let raw: Partial<MithelfenSettings> = {};
-    try {
-      raw = JSON.parse(readFileSync(this.file, "utf8"));
-    } catch {
-      /* Erststart */
-    }
-    this.cache = { aktiv: raw.aktiv === true, nurNetzbetrieb: raw.nurNetzbetrieb !== false, nurRegister: raw.nurRegister === true };
-    return this.cache;
-  }
-  set(patch: Partial<MithelfenSettings>): MithelfenSettings {
-    const next = { ...this.get(), ...patch };
-    this.cache = next;
-    writeFileSync(this.file, JSON.stringify(next, null, 2), "utf8");
-    return next;
-  }
-}
-
 export interface MithelfenSupervisorOptions {
   userDataDir: string;
   resourcesRoot: string;
@@ -89,6 +66,8 @@ export interface MithelfenSupervisorOptions {
   browserPfad?: () => string | null;
   /** Verzeichnis des passenden Treibers fuer den Suchpfad des Kindprozesses. */
   treiberVerzeichnis?: () => string | null;
+  /** Burggraben 4: Einstellung ans Gateway melden (Opt-out-Quote fuer den Betreiber). */
+  meldeStand?: (stand: { workerId: string; aktiv: boolean; quelle: MithelfenQuelle }) => Promise<void>;
 }
 
 type KindZustand = {
@@ -109,6 +88,7 @@ export class MithelfenSupervisor extends EventEmitter {
   private readonly verlaufFile: string;
   private verlaufCache: MithelfenVerlauf | null = null;
   private stopping = false;
+  private standGemeldet: string | null = null;
 
   constructor(private readonly o: MithelfenSupervisorOptions) {
     super();
@@ -205,6 +185,8 @@ export class MithelfenSupervisor extends EventEmitter {
       aktiv: s.aktiv,
       nurNetzbetrieb: s.nurNetzbetrieb,
       nurRegister: s.nurRegister,
+      quelle: this.o.settings.quelle(),
+      standardAktiv: this.o.settings.standardWert(),
       orgErlaubt: featureEnabled("stammdaten.mithelfen"),
       laeuft: this.child !== null,
       pausenGrund: this.pausenGrund(),
@@ -243,6 +225,24 @@ export class MithelfenSupervisor extends EventEmitter {
       await this.stop();
     }
     this.emit("status", this.status());
+    void this.standMelden();
+  }
+
+  /** Einstellung einmal je Aenderung ans Gateway melden; still bei Fehlern, naechster Abgleich versucht es erneut. */
+  private async standMelden(): Promise<void> {
+    if (!this.o.meldeStand || !this.signedIn) return;
+    const workerId = this.workerId();
+    if (!workerId) return;
+    const s = this.o.settings.get();
+    const quelle = this.o.settings.quelle();
+    const key = `${workerId}:${s.aktiv}:${quelle}`;
+    if (key === this.standGemeldet) return;
+    try {
+      await this.o.meldeStand({ workerId, aktiv: s.aktiv, quelle });
+      this.standGemeldet = key;
+    } catch (err) {
+      this.log(`Einstellung nicht gemeldet: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`);
+    }
   }
 
   private async schreibeToken(): Promise<boolean> {

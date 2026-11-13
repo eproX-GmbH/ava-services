@@ -12,6 +12,7 @@
 //   ... Hülle registriert IPC / Fenster ...
 //   await core.startBackground();                      // Ollama, Postgres, Producer, Herzschlag, Worker-Modus
 
+import type { MithelfenBeitrag } from "../shared/register-delta-types";
 import { SuchblockEmbedder } from "../main/suchblock-embedder";
 import { DienstEreignisseWaechter } from "../main/dienst-ereignisse-waechter";
 import { ProblemAbholer } from "../main/problem/abholen";
@@ -962,12 +963,14 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // GET /v1/usage. null = noch unbekannt (Konsumenten fallen dann auf
   // ihr Legacy-Verhalten zurueck, nie auf kuenstliche Verknappung).
   let cachedTenantTier: "free" | "starter" | "pro" | "enterprise" | null = null;
+  // Burggraben 4: bezahlter Sitz? (Sitz-Modell: kontingent.plan, sonst tier). null = unbekannt.
+  let cachedSitzBezahlt: boolean | null = null;
   let tierFetchStartedAt = 0;
   function getTenantTierCached(): typeof cachedTenantTier {
     if (Date.now() - tierFetchStartedAt > 30 * 60_000) {
       tierFetchStartedAt = Date.now();
       void gatewayClient
-        .request<{ tier?: string }>("/v1/usage")
+        .request<{ tier?: string; kontingent?: { plan?: string } | null }>("/v1/usage")
         .then((u) => {
           if (
             u.tier === "free" ||
@@ -977,6 +980,11 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
           ) {
             cachedTenantTier = u.tier;
           }
+          const plan = u.kontingent?.plan ?? u.tier;
+          const vorher = cachedSitzBezahlt;
+          cachedSitzBezahlt = typeof plan === "string" ? plan !== "free" : null;
+          // Der Standard fuers Mithelfen haengt am Sitz: sobald er bekannt ist, Soll-Zustand pruefen.
+          if (vorher !== cachedSitzBezahlt) void mithelfen?.abgleichen("plan");
         })
         .catch(() => {
           /* offline/ausgeloggt — letzter bekannter Wert bleibt */
@@ -2290,7 +2298,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // O5: Neuigkeiten per Mail (Gateway prueft Zustimmung und 20-Stunden-Abstand).
   const neuigkeitenTakt = setInterval(() => {
     if (!auth.getStatus().signedIn || workerModus.aktiv()) return;
-    void neuigkeitenMailPruefen({ gateway: gatewayClient, meldungen: () => alerts.list(), datei: onboardingDatei }).catch((err) => console.warn("[onboarding] Neuigkeiten-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
+    void neuigkeitenMailPruefen({ gateway: gatewayClient, meldungen: () => alerts.list(), datei: onboardingDatei, beitrag: () => gatewayClient.request<MithelfenBeitrag>("/v1/stammdaten/mein-beitrag") }).catch((err) => console.warn("[onboarding] Neuigkeiten-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
   }, 30 * 60_000);
   neuigkeitenTakt.unref?.();
   const startIcp = new StartIcpUebernahme({
@@ -4345,12 +4353,32 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     gatewayUrl: APP_CONFIG.gatewayUrl,
     getAccessToken: () => auth.getAccessToken(),
     getActorId: () => auth.getStatus().actorId ?? null,
-    settings: new MithelfenSettingsStore(join(paths().get("userData"), "register-delta")),
+    settings: new MithelfenSettingsStore(join(paths().get("userData"), "register-delta"), () => {
+      getTenantTierCached();
+      return cachedSitzBezahlt;
+    }),
     browserPfad: () => eigenerBrowser?.browserPfad() ?? null,
     treiberVerzeichnis: () => eigenerBrowser?.treiberVerzeichnis() ?? null,
+    meldeStand: (stand) => gatewayClient.request("/v1/stammdaten/mithelfen-stand", { method: "POST", body: stand }).then(() => undefined),
   });
   mithelfen.on("status", (st) => {
     windows().broadcast("register-delta:status:changed", st);
+    // Burggraben 4: einmaliger Hinweis, wenn das Mithelfen durch den Standard des Sitzes
+    // laeuft (nie durch den Nutzer eingeschaltet). Dedupe ueber sourceRef im AlertsStore.
+    if (st.aktiv && st.quelle === "standard" && st.orgErlaubt && st.pausenGrund !== "nicht_installiert") {
+      const a = alerts.add({
+        tenantId: null,
+        companyId: "",
+        companyName: "Stammdaten mitpflegen",
+        kind: "reminder",
+        severity: "info",
+        headline: "Dein Rechner hilft jetzt bei den Stammdaten mit",
+        rationale:
+          "Mit deinem Sitz fragt AVA das Handelsregister im Hintergrund mit ab: höchstens 60 Mal je Stunde, nur am Netz, ohne Downloads. Davon haben alle Nutzer etwas, und du siehst deinen Beitrag in den Einstellungen. Ausschalten: Einstellungen → Recherche → Stammdaten mitpflegen, oder sag es mir im Chat.",
+        sourceRef: "mithelfen:standard",
+      });
+      if (a) { try { notifications.notifyForAlert(a); } catch { /* best-effort */ } }
+    }
   });
   auth.on("status", (st: AuthStatus) => mithelfen?.setSignedIn(Boolean(st.signedIn)));
   mithelfen.setSignedIn(Boolean(auth.getStatus().signedIn));

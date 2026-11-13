@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 for (const k of ["DATABASE_URL", "UPSTREAM_MASTER_DATA_URL", "UPSTREAM_COMPANY_PROFILE_URL", "UPSTREAM_COMPANY_CONTACT_URL", "UPSTREAM_COMPANY_PUBLICATION_URL", "UPSTREAM_WEBSITE_URL", "UPSTREAM_STRUCTURED_CONTENT_URL", "EVENT_BUS_URL", "JWKS_URI"]) process.env[k] ??= "http://127.0.0.1:9/test";
 const V = await import("../src/lib/register-verlauf.ts");
 const N = await import("../src/lib/neuigkeiten-cron.ts");
+const M = await import("../src/lib/mail/vorlagen.ts");
 
 // ---- Burggraben 1: Register-Snapshots nur bei echter Aenderung ---------------
 const stand = (x = {}) => ({
@@ -62,5 +63,15 @@ const viele = Array.from({ length: 20 }, (_, i) => ({ art: "publication", id: St
 const v = N.neuheitenZuMeldungen(viele, new Map());
 assert.equal(v.length, 12);
 assert.equal(v[0].firma, "DE_10");
+
+// ---- Burggraben 4: Beitragszeile in der Neuigkeiten-Mail ----------------------
+assert.equal(M.monatsName("2026-10"), "Oktober");
+assert.equal(M.beitragSatz({ monat: "2026-10", abfragen: 1240, aenderungen: 37 }), "Dein Rechner hat im Oktober 1.240 Register-Abfragen beigetragen, daraus 37 Änderungen für alle AVA-Nutzer. Danke fürs Mithelfen.");
+assert.match(M.beitragSatz({ monat: "2026-03", abfragen: 5, aenderungen: 1 }), /im März 5 Register-Abfragen beigetragen, daraus eine Änderung/);
+const mail = M.neuigkeitenMail({ vorname: "Joyce", meldungen: [{ firma: "Muster GmbH", titel: "Geschäftsführung geändert", text: "", art: "Stammdaten", quelleUrl: null, companyId: "DE_X" }], beitrag: { monat: "2026-10", abfragen: 12, aenderungen: 0 }, appBasis: "https://app.ava.bi", abmeldenUrl: "https://x/abmelden" });
+assert.match(mail.text, /im Oktober 12 Register-Abfragen/);
+assert.match(mail.html, /im Oktober 12 Register-Abfragen/);
+const ohne = M.neuigkeitenMail({ vorname: null, meldungen: [{ firma: "Muster GmbH", titel: "x", text: "", art: "Stammdaten", quelleUrl: null }], beitrag: { monat: "2026-10", abfragen: 0, aenderungen: 0 }, appBasis: "https://app.ava.bi", abmeldenUrl: "https://x/abmelden" });
+assert.doesNotMatch(ohne.text, /Register-Abfragen/);
 
 console.log("test-burggraben: ok");

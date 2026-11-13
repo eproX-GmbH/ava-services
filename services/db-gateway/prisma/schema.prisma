@@ -879,6 +879,11 @@ model RegisterWorker {
   jobsErledigt Int       @default(0)
   abfragen     Int       @default(0)
   gesperrtAt   DateTime?
+  /// Burggraben 4: vom Desktop gemeldete Einstellung (an/aus) und ob sie vom Standard
+  /// (bezahlter Sitz) oder vom Nutzer stammt; Opt-out-Quote fuer den Betreiber.
+  einstellungAktiv  Boolean?
+  einstellungQuelle String?
+  einstellungAt     DateTime? @db.Timestamptz(6)
 }
 
 // Register-Delta S7 — strukturierte Inhalte veraltet (Migration 20260914_structured_content_stale).

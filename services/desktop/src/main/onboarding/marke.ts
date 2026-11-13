@@ -20,6 +20,8 @@ export interface OnboardingMarke {
   /** O3/O5: Mail "Deine Top 10" wartet, bis der Import verarbeitet ist (dann genau einmal). */
   /** O5: Meldungen bis zu diesem Zeitpunkt sind fuer die Neuigkeiten-Mail erledigt. */
   neuigkeitenBis?: string;
+  /** Burggraben 4: Monat (YYYY-MM), dessen Mithelfen-Beitrag schon in einer Mail stand (oder nichts zu melden war). */
+  beitragGemeldet?: string;
   top10Mail?: { transactionId: string; firmen: Array<{ name: string; ort: string | null; branche: string | null; score: number; grund: string }>; seit: string; erledigt?: string; ergebnis?: string };
 }
 

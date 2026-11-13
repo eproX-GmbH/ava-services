@@ -1891,6 +1891,7 @@ const api = {
       ipcRenderer.invoke("registerDelta:setSettings", patch),
     queue: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke("registerDelta:queue"),
     verlauf: (): Promise<import("../shared/register-delta-types").MithelfenVerlauf> => ipcRenderer.invoke("registerDelta:verlauf"),
+    beitrag: (): Promise<import("../shared/register-delta-types").MithelfenBeitrag | null> => ipcRenderer.invoke("registerDelta:beitrag"),
     onVerlauf: (cb: (v: import("../shared/register-delta-types").MithelfenVerlauf) => void): (() => void) => {
       const h = (_e: unknown, v: import("../shared/register-delta-types").MithelfenVerlauf) => cb(v);
       ipcRenderer.on("register-delta:verlauf:changed", h);

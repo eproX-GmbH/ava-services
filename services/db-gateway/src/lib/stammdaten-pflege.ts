@@ -5,6 +5,7 @@
 import type { Pool } from "pg";
 import { masterData } from "./register-jobs";
 import { logger } from "./logger";
+import { mithelfenStandUebersicht } from "./mithelfen-beitrag";
 
 // Eigener, nur lesender Token fuer die Worker-App (fly tokens create readonly), sonst der
 // allgemeine Gateway-Token; der gilt oft nur fuer die Kunden-Instanzen.
@@ -95,7 +96,14 @@ export async function pflegeUebersicht(pool: Pool, tage: number) {
     server.push({ workerId: w.workerId, maschine: null, gruppe: null, zustand: null, region: null, standby: false, maschineAktualisiert: null, zuletztAt: iso(w.zuletztAt), jobsErledigt: w.jobsErledigt, abfragen: w.abfragen, gesperrtAt: iso(w.gesperrtAt), aktuellerJob: jobVon(w.workerId), aktiv: zuletzt > jetzt - STILL_MIN * 60_000 || leiheGueltig(w.workerId) });
   }
 
-  const helfer = await pool.query<{ aktiv: string; gesamt: string }>(`SELECT COUNT(*) FILTER (WHERE "zuletztAt" > NOW() - INTERVAL '15 minutes')::text AS aktiv, COUNT(*)::text AS gesamt FROM "RegisterWorker" WHERE art = 'desktop'`);
+  const helfer = await pool.query<{ aktiv: string; heute: string; gesamt: string }>(
+    `SELECT COUNT(*) FILTER (WHERE "zuletztAt" > NOW() - INTERVAL '15 minutes')::text AS aktiv,
+            COUNT(*) FILTER (WHERE "zuletztAt" > NOW() - INTERVAL '24 hours')::text AS heute,
+            COUNT(*)::text AS gesamt
+       FROM "RegisterWorker" WHERE art = 'desktop'`,
+  );
+  // Burggraben 4: Opt-out-Quote aus den vom Desktop gemeldeten Einstellungen.
+  const einstellung = await mithelfenStandUebersicht(pool).catch(() => null);
 
   const warnungen: Array<{ stufe: "fehler" | "warnung"; text: string }> = [];
   // Eine Gruppe gilt als laufend, sobald irgendeine ihrer Maschinen laeuft, auch die
@@ -123,7 +131,7 @@ export async function pflegeUebersicht(pool: Pool, tage: number) {
     veraltet: Number(veraltet.rows[0]?.n ?? 0),
     fehlgeschlagen: fehlg,
     server,
-    helfer: { aktiv: Number(helfer.rows[0]?.aktiv ?? 0), gesamt: Number(helfer.rows[0]?.gesamt ?? 0) },
+    helfer: { aktiv: Number(helfer.rows[0]?.aktiv ?? 0), heute: Number(helfer.rows[0]?.heute ?? 0), gesamt: Number(helfer.rows[0]?.gesamt ?? 0), einstellung },
     ereignisse: statistik?.jeTag ?? null,
     fronten: statistik?.fronten ?? null,
     warnungen,
@@ -135,8 +143,8 @@ export async function helferListe(pool: Pool, q: { seite: number; groesse: numbe
   const where = `WHERE w.art = 'desktop'${q.nurAktiv ? ` AND w."zuletztAt" > NOW() - INTERVAL '15 minutes'` : ""}`;
   const [n, rows, jobs] = await Promise.all([
     pool.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM "RegisterWorker" w ${where}`),
-    pool.query<{ workerId: string; tenantId: string | null; actorId: string | null; zuletztAt: Date | null; jobsErledigt: number; abfragen: number; gesperrtAt: Date | null; email: string | null; name: string | null; organisation: string | null }>(
-      `SELECT w."workerId", w."tenantId", w."actorId", w."zuletztAt", w."jobsErledigt", w.abfragen, w."gesperrtAt", m.email, m.name, t.name AS organisation
+    pool.query<{ workerId: string; tenantId: string | null; actorId: string | null; zuletztAt: Date | null; jobsErledigt: number; abfragen: number; gesperrtAt: Date | null; email: string | null; name: string | null; organisation: string | null; einstellungAktiv: boolean | null; einstellungQuelle: string | null; einstellungAt: Date | null }>(
+      `SELECT w."workerId", w."tenantId", w."actorId", w."zuletztAt", w."jobsErledigt", w.abfragen, w."gesperrtAt", w."einstellungAktiv", w."einstellungQuelle", w."einstellungAt", m.email, m.name, t.name AS organisation
          FROM "RegisterWorker" w LEFT JOIN "TenantMember" m ON m."actorId" = w."actorId" LEFT JOIN "Tenant" t ON t.id = w."tenantId"
          ${where} ORDER BY w."zuletztAt" DESC NULLS LAST LIMIT $1 OFFSET $2`,
       [q.groesse, (q.seite - 1) * q.groesse],
@@ -154,6 +162,7 @@ export async function helferListe(pool: Pool, q: { seite: number; groesse: numbe
       return {
         workerId: r.workerId, geraet, email: r.email, name: r.name, organisation: r.organisation, zuletztAt: iso(r.zuletztAt), jobsErledigt: r.jobsErledigt, abfragen: r.abfragen, gesperrtAt: iso(r.gesperrtAt),
         aktiv: !!r.zuletztAt && new Date(r.zuletztAt).getTime() > jetzt - 15 * 60_000, aktuellerJob: j ? { art: j.art, schluessel: j.schluessel } : null,
+        einstellung: r.einstellungAktiv === null ? null : { aktiv: r.einstellungAktiv, quelle: r.einstellungQuelle, at: iso(r.einstellungAt) },
       };
     }),
   };

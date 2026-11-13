@@ -5,16 +5,19 @@
 import { BrowserWindow, ipcMain, webContents } from "electron";
 import { workerModus } from "../worker-modus";
 import type { MithelfenSupervisor } from "../register-delta/supervisor";
+import type { MithelfenBeitrag } from "../../shared/register-delta-types";
 
 export interface StammdatenIpcDeps {
   mithelfen: { readonly current: MithelfenSupervisor | null };
+  /** Burggraben 4: eigener Beitrag aus dem Gateway. */
+  gateway: { request<T>(path: string): Promise<T> };
   registerQueueStatus: () => Promise<Record<string, unknown> | null>;
   workerModusMerkerLoeschen: () => void;
   workerModusMerkerSetzen: () => void;
 }
 
 export function registerStammdatenIpc(deps: StammdatenIpcDeps): void {
-  const { mithelfen, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen } = deps;
+  const { mithelfen, gateway, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen } = deps;
 
   ipcMain.handle("registerDelta:status", () => mithelfen.current!.status());
 
@@ -46,4 +49,6 @@ export function registerStammdatenIpc(deps: StammdatenIpcDeps): void {
   ipcMain.handle("registerDelta:queue", () => registerQueueStatus());
 
   ipcMain.handle("registerDelta:verlauf", () => mithelfen.current!.verlauf());
+
+  ipcMain.handle("registerDelta:beitrag", () => gateway.request<MithelfenBeitrag>("/v1/stammdaten/mein-beitrag").catch(() => null));
 }

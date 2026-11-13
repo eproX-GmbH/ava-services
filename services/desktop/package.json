@@ -34,6 +34,7 @@
     "lint:german": "node scripts/check-german.mjs",
     "lint:jargon": "node scripts/check-jargon.mjs",
     "test:buying-center": "node scripts/test-buying-center.mjs",
+    "test:mithelfen": "node scripts/test-mithelfen.mjs",
     "test:telegram-text": "node scripts/test-telegram-text.mjs",
     "test:mail-entwurf": "node scripts/test-mail-entwurf.mjs",
     "test:adresse": "node scripts/test-adresse.mjs",

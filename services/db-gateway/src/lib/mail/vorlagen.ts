@@ -156,8 +156,21 @@ export function top10Mail(d: Top10Daten): Mail {
 export interface NeuigkeitenDaten {
   vorname: string | null;
   meldungen: Array<{ firma: string; titel: string; text: string; art: string; quelleUrl: string | null; companyId?: string | null }>;
+  /** Burggraben 4: Beitrag des Rechners beim Mithelfen (Vormonat), hoechstens einmal im Monat. */
+  beitrag?: { monat: string; abfragen: number; aenderungen: number } | null;
   appBasis: string;
   abmeldenUrl: string;
+}
+
+const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+export function monatsName(kennung: string): string {
+  const m = Number(kennung.slice(5, 7));
+  return MONATE[m - 1] ?? kennung;
+}
+const zahl = (n: number) => n.toLocaleString("de-DE");
+export function beitragSatz(b: { monat: string; abfragen: number; aenderungen: number }): string {
+  const aend = b.aenderungen === 1 ? "eine Änderung" : `${zahl(b.aenderungen)} Änderungen`;
+  return `Dein Rechner hat im ${monatsName(b.monat)} ${zahl(b.abfragen)} Register-Abfragen beigetragen, daraus ${aend} für alle AVA-Nutzer. Danke fürs Mithelfen.`;
 }
 
 export function neuigkeitenMail(d: NeuigkeitenDaten): Mail {
@@ -171,10 +184,12 @@ ${m.quelleUrl || m.companyId ? `<div style="margin-top:5px;font-size:13px;">${[m
     ueberschrift(n === 1 ? "Eine Neuigkeit zu deinen Firmen" : `${n} Neuigkeiten zu deinen Firmen`) +
     absatz(esc(d.vorname ? `Hallo ${d.vorname},` : "Hallo,")) +
     absatz("das hat sich seit meiner letzten Mail bei deinen Firmen getan:") +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${eintraege}</table>`;
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${eintraege}</table>` +
+    (d.beitrag && d.beitrag.abfragen > 0 ? absatz(`<span style="color:${FARBE.leise};font-size:13px;">${esc(beitragSatz(d.beitrag))}</span>`) : "");
   const text = [
     d.vorname ? `Hallo ${d.vorname},` : "Hallo,", "", "das hat sich seit meiner letzten Mail bei deinen Firmen getan:", "",
     ...d.meldungen.slice(0, 12).map((m) => `- ${m.firma}: ${m.titel}\n  ${m.text}${m.companyId ? `\n  In AVA: ${firmenLink(d.appBasis, m.companyId)}` : ""}${m.quelleUrl ? `\n  Quelle: ${m.quelleUrl}` : ""}`), "",
+    ...(d.beitrag && d.beitrag.abfragen > 0 ? [beitragSatz(d.beitrag), ""] : []),
     `Keine Mails mehr von AVA: ${d.abmeldenUrl}`,
   ].join("\n");
   return { betreff: n === 1 ? `${d.meldungen[0]!.firma}: ${d.meldungen[0]!.titel}` : `${n} Neuigkeiten zu deinen Firmen`, html: rahmen({ vorschau: d.meldungen.map((m) => m.firma).slice(0, 3).join(", "), inhalt, fusszeile: abmelden(d.abmeldenUrl) }), text };

@@ -7,6 +7,7 @@ import type { Tool } from "../types";
 import type { MithelfenSupervisor } from "../../register-delta/supervisor";
 import type { GatewayClient } from "../gateway-client";
 import { workerModus } from "../../worker-modus";
+import type { MithelfenBeitrag } from "../../../shared/register-delta-types";
 
 const GRUND_TEXT: Record<string, string> = {
   aus: "ausgeschaltet",
@@ -33,8 +34,10 @@ export function buildRegisterDeltaTools(deps: {
     category: "stammdaten mithelfen register handelsregister worker queue status aktualisierung",
     description:
       "Zeigt, ob dieser Rechner Register-Jobs abarbeitet (Nummernfront neuer Firmen, Registerbekanntmachungen, Auffrischung bekannter Firmen), " +
-      "warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), und den Stand der " +
-      "geteilten Queue (offene und erledigte Jobs, aktive Worker). Nur lesend.",
+      "warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), den Stand der " +
+      "geteilten Queue (offene und erledigte Jobs, aktive Worker) und den eigenen Beitrag (beitrag: Abfragen, gelesene Registerblaetter, " +
+      "neue und geaenderte Firmen im laufenden und vorigen Monat). quelle = standard heisst: an durch den bezahlten Sitz, nie vom Nutzer " +
+      "eingeschaltet; Opt-out jederzeit ueber register_delta_config. Nur lesend.",
     parameters: { type: "object", properties: {} },
     schema: yup.object({}).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error ? r.error : r.lokal?.laeuft ? "Mithelfen aktiv" : `Mithelfen pausiert: ${r.lokal?.pausenText ?? "-"}`),
@@ -43,7 +46,8 @@ export function buildRegisterDeltaTools(deps: {
       if (!sup) return { error: "Mithelfen noch nicht initialisiert." };
       const s = sup.status();
       const queue = await deps.queueStatus();
-      return { lokal: { ...s, pausenText: s.pausenGrund ? GRUND_TEXT[s.pausenGrund] : null }, queue };
+      const beitrag = deps.gateway ? await deps.gateway.request<MithelfenBeitrag>("/v1/stammdaten/mein-beitrag").catch(() => null) : null;
+      return { lokal: { ...s, pausenText: s.pausenGrund ? GRUND_TEXT[s.pausenGrund] : null }, queue, beitrag };
     },
   });
   const config = defineTool({
@@ -52,7 +56,8 @@ export function buildRegisterDeltaTools(deps: {
     category: "stammdaten mithelfen einstellung register worker netzbetrieb akku worker-modus nur handelsregister",
     description:
       "Liest oder aendert die Einstellung: aktiv = dieser Rechner arbeitet Register-Jobs der Organisation ab (Handelsregister-Abfragen mit der " +
-      "eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund), nurNetzbetrieb = auf Akku pausieren, nurRegister = Worker-Modus: AVA " +
+      "eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund; bei bezahltem Sitz standardmaessig an, Free aus; eine ausdrueckliche " +
+      "Entscheidung des Nutzers gilt dauerhaft), nurNetzbetrieb = auf Akku pausieren, nurRegister = Worker-Modus: AVA " +
       "verarbeitet dann ausschliesslich Handelsregister-Jobs, alles andere (Herzschlag, Vorgaenge, Producer, Ablaeufe, Mail, Radar) ruht. " +
       "Ohne Argumente: aktuelle Werte. Schaltet die Organisation die Funktion ab, gilt das vorrangig.",
     parameters: { type: "object", properties: { aktiv: { type: "boolean" }, nurNetzbetrieb: { type: "boolean" }, nurRegister: { type: "boolean" } } },

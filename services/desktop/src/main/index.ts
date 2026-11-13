@@ -419,7 +419,7 @@ app.whenReady().then(async () => {
   registerMcpDiensteIpc({ mcpDienste });
   registerLaufzeitIpc({ externalServiceMonitor, ollama, ollamaUpdater, postgres, producers, storageDeps, updater });
   registerSpracheIpc({ auth, gatewayClient, providers, spracheRelay, spracheStand, spracheStore, userProfile });
-  registerStammdatenIpc({ mithelfen: core.mithelfen, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });
+  registerStammdatenIpc({ mithelfen: core.mithelfen, gateway: gatewayClient, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });
   registerThemenIpc({ themen: { current: core.themenStore }, providers });
   registerVorschlaegeIpc({ agentRegistry, chipErzeugung: core.chipErzeugung, hintergrundAufgaben, nutzerstand: core.nutzerstand, vorschlaegeSettings: core.vorschlaegeSettings });
   registerPersonenIpc({ apifyZugangInfo, audit, cycleCompanyContact, getTenantTierCached, personenRadarStore: core.personenRadarStore, personenRadarSupervisor: core.personenRadarSupervisor, resolveApifyAccess, watchlistKeyStore: core.watchlistKeyStore, watchlistStore: core.watchlistStore, watchlistSupervisor: core.watchlistSupervisor });

@@ -161,6 +161,8 @@ const NeuigkeitenBody = z.object({
     quelleUrl: z.string().trim().url().max(1000).regex(/^https?:\/\//).nullable().optional(),
     companyId: z.string().trim().max(120).regex(/^[A-Za-z0-9_.:-]+$/).nullable().optional(),
   })).min(1).max(30),
+  /** Burggraben 4: einmal im Monat eine Zeile, was der Rechner beim Mithelfen beigetragen hat. */
+  beitrag: z.object({ monat: z.string().regex(/^\d{4}-\d{2}$/), abfragen: z.number().int().min(0).max(1_000_000), aenderungen: z.number().int().min(0).max(1_000_000) }).optional(),
 });
 
 onboardingRouter.openapi(
@@ -189,7 +191,7 @@ onboardingRouter.openapi(
     }
     const env = loadEnv();
     const meldungen = p.data.meldungen.map((m) => ({ ...m, text: m.text ?? "", quelleUrl: m.quelleUrl ?? null, companyId: m.companyId ?? null }));
-    const erg = await mailSenden(pool, konto, "neuigkeiten", neuigkeitenMail({ vorname: konto.vorname, meldungen, appBasis: env.AVA_APP_URL, abmeldenUrl: linkAdressen(konto.token).abmelden }));
+    const erg = await mailSenden(pool, konto, "neuigkeiten", neuigkeitenMail({ vorname: konto.vorname, meldungen, beitrag: p.data.beitrag ?? null, appBasis: env.AVA_APP_URL, abmeldenUrl: linkAdressen(konto.token).abmelden }));
     return c.json({ gesendet: erg.ok, ...(erg.grund ? { grund: erg.grund } : {}), anzahl: meldungen.length }, 200);
   },
 );
