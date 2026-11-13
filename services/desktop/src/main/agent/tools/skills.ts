@@ -151,7 +151,7 @@ export function buildSkillsTools(deps: {
   const search = defineTool({
     name: "skill_search",
     description:
-      "Substring-search across skill names + descriptions + bodies. Returns up to 10 hits sorted by relevance. Use this at the start of EVERY turn where the user asks AVA to do something repeatable ('mach mir ein …', 'wie immer …', 'analysiere das Profil') — there might already be a skill for it.",
+      "Substring-search across skill names + descriptions + bodies. Returns up to 10 hits sorted by relevance. Use it only when the user refers to a stored routine ('wie immer', 'mein Skill', 'so wie letztes Mal', '/name') or when the 'Verfügbare Skills' list in your instructions has an entry that fits the request. Never for ordinary company research, finance questions or contact lookups — those go straight to the company tools.",
     parameters: {
       type: "object",
       properties: {

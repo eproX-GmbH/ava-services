@@ -337,6 +337,15 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     queryHints: ["firma", "firmen", "company", "übersicht", "recherche"],
   },
   {
+    // 2026-11-13 (PLAN_APP_UI.md, Stufe A): Finanzfragen holten sich
+    // publication_search und company_publications in zwei Suchen und zwei
+    // Ladevorgaengen. Als Buendel kommt beides in einem tool_load; der
+    // Prompt schickt Finanzfragen ohnehin zuerst zu company_get.
+    label: "Jahresabschluss",
+    tools: ["company_publications", "publication_search"],
+    queryHints: ["jahresabschluss", "bilanz", "lagebericht", "guv", "finanzen", "kennzahlen", "umsatz", "publikation"],
+  },
+  {
     label: "Notion-CRM-Update",
     tools: [
       "notion_list_databases",

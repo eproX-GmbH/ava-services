@@ -33,14 +33,21 @@ export interface SelectToolsOpts {
   activeSkill: LoadedSkill | null;
   loadedToolNames?: ReadonlySet<string>;
   extraToolNames?: ReadonlyArray<string>;
+  /** Kernwerkzeuge, die in diesem Zug trotzdem fehlen sollen (z. B.
+   *  skill_search/skill_get, wenn der Nutzer keine Skills hat; Befund
+   *  2026-11-13: ein Suchaufruf ohne Treffer in jeder Finanzfrage). */
+  ohneWerkzeuge?: ReadonlySet<string>;
 }
 
 export function selectToolsForTurn(
   opts: SelectToolsOpts,
 ): OllamaToolSpec[] | undefined {
-  const { registry, activeSkill, loadedToolNames, extraToolNames } = opts;
+  const { registry, activeSkill, loadedToolNames, extraToolNames, ohneWerkzeuge } = opts;
 
   const allowed = new Set<string>(ALWAYS_ON_CORE_TOOL_NAMES);
+  if (ohneWerkzeuge) {
+    for (const name of ohneWerkzeuge) allowed.delete(name);
+  }
   if (loadedToolNames) {
     for (const name of loadedToolNames) allowed.add(name);
   }

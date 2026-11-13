@@ -1245,6 +1245,11 @@ export class AgentOrchestrator extends EventEmitter {
         // text, even though only ~6 were exposed structurally — a
         // ~10k-token leak per turn.
         const availableToolNames = new Set<string>(ALWAYS_ON_CORE_TOOL_NAMES);
+        // Ohne hinterlegte Skills gibt es nichts zu suchen: skill_search und
+        // skill_get fallen dann aus dem Zug (Prompt und tools[]), sonst ruft
+        // das Modell sie bei jeder "wiederholbaren" Aufgabe ins Leere.
+        const ohneSkillWerkzeuge = this.availableSkills().length === 0 ? new Set<string>(["skill_search", "skill_get"]) : undefined;
+        if (ohneSkillWerkzeuge) for (const n of ohneSkillWerkzeuge) availableToolNames.delete(n);
         // D2: Liegen Uploads im Verlauf, sind die Datei-Werkzeuge da, ohne
         // dass das Modell sie erst suchen muss.
         if (conversation.messages.some((m) => m.role === "user" && m.content.includes("[attachment:"))) {
@@ -1328,6 +1333,7 @@ export class AgentOrchestrator extends EventEmitter {
                 // within the same conversation.
                 loadedToolNames: conversation.loadedToolNames,
                 extraToolNames: slashNudgedTool ? [slashNudgedTool] : undefined,
+                ohneWerkzeuge: ohneSkillWerkzeuge,
               })
             : undefined;
         // L0: Kontext je Schritt vermessen; echte Tokens kommen mit dem done-Frame.
