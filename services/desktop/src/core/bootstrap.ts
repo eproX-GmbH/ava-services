@@ -2298,7 +2298,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // O5: Neuigkeiten per Mail (Gateway prueft Zustimmung und 20-Stunden-Abstand).
   const neuigkeitenTakt = setInterval(() => {
     if (!auth.getStatus().signedIn || workerModus.aktiv()) return;
-    void neuigkeitenMailPruefen({ gateway: gatewayClient, meldungen: () => alerts.list(), datei: onboardingDatei, beitrag: () => gatewayClient.request<MithelfenBeitrag>("/v1/stammdaten/mein-beitrag") }).catch((err) => console.warn("[onboarding] Neuigkeiten-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
+    void neuigkeitenMailPruefen({ gateway: gatewayClient, meldungen: () => alerts.list(), datei: onboardingDatei, beitrag: () => gatewayClient.request<MithelfenBeitrag>("/v1/stammdaten/mein-beitrag") })
+      .then((r) => { if (r.schritt !== "nichts zu melden") console.info(`[onboarding] Neuigkeiten-Mail: ${r.schritt}, ${r.meldungen} Meldungen${r.grund ? `, ${r.grund}` : ""}`); })
+      .catch((err) => console.warn("[onboarding] Neuigkeiten-Mail:", err instanceof Error ? err.message.slice(0, 160) : err));
   }, 30 * 60_000);
   neuigkeitenTakt.unref?.();
   const startIcp = new StartIcpUebernahme({

@@ -175,8 +175,15 @@ const geprueftAm = new Map<string, string>();
 
 export async function runNeuigkeitenCronOnce(jetzt: Date = new Date()): Promise<{ geprueft: number; gesendet: number }> {
   const erg = { geprueft: 0, gesendet: 0 };
-  if (!versandBereit()) return erg;
+  if (!versandBereit()) {
+    logger.warn("[neuigkeiten-cron] kein Mailgun-Schluessel, Takt uebersprungen");
+    return erg;
+  }
   const tag = jetzt.toISOString().slice(0, 10);
+  // Zusammenfassung je Takt, damit "warum kam keine Mail?" aus dem Log beantwortbar ist.
+  const uebersprungen: Record<string, number> = {};
+  let ohneFirmen = 0;
+  let nichtsNeues = 0;
   const env = loadEnv();
   const pool = getGatewayPool();
   let liste: Konto[];
@@ -188,19 +195,29 @@ export async function runNeuigkeitenCronOnce(jetzt: Date = new Date()): Promise<
   }
   for (const k of liste) {
     const e = cronEntscheidung({ jetzt, letzterVersand: k.letzterVersand ? new Date(k.letzterVersand) : null, appZuletztAt: k.appZuletztAt ? new Date(k.appZuletztAt) : null });
-    if (!e.senden) continue;
-    if (geprueftAm.get(k.actorId) === tag) continue;
+    if (!e.senden) {
+      uebersprungen[e.grund] = (uebersprungen[e.grund] ?? 0) + 1;
+      continue;
+    }
+    if (geprueftAm.get(k.actorId) === tag) {
+      uebersprungen["heute schon geprueft"] = (uebersprungen["heute schon geprueft"] ?? 0) + 1;
+      continue;
+    }
     geprueftAm.set(k.actorId, tag);
     erg.geprueft += 1;
     try {
       const ids = await firmenDesNutzers(k.actorId);
-      if (ids.length === 0) continue;
+      if (ids.length === 0) {
+        ohneFirmen += 1;
+        continue;
+      }
       const seit = k.letzterVersand ? new Date(k.letzterVersand) : new Date(jetzt.getTime() - ERSTES_FENSTER_MS);
       const { items } = await sammleNeuheiten(ids, seit.toISOString(), k.actorId);
       const namen = await resolveCompanyNames(pool, items.map((i) => i.companyId));
       const meldungen = neuheitenZuMeldungen(items, namen);
       if (meldungen.length === 0) {
-        logger.info({ actorId: k.actorId, firmen: ids.length }, "[neuigkeiten-cron] nichts Neues");
+        nichtsNeues += 1;
+        logger.info({ actorId: k.actorId, firmen: ids.length, seit: seit.toISOString() }, "[neuigkeiten-cron] nichts Neues");
         continue;
       }
       const konto: MailKonto = { actorId: k.actorId, email: k.email, vorname: k.vorname, token: k.token, neuigkeiten: true, abgemeldet: false };
@@ -212,6 +229,7 @@ export async function runNeuigkeitenCronOnce(jetzt: Date = new Date()): Promise<
     }
   }
   if (geprueftAm.size > 50_000) geprueftAm.clear();
+  logger.info({ stundeBerlin: stundeBerlin(jetzt), konten: liste.length, uebersprungen, geprueft: erg.geprueft, ohneFirmen, nichtsNeues, gesendet: erg.gesendet }, "[neuigkeiten-cron] Takt");
   return erg;
 }
 

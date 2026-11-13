@@ -54,16 +54,16 @@ export async function neuigkeitenMailPruefen(deps: {
   jetzt?: () => Date;
   /** Burggraben 4: eigener Mithelfen-Beitrag (Gateway); fehlt er, geht die Mail ohne die Zeile. */
   beitrag?: () => Promise<MithelfenBeitrag | null>;
-}): Promise<void> {
+}): Promise<{ schritt: "erster lauf" | "nichts zu melden" | "gesendet" | "uebersprungen"; meldungen: number; grund?: string }> {
   const datei = deps.datei ?? onboardingDatei();
   const jetztDatum = (deps.jetzt ?? (() => new Date()))();
   const jetzt = jetztDatum.toISOString();
   const marke = markeLesen(datei);
   const bis = marke.neuigkeitenBis;
   // Erster Lauf: ab jetzt zaehlen, keine alten Meldungen nachschicken.
-  if (!bis) { markeSetzen(datei, { neuigkeitenBis: jetzt }); return; }
+  if (!bis) { markeSetzen(datei, { neuigkeitenBis: jetzt }); return { schritt: "erster lauf", meldungen: 0 }; }
   const auswahl = mailMeldungen(deps.meldungen(), bis);
-  if (auswahl.length === 0) return;
+  if (auswahl.length === 0) return { schritt: "nichts zu melden", meldungen: 0 };
   const vormonat = vormonatKennung(jetztDatum);
   let beitrag: { monat: string; abfragen: number; aenderungen: number } | null = null;
   let beitragGeprueft = false;
@@ -94,4 +94,5 @@ export async function neuigkeitenMailPruefen(deps: {
   if (r.gesendet || r.grund === "keine Zustimmung" || r.grund === "abgemeldet") {
     markeSetzen(datei, { neuigkeitenBis: jetzt, ...(r.gesendet && beitragGeprueft ? { beitragGemeldet: vormonat } : {}) });
   }
+  return { schritt: r.gesendet ? "gesendet" : "uebersprungen", meldungen: auswahl.length, grund: r.grund };
 }
