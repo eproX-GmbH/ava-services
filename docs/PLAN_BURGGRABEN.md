@@ -66,6 +66,14 @@ Stand 2026-11-12. Anlass: Challenge-Gespräch mit Joyce („Burggraben tiefer bu
   eine Mail.
 - Prüfung: `pnpm -F @ava/db-gateway test:burggraben` (Felder-Diff, Cron-Entscheidung,
   Neuheiten → Meldungen).
+- Befund 2026-11-13 (Gateway v388, erster lesbarer Takt): ein Konto mit Zustimmung, geprüft,
+  „ohne Firmen“. Ursache: der Cron fragte nur die eigenen Importe des Nutzers ab, „Meine
+  Firmen“ zeigt aber die Firmen der ganzen Organisation. Seitdem Firmenliste wie in der
+  Abrechnung: Importe aller Mitglieder der Organisation(en) des Nutzers, ohne gelöschte
+  (Paar) und ohne ruhende. Je Takt eine Zusammenfassung im Log (`[neuigkeiten-cron] Takt`:
+  Konten, übersprungen je Grund, geprüft, ohne Firmen, nichts Neues, gesendet). Lese-Skript
+  `scripts/mail-stand.readonly.js` für Zustimmung, Versand, App-Aktivität und Firmen je
+  Nutzer.
 
 ## 5. Vorschlag zu Punkt 3 und 4 (2026-11-13, zur Entscheidung)
 

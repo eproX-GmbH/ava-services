@@ -26,7 +26,6 @@
 import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { resolveCompanyNames } from "./company-names";
-import { tombstonedSubset } from "./company-tombstones";
 import { masterData } from "./register-jobs";
 import { loadEnv } from "./env";
 import { linkAdressen, mailSenden, versandBereit, type MailKonto } from "./mail/versand";
@@ -161,13 +160,33 @@ async function konten(): Promise<Konto[]> {
   return r.rows;
 }
 
-/** Firmen des Nutzers laut master-data, ohne vom Nutzer geloeschte. */
+/**
+ * Firmen wie in "Meine Firmen": die Importe aller Mitglieder der Organisation(en) des
+ * Nutzers (Transaction.userId je Mitglied), ohne geloeschte (CompanyTombstone je Paar)
+ * und ohne ruhende (P10). Befund 2026-11-13: nur die eigenen Importe abzufragen lieferte
+ * fuer Nutzer, deren Firmen Kollegen importiert haben, eine leere Liste ("ohne Firmen").
+ */
 async function firmenDesNutzers(actorId: string): Promise<string[]> {
-  const r = await masterData<{ rows: Array<{ companyId: string }> }>("POST", "/internal/transactions/companies-by-users", { userIds: [actorId] });
-  const ids = [...new Set((r.rows ?? []).map((x) => x.companyId).filter(Boolean))];
-  if (ids.length === 0) return [];
-  const weg = await tombstonedSubset(getGatewayPool(), actorId, ids).catch(() => new Set<string>());
-  return ids.filter((id) => !weg.has(id)).slice(0, MAX_FIRMEN);
+  const pool = getGatewayPool();
+  const m = await pool.query<{ actorId: string }>(
+    `SELECT DISTINCT "actorId" FROM "TenantMember"
+      WHERE "tenantId" IN (SELECT "tenantId" FROM "TenantMember" WHERE "actorId" = $1)`,
+    [actorId],
+  );
+  const userIds = [...new Set([actorId, ...m.rows.map((r) => r.actorId)])];
+  const r = await masterData<{ rows: Array<{ userId: string; companyId: string }> }>("POST", "/internal/transactions/companies-by-users", { userIds });
+  if ((r.rows ?? []).length === 0) return [];
+  const tomb = await pool.query<{ userId: string; companyId: string }>(`SELECT "userId", "companyId" FROM "CompanyTombstone" WHERE "userId" = ANY($1::text[])`, [userIds]).catch(() => ({ rows: [] as Array<{ userId: string; companyId: string }> }));
+  const weg = new Set(tomb.rows.map((t) => `${t.userId}|${t.companyId}`));
+  const { ruhendePaare } = await import("./firmen-zustand");
+  const ruhend = await ruhendePaare(pool, userIds).catch(() => new Set<string>());
+  const ids = new Set<string>();
+  for (const row of r.rows) {
+    if (!row.companyId) continue;
+    const k = `${row.userId}|${row.companyId}`;
+    if (!weg.has(k) && !ruhend.has(k)) ids.add(row.companyId);
+  }
+  return [...ids].slice(0, MAX_FIRMEN);
 }
 
 /** Je Konto hoechstens einmal am Tag sammeln, auch wenn nichts zu melden war. */
