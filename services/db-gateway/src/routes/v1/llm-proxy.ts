@@ -382,7 +382,7 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
       void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false, quelle, kontext: apifyKontext, preisCents: status < 400 && apifyKontext === "linkedin" ? apifyPreisCents : null }).then((id) => {
         // 2026-10-15 — Apify: Lauf-Kennung und echte Kosten laut Apify an die Zeile.
         if (id && kind === "apify" && status < 400) {
-          void import("../../lib/anbieter-kosten").then(({ apifyLaufNachtragen }) => apifyLaufNachtragen(pool, id, rest, upstream.headers, text));
+          void import("../../lib/anbieter-kosten").then(({ apifyLaufNachtragen }) => apifyLaufNachtragen(pool, id, rest, upstream.headers, text, c.req.method));
         }
       });
       return;

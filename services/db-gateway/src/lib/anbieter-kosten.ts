@@ -78,7 +78,9 @@ async function apifyLetzterLauf(actorId: string): Promise<{ runId: string; usd: 
 }
 
 /** Nach einem Apify-Aufruf: Lauf-Kennung und echte Kosten an die Verbrauchszeile schreiben. */
-export async function apifyLaufNachtragen(pool: Pool, usageId: string, rest: string, headers: Headers, bodyText: string | null): Promise<void> {
+export async function apifyLaufNachtragen(pool: Pool, usageId: string, rest: string, headers: Headers, bodyText: string | null, methode = "POST"): Promise<void> {
+  // Nur der Start eines Laufs (POST) traegt Kosten; GET auf runs/last o. Ae. wuerde sie doppelt zaehlen.
+  if (methode.toUpperCase() !== "POST") return;
   try {
     const m = /^acts\/([^/?]+)\/(run-sync[^/?]*|runs)/.exec(rest.replace(/^\/+/, ""));
     if (!m) return;
@@ -87,7 +89,10 @@ export async function apifyLaufNachtragen(pool: Pool, usageId: string, rest: str
     let usd: number | null = null;
     if (runId) {
       const k = await apifyLaufKosten(runId);
-      usd = k?.usd ?? null;
+      // PM-2026-0052: asynchron gestartete Laeufe (POST /runs) laufen beim Nachtragen noch;
+      // deren Zwischenstand waere fast 0 und wuerde die Schaetzung unterbieten. Nur fertige
+      // Laeufe tragen Kosten ein, den Rest holt apifyFehlendeKostenNachtragen stuendlich.
+      usd = k && APIFY_FERTIG.includes(k.status) ? k.usd : null;
     } else {
       const l = await apifyLetzterLauf(actorId);
       if (l) {
@@ -107,6 +112,8 @@ export async function apifyLaufNachtragen(pool: Pool, usageId: string, rest: str
   }
 }
 
+const APIFY_FERTIG = ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"];
+
 /** Apify-Zeilen ohne Kosten (Lauf lief beim Aufruf noch) nachtragen, stuendlich. */
 export async function apifyFehlendeKostenNachtragen(pool: Pool): Promise<number> {
   if (!apifyToken()) return 0;
@@ -116,7 +123,7 @@ export async function apifyFehlendeKostenNachtragen(pool: Pool): Promise<number>
   let n = 0;
   for (const row of r.rows) {
     const k = await apifyLaufKosten(row.ref).catch(() => null);
-    if (!k || !["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"].includes(k.status)) continue;
+    if (!k || !APIFY_FERTIG.includes(k.status)) continue;
     await pool.query(`UPDATE "LlmUsage" SET "costMicroUsd" = $2 WHERE "id" = $1`, [row.id, Math.round(k.usd * 1e6)]);
     {
       const { kundenpreisCents } = await import("./apify-preise");
