@@ -13,6 +13,7 @@ import type {
   UpdateStatus,
 } from "../shared/types";
 import { scrubQuarantine, scrubPathExplicit } from "./scrub-quarantine";
+import { pruefeUpdateSignatur } from "./update-signatur";
 
 // Auto-update via electron-updater (Phase 8.u4 — finally landed in
 // 8.v1.5; substantially reworked in v0.1.155 after silent-install
@@ -103,6 +104,11 @@ export class Updater extends EventEmitter {
    *  überspringt sein 4s-Producer-Grace, damit NSIS auf Windows nicht
    *  in den "AVA kann nicht geschlossen werden"-Dialog läuft. */
   private installing = false;
+  /** 2026-11-16 — Version, deren Signaturpruefung gescheitert ist. Solange
+   *  gesetzt, laeuft der 15-Min-Takt nicht weiter: jeder Takt wuerde das
+   *  ~1,8 GB grosse Windows-Setup erneut herunterladen und wieder
+   *  verwerfen. "Jetzt nach Updates suchen" geht weiterhin. */
+  private signaturFehlerVersion: string | null = null;
 
   /** Public read-only Getter für den before-quit-Handler. */
   isInstallingUpdate(): boolean {
@@ -137,6 +143,13 @@ export class Updater extends EventEmitter {
     // nächste Cmd-Q die Installation nach.
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    // 2026-11-16 — eigene Signaturpruefung auf Windows (update-signatur.ts):
+    // die eingebaute gibt PowerShell nur 20 s fuer das ~1,8 GB grosse Setup.
+    if (process.platform === "win32" && "verifyUpdateCodeSignature" in autoUpdater) {
+      (autoUpdater as unknown as {
+        verifyUpdateCodeSignature: (namen: string[], datei: string) => Promise<string | null>;
+      }).verifyUpdateCodeSignature = pruefeUpdateSignatur;
+    }
     autoUpdater.logger = {
       info: (m: unknown) => console.log("[updater]", m),
       warn: (m: unknown) => console.warn("[updater]", m),
@@ -236,6 +249,9 @@ export class Updater extends EventEmitter {
       console.warn(
         `[updater] error in autoUpdater pipeline: ${err.message}`,
       );
+      if ((err as Error & { code?: string }).code === "ERR_UPDATER_INVALID_SIGNATURE") {
+        this.signaturFehlerVersion = this.latestVersion ?? "unbekannt";
+      }
       this.errorMessage = err.message;
       this.setState("error");
     });
@@ -246,7 +262,15 @@ export class Updater extends EventEmitter {
     await this.detectSilentInstallFailure();
 
     void this.check();
-    this.interval = setInterval(() => void this.check(), CHECK_INTERVAL_MS);
+    this.interval = setInterval(() => {
+      if (this.signaturFehlerVersion) {
+        console.info(
+          `[updater] Takt ausgesetzt: Signaturpruefung fuer v${this.signaturFehlerVersion} gescheitert`,
+        );
+        return;
+      }
+      void this.check();
+    }, CHECK_INTERVAL_MS);
   }
 
   stop(): void {
@@ -257,6 +281,8 @@ export class Updater extends EventEmitter {
   }
 
   async check(): Promise<void> {
+    // Manueller Check (oder Neustart) setzt die Takt-Sperre zurueck.
+    this.signaturFehlerVersion = null;
     if (!paths().isPackaged) {
       console.info(
         "[updater] check() skipped — paths().isPackaged is false (dev mode).",

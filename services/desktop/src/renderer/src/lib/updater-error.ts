@@ -89,6 +89,21 @@ export function humanizeUpdaterError(raw: string | null): HumanizedUpdaterError 
     };
   }
 
+  // 3b) Signatur konnte gar nicht geprüft werden (Windows-PowerShell hat
+  //     nicht oder nicht rechtzeitig geantwortet). Das ist KEIN Beweis
+  //     für eine falsche Signatur — nicht als solche melden.
+  if (
+    lower.includes("signaturpruefung nicht moeglich") ||
+    lower.includes("get-authenticodesignature")
+  ) {
+    return {
+      friendly:
+        "Das Update wurde heruntergeladen, aber Windows konnte die Signatur nicht rechtzeitig prüfen. Klick auf „Jetzt nach Updates suchen“, um es erneut zu versuchen. Klappt es wieder nicht, lade AVA von ava.bi neu herunter.",
+      technical: condense(raw),
+      transient: true,
+    };
+  }
+
   // 4) Signatur-/Integritätsprobleme — das ist NICHT transient,
   //    der Build oder die Verteilung ist defekt.
   if (

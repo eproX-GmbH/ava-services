@@ -13,10 +13,12 @@ aktionen:
   - { art: chat_vorschlag, ziel: "Gibt es ein Update für AVA?", label: "Nach Update suchen" }
   - { art: app_oeffnen, ziel: updates, label: "Updates öffnen" }
 gilt_fuer: [desktop]
-stand: 2026-11-07
+stand: 2026-11-16
 ---
 Frag mich einfach, ob es eine neue Version gibt. Ich sehe nach, lade sie herunter und starte AVA auf deinen Wunsch neu.
 
 Von selbst prüft AVA beim Start und danach regelmäßig, ob es eine neue Version gibt, und lädt sie im Hintergrund herunter. Du bekommst eine Mitteilung, und oben in der App erscheint „Neu starten, um zu aktualisieren“. Ein Klick darauf installiert das Update und startet AVA neu. Startest du nicht neu, wird das Update beim nächsten Beenden installiert.
 
 Unter Einstellungen → Erweitert → Updates siehst du die installierte Version, eine verfügbare neue Version und den Fortschritt beim Herunterladen. Dort gibt es auch „Jetzt nach Updates suchen“. Meldet die Suche kurz einen Fehler, wird meist gerade eine neue Version bereitgestellt; versuch es dann in ein paar Minuten noch einmal.
+
+Auf Windows prüft AVA vor der Installation die digitale Signatur des Updates. Das kann bei langsamen Rechnern oder aktivem Virenscanner einige Minuten dauern. Meldet AVA, dass die Signatur nicht rechtzeitig geprüft werden konnte, klick erneut auf „Jetzt nach Updates suchen“; hilft das nicht, lade AVA von ava.bi neu herunter.
