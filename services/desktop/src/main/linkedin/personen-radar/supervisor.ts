@@ -20,7 +20,7 @@ import {
 import type { GatewayClient } from "../../agent/gateway-client";
 import type { Alert } from "../../../shared/types";
 import type { WatchlistKeyStore } from "../watchlist/key-store";
-import { fetchPostEngagement, type Engager } from "./engagement";
+import { fetchPostEngagement, zeitfensterSeit, type EngagementAbruf, type Engager } from "./engagement";
 import { resolveEngagerCompanies } from "./matching";
 import type { PersonenRadarStore } from "./store";
 
@@ -28,6 +28,13 @@ const CHECK_INTERVAL_MS = 60 * 60_000;
 const FIRST_TICK_DELAY_MS = 5 * 60_000;
 const MAX_POSTS_PER_RUN = 10;
 const MAX_CANDIDATES_PER_BATCH = 25;
+/** PM-2026-0052 — volles Nachladen: hoechstens so viele Kommentare (explizit, damit das
+ *  Gateway die Kosten richtig schaetzt; maxItems 0 hiesse beim Actor ebenfalls 1.000). */
+export const NACHLADEN_MAX_KOMMENTARE = 1000;
+/** Profil-Aufloesungen in einem Nachlade-Lauf (Rest wartet in der Warteschlange). */
+export const NACHLADEN_BUDGET = 100;
+/** So viele wartende Personen nimmt ein Lauf zusaetzlich auf. */
+const WARTESCHLANGE_JE_LAUF = 300;
 
 export interface PersonenRadarSupervisorDeps {
   /** v0.1.519 — fuer die Headline-Extraktion per LLM. */
@@ -120,12 +127,20 @@ export class PersonenRadarSupervisor {
     await this.runNow("automatik");
   }
 
-  async runNow(trigger: "automatik" | "manuell"): Promise<string> {
+  /**
+   * PM-2026-0052 — `nachladen`: fuer EINEN beobachteten Post alle Kommentare (mit Antworten)
+   * holen und mit groesserem Budget zuordnen. Ist der Post schon voll geladen, holt der Lauf
+   * nur neue Kommentare und arbeitet die Warteschlange weiter ab.
+   */
+  async runNow(trigger: "automatik" | "manuell", opts: { nachladen?: string } = {}): Promise<string> {
     if (this.running) return "Personen-Radar-Lauf laeuft bereits.";
     const cfg = this.deps.store.getConfig();
     const key = await this.deps.getApifyAccess();
     if (!key) return "Kein Apify-Zugang: weder eigener Token (LinkedIn → Watchlist) noch Organisationsschluessel.";
     if (cfg.postUrls.length === 0) return "Keine Quell-Posts konfiguriert.";
+    const nachladen = opts.nachladen?.trim() || null;
+    if (nachladen && !cfg.postUrls.includes(nachladen)) return "Dieser Post wird nicht beobachtet.";
+    const posts = nachladen ? [nachladen] : cfg.postUrls.slice(0, MAX_POSTS_PER_RUN);
     this.running = true;
     const startedAt = new Date().toISOString();
     let items = 0;
@@ -135,19 +150,36 @@ export class PersonenRadarSupervisor {
     let firmenNeu = 0;
     let firmenBekannt = 0;
     const probleme: string[] = [];
+    const hinweise: string[] = [];
     try {
-      // 1. Engagement einsammeln.
+      // 1. Engagement einsammeln. PM-2026-0052: der Actor kennt kein Blaettern. Ohne volles
+      //    Nachladen sieht jeder Lauf dieselben ersten Kommentare; danach nur noch neue.
       const alle: Engager[] = [];
-      for (const postUrl of cfg.postUrls.slice(0, MAX_POSTS_PER_RUN)) {
+      for (const postUrl of posts) {
+        const stand = cfg.postStand[postUrl];
+        const fenster = stand?.vollGeladenAt ? zeitfensterSeit(stand.letzterAbrufAt) : null;
+        const abruf: EngagementAbruf =
+          nachladen && !stand?.vollGeladenAt
+            ? { reaktionen: 0, kommentare: NACHLADEN_MAX_KOMMENTARE, antworten: true, lang: true }
+            : nachladen
+              ? { reaktionen: 0, kommentare: NACHLADEN_MAX_KOMMENTARE, antworten: true, zeitfenster: fenster ?? "month", lang: true }
+              : stand?.vollGeladenAt && fenster
+                ? { reaktionen: cfg.maxItemsPerPost, kommentare: cfg.maxItemsPerPost, antworten: true, zeitfenster: fenster }
+                : { reaktionen: cfg.maxItemsPerPost, kommentare: cfg.maxItemsPerPost };
         try {
-          const r = await fetchPostEngagement(
-            key,
-            cfg.actorIds,
-            postUrl,
-            cfg.maxItemsPerPost,
-          );
+          const r = await fetchPostEngagement(key, cfg.actorIds, postUrl, abruf);
           items += r.kosteneinheiten;
           alle.push(...r.engager);
+          this.deps.store.setPostStand(postUrl, {
+            letzterAbrufAt: startedAt,
+            ...(nachladen && !stand?.vollGeladenAt ? { vollGeladenAt: startedAt } : {}),
+          });
+          if (!stand?.vollGeladenAt && !nachladen && r.kommentare >= cfg.maxItemsPerPost) {
+            hinweise.push(`Post hat mehr als ${cfg.maxItemsPerPost} Kommentare, ältere erst nach „Alle Kommentare nachladen“`);
+          }
+          if (nachladen && !stand?.vollGeladenAt && r.kommentare >= NACHLADEN_MAX_KOMMENTARE) {
+            hinweise.push(`mehr als ${NACHLADEN_MAX_KOMMENTARE} Kommentare, die ältesten fehlen`);
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
@@ -167,7 +199,9 @@ export class PersonenRadarSupervisor {
       //    zweiten Profil-Lookup (Firmen-Cache 90 Tage). Je Paar den staerksten Auftritt
       //    behalten (Kommentar > Reaktion).
       const proPaar = new Map<string, Engager>();
-      for (const e of alle) {
+      // PM-2026-0052: zuerst die Personen, die frueher am Budget gescheitert sind.
+      const wartend = await this.deps.store.offeneHolen(WARTESCHLANGE_JE_LAUF, nachladen);
+      for (const e of [...wartend, ...alle]) {
         const k = `${e.profileUrl}|${e.postUrl}`;
         const vorhanden = proPaar.get(k);
         if (!vorhanden || (e.activityType === "comment" && vorhanden.activityType !== "comment")) proPaar.set(k, e);
@@ -192,13 +226,18 @@ export class PersonenRadarSupervisor {
       const unklar: Array<{ profileUrl: string; name: string | null; headline: string | null; grund: string }> = [];
       const bearbeitet: string[] = [];
       const firmenImLauf = new Set<string>();
-      let budget = cfg.maxResolvesPerRun;
+      let budget = nachladen ? Math.max(cfg.maxResolvesPerRun, NACHLADEN_BUDGET) : cfg.maxResolvesPerRun;
+      const zurueckgestellt: Engager[] = [];
       for (const [url, auftritte] of proPerson) {
         const engager = auftritte[0]!;
         let matches = firmenCache.get(url) as Array<{ domain: string; companyName: string; rolle: string | null; konfidenz: "hart" | "mittel" }> | undefined;
         let grund: string | null = null;
         if (!matches) {
-          if (budget <= 0) break;
+          // Budget aufgebraucht: merken statt verwerfen (naechster Lauf macht weiter).
+          if (budget <= 0) {
+            zurueckgestellt.push(...auftritte);
+            continue;
+          }
           budget--;
           try {
             const r = await resolveEngagerCompanies({
@@ -220,6 +259,7 @@ export class PersonenRadarSupervisor {
               return msg;
             }
             probleme.push(`${engager.name ?? url}: ${msg.slice(0, 80)}`);
+            zurueckgestellt.push(...auftritte);
             continue;
           }
         }
@@ -342,6 +382,9 @@ export class PersonenRadarSupervisor {
       // 5. Buchhaltung.
       await this.deps.store.markPersonsSeen(bearbeitet);
       if (unklar.length > 0) await this.deps.store.addUnklar(unklar);
+      await this.deps.store.offeneEntfernen(bearbeitet);
+      await this.deps.store.offeneAblegen(zurueckgestellt);
+      const nochOffen = Object.values(await this.deps.store.offeneAnzahl()).reduce((a, n) => a + n, 0);
 
       const outcome = [
         `${engagerGesamt} Engagements (${items} Items)`,
@@ -351,11 +394,13 @@ export class PersonenRadarSupervisor {
         `${firmenNeu} neue Firmen im Radar` +
           (firmenBekannt > 0 ? ` (${firmenBekannt} bereits bekannt)` : ""),
         unklar.length > 0 ? `${unklar.length} ungeklaert` : null,
+        nochOffen > 0 ? `${nochOffen} warten auf Zuordnung` : null,
+        hinweise.length > 0 ? `Hinweis: ${hinweise.slice(0, 2).join(" · ")}` : null,
         probleme.length > 0 ? `Probleme: ${probleme.slice(0, 2).join(" · ")}` : null,
       ]
         .filter(Boolean)
         .join(", ");
-      this.finishRun(startedAt, outcome, trigger, probleme.length > 0 ? "warning" : "info");
+      this.finishRun(startedAt, nachladen ? `Nachladen: ${outcome}` : outcome, nachladen ? "nachladen" : trigger, probleme.length > 0 ? "warning" : "info");
       return outcome;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

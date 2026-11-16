@@ -3,12 +3,13 @@
 // Kein ICP-Tor: der Score ist nur ein Hinweis.
 
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
 import type { PersonenRadarStore } from "../../linkedin/personen-radar/store";
 import type { PersonenRadarSupervisor } from "../../linkedin/personen-radar/supervisor";
 import { gwVon, leadIgnorieren, leadUebernehmen, leadsListe } from "../../linkedin/leads-uebernahme";
+import { nachladenKostenHinweis, nachladenStarten } from "../../linkedin/personen-radar/nachladen";
 
 export interface LinkedInLeadsToolDeps {
   gateway: GatewayClient;
@@ -188,5 +189,48 @@ export function buildLinkedInLeadsTools(deps: LinkedInLeadsToolDeps): Tool[] {
     },
   });
 
-  return [leads, uebernehmen, ignorieren, posts];
+  // PM-2026-0052 — ein Lauf sieht je Post nur die ersten Kommentare; grosse Posts einmal komplett holen.
+  const nachladen = defineTool({
+    name: "linkedin_post_nachladen",
+    summary: "Alle Kommentare eines beobachteten LinkedIn-Posts nachladen (auch aeltere), mit Kostenhinweis.",
+    category: "linkedin post beobachten leads kommentare nachladen alle vollstaendig",
+    description:
+      "Ein normaler Lauf holt je Post nur die ersten Kommentare (maxItemsPerPost) und sieht bei jedem Lauf dieselben. " +
+      "Dieses Werkzeug holt fuer EINEN beobachteten Post alle Kommentare samt Antworten (hoechstens 1.000) und ordnet bis zu 100 neue Personen ihrer Firma zu; " +
+      "der Rest wartet und wird in den naechsten Laeufen zugeordnet. Danach holen die regelmaessigen Laeufe nur noch neue Kommentare. " +
+      "Erneut aufgerufen arbeitet es die Warteschlange weiter ab, ohne alles erneut zu holen. Laeuft im Hintergrund; vorher Kostenhinweis mit Bestaetigung. " +
+      "postUrl weglassen, wenn genau ein Post beobachtet wird.",
+    parameters: { type: "object", properties: { postUrl: { type: "string", description: "Beobachteter Post (volle LinkedIn-URL)." } } },
+    schema: yup.object({ postUrl: yup.string().trim().optional() }).noUnknown(true),
+    preview: (r: unknown) => {
+      const x = (r ?? {}) as { status?: string; error?: string };
+      return (x.error ?? x.status ?? "").slice(0, 80);
+    },
+    run: async (args, c) => {
+      const store = deps.getPradarStore();
+      const sup = deps.getPradarSupervisor();
+      if (!store || !sup) return { error: "Beobachtete Posts sind nicht initialisiert." };
+      const cfg = store.getConfig();
+      const postUrl = args.postUrl || (cfg.postUrls.length === 1 ? cfg.postUrls[0]! : "");
+      if (!postUrl) return { error: "Mehrere Posts werden beobachtet. Bitte den gewünschten Post nennen.", posts: cfg.postUrls };
+      if (!cfg.postUrls.includes(postUrl)) return { error: "Dieser Post wird nicht beobachtet. Erst mit linkedin_posts_beobachten hinzufügen." };
+      const hinweis = await nachladenKostenHinweis(deps.gateway, store, postUrl);
+      const wahl = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Alle Kommentare nachladen? ${hinweis}`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Nachladen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (wahl !== "ja") return userDeclined();
+      return { status: nachladenStarten(sup, postUrl), postUrl };
+    },
+  });
+
+  return [leads, uebernehmen, ignorieren, posts, nachladen];
 }

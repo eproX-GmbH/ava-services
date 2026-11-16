@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { linkedinLimitSicherstellen } from "./LinkedinLimitDialog";
+import { bestaetigen } from "./Bestaetigung";
 
 interface PrState {
   error?: string;
@@ -18,7 +19,9 @@ interface PrState {
     maxResolvesPerRun: number;
     lastRunAt: string | null;
     lastOutcome: string | null;
+    postStand?: Record<string, { vollGeladenAt: string | null; letzterAbrufAt: string | null }>;
   };
+  offen?: Record<string, number>;
   hasKey?: boolean;
   apifyVerfuegbar?: boolean;
   running?: boolean;
@@ -29,6 +32,14 @@ interface PrState {
     grund: string | null;
     firstSeen: string;
   }>;
+}
+
+/** PM-2026-0052 — alle Kommentare eines Posts nachladen, mit Kostenhinweis vorab. */
+export async function kommentareNachladen(postUrl: string): Promise<string | null> {
+  const hinweis = await window.api.linkedin.personenRadar.nachladenHinweis(postUrl);
+  const ok = await bestaetigen({ titel: "Alle Kommentare nachladen?", text: hinweis, bestaetigen: "Nachladen" });
+  if (!ok) return null;
+  return window.api.linkedin.personenRadar.nachladen(postUrl);
 }
 
 export function PersonenRadarPanel(): JSX.Element {
@@ -103,6 +114,28 @@ export function PersonenRadarPanel(): JSX.Element {
               }
             />
           </label>
+
+          {cfg.postUrls.length > 0 && (
+            <ul className="wl__posts" style={{ listStyle: "none", padding: 0, margin: "8px 0 0", display: "grid", gap: 6 }}>
+              {cfg.postUrls.map((u) => {
+                const stand = cfg.postStand?.[u];
+                const offen = state.offen?.[u] ?? 0;
+                return (
+                  <li key={u} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+                    <span className="muted small" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }} title={u}>
+                      {u.replace(/^https?:\/\/(www\.)?linkedin\.com\//, "")}
+                      {" · "}
+                      {stand?.vollGeladenAt ? `alle Kommentare geholt am ${new Date(stand.vollGeladenAt).toLocaleDateString("de-DE")}` : "nur die ersten Kommentare"}
+                      {offen > 0 ? ` · ${offen} warten auf Zuordnung` : ""}
+                    </span>
+                    <button type="button" className="btn" disabled={busy || state.running} onClick={() => void run(() => kommentareNachladen(u))}>
+                      {stand?.vollGeladenAt ? (offen > 0 ? "Weiter zuordnen" : "Neue nachladen") : "Alle Kommentare nachladen"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           <h4 className="wl__titel">Automatik</h4>
           <div className="wl__zeile">

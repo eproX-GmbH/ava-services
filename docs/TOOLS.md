@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-13
-Anzahl Tools: 317
+Stand: 2026-11-16
+Anzahl Tools: 318
 
 ## Firmen (31)
 
@@ -1750,7 +1750,7 @@ _Parameter:_
 - `intervalMinutes: number`
 - `label: string`
 
-## linkedin-leads (4)
+## linkedin-leads (5)
 
 ### `linkedin_lead_ignorieren`
 
@@ -1785,6 +1785,15 @@ _Parameter:_
 - `nurKommentare: boolean`
 - `alle: boolean` — Auch Leads der Kolleginnen und Kollegen (Standard: nur eigene).
 - `limit: integer`
+
+### `linkedin_post_nachladen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-leads.ts`
+
+Ein normaler Lauf holt je Post nur die ersten Kommentare (maxItemsPerPost) und sieht bei jedem Lauf dieselben. Dieses Werkzeug holt fuer EINEN beobachteten Post alle Kommentare samt Antworten (hoechstens 1.000) und ordnet bis zu 100 neue Personen ihrer Firma zu; der Rest wartet und wird in den naechsten Laeufen zugeordnet. Danach holen die regelmaessigen Laeufe nur noch neue Kommentare. Erneut aufgerufen arbeitet es die Warteschlange weiter ab, ohne alles erneut zu holen. Laeuft im Hintergrund; vorher Kostenhinweis mit Bestaetigung. postUrl weglassen, wenn genau ein Post beobachtet wird.
+
+_Parameter:_
+- `postUrl: string` — Beobachteter Post (volle LinkedIn-URL).
 
 ### `linkedin_posts_beobachten`
 

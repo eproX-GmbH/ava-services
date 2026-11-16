@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { useNavigate } from "react-router-dom";
 import type { LinkedInLead, LinkedInLeadPost } from "../../../shared/types";
+import { kommentareNachladen } from "./PersonenRadarPanel";
 
 type Status = "offen" | "uebernommen" | "ignoriert" | "ungeklaert";
 
@@ -212,7 +213,10 @@ export function LinkedInLeadsPanel(): JSX.Element {
                   {info ? `${info.leads} Leads · ${info.kommentare} Kommentare · ${info.uebernommen} übernommen · zuletzt ${datum(info.zuletzt)}` : ""}
                 </div>
               </div>
-              <button type="button" className="btn" onClick={() => void window.api.shell.openExternal(url)} title="Post auf LinkedIn öffnen">Post öffnen</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="btn" title="Ein Lauf sieht nur die ersten Kommentare; hier alle holen" onClick={() => void kommentareNachladen(url).then((m) => { if (m) setNotice(m); })}>Alle Kommentare nachladen</button>
+                <button type="button" className="btn" onClick={() => void window.api.shell.openExternal(url)} title="Post auf LinkedIn öffnen">Post öffnen</button>
+              </div>
             </header>
             <ul className="leads__liste">
               {leads.map((l) => (

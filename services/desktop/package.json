@@ -53,6 +53,7 @@
     "test:email-zuordnung": "node scripts/test-email-zuordnung.mjs",
     "test:telegram-sprachantwort": "node scripts/test-telegram-sprachantwort.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
+    "test:post-nachladen": "node scripts/test-post-nachladen.mjs",
     "test:skills": "node scripts/test-skills-loader.mjs",
     "test:skills:agent": "node scripts/test-skills-agent.mjs",
     "test:skills:bundled": "node scripts/test-skills-bundled.mjs",

@@ -1305,5 +1305,17 @@
   {
     "frage": "was hat mein rechner diesen monat für ava beigetragen",
     "erwartet": "stammdaten-mithelfen"
+  },
+  {
+    "frage": "der post hat 473 kommentare aber ava findet nur einen lead",
+    "erwartet": "linkedin-alle-kommentare"
+  },
+  {
+    "frage": "kommst du überhaupt an alle kommentare von dem beitrag ran",
+    "erwartet": "linkedin-alle-kommentare"
+  },
+  {
+    "frage": "was bedeutet 50 engagements (100 items)",
+    "erwartet": "linkedin-alle-kommentare"
   }
 ]

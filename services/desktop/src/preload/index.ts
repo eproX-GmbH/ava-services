@@ -2073,7 +2073,9 @@ const api = {
           maxResolvesPerRun: number;
           lastRunAt: string | null;
           lastOutcome: string | null;
+          postStand?: Record<string, { vollGeladenAt: string | null; letzterAbrufAt: string | null }>;
         };
+        offen?: Record<string, number>;
         hasKey?: boolean;
         apifyQuelle?: "eigen" | "organisation" | null;
         apifyVerfuegbar?: boolean;
@@ -2089,6 +2091,8 @@ const api = {
       setConfig: (patch: Record<string, unknown>): Promise<unknown> =>
         ipcRenderer.invoke("pradar:setConfig", patch),
       runNow: (): Promise<string> => ipcRenderer.invoke("pradar:runNow"),
+      nachladenHinweis: (postUrl: string): Promise<string> => ipcRenderer.invoke("pradar:nachladenHinweis", postUrl),
+      nachladen: (postUrl: string): Promise<string> => ipcRenderer.invoke("pradar:nachladen", postUrl),
     },
     /** Bereich LinkedIn-Leads: Personen, die auf beobachtete Posts reagiert haben. */
     leads: {

@@ -422,7 +422,7 @@ app.whenReady().then(async () => {
   registerStammdatenIpc({ mithelfen: core.mithelfen, gateway: gatewayClient, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });
   registerThemenIpc({ themen: { current: core.themenStore }, providers });
   registerVorschlaegeIpc({ agentRegistry, chipErzeugung: core.chipErzeugung, hintergrundAufgaben, nutzerstand: core.nutzerstand, vorschlaegeSettings: core.vorschlaegeSettings });
-  registerPersonenIpc({ apifyZugangInfo, audit, cycleCompanyContact, getTenantTierCached, personenRadarStore: core.personenRadarStore, personenRadarSupervisor: core.personenRadarSupervisor, resolveApifyAccess, watchlistKeyStore: core.watchlistKeyStore, watchlistStore: core.watchlistStore, watchlistSupervisor: core.watchlistSupervisor });
+  registerPersonenIpc({ apifyZugangInfo, audit, cycleCompanyContact, getTenantTierCached, personenRadarStore: core.personenRadarStore, personenRadarSupervisor: core.personenRadarSupervisor, resolveApifyAccess, watchlistKeyStore: core.watchlistKeyStore, watchlistStore: core.watchlistStore, watchlistSupervisor: core.watchlistSupervisor, gatewayClient });
   registerLeadsIpc({ audit, gatewayClient });
   registerErlaubnisseIpc({ audit });
   registerAblaeufeIpc({ wf });

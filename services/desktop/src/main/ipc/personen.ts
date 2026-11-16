@@ -11,6 +11,8 @@ import type { PersonenRadarSupervisor } from "../linkedin/personen-radar/supervi
 import type { WatchlistKeyStore } from "../linkedin/watchlist/key-store";
 import type { WatchlistStore } from "../linkedin/watchlist/store";
 import type { WatchlistSupervisor } from "../linkedin/watchlist/supervisor";
+import type { GatewayClient } from "../agent/gateway-client";
+import { nachladenKostenHinweis, nachladenStarten } from "../linkedin/personen-radar/nachladen";
 
 export interface PersonenIpcDeps {
   apifyZugangInfo: () => { apifyQuelle: "eigen" | "organisation" | null; apifyVerfuegbar: boolean; eigenerTokenErlaubt: boolean };
@@ -23,6 +25,7 @@ export interface PersonenIpcDeps {
   watchlistKeyStore: { readonly current: WatchlistKeyStore | null };
   watchlistStore: { readonly current: WatchlistStore | null };
   watchlistSupervisor: { readonly current: WatchlistSupervisor | null };
+  gatewayClient: GatewayClient;
 }
 
 export function registerPersonenIpc(deps: PersonenIpcDeps): void {
@@ -144,7 +147,18 @@ export function registerPersonenIpc(deps: PersonenIpcDeps): void {
       ...apifyZugangInfo(),
       running: personenRadarSupervisor.current.isRunning(),
       unklar: await personenRadarStore.current.listUnklar(),
+      offen: await personenRadarStore.current.offeneAnzahl().catch(() => ({})),
     };
+  });
+
+  // PM-2026-0052 — alle Kommentare eines Posts nachladen (Hinweis vorab, Start im Hintergrund).
+  ipcMain.handle("pradar:nachladenHinweis", async (_e, postUrl: string) =>
+    personenRadarStore.current ? nachladenKostenHinweis(deps.gatewayClient, personenRadarStore.current, String(postUrl)) : "nicht initialisiert",
+  );
+  ipcMain.handle("pradar:nachladen", (_e, postUrl: string) => {
+    if (!personenRadarSupervisor.current || !personenRadarStore.current) return "nicht initialisiert";
+    if (!personenRadarStore.current.getConfig().postUrls.includes(String(postUrl))) return "Dieser Post wird nicht beobachtet.";
+    return nachladenStarten(personenRadarSupervisor.current, String(postUrl));
   });
 
   ipcMain.handle("pradar:setConfig", (_e, patch: Record<string, unknown>) => {

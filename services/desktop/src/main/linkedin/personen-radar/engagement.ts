@@ -79,6 +79,13 @@ async function runActor(
     body: JSON.stringify(input),
     signal: signal ?? AbortSignal.timeout(RUN_TIMEOUT_MS),
   });
+  await antwortPruefen(res, actorId);
+  const json: unknown = await res.json();
+  return Array.isArray(json) ? json : [];
+}
+
+/** Gemeinsame Fehlerabbildung aller Apify-Aufrufe (AUTH/LIMIT/CREDITS hart nach oben). */
+async function antwortPruefen(res: Response, actorId: string): Promise<void> {
   if (res.status === 401 || res.status === 403) {
     throw new Error("APIFY_AUTH: Token ungueltig oder abgelaufen.");
   }
@@ -97,8 +104,82 @@ async function runActor(
     const body = await res.text().catch(() => "");
     throw new Error(`Apify ${actorId}: HTTP ${res.status} ${body.slice(0, 140)}`);
   }
-  const json: unknown = await res.json();
-  return Array.isArray(json) ? json : [];
+}
+
+const LANG_MAX_MS = 30 * 60_000;
+
+/**
+ * PM-2026-0052 — langer Lauf (alle Kommentare eines grossen Posts): synchrone Laeufe bricht
+ * Apify nach 300 s ab. Daher asynchron starten, mit waitForFinish nachfragen und das Dataset
+ * seitenweise lesen. Die Kosten traegt das Gateway nach, sobald der Lauf fertig ist.
+ */
+async function runActorLang(
+  access: ApifyAccess,
+  actorId: string,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<unknown[]> {
+  const ende = Date.now() + LANG_MAX_MS;
+  const kurz = () => (signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000));
+  const start = await fetch(apifyUrl(access, `/acts/${encodeURIComponent(actorId)}/runs?waitForFinish=60`), {
+    method: "POST",
+    headers: apifyHeaders(access, { "content-type": "application/json" }),
+    body: JSON.stringify(input),
+    signal: kurz(),
+  });
+  await antwortPruefen(start, actorId);
+  let lauf = ((await start.json()) as { data?: { id?: string; status?: string; defaultDatasetId?: string } }).data ?? {};
+  const laufId = lauf.id;
+  if (!laufId) throw new Error(`Apify ${actorId}: Lauf ohne Kennung`);
+  while (lauf.status === "READY" || lauf.status === "RUNNING") {
+    if (Date.now() > ende) throw new Error(`Apify ${actorId}: Lauf nach 30 Minuten nicht fertig (${laufId})`);
+    const r = await fetch(apifyUrl(access, `/actor-runs/${encodeURIComponent(laufId)}?waitForFinish=60`), { headers: apifyHeaders(access), signal: kurz() });
+    await antwortPruefen(r, actorId);
+    lauf = { ...lauf, ...(((await r.json()) as { data?: typeof lauf }).data ?? {}) };
+  }
+  if (lauf.status !== "SUCCEEDED") throw new Error(`Apify ${actorId}: Lauf ${lauf.status ?? "unbekannt"}`);
+  if (!lauf.defaultDatasetId) return [];
+  const alle: unknown[] = [];
+  for (let offset = 0; offset < 5000; offset += 1000) {
+    const r = await fetch(apifyUrl(access, `/datasets/${encodeURIComponent(lauf.defaultDatasetId)}/items?format=json&clean=true&limit=1000&offset=${offset}`), { headers: apifyHeaders(access), signal: kurz() });
+    await antwortPruefen(r, actorId);
+    const seite = (await r.json()) as unknown;
+    const zeilen = Array.isArray(seite) ? seite : [];
+    alle.push(...zeilen);
+    if (zeilen.length < 1000) break;
+  }
+  return alle;
+}
+
+/** Zeitfenster des Kommentar-Actors (`postedLimit`, wirkt auf das Kommentardatum). */
+export type Zeitfenster = "24h" | "week" | "month" | "3months" | "6months" | "year";
+
+/** PM-2026-0052 — was ein Lauf je Post holt. Der Actor kennt kein Blaettern: ohne
+ *  Zeitfenster liefert jeder Lauf dieselben ersten `kommentare` Eintraege. `kommentare: 0`
+ *  heisst beim Actor „alle Seiten“ (bis 100 Seiten à 10, also 1.000). */
+export interface EngagementAbruf {
+  reaktionen: number;
+  kommentare: number;
+  /** Nur Kommentare der letzten Zeit (Folgelauf nach dem vollen Nachladen). */
+  zeitfenster?: Zeitfenster | null;
+  /** Antworten auf Kommentare als eigene Eintraege mitnehmen. */
+  antworten?: boolean;
+  /** Kommentare als langen Lauf holen (asynchron, fuer das volle Nachladen). */
+  lang?: boolean;
+}
+
+/** Kleinstes Zeitfenster, das die Zeit seit dem letzten Abruf sicher abdeckt (mit Puffer). */
+export function zeitfensterSeit(letzterAbruf: string | null, jetzt: number = Date.now()): Zeitfenster | null {
+  const t = letzterAbruf ? Date.parse(letzterAbruf) : NaN;
+  if (!Number.isFinite(t)) return null;
+  const stunden = (jetzt - t) / 3600_000;
+  if (stunden <= 20) return "24h";
+  if (stunden <= 6 * 24) return "week";
+  if (stunden <= 27 * 24) return "month";
+  if (stunden <= 85 * 24) return "3months";
+  if (stunden <= 175 * 24) return "6months";
+  if (stunden <= 360 * 24) return "year";
+  return null;
 }
 
 /** Engager (Reaktionen + Kommentare) eines Posts holen. */
@@ -106,25 +187,39 @@ export async function fetchPostEngagement(
   access: ApifyAccess,
   actors: EngagementActorConfig,
   postUrl: string,
-  maxItemsPerPost: number,
+  abrufOderMax: EngagementAbruf | number,
   signal?: AbortSignal,
-): Promise<{ engager: Engager[]; kosteneinheiten: number }> {
+): Promise<{ engager: Engager[]; kosteneinheiten: number; kommentare: number; reaktionen: number }> {
+  const abruf: EngagementAbruf =
+    typeof abrufOderMax === "number" ? { reaktionen: abrufOderMax, kommentare: abrufOderMax } : abrufOderMax;
   const out: Engager[] = [];
   let items = 0;
-  const laeufe: Array<{ actorId: string; kind: "reaction" | "comment" }> = [
-    { actorId: actors.postReactionsActorId, kind: "reaction" },
-  ];
+  let kommentare = 0;
+  let reaktionen = 0;
+  const laeufe: Array<{ actorId: string; kind: "reaction" | "comment"; input: Record<string, unknown> }> = [];
+  if (abruf.reaktionen > 0 && actors.postReactionsActorId.trim()) {
+    laeufe.push({ actorId: actors.postReactionsActorId, kind: "reaction", input: { posts: [postUrl], maxItems: abruf.reaktionen } });
+  }
   if (actors.postCommentsActorId.trim()) {
-    laeufe.push({ actorId: actors.postCommentsActorId, kind: "comment" });
+    laeufe.push({
+      actorId: actors.postCommentsActorId,
+      kind: "comment",
+      input: {
+        posts: [postUrl],
+        maxItems: abruf.kommentare,
+        ...(abruf.zeitfenster ? { postedLimit: abruf.zeitfenster } : {}),
+        ...(abruf.antworten ? { scrapeReplies: true } : {}),
+      },
+    });
   }
   for (const lauf of laeufe) {
-    const rows = await runActor(
-      access,
-      lauf.actorId,
-      { posts: [postUrl], maxItems: maxItemsPerPost },
-      signal,
-    );
+    const rows =
+      lauf.kind === "comment" && abruf.lang
+        ? await runActorLang(access, lauf.actorId, lauf.input, signal)
+        : await runActor(access, lauf.actorId, lauf.input, signal);
     items += rows.length;
+    if (lauf.kind === "comment") kommentare += rows.length;
+    else reaktionen += rows.length;
     for (const raw of rows) {
       const o = asObj(raw);
       if (!o) continue;
@@ -153,7 +248,7 @@ export async function fetchPostEngagement(
       });
     }
   }
-  return { engager: out, kosteneinheiten: items };
+  return { engager: out, kosteneinheiten: items, kommentare, reaktionen };
 }
 
 /** Aktuelle Positionen einer Person (Profile-Scraper, $4/1000 —
