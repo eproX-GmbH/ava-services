@@ -116,19 +116,19 @@ export function PersonenRadarPanel(): JSX.Element {
           </label>
 
           {cfg.postUrls.length > 0 && (
-            <ul className="wl__posts" style={{ listStyle: "none", padding: 0, margin: "8px 0 0", display: "grid", gap: 6 }}>
+            <ul className="wl__posts" style={{ listStyle: "none", padding: 0, margin: "8px 0 0", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 6 }}>
               {cfg.postUrls.map((u) => {
                 const stand = cfg.postStand?.[u];
                 const offen = state.offen?.[u] ?? 0;
                 return (
-                  <li key={u} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-                    <span className="muted small" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }} title={u}>
-                      {u.replace(/^https?:\/\/(www\.)?linkedin\.com\//, "")}
+                  <li key={u} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", minWidth: 0 }}>
+                    <span className="muted small" style={{ flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }} title={u}>
+                      {u.replace(/^https?:\/\/(www\.)?linkedin\.com\//, "").split("?")[0]}
                       {" · "}
                       {stand?.vollGeladenAt ? `alle Kommentare geholt am ${new Date(stand.vollGeladenAt).toLocaleDateString("de-DE")}` : "nur die ersten Kommentare"}
                       {offen > 0 ? ` · ${offen} warten auf Zuordnung` : ""}
                     </span>
-                    <button type="button" className="btn" disabled={busy || state.running} onClick={() => void run(() => kommentareNachladen(u))}>
+                    <button type="button" className="btn" style={{ flexShrink: 0 }} disabled={busy || state.running} onClick={() => void run(() => kommentareNachladen(u))}>
                       {stand?.vollGeladenAt ? (offen > 0 ? "Weiter zuordnen" : "Neue nachladen") : "Alle Kommentare nachladen"}
                     </button>
                   </li>
