@@ -82,7 +82,8 @@ export async function apifyLaufNachtragen(pool: Pool, usageId: string, rest: str
   // Nur der Start eines Laufs (POST) traegt Kosten; GET auf runs/last o. Ae. wuerde sie doppelt zaehlen.
   if (methode.toUpperCase() !== "POST") return;
   try {
-    const m = /^acts\/([^/?]+)\/(run-sync[^/?]*|runs)/.exec(rest.replace(/^\/+/, ""));
+    // 2026-11-17: Pfade des Hauptprozesses beginnen mit "v2/" (Basis .../proxy/apify/v2).
+    const m = /^acts\/([^/?]+)\/(run-sync[^/?]*|runs)/.exec(rest.replace(/^\/+/, "").replace(/^v2\//, ""));
     if (!m) return;
     const actorId = decodeURIComponent(m[1]!);
     let runId = apifyRunId(headers, bodyText);

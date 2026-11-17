@@ -324,7 +324,9 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
   if (kind === "apify") {
     const kopf = (c.req.header("x-ava-apify-kontext") ?? "").toLowerCase();
     apifyKontext = kopf === "linkedin" ? "linkedin" : "firmenverarbeitung";
-    const am = /^acts\/([^/?]+)\//.exec(rest.replace(/^\/+/, ""));
+    // 2026-11-17: Der Hauptprozess ruft ueber `.../proxy/apify/v2/...` auf, rest beginnt dann
+    // mit "v2/". Ohne Abschneiden griff weder Schaetzung noch Limit (LinkedIn-Beobachtung unberechnet).
+    const am = /^acts\/([^/?]+)\//.exec(apifyPfad(rest));
     if (am) {
       const { schaetzeLaufUsd, kundenpreisCents } = await import("../../lib/apify-preise");
       apifyPreisCents = kundenpreisCents(schaetzeLaufUsd(decodeURIComponent(am[1]!), requestJson));
@@ -428,6 +430,11 @@ async function passthrough(c: Context, kind: ProxyKind, basis: string, rest: str
 async function promptAuditAktiv(pool: ReturnType<typeof getGatewayPool>, tenantId: string): Promise<boolean> {
   const r = await pool.query<{ promptAudit: boolean }>(`SELECT "promptAudit" FROM "TenantPolicy" WHERE "tenantId" = $1`, [tenantId]);
   return r.rows[0]?.promptAudit === true;
+}
+
+/** Apify-Pfad ohne fuehrende Schraegstriche und ohne Versionspraefix ("v2/acts/x" → "acts/x"). */
+export function apifyPfad(rest: string): string {
+  return rest.replace(/^\/+/, "").replace(/^v2\//, "");
 }
 
 async function recordUsage(

@@ -27,7 +27,8 @@ const TABELLE: ActorPreis[] = [
   { schluessel: "POST_COMMENTS", actorId: "harvestapi~linkedin-post-comments", einheit: "Kommentare", usdJe1000: 2, beobachtung: true, standardMaxItems: 50 },
   { schluessel: "PROFILE_REACTIONS", actorId: "harvestapi~linkedin-profile-reactions", einheit: "Reaktionen", usdJe1000: 2, beobachtung: true, standardMaxItems: 20 },
   { schluessel: "PROFILE_COMMENTS", actorId: "harvestapi~linkedin-profile-comments", einheit: "Kommentare", usdJe1000: 2, beobachtung: true, standardMaxItems: 20 },
-  { schluessel: "PROFILE_SCRAPER", actorId: "harvestapi~linkedin-profile-scraper", einheit: "Profile", usdJe1000: 4, beobachtung: true, standardMaxItems: 10 },
+  // Eine Anfrage je Profil (queries: [url]) liefert genau ein Profil.
+  { schluessel: "PROFILE_SCRAPER", actorId: "harvestapi~linkedin-profile-scraper", einheit: "Profile", usdJe1000: 4, beobachtung: true, standardMaxItems: 1 },
   { schluessel: "COMPANY", actorId: "harvestapi~linkedin-company", einheit: "Firmenprofile", usdJe1000: 3, beobachtung: false, standardMaxItems: 1 },
   { schluessel: "COMPANY_SEARCH", actorId: "harvestapi~linkedin-company-search", einheit: "Treffer", usdJe1000: 3, beobachtung: false, standardMaxItems: 5 },
   { schluessel: "COMPANY_EMPLOYEES", actorId: "harvestapi~linkedin-company-employees", einheit: "Profile", usdJe1000: 8, beobachtung: false, standardMaxItems: 50 },
@@ -62,7 +63,7 @@ export function actorPreis(actorId: string): ActorPreis | null {
 export function erwarteteItems(preis: ActorPreis | null, body: unknown): number {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const max = typeof b.maxItems === "number" && Number.isFinite(b.maxItems) ? Math.max(1, Math.round(b.maxItems)) : preis?.standardMaxItems ?? 50;
-  const ziele = ["posts", "profiles", "companies", "urls", "profileUrls"].map((k) => (Array.isArray(b[k]) ? (b[k] as unknown[]).length : 0)).reduce((a, n) => Math.max(a, n), 0);
+  const ziele = ["posts", "profiles", "companies", "urls", "profileUrls", "queries"].map((k) => (Array.isArray(b[k]) ? (b[k] as unknown[]).length : 0)).reduce((a, n) => Math.max(a, n), 0);
   return max * Math.max(1, ziele);
 }
 
