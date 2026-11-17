@@ -2076,6 +2076,7 @@ const api = {
           postStand?: Record<string, { vollGeladenAt: string | null; letzterAbrufAt: string | null }>;
         };
         offen?: Record<string, number>;
+        fortschritt?: { phase: "kommentare" | "zuordnen"; gesamt: number; erledigt: number; leads: number; seit: string } | null;
         hasKey?: boolean;
         apifyQuelle?: "eigen" | "organisation" | null;
         apifyVerfuegbar?: boolean;

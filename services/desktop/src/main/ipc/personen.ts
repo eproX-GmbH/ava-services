@@ -146,6 +146,7 @@ export function registerPersonenIpc(deps: PersonenIpcDeps): void {
       hasKey: watchlistKeyStore.current?.hasKey() ?? false,
       ...apifyZugangInfo(),
       running: personenRadarSupervisor.current.isRunning(),
+      fortschritt: personenRadarSupervisor.current.getFortschritt(),
       unklar: await personenRadarStore.current.listUnklar(),
       offen: await personenRadarStore.current.offeneAnzahl().catch(() => ({})),
     };

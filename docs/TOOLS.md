@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-16
+Stand: 2026-11-17
 Anzahl Tools: 318
 
 ## Firmen (31)
@@ -1835,7 +1835,7 @@ _Parameter:_
 - `automatik: boolean` — Automatische Laeufe an/aus.
 - `intervalHours: number (enum: 24, 168)` — 24 = taeglich, 168 = woechentlich.
 - `maxItemsPerPost: number` — Engagement-Items je Post (1-200).
-- `maxResolvesPerRun: number` — Profil-Aufloesungen je Lauf (1-50) — Kosten-Hebel.
+- `maxResolvesPerRun: number` — Profil-Aufloesungen je Lauf (1-500), Kosten-Hebel; das Nachladen eines Posts ordnet ohne Deckel zu.
 - `addPostUrls: array` — LinkedIn-Post-URLs hinzufuegen.
 - `removePostUrls: array` — Post-URLs entfernen.
 

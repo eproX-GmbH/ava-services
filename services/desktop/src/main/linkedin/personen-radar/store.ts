@@ -112,7 +112,7 @@ export class PersonenRadarStore {
               : DEFAULT_CONFIG.maxItemsPerPost,
           maxResolvesPerRun:
             typeof p.maxResolvesPerRun === "number" && Number.isFinite(p.maxResolvesPerRun)
-              ? Math.min(50, Math.max(1, Math.floor(p.maxResolvesPerRun)))
+              ? Math.min(500, Math.max(1, Math.floor(p.maxResolvesPerRun)))
               : DEFAULT_CONFIG.maxResolvesPerRun,
           actorIds: {
             ...ENGAGEMENT_DEFAULT_ACTORS,

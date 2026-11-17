@@ -31,10 +31,35 @@ const MAX_CANDIDATES_PER_BATCH = 25;
 /** PM-2026-0052 — volles Nachladen: hoechstens so viele Kommentare (explizit, damit das
  *  Gateway die Kosten richtig schaetzt; maxItems 0 hiesse beim Actor ebenfalls 1.000). */
 export const NACHLADEN_MAX_KOMMENTARE = 1000;
-/** Profil-Aufloesungen in einem Nachlade-Lauf (Rest wartet in der Warteschlange). */
-export const NACHLADEN_BUDGET = 100;
 /** So viele wartende Personen nimmt ein Lauf zusaetzlich auf. */
-const WARTESCHLANGE_JE_LAUF = 300;
+const WARTESCHLANGE_JE_LAUF = 1000;
+/** PM-2026-0053 — so viele Personen werden gleichzeitig ihrer Firma zugeordnet. */
+const ZUORDNUNG_PARALLEL = 5;
+/** Hoechstdauer einer Zuordnung (Profil, Firmenseite, Websuche); danach wartet die Person. */
+const ZUORDNUNG_TIMEOUT_MS = 3 * 60_000;
+const GATEWAY_TIMEOUT_MS = 60_000;
+/** Nach so vielen zugeordneten Personen werden Leads und Kandidaten gespeichert. */
+const SPEICHER_PAKET = 10;
+
+export interface LaufFortschritt {
+  phase: "kommentare" | "zuordnen";
+  gesamt: number;
+  erledigt: number;
+  leads: number;
+  seit: string;
+}
+
+/** Fuehrt `fn` fuer alle Eintraege aus, hoechstens `n` gleichzeitig. */
+export async function nebenlaeufig<T>(eintraege: T[], n: number, fn: (x: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const arbeiter = async (): Promise<void> => {
+    while (i < eintraege.length) {
+      const x = eintraege[i++]!;
+      await fn(x);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(n, eintraege.length)) }, arbeiter));
+}
 
 export interface PersonenRadarSupervisorDeps {
   /** v0.1.519 — fuer die Headline-Extraktion per LLM. */
@@ -63,6 +88,12 @@ export interface PersonenRadarSupervisorDeps {
 export class PersonenRadarSupervisor {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  /** PM-2026-0053 — Stand des laufenden Laufs fuer Anzeige und Chat. */
+  private fortschritt: LaufFortschritt | null = null;
+
+  getFortschritt(): LaufFortschritt | null {
+    return this.fortschritt ? { ...this.fortschritt } : null;
+  }
 
   constructor(private readonly deps: PersonenRadarSupervisorDeps) {}
 
@@ -155,6 +186,7 @@ export class PersonenRadarSupervisor {
       // 1. Engagement einsammeln. PM-2026-0052: der Actor kennt kein Blaettern. Ohne volles
       //    Nachladen sieht jeder Lauf dieselben ersten Kommentare; danach nur noch neue.
       const alle: Engager[] = [];
+      this.fortschritt = { phase: "kommentare", gesamt: posts.length, erledigt: 0, leads: 0, seit: startedAt };
       for (const postUrl of posts) {
         const stand = cfg.postStand[postUrl];
         const fenster = stand?.vollGeladenAt ? zeitfensterSeit(stand.letzterAbrufAt) : null;
@@ -168,6 +200,7 @@ export class PersonenRadarSupervisor {
                 : { reaktionen: cfg.maxItemsPerPost, kommentare: cfg.maxItemsPerPost };
         try {
           const r = await fetchPostEngagement(key, cfg.actorIds, postUrl, abruf);
+          if (this.fortschritt) this.fortschritt.erledigt++;
           items += r.kosteneinheiten;
           alle.push(...r.engager);
           this.deps.store.setPostStand(postUrl, {
@@ -213,30 +246,100 @@ export class PersonenRadarSupervisor {
         proPerson.set(e.profileUrl, [...(proPerson.get(e.profileUrl) ?? []), e]);
       }
       neuePersonen = proPerson.size;
+      // PM-2026-0053: alle neuen Personen sofort vormerken; nach dem Speichern fallen sie wieder
+      // heraus. Wird AVA mitten im Lauf beendet, macht der naechste Lauf genau dort weiter.
+      await this.deps.store.offeneAblegen([...proPerson.values()].flat());
       const firmenCache = await this.deps.store.getFirmenCache([...proPerson.keys()]);
 
-      // 3. Budget-Aufloesung (§8.2: teuerster Schritt hart gedeckelt); gecachte Personen
-      //    kosten nichts und zaehlen nicht gegen das Budget.
-      const kandidaten: Array<{
-        name: string;
-        domain: string;
-        meta: Record<string, unknown>;
-      }> = [];
-      const leads: Array<Record<string, unknown>> = [];
-      const unklar: Array<{ profileUrl: string; name: string | null; headline: string | null; grund: string }> = [];
-      const bearbeitet: string[] = [];
-      const firmenImLauf = new Set<string>();
-      let budget = nachladen ? Math.max(cfg.maxResolvesPerRun, NACHLADEN_BUDGET) : cfg.maxResolvesPerRun;
+      // 3. Aufloesung. PM-2026-0053: parallel (ZUORDNUNG_PARALLEL), jede Person mit Zeitlimit,
+      //    Ergebnisse in Paketen gespeichert — ein haengender Aufruf blockiert nicht mehr den
+      //    ganzen Lauf, und ein Abbruch verliert hoechstens das letzte Paket. Gecachte Personen
+      //    kosten nichts und zaehlen nicht gegen das Budget; beim Nachladen gibt es keinen Deckel.
+      type Kandidat = { name: string; domain: string; meta: Record<string, unknown> };
+      type Unklar = { profileUrl: string; name: string | null; headline: string | null; grund: string };
+      const zuordnen = [...proPerson.entries()];
+      let budget = nachladen ? Number.POSITIVE_INFINITY : cfg.maxResolvesPerRun;
       const zurueckgestellt: Engager[] = [];
-      for (const [url, auftritte] of proPerson) {
+      const firmenImLauf = new Set<string>();
+      let unklarGesamt = 0;
+      let leadsNeu = 0;
+      let leadsKommentare = 0;
+      let abbruch: string | null = null;
+      type Puffer = { leads: Array<Record<string, unknown>>; kandidaten: Kandidat[]; unklar: Unklar[]; bearbeitet: string[]; engager: Engager[]; personen: number };
+      const leer = (): Puffer => ({ leads: [], kandidaten: [], unklar: [], bearbeitet: [], engager: [], personen: 0 });
+      let puffer: Puffer = leer();
+      const speichern = async (): Promise<void> => {
+        const p = puffer;
+        puffer = leer();
+        if (p.personen === 0) return;
+        if (p.leads.length > 0) {
+          try {
+            const r = await this.deps.gateway.request<{ neu: number; aktualisiert: number; vorhanden: number; ids?: Array<{ profileUrl: string; postUrl: string; id: string; neu: boolean }> }>("/v1/linkedin-leads/batch", { method: "POST", body: { leads: p.leads.slice(0, 500) }, signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS) });
+            const neuHier = r.neu + r.aktualisiert;
+            leadsNeu += neuHier;
+            leadsKommentare += p.leads.filter((l) => l.aktivitaet === "comment").length;
+            if (neuHier > 0 && this.deps.onLeads) {
+              try {
+                // 2026-10-31: leadId aus der Gateway-Antwort mitgeben (Workflow-Ereignis linkedin.lead);
+                // nur neue Leads loesen aus — bereits bekannte waren schon einmal Ereignis.
+                const idJeLead = new Map((r.ids ?? []).map((x) => [`${x.profileUrl}|${x.postUrl}`, x] as const));
+                this.deps.onLeads(
+                  p.leads
+                    .filter((l) => typeof l.firmaDomain === "string" && l.firmaDomain)
+                    .map((l) => ({ ...l, leadId: idJeLead.get(`${l.profileUrl}|${l.postUrl}`)?.id ?? null, neu: idJeLead.get(`${l.profileUrl}|${l.postUrl}`)?.neu ?? true }))
+                    .filter((l) => l.neu),
+                );
+              } catch {
+                /* best-effort */
+              }
+            }
+          } catch (err) {
+            // Nicht gespeichert: Personen bleiben ungesehen und warten auf den naechsten Lauf
+            // (Firmen-Cache macht die erneute Zuordnung kostenlos).
+            zurueckgestellt.push(...p.engager);
+            probleme.push(`Leads speichern: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`);
+            return;
+          }
+        }
+        // Die Firma geht zusaetzlich als Direkt-Kandidat in den Trichter, damit Mini-Profil und
+        // Ort entstehen — die Radar-Liste blendet diese Quelle aus.
+        for (let i = 0; i < p.kandidaten.length; i += MAX_CANDIDATES_PER_BATCH) {
+          try {
+            const r = await this.deps.gateway.request<{ added: number; updated: number; known: Record<string, string> }>("/v1/discovery/candidates/direct", {
+              method: "POST",
+              body: {
+                source: "personen-radar",
+                candidates: p.kandidaten.slice(i, i + MAX_CANDIDATES_PER_BATCH).map((k) => ({ name: k.name, domain: k.domain, source: "personen-radar", meta: k.meta })),
+              },
+              signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
+            });
+            firmenNeu += r.added;
+            firmenBekannt += r.updated + Object.keys(r.known).length;
+            if (r.added > 0) this.deps.onCandidatesAdded();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            probleme.push(msg.includes("DIRECT_CAP") ? "Tages-Deckel fuer Direkt-Kandidaten erreicht — Rest kommt beim naechsten Lauf." : `Kandidaten-Einspeisung: ${msg.slice(0, 100)}`);
+            break;
+          }
+        }
+        await this.deps.store.markPersonsSeen(p.bearbeitet);
+        if (p.unklar.length > 0) await this.deps.store.addUnklar(p.unklar);
+        await this.deps.store.offeneEntfernen(p.bearbeitet);
+        if (this.fortschritt) this.fortschritt.leads = leadsNeu;
+      };
+      let kette: Promise<void> = Promise.resolve();
+      const sichern = (): Promise<void> => (kette = kette.then(speichern).catch(() => undefined));
+
+      this.fortschritt = { phase: "zuordnen", gesamt: zuordnen.length, erledigt: 0, leads: 0, seit: startedAt };
+      await nebenlaeufig(zuordnen, ZUORDNUNG_PARALLEL, async ([url, auftritte]) => {
         const engager = auftritte[0]!;
         let matches = firmenCache.get(url) as Array<{ domain: string; companyName: string; rolle: string | null; konfidenz: "hart" | "mittel" }> | undefined;
         let grund: string | null = null;
         if (!matches) {
-          // Budget aufgebraucht: merken statt verwerfen (naechster Lauf macht weiter).
-          if (budget <= 0) {
+          // Budget aufgebraucht oder Lauf abgebrochen: merken statt verwerfen.
+          if (abbruch || budget <= 0) {
             zurueckgestellt.push(...auftritte);
-            continue;
+            return;
           }
           budget--;
           try {
@@ -246,6 +349,7 @@ export class PersonenRadarSupervisor {
               gateway: this.deps.gateway,
               engager,
               firmaAusHeadline: (h) => this.firmaAusHeadlinePerLlm(h),
+              signal: AbortSignal.timeout(ZUORDNUNG_TIMEOUT_MS),
             });
             this.deps.keyStore.addMonthItems(r.kosteneinheiten);
             matches = r.matches;
@@ -253,32 +357,38 @@ export class PersonenRadarSupervisor {
             if (matches.length > 0) await this.deps.store.setFirmenCache(url, matches);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
-              if (msg.startsWith("LINKEDIN_LIMIT")) this.linkedinLimitMelden(msg);
-              this.finishRun(startedAt, msg, trigger, "error");
-              return msg;
-            }
-            probleme.push(`${engager.name ?? url}: ${msg.slice(0, 80)}`);
             zurueckgestellt.push(...auftritte);
-            continue;
+            if (msg.startsWith("APIFY_AUTH") || msg.startsWith("APIFY_CREDITS") || msg.startsWith("LINKEDIN_LIMIT")) {
+              abbruch ??= msg;
+              return;
+            }
+            probleme.push(`${engager.name ?? url}: ${/abort|timeout/i.test(msg) ? "Zeitlimit überschritten" : msg.slice(0, 80)}`);
+            return;
+          } finally {
+            if (this.fortschritt) this.fortschritt.erledigt++;
           }
+        } else if (this.fortschritt) {
+          this.fortschritt.erledigt++;
         }
-        bearbeitet.push(...auftritte.map((e) => `${e.profileUrl}|${e.postUrl}`));
+        puffer.bearbeitet.push(...auftritte.map((e) => `${e.profileUrl}|${e.postUrl}`));
+        puffer.engager.push(...auftritte);
+        puffer.personen++;
         if (matches.length > 0) aufgeloest++;
         else {
-          unklar.push({ profileUrl: url, name: engager.name, headline: engager.headline, grund: grund ?? "keine belastbare Firma" });
+          unklarGesamt++;
+          puffer.unklar.push({ profileUrl: url, name: engager.name, headline: engager.headline, grund: grund ?? "keine belastbare Firma" });
         }
         for (const e of auftritte) {
           const basis = { postUrl: e.postUrl, personName: e.name, profileUrl: e.profileUrl, headline: e.headline, aktivitaet: e.activityType, reactionType: e.reactionType, kommentar: e.commentText?.slice(0, 200) ?? null };
           if (matches.length === 0) {
-            leads.push({ ...basis, status: "ungeklaert", grund: grund ?? "keine belastbare Firma" });
+            puffer.leads.push({ ...basis, status: "ungeklaert", grund: grund ?? "keine belastbare Firma" });
             continue;
           }
           for (const m of matches.slice(0, 2)) {
-            leads.push({ ...basis, rolle: m.rolle, firmaDomain: m.domain, firmaName: m.companyName, konfidenz: m.konfidenz === "hart" ? 0.9 : 0.6 });
+            puffer.leads.push({ ...basis, rolle: m.rolle, firmaDomain: m.domain, firmaName: m.companyName, konfidenz: m.konfidenz === "hart" ? 0.9 : 0.6 });
             if (firmenImLauf.has(m.domain)) continue;
             firmenImLauf.add(m.domain);
-            kandidaten.push({
+            puffer.kandidaten.push({
               name: m.companyName,
               domain: m.domain,
               meta: {
@@ -296,94 +406,41 @@ export class PersonenRadarSupervisor {
             });
           }
         }
-      }
+        if (puffer.personen >= SPEICHER_PAKET) await sichern();
+      });
+      await sichern();
+      await kette;
+      await this.deps.store.offeneAblegen(zurueckgestellt);
 
-      // 3b. Leads ans Gateway (Bereich LinkedIn-Leads); die Firma geht zusaetzlich als
-      //     Direkt-Kandidat in den Trichter, damit Mini-Profil und Ort entstehen — die
-      //     Radar-Liste blendet diese Quelle aus.
-      let leadsNeu = 0;
-      if (leads.length > 0) {
-        try {
-          const r = await this.deps.gateway.request<{ neu: number; aktualisiert: number; vorhanden: number; ids?: Array<{ profileUrl: string; postUrl: string; id: string; neu: boolean }> }>("/v1/linkedin-leads/batch", { method: "POST", body: { leads: leads.slice(0, 500) } });
-          leadsNeu = r.neu + r.aktualisiert;
-          if (leadsNeu > 0 && this.deps.onLeads) {
-            try {
-              // 2026-10-31: leadId aus der Gateway-Antwort mitgeben (Workflow-Ereignis linkedin.lead);
-              // nur neue Leads loesen aus — bereits bekannte waren schon einmal Ereignis.
-              const idJeLead = new Map((r.ids ?? []).map((x) => [`${x.profileUrl}|${x.postUrl}`, x] as const));
-              this.deps.onLeads(
-                leads
-                  .filter((l) => typeof l.firmaDomain === "string" && l.firmaDomain)
-                  .map((l) => ({ ...l, leadId: idJeLead.get(`${l.profileUrl}|${l.postUrl}`)?.id ?? null, neu: idJeLead.get(`${l.profileUrl}|${l.postUrl}`)?.neu ?? true }))
-                  .filter((l) => l.neu),
-              );
-            } catch {
-              /* best-effort */
-            }
+      if (leadsNeu > 0) {
+        const alert = this.deps.alerts.add({
+          tenantId: null,
+          companyId: "",
+          companyName: "LinkedIn-Leads",
+          kind: "linkedin-signal",
+          severity: "info",
+          headline: `${leadsNeu} neue LinkedIn-Leads`,
+          rationale: `${leadsNeu} Personen haben auf beobachtete Posts reagiert${leadsKommentare > 0 ? `, davon ${leadsKommentare} mit Kommentar` : ""}. Bereich LinkedIn → Leads.`,
+          sourceRef: `leads:${startedAt}`,
+        });
+        if (alert) {
+          try {
+            this.deps.notify(alert);
+          } catch {
+            /* best-effort */
           }
-        } catch (err) {
-          probleme.push(`Leads speichern: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`);
         }
+        this.deps.onAlertsChanged();
       }
-
-      // 4. Direkt in den Radar-Trichter (Batch, eigener Tages-Deckel).
-      if (kandidaten.length > 0) {
-        try {
-          const r = await this.deps.gateway.request<{
-            added: number;
-            updated: number;
-            known: Record<string, string>;
-          }>("/v1/discovery/candidates/direct", {
-            method: "POST",
-            body: {
-              source: "personen-radar",
-              candidates: kandidaten.slice(0, MAX_CANDIDATES_PER_BATCH).map((k) => ({
-                name: k.name,
-                domain: k.domain,
-                source: "personen-radar",
-                meta: k.meta,
-              })),
-            },
-          });
-          firmenNeu = r.added;
-          firmenBekannt = r.updated + Object.keys(r.known).length;
-          if (r.added > 0) this.deps.onCandidatesAdded();
-          if (leadsNeu > 0) {
-            const kommentare = leads.filter((l) => l.aktivitaet === "comment").length;
-            const alert = this.deps.alerts.add({
-              tenantId: null,
-              companyId: "",
-              companyName: "LinkedIn-Leads",
-              kind: "linkedin-signal",
-              severity: "info",
-              headline: `${leadsNeu} neue LinkedIn-Leads`,
-              rationale: `${leadsNeu} Personen haben auf beobachtete Posts reagiert${kommentare > 0 ? `, davon ${kommentare} mit Kommentar` : ""}. Bereich LinkedIn → Leads.`,
-              sourceRef: `leads:${startedAt}`,
-            });
-            if (alert) {
-              try {
-                this.deps.notify(alert);
-              } catch {
-                /* best-effort */
-              }
-            }
-            this.deps.onAlertsChanged();
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          probleme.push(
-            msg.includes("DIRECT_CAP")
-              ? "Tages-Deckel fuer Direkt-Kandidaten erreicht — Rest kommt beim naechsten Lauf."
-              : `Kandidaten-Einspeisung: ${msg.slice(0, 100)}`,
-          );
-        }
+      // In der parallelen Schleife gesetzt; TypeScript sieht das nicht.
+      const abbruchGrund = abbruch as string | null;
+      if (abbruchGrund) {
+        if (abbruchGrund.startsWith("LINKEDIN_LIMIT")) this.linkedinLimitMelden(abbruchGrund);
+        this.finishRun(startedAt, `${abbruchGrund} (${leadsNeu} Leads bis dahin gespeichert)`, trigger, "error");
+        return abbruchGrund;
       }
 
       // 5. Buchhaltung.
-      await this.deps.store.markPersonsSeen(bearbeitet);
-      if (unklar.length > 0) await this.deps.store.addUnklar(unklar);
-      await this.deps.store.offeneEntfernen(bearbeitet);
-      await this.deps.store.offeneAblegen(zurueckgestellt);
       const nochOffen = Object.values(await this.deps.store.offeneAnzahl()).reduce((a, n) => a + n, 0);
 
       const outcome = [
@@ -393,7 +450,7 @@ export class PersonenRadarSupervisor {
         `${leadsNeu} neue Leads`,
         `${firmenNeu} neue Firmen im Radar` +
           (firmenBekannt > 0 ? ` (${firmenBekannt} bereits bekannt)` : ""),
-        unklar.length > 0 ? `${unklar.length} ungeklaert` : null,
+        unklarGesamt > 0 ? `${unklarGesamt} ungeklaert` : null,
         nochOffen > 0 ? `${nochOffen} warten auf Zuordnung` : null,
         hinweise.length > 0 ? `Hinweis: ${hinweise.slice(0, 2).join(" · ")}` : null,
         probleme.length > 0 ? `Probleme: ${probleme.slice(0, 2).join(" · ")}` : null,
@@ -408,6 +465,7 @@ export class PersonenRadarSupervisor {
       return msg;
     } finally {
       this.running = false;
+      this.fortschritt = null;
     }
   }
 

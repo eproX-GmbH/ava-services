@@ -44,7 +44,7 @@ export function buildLinkedInSelfserviceTools(
         automatik: { type: "boolean", description: "Automatische Laeufe an/aus." },
         intervalHours: { type: "number", enum: [24, 168], description: "24 = taeglich, 168 = woechentlich." },
         maxItemsPerPost: { type: "number", description: "Engagement-Items je Post (1-200)." },
-        maxResolvesPerRun: { type: "number", description: "Profil-Aufloesungen je Lauf (1-50) — Kosten-Hebel." },
+        maxResolvesPerRun: { type: "number", description: "Profil-Aufloesungen je Lauf (1-500), Kosten-Hebel; das Nachladen eines Posts ordnet ohne Deckel zu." },
         addPostUrls: { type: "array", items: { type: "string" }, description: "LinkedIn-Post-URLs hinzufuegen." },
         removePostUrls: { type: "array", items: { type: "string" }, description: "Post-URLs entfernen." },
       },
@@ -53,7 +53,7 @@ export function buildLinkedInSelfserviceTools(
       automatik: yup.boolean().optional(),
       intervalHours: yup.number().oneOf([24, 168]).optional(),
       maxItemsPerPost: yup.number().min(1).max(200).optional(),
-      maxResolvesPerRun: yup.number().min(1).max(50).optional(),
+      maxResolvesPerRun: yup.number().min(1).max(500).optional(),
       addPostUrls: yup.array().of(yup.string().required()).optional(),
       removePostUrls: yup.array().of(yup.string().required()).optional(),
     }),
@@ -195,6 +195,7 @@ export function buildLinkedInSelfserviceTools(
       return {
         letzterLauf: cfg.lastRunAt,
         zusammenfassung: cfg.lastOutcome,
+        ...(deps.getPradarSupervisor()?.getFortschritt() ? { laeuftGerade: deps.getPradarSupervisor()!.getFortschritt() } : {}),
         hinweis:
           "Grund 'keine belastbare Firma' = weder aktuelle Position mit " +
           "Unternehmensseite noch eindeutige Website ueber den Firmennamen; " +

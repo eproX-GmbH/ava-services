@@ -67,5 +67,26 @@ await pruefe("Gateway-Limit beim Nachfragen wird als LINKEDIN_LIMIT gemeldet", a
   await assert.rejects(fetchPostEngagement(access, ENGAGEMENT_DEFAULT_ACTORS, "https://www.linkedin.com/posts/x", { reaktionen: 0, kommentare: 1000, lang: true }), /^Error: LINKEDIN_LIMIT/);
 });
 globalThis.fetch = echt;
+
+// PM-2026-0053: parallele Zuordnung mit Obergrenze, nichts geht verloren.
+const Sup = await import("../src/main/linkedin/personen-radar/supervisor.ts");
+const { nebenlaeufig } = Sup.default ?? Sup;
+await pruefe("nebenlaeufig: hoechstens n gleichzeitig, alle bearbeitet", async () => {
+  let aktiv = 0, spitze = 0;
+  const fertig = [];
+  await nebenlaeufig(Array.from({ length: 23 }, (_, i) => i), 5, async (x) => {
+    aktiv++; spitze = Math.max(spitze, aktiv);
+    await new Promise((r) => setTimeout(r, 2 + (x % 4)));
+    fertig.push(x); aktiv--;
+  });
+  assert.equal(spitze, 5);
+  assert.deepEqual([...fertig].sort((a, b) => a - b), Array.from({ length: 23 }, (_, i) => i));
+});
+await pruefe("nebenlaeufig: leere Liste und weniger Eintraege als Arbeiter", async () => {
+  await nebenlaeufig([], 5, async () => { throw new Error("nie"); });
+  const f = [];
+  await nebenlaeufig([1, 2], 5, async (x) => { f.push(x); });
+  assert.deepEqual(f.sort(), [1, 2]);
+});
 console.log(fehler ? `\n${fehler} Fehler.` : "\nAlles gruen.");
 process.exit(fehler ? 1 : 0);

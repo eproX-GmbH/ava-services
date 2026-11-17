@@ -1317,5 +1317,9 @@
   {
     "frage": "was bedeutet 50 engagements (100 items)",
     "erwartet": "linkedin-alle-kommentare"
+  },
+  {
+    "frage": "das nachladen der kommentare hängt schon seit zehn minuten",
+    "erwartet": "linkedin-alle-kommentare"
   }
 ]

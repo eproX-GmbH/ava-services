@@ -22,6 +22,7 @@ interface PrState {
     postStand?: Record<string, { vollGeladenAt: string | null; letzterAbrufAt: string | null }>;
   };
   offen?: Record<string, number>;
+  fortschritt?: { phase: "kommentare" | "zuordnen"; gesamt: number; erledigt: number; leads: number; seit: string } | null;
   hasKey?: boolean;
   apifyVerfuegbar?: boolean;
   running?: boolean;
@@ -56,6 +57,12 @@ export function PersonenRadarPanel(): JSX.Element {
   useEffect(() => {
     void reload();
   }, [reload]);
+  // PM-2026-0053: waehrend eines Laufs den Stand alle paar Sekunden nachladen.
+  useEffect(() => {
+    if (!state?.running) return;
+    const t = setInterval(() => void reload(), 4000);
+    return () => clearInterval(t);
+  }, [state?.running, reload]);
 
   const run = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
@@ -174,7 +181,7 @@ export function PersonenRadarPanel(): JSX.Element {
               <input
                 type="number"
                 min={1}
-                max={50}
+                max={500}
                 value={cfg.maxResolvesPerRun}
                 disabled={busy}
                 style={{ width: 64 }}
@@ -196,6 +203,13 @@ export function PersonenRadarPanel(): JSX.Element {
               {state.running ? "Läuft…" : "Jetzt prüfen"}
             </button>
           </div>
+          {state.running && state.fortschritt && (
+            <p className="small" style={{ margin: "4px 0" }}>
+              {state.fortschritt.phase === "kommentare"
+                ? `Läuft seit ${new Date(state.fortschritt.seit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}: Kommentare holen …`
+                : `Läuft seit ${new Date(state.fortschritt.seit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}: ${state.fortschritt.erledigt} von ${state.fortschritt.gesamt} Personen zugeordnet, ${state.fortschritt.leads} Leads gespeichert`}
+            </p>
+          )}
           <p className="muted" style={{ fontSize: 12 }}>
             {cfg.lastRunAt
               ? `Letzter Lauf ${new Date(cfg.lastRunAt).toLocaleString("de-DE")}: ${cfg.lastOutcome ?? ""}`
