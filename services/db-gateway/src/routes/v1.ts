@@ -43,6 +43,7 @@ import { kontakteAbgleichRouter } from "./v1/kontakte-abgleich";
 import { registerJobsRouter } from "./v1/register-jobs";
 import { relevanzRouter } from "./v1/relevanz";
 import { alertsNeuheitenRouter } from "./v1/alerts-neuheiten";
+import { firmenEreignisseRouter } from "./v1/firmen-ereignisse";
 import { companiesKundenRouter } from "./v1/companies-kunden";
 import { verbindungenRouter } from "./v1/verbindungen";
 import { buyingCenterRouter } from "./v1/buying-center";
@@ -99,6 +100,7 @@ v1.route("/", kontakteAbgleichRouter);
 v1.route("/", relevanzRouter);
 // Neuheiten fuer den Heartbeat (2026-10-05) — eigener Pfad /alerts/…
 v1.route("/", alertsNeuheitenRouter);
+v1.route("/", firmenEreignisseRouter);
 // Buying Center (docs/PLAN_BUYING_CENTER.md) — eigener Pfad.
 v1.route("/", buyingCenterRouter);
 // Kunden/Referenzen (docs/PLAN_KUNDEN.md) — vor dem generischen companiesRouter (Glob).

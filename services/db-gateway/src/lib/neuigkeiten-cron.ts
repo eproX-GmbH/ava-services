@@ -166,7 +166,7 @@ async function konten(): Promise<Konto[]> {
  * und ohne ruhende (P10). Befund 2026-11-13: nur die eigenen Importe abzufragen lieferte
  * fuer Nutzer, deren Firmen Kollegen importiert haben, eine leere Liste ("ohne Firmen").
  */
-async function firmenDesNutzers(actorId: string): Promise<string[]> {
+export async function firmenDesNutzers(actorId: string): Promise<string[]> {
   const pool = getGatewayPool();
   const m = await pool.query<{ actorId: string }>(
     `SELECT DISTINCT "actorId" FROM "TenantMember"

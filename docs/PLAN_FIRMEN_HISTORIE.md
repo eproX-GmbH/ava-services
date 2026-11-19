@@ -154,3 +154,18 @@ Reihenfolge: H0 → H1 → H2 (damit ist Patricks Frage beantwortet), dann H3 un
 
 - 2026-11-19: Befund und Plan geschrieben (Sprachnachricht lokal transkribiert, Code und Prod-Daten
   nur lesend geprüft). Wartet auf Abnahme.
+- 2026-11-19: Abgenommen („Ja, so umsetzen“, Entscheidungen wie empfohlen).
+- 2026-11-19 H0: 4.291 Titel, 1.776 Titeländerungen → 161 echte Wechsel (beide Titel eingeordnet,
+  Assistenz raus, eigene Gruppe Aufsichtsrat/Beirat). Wörterliste in `rollengruppe.ts`.
+- 2026-11-19 H1 gebaut: `GET /v1/firmen-ereignisse` (Gateway, `lib/firmen-ereignisse.ts`). Lesende
+  Probe für Patricks Org (234 Firmen, 90 Tage), Lehren daraus fest eingebaut:
+  * `endDate` setzt das System (Titeländerung schließt die alte Zeile, Aufräumen, Profilprüfung),
+    nicht das Profil → „verlassen“ nur, wenn keine aktuelle Zeile der Person mehr da ist, Zeitpunkt
+    „festgestellt“. Titeländerungen innerhalb einer Firma werden zu Wechseln. 127 → 9 GF-Abgänge.
+  * Beförderung stand doppelt (neu + Wechsel, Signal + Zeile) → je Person/Firma/Rollenpaar einmal.
+  * Neue Quelle für eine Firma (LinkedIn nach Website) ist Bestand: Basis = erster Abruf der Firma
+    durch DIE Quelle. Fehlzuordnung binnen 30 Tagen auf- und zugeklappt zählt gar nicht.
+  * Schub ≥ 3 Personen am selben Tag aus derselben Quelle ohne Profildatum = Bestand.
+  * „Gebiets-/Regionalleiter“ = Mitarbeit, „Vice President“/„Product Owner“ ≠ Geschäftsführung.
+  Ergebnis: 113 Ereignisse in 90 Tagen (statt 500), 7 in der Vertriebsleitung, alle plausibel
+  (z. B. „Vertriebsingenieur → Vertriebsleitung“, laut Profil). Antwortzeit ~350 ms.
