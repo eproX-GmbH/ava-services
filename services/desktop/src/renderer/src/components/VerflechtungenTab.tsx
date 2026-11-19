@@ -73,8 +73,17 @@ export function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string
   useEffect(() => {
     const el = huelle.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => e && setBreite(Math.max(320, Math.round(e.contentRect.width))));
-    ro.observe(el);
+    // Die eigene Breite folgt dem Inhalt (SVG mit fester Breite); gemessen wird deshalb
+    // der Platz, den das Elternelement bietet.
+    const ziel = el.parentElement ?? el;
+    const messen = () => {
+      const st = getComputedStyle(ziel);
+      const innen = ziel.clientWidth - parseFloat(st.paddingLeft || "0") - parseFloat(st.paddingRight || "0");
+      setBreite(Math.max(320, Math.round(innen)));
+    };
+    messen();
+    const ro = new ResizeObserver(messen);
+    ro.observe(ziel);
     return () => ro.disconnect();
   }, []);
   const rahmen = useMemo(() => umriss(knoten, berechnet, wurzel, (k) => personLabel(k as Knoten)), [knoten, berechnet, wurzel]);
@@ -161,7 +170,7 @@ export function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string
   const nachbarVonAktiv = (id: string) => aktiv === null || aktiv === id || kanten.some((e) => (e.von === aktiv && e.nach === id) || (e.nach === aktiv && e.von === id));
   const knopf: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, padding: 0, borderRadius: 8 };
   return (
-    <div ref={huelle} className="netz" style={{ position: "relative", marginTop: 12 }}>
+    <div ref={huelle} className="netz" style={{ position: "relative", marginTop: 12, width: "100%", minWidth: 0, alignSelf: "stretch" }}>
       <div className="netz__steuerung" style={{ position: "absolute", right: 8, top: 8, display: "flex", gap: 4, zIndex: 1 }}>
         <button type="button" className="secondary small" style={knopf} title="Vergrößern" aria-label="Vergrößern" onClick={() => zoom(1.25)}>
           <ZoomIn size={15} />
