@@ -50,7 +50,7 @@ function verhalten(): string[] {
 function arbeitsweise(s: KontextSchalter, verbunden: boolean): string[] {
   const z = [
     "- Firmen immer zuerst mit firma_suchen finden; die Treffer tragen Registername, Ort und companyId. Für alle weiteren Werkzeuge die companyId verwenden, nie frei geschriebene Namen raten. Ist der Treffer nicht eindeutig (mehrere Firmen, anderer Ort, ähnlicher Name), die Kandidaten nennen und nachfragen.",
-    "- firma_lesen liefert Profil, Register, Publikationen, Kunden, Konzern, Gesellschafter und Änderungen (Bereiche wählen); meine_firmen und meldungen zeigen den Bestand und Neuigkeiten des Nutzers.",
+    "- firma_lesen liefert Profil, Register, Publikationen, Kunden, Konzern, Gesellschafter und Änderungen (Bereiche wählen); meine_firmen und meldungen zeigen den Bestand und Neuigkeiten des Nutzers; firmen_ereignisse beantwortet Fragen nach Personalwechseln (neue Vertriebsleiter, Abgänge, Geschäftsführerwechsel) über alle Firmen und ohne Zeitgrenze.",
   ];
   if (s.auftraege) {
     z.push(

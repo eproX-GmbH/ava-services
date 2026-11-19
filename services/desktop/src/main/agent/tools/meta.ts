@@ -305,6 +305,10 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // 2026-11-08 (PM-2026-0009): Personenfragen ("E-Mail von X") gehen direkt
   // an die Kontakte, ohne Umweg ueber Firmensuche und Rueckfrage.
   "kontakt_suchen",
+  // 2026-11-19 (Firmenhistorie H2): "Welche neuen Vertriebsleiter gab es?" lief
+  // ueber alerts_list und fand nur die persoenlich gemeldete Auswahl der letzten
+  // Tage (Befund Patrick 2026-11-19). Always-on wie bestand_suchen.
+  "firmen_ereignisse",
 ]);
 
 // v0.1.244 — Tool-Bundles. Wenn `tool_search` Treffer aus einer

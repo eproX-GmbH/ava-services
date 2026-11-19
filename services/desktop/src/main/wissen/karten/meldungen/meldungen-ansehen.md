@@ -13,9 +13,9 @@ schlagworte: [meldungen, alerts, benachrichtigungen, glocke, ungelesen, neu, hea
 aktionen:
   - { art: chat_vorschlag, ziel: "Zeig mir meine ungelesenen Meldungen", label: "Ungelesene zeigen" }
   - { art: app_oeffnen, ziel: meldungen, label: "Meldungen öffnen" }
-stand: 2026-11-08
+stand: 2026-11-19
 ---
-Frag mich einfach „Was gibt es Neues?“, dann fasse ich dir die Meldungen zusammen, auf Wunsch nur die ungelesenen, nur die der letzten Tage oder nur eine bestimmte Art.
+Frag mich einfach „Was gibt es Neues?“, dann fasse ich dir die Meldungen zusammen, auf Wunsch nur die ungelesenen, nur die der letzten Tage, nur eine bestimmte Art, nur zu einer Firma oder mit einem Suchwort („Was wurde mir zu Firma X gemeldet?“). Fragen nach Personalwechseln über alle Firmen, etwa nach neuen Vertriebsleitern, beantworte ich nicht aus den Meldungen, sondern aus der Firmenhistorie.
 
 In der App findest du alle Meldungen in der Navigation unter „Meldungen“ → „Aktive Meldungen“, nach Tagen gruppiert und neueste zuerst. Die Glocke oben zeigt, wie viele noch ungelesen sind. Ein farbiger Punkt steht für die Wichtigkeit: Info, Achtung oder Dringend. Mit „Alle“ und „Ungelesen“ wechselst du die Ansicht.
 

@@ -40,7 +40,8 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
   const list = defineTool({
     name: "alerts_list",
     description:
-      "List current heartbeat alerts (newest first). Use when the user asks 'welche Meldungen gibt es', 'was ist neu', 'zeig mir die letzten Alarme'. Optional `unreadOnly` filters to entries the user hasn't seen; `limit` defaults to 20. " +
+      "List current heartbeat alerts (newest first). Use when the user asks 'welche Meldungen gibt es', 'was ist neu', 'zeig mir die letzten Alarme', 'was wurde mir zu Firma X gemeldet'. Optional `unreadOnly` filters to entries the user hasn't seen; `limit` defaults to 20; `suche` (Freitext in Firma, Titel und Begruendung) und `companyId` grenzen ein. " +
+      "Meldungen sind nur die persoenlich gemeldete Auswahl; Fragen nach Personalwechseln ueber alle Firmen (neue Vertriebsleiter, Abgaenge) beantwortet `firmen_ereignisse`. " +
       "In Workflows: `sinceMinutes` (nur Meldungen der letzten N Minuten) und `kinds` (z. B. ['publication','status','contact-change']) nutzen, sonst kommen bei jedem Lauf dieselben Meldungen wieder (Duplikate); kind 'workflow' sind die Abschluss-/Fehlermeldungen der Workflows selbst und gehoeren nicht in Mails.",
     parameters: {
       type: "object",
@@ -49,7 +50,9 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
           type: "boolean",
           description: "When true, only return entries with seenAt=null.",
         },
-        sinceMinutes: { type: "integer", minimum: 1, maximum: 43200, description: "Nur Meldungen, die in den letzten N Minuten entstanden sind." },
+        sinceMinutes: { type: "integer", minimum: 1, maximum: 525600, description: "Nur Meldungen, die in den letzten N Minuten entstanden sind (bis ein Jahr)." },
+        suche: { type: "string", description: "Freitext, z. B. 'Vertriebsleiter' oder ein Personenname; trifft Firma, Titel und Begruendung." },
+        companyId: { type: "string", description: "Nur Meldungen zu dieser Firma." },
         kinds: { type: "array", items: { type: "string" }, description: "Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change, job-posting, fokus-thema)." },
         limit: {
           type: "integer",
@@ -62,7 +65,9 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
     schema: yup
       .object({
         unreadOnly: yup.boolean().optional(),
-        sinceMinutes: yup.number().integer().min(1).max(43200).optional(),
+        sinceMinutes: yup.number().integer().min(1).max(525600).optional(),
+        suche: yup.string().trim().min(2).max(200).optional(),
+        companyId: yup.string().trim().min(1).optional(),
         kinds: yup.array().of(yup.string().trim().required()).optional(),
         limit: yup.number().integer().min(1).max(200).optional(),
       })
@@ -74,11 +79,15 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
       const all = deps.alerts.list();
       const seit = args.sinceMinutes ? Date.now() - args.sinceMinutes * 60_000 : null;
       const arten = args.kinds && args.kinds.length > 0 ? new Set(args.kinds) : null;
+      const falte = (t: string) => t.toLocaleLowerCase("de-DE").normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+      const woerter = args.suche ? falte(args.suche).split(/\s+/).filter(Boolean) : [];
       const filtered = all.filter(
         (a) =>
           (!args.unreadOnly || a.seenAt === null) &&
           (seit === null || Date.parse(a.createdAt) >= seit) &&
-          (arten === null || arten.has(a.kind)),
+          (arten === null || arten.has(a.kind)) &&
+          (!args.companyId || a.companyId === args.companyId) &&
+          (woerter.length === 0 || ((t) => woerter.every((w) => t.includes(w)))(falte(`${a.companyName ?? ""} ${a.headline} ${a.rationale}`))),
       );
       return {
         count: filtered.length,

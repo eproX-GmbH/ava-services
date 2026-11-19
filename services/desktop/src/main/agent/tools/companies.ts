@@ -1561,6 +1561,86 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // Firmenhistorie (docs/PLAN_FIRMEN_HISTORIE.md, H2): Personalwechsel aus den
+  // zentralen Daten aller eigenen Firmen, nicht aus den lokalen Meldungen.
+  const GRUPPEN = ["geschaeftsfuehrung", "aufsicht", "vertrieb", "marketing", "einkauf", "it", "personal", "finanzen", "technik", "service"] as const;
+  const ARTEN = ["neu", "verlassen", "wechsel", "geschaeftsfuehrung"] as const;
+  const firmenEreignisse = defineTool({
+    name: "firmen_ereignisse",
+    summary: "Personalwechsel bei meinen Firmen: neue Vertriebsleiter, Abgänge, Aufstiege, Geschäftsführerwechsel, ohne Zeitgrenze.",
+    category: "firmen personal historie",
+    description:
+      "Firmenhistorie: Personal- und Geschaeftsfuehrungswechsel bei ALLEN Firmen des Nutzers (Firmenliste der Organisation) oder bei einzelnen Firmen (`companyIds`), " +
+      "aus den zentralen Daten (Profile, Website, Register), unabhaengig davon, ob dazu eine Meldung kam. " +
+      "Fuer „Welche neuen Vertriebsleiter gab es in letzter Zeit?“, „Wo hat die Geschaeftsfuehrung gewechselt?“, „Wer hat bei X die IT verlassen?“, „Personalwechsel bei X seit Januar“. " +
+      "Arten: neu (Person neu in der Rolle), verlassen (nicht mehr bei der Firma), wechsel (Aufstieg oder anderer Bereich; reine Umformulierungen zaehlen nicht), " +
+      "geschaeftsfuehrung (Bestellung/Abberufung laut Register oder Abschluss). `gruppen` = Rollenbereiche, `ebene` leitung = Leiter/Head/Director/Chief/VP/Geschaeftsfuehrer. " +
+      "Je Ereignis: person, rolleVorher/rolle, firma (companyId), zeitpunkt mit zeitpunktArt: laut_profil = Datum aus dem Profil; erstmals_gesehen/festgestellt = wann AVA es bemerkt hat " +
+      "(kann Wochen nach dem echten Wechsel liegen); register = Registerangabe. Beleg in url.",
+    parameters: {
+      type: "object",
+      properties: {
+        companyIds: { type: "array", items: { type: "string" }, description: "Nur diese Firmen; ohne Angabe alle Firmen des Nutzers" },
+        gruppen: { type: "array", items: { type: "string", enum: [...GRUPPEN] }, description: "Rollenbereiche, z. B. ['vertrieb']" },
+        ebene: { type: "string", enum: ["leitung", "mitarbeit"] },
+        arten: { type: "array", items: { type: "string", enum: [...ARTEN] }, description: "Ohne Angabe alle" },
+        seitTage: { type: "integer", minimum: 1, maximum: 3650, description: "Zeitraum in Tagen zurueck; Standard 90 („in letzter Zeit“), „dieses Jahr“ = seit 1. Januar" },
+        limit: { type: "integer", minimum: 1, maximum: 500, description: "Standard 50" },
+      },
+    },
+    schema: yup
+      .object({
+        companyIds: yup.array().of(yup.string().trim().min(1).required()).max(1000).optional(),
+        gruppen: yup.array().of(yup.string().oneOf([...GRUPPEN]).required()).optional(),
+        ebene: yup.string().oneOf(["leitung", "mitarbeit"]).optional(),
+        arten: yup.array().of(yup.string().oneOf([...ARTEN]).required()).optional(),
+        seitTage: yup.number().integer().min(1).max(3650).optional(),
+        limit: yup.number().integer().min(1).max(500).optional(),
+      })
+      .noUnknown(true),
+    run: async (args, c) => {
+      const tage = args.seitTage ?? 90;
+      const query: Record<string, string | number> = {
+        seit: new Date(Date.now() - tage * 86_400_000).toISOString(),
+        limit: args.limit ?? 50,
+      };
+      if (args.companyIds && args.companyIds.length > 0) query.companyIds = args.companyIds.join(",");
+      else query.meine = "1";
+      if (args.gruppen?.length) query.gruppen = args.gruppen.join(",");
+      if (args.arten?.length) query.arten = args.arten.join(",");
+      if (args.ebene) query.ebene = args.ebene;
+      const r = await gateway.request<{
+        firmen: number;
+        items: Array<{
+          art: string; companyId: string; firma: string | null; person: string | null; rolleVorher: string | null; rolle: string | null;
+          gruppeLabel: string; ebene: string; zeitpunkt: string; zeitpunktArt: string; quelle: string | null; url: string | null;
+          neuBestellt?: string[]; ausgeschieden?: string[];
+        }>;
+      }>("/v1/firmen-ereignisse", { query, signal: c.signal });
+      return {
+        zeitraumTage: tage,
+        firmenGeprueft: r.firmen,
+        anzahl: r.items.length,
+        ereignisse: r.items.map((e) => ({
+          art: e.art,
+          firma: e.firma ?? e.companyId,
+          companyId: e.companyId,
+          ...(e.person ? { person: e.person } : {}),
+          ...(e.rolleVorher ? { rolleVorher: e.rolleVorher } : {}),
+          ...(e.rolle ? { rolle: e.rolle } : {}),
+          bereich: `${e.gruppeLabel}${e.ebene === "leitung" ? " (Leitung)" : ""}`,
+          zeitpunkt: e.zeitpunkt.slice(0, 10),
+          zeitpunktArt: e.zeitpunktArt,
+          ...(e.quelle ? { quelle: e.quelle } : {}),
+          ...(e.url ? { url: e.url } : {}),
+          ...(e.neuBestellt?.length ? { neuBestellt: e.neuBestellt } : {}),
+          ...(e.ausgeschieden?.length ? { ausgeschieden: e.ausgeschieden } : {}),
+        })),
+      };
+    },
+    preview: (r) => `${(r as { anzahl?: number }).anzahl ?? 0} Personalereignisse`,
+  });
+
   return [
     websiteFestlegen,
     personHerkunft,
@@ -1588,6 +1668,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     techStack,
     kunden,
     kundenUmkehrsuche,
+    firmenEreignisse,
     shareholders,
     network,
     networkDeepen,

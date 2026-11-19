@@ -144,6 +144,26 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "firmen_ereignisse",
+    schalter: "lesen",
+    description:
+      "Firmenhistorie: Personal- und Geschaeftsfuehrungswechsel bei den Firmen des Nutzers (alle Firmen der Organisation) oder bei einzelnen Firmen, ohne Zeitgrenze. " +
+      "Fuer Fragen wie „Welche neuen Vertriebsleiter gab es in letzter Zeit?“, „Wo hat die Geschaeftsfuehrung gewechselt?“, „Wer hat bei Firma X die IT verlassen?“. " +
+      "Arten: neu (Person neu in der Rolle), verlassen (nicht mehr bei der Firma), wechsel (Aufstieg oder anderer Bereich; reine Umformulierungen zaehlen nicht), geschaeftsfuehrung (Bestellung/Abberufung laut Register). " +
+      "Je Ereignis Person, Rolle vorher/nachher, Firma, Zeitpunkt mit zeitpunktArt (laut_profil = Datum aus dem Profil; erstmals_gesehen/festgestellt = wann AVA es bemerkt hat, kann spaeter sein als der echte Wechsel; register) und Beleg-URL. In der Antwort die Zeitpunkt-Art nennen.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyIds: { type: "array", items: { type: "string" }, description: "Nur diese Firmen; ohne Angabe alle Firmen des Nutzers" },
+        gruppen: { type: "array", items: { type: "string", enum: ["geschaeftsfuehrung", "aufsicht", "vertrieb", "marketing", "einkauf", "it", "personal", "finanzen", "technik", "service"] }, description: "Rollenbereiche, z. B. ['vertrieb']" },
+        ebene: { type: "string", enum: ["leitung", "mitarbeit"], description: "leitung = Leiter, Head, Director, Chief, VP, Geschaeftsfuehrer" },
+        arten: { type: "array", items: { type: "string", enum: ["neu", "verlassen", "wechsel", "geschaeftsfuehrung"] } },
+        seitTage: { type: "integer", minimum: 1, maximum: 3650, description: "Zeitraum in Tagen zurueck; Standard 90" },
+        limit: { type: "integer", minimum: 1, maximum: 500, description: "Standard 100" },
+      },
+    },
+  },
+  {
     name: "import_anlegen",
     schalter: "auftraege",
     description:
@@ -353,6 +373,21 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
       if (!r.ok) return { text: fehlerText(r), isError: true };
       return { text: kompakt({ seit, firmen: Math.min(ids.length, MAX_FIRMEN_MELDUNGEN), ...(r.json as object) }) };
     }
+    case "firmen_ereignisse": {
+      const ids = Array.isArray(args.companyIds) ? args.companyIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim()) : [];
+      const tage = Math.min(3650, Math.max(1, Number(args.seitTage) || 90));
+      const liste = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").join(",") : undefined);
+      const r = await api(app, token, "GET", `/v1/firmen-ereignisse${qs({
+        ...(ids.length > 0 ? { companyIds: ids.slice(0, 1000).join(",") } : { meine: "1" }),
+        gruppen: liste(args.gruppen) || undefined,
+        arten: liste(args.arten) || undefined,
+        ebene: args.ebene === "leitung" || args.ebene === "mitarbeit" ? args.ebene : undefined,
+        seit: new Date(Date.now() - tage * 86_400_000).toISOString(),
+        limit: Math.min(500, Math.max(1, Number(args.limit) || 100)),
+      })}`);
+      if (!r.ok) return { text: fehlerText(r), isError: true };
+      return { text: kompakt({ seitTage: tage, ...(r.json as object) }) };
+    }
     case "import_anlegen": {
       const name = typeof args.name === "string" && args.name.trim() ? args.name.trim().slice(0, 120) : `Import über MCP ${new Date().toLocaleDateString("de-DE")}`;
       const unscharf = args.unscharf !== false;
@@ -466,7 +501,7 @@ export async function schalterFuer(tenantId: string): Promise<McpSchalter> {
   return { aktiv: f["mcp"] === true, lesen: f["mcp.lesen"] !== false, auftraege: f["mcp.auftraege"] !== false, kontakte: f["mcp.kontakte"] === true, kopf: f["mcp.kopf"] !== false && !copilot, copilot, a2a: f["mcp.a2a"] === true };
 }
 
-const COPILOT_MENGE = new Set([KONTEXT_WERKZEUG, "firma_suchen", "firma_lesen", "firma_kontakte", "meine_firmen", "meldungen", "import_anlegen", "protokoll_ablegen", "auftrag_status"]);
+const COPILOT_MENGE = new Set([KONTEXT_WERKZEUG, "firma_suchen", "firma_lesen", "firma_kontakte", "meine_firmen", "meldungen", "firmen_ereignisse", "import_anlegen", "protokoll_ablegen", "auftrag_status"]);
 
 /** Werkzeuge des verbundenen Kopfs, ohne Namenskollisionen mit den Gateway-Werkzeugen. */
 export function kopfWerkzeuge(actorId: string, s: McpSchalter) {

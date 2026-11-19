@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-19
-Anzahl Tools: 318
+Anzahl Tools: 319
 
-## Firmen (31)
+## Firmen (32)
 
 ### `bestand_suchen`
 
@@ -230,6 +230,14 @@ _Parameter:_
 - `fullName: string` (required) — Voller Personenname.
 - `companyName: string` — Firmenname fuer die Suche (empfohlen).
 - `chosenUrl: string` — Bereits geklaerte Profil-URL — ueberspringt die Suche und speichert direkt.
+
+### `firmen_ereignisse`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Firmenhistorie: Personal- und Geschaeftsfuehrungswechsel bei ALLEN Firmen des Nutzers (Firmenliste der Organisation) oder bei einzelnen Firmen (`companyIds`), aus den zentralen Daten (Profile, Website, Register), unabhaengig davon, ob dazu eine Meldung kam. Fuer „Welche neuen Vertriebsleiter gab es in letzter Zeit?“, „Wo hat die Geschaeftsfuehrung gewechselt?“, „Wer hat bei X die IT verlassen?“, „Personalwechsel bei X seit Januar“. Arten: neu (Person neu in der Rolle), verlassen (nicht mehr bei der Firma), wechsel (Aufstieg oder anderer Bereich; reine Umformulierungen zaehlen nicht), geschaeftsfuehrung (Bestellung/Abberufung laut Register oder Abschluss). `gruppen` = Rollenbereiche, `ebene` leitung = Leiter/Head/Director/Chief/VP/Geschaeftsfuehrer. Je Ereignis: person, rolleVorher/rolle, firma (companyId), zeitpunkt mit zeitpunktArt: laut_profil = Datum aus dem Profil; erstmals_gesehen/festgestellt = wann AVA es bemerkt hat (kann Wochen nach dem echten Wechsel liegen); register = Registerangabe. Beleg in url.
+
+_Parameter:_ keine.
 
 ### `kontakt_suchen`
 
@@ -503,13 +511,9 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/alerts.ts`
 
-List current heartbeat alerts (newest first). Use when the user asks 'welche Meldungen gibt es', 'was ist neu', 'zeig mir die letzten Alarme'. Optional `unreadOnly` filters to entries the user hasn't seen; `limit` defaults to 20. In Workflows: `sinceMinutes` (nur Meldungen der letzten N Minuten) und `kinds` (z. B. ['publication','status','contact-change']) nutzen, sonst kommen bei jedem Lauf dieselben Meldungen wieder (Duplikate); kind 'workflow' sind die Abschluss-/Fehlermeldungen der Workflows selbst und gehoeren nicht in Mails.
+List current heartbeat alerts (newest first). Use when the user asks 'welche Meldungen gibt es', 'was ist neu', 'zeig mir die letzten Alarme', 'was wurde mir zu Firma X gemeldet'. Optional `unreadOnly` filters to entries the user hasn't seen; `limit` defaults to 20; `suche` (Freitext in Firma, Titel und Begruendung) und `companyId` grenzen ein. Meldungen sind nur die persoenlich gemeldete Auswahl; Fragen nach Personalwechseln ueber alle Firmen (neue Vertriebsleiter, Abgaenge) beantwortet `firmen_ereignisse`. In Workflows: `sinceMinutes` (nur Meldungen der letzten N Minuten) und `kinds` (z. B. ['publication','status','contact-change']) nutzen, sonst kommen bei jedem Lauf dieselben Meldungen wieder (Duplikate); kind 'workflow' sind die Abschluss-/Fehlermeldungen der Workflows selbst und gehoeren nicht in Mails.
 
-_Parameter:_
-- `unreadOnly: boolean` — When true, only return entries with seenAt=null.
-- `sinceMinutes: integer` — Nur Meldungen, die in den letzten N Minuten entstanden sind.
-- `kinds: array` — Nur diese Meldungsarten (publication, financial-delta, profile-change, linkedin-signal, reminder, link-change, radar-match, workflow, import-finished, status, contact-change, customer-change, job-posting, fokus-thema).
-- `limit: integer` — Max entries to return. Default 20.
+_Parameter:_ keine.
 
 ### `alerts_mark_all_seen`
 

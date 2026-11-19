@@ -1321,5 +1321,17 @@
   {
     "frage": "das nachladen der kommentare hängt schon seit zehn minuten",
     "erwartet": "linkedin-alle-kommentare"
+  },
+  {
+    "frage": "welche neuen vertriebsleiter gab es bei meinen firmen",
+    "erwartet": "personalwechsel"
+  },
+  {
+    "frage": "gab es personalwechsel in der geschäftsführung",
+    "erwartet": "personalwechsel"
+  },
+  {
+    "frage": "wer ist neu als head of sales",
+    "erwartet": "personalwechsel"
   }
 ]
