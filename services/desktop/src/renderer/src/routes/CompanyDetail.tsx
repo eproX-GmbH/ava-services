@@ -8,6 +8,7 @@ import {
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { VerflechtungenTab } from "../components/VerflechtungenTab";
 import { KundenTab, type Kunde } from "../components/KundenTab";
+import { ZeitachseTab } from "../components/ZeitachseTab";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { useFeature } from "../store/policy";
@@ -82,6 +83,7 @@ import { adressZeilen, kartenSuche } from "../../../shared/adresse";
 
 type TabKey =
   | "overview"
+  | "zeitachse"
   | "financials"
   | "management"
   | "contacts"
@@ -95,6 +97,7 @@ type TabKey =
 
 const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "overview", label: "Übersicht", workflow: "W8/W10" },
+  { key: "zeitachse", label: "Zeitachse", workflow: "H3" },
   { key: "financials", label: "Finanzen", workflow: "W11" },
   { key: "management", label: "Geschäftsführung", workflow: "W13" },
   { key: "contacts", label: "Kontakte", workflow: "W12" },
@@ -660,6 +663,8 @@ export function CompanyDetail() {
     // gaebe es keinen Weg mehr, die Gesellschafterliste ueberhaupt zu
     // holen — der Reiter waere genau dann weg, wenn man ihn braucht.
     verflechtungen: true,
+    // Zeitachse: immer da, auch leer (Notiz-Eingabe oben).
+    zeitachse: true,
     buyingcenter: buyingcenterErlaubt && eigenesBcId !== null,
     kunden: (kunden.data?.items ?? []).length > 0,
   };
@@ -893,7 +898,7 @@ export function CompanyDetail() {
             type="button"
             className={`tab ${tab === t.key ? "active" : ""}`}
             onClick={() => setTab(t.key)}
-            title={t.workflow}
+            title={t.label}
           >
             {t.label}
           </button>
@@ -945,6 +950,16 @@ export function CompanyDetail() {
         {tab === "kunden" && (
           <KundenTab items={kunden.data?.items ?? []} onFertig={() => void kunden.refetch()} />
         )}
+        {tab === "zeitachse" && (
+          <ZeitachseTab
+            id={id!}
+            name={summary.data?.name ?? null}
+            country={summary.data?.country ?? null}
+            websiteUrl={contactFallback.data?.websiteUrl ?? null}
+            an={datenErlaubt}
+            onReiter={(r) => (r === "overview" || r === "financials") && setTab(r)}
+          />
+        )}
         {tab === "verflechtungen" && verflechtungenSichtbar && <VerflechtungenTab id={id!} name={summary.data?.name ?? null} />}
         {tab === "buyingcenter" && eigenesBcId && <BuyingCenterKarte id={eigenesBcId} />}
       </div>
@@ -958,6 +973,7 @@ export function CompanyDetail() {
  *  intentionally have empty arrays — no tier badge to show. */
 const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   overview: ["company-profile", "website"],
+  zeitachse: [],
   financials: [],
   management: [],
   contacts: ["company-contact"],
@@ -1214,6 +1230,15 @@ function OverviewTab({
   /** Rechtsform aus den Stammdaten (AT/CH), wenn das Register nichts liefert. */
   rechtsform?: string | null;
 }) {
+  // Fluktuation der Leitung (Zu- und Abgaenge in 24 Monaten): nur auffaellige Hinweise;
+  // fehlt die Route oder scheitert sie, bleibt die Zeile weg.
+  const fluktuation = useQuery<{ hinweise: string[]; leitungVerweildauer: { medianMonate: number; anzahl: number } | null }>({
+    queryKey: ["company", companyId, "fluktuation"],
+    queryFn: () => gatewayFetch(`/v1/companies/${encodeURIComponent(companyId)}/fluktuation`),
+    retry: false,
+    staleTime: 10 * 60_000,
+  });
+  const fluktuationHinweise = Array.isArray(fluktuation.data?.hinweise) ? fluktuation.data.hinweise : [];
   if (!profile && !structured && !website) {
     return <p className="muted">Noch keine Daten.</p>;
   }
@@ -1296,6 +1321,16 @@ function OverviewTab({
               </div>
             );
           })()}
+          {fluktuationHinweise.length > 0 && (
+            <div>
+              <dt>Wechsel in der Leitung</dt>
+              <dd>
+                {fluktuationHinweise.map((h) => (
+                  <span key={h} style={{ display: "block" }}>{h}</span>
+                ))}
+              </dd>
+            </div>
+          )}
         </dl>
       </article>
 

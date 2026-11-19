@@ -169,3 +169,14 @@ Reihenfolge: H0 → H1 → H2 (damit ist Patricks Frage beantwortet), dann H3 un
   * „Gebiets-/Regionalleiter“ = Mitarbeit, „Vice President“/„Product Owner“ ≠ Geschäftsführung.
   Ergebnis: 113 Ereignisse in 90 Tagen (statt 500), 7 in der Vertriebsleitung, alle plausibel
   (z. B. „Vertriebsingenieur → Vertriebsleitung“, laut Profil). Antwortzeit ~350 ms.
+- 2026-11-19 H2 gebaut: Werkzeug `firmen_ereignisse` im Kern der Desktop-App und im Gateway-MCP
+  (auch Copilot-Menge), Prompt-Regel „Personalwechsel“ (nie über `alerts_list`), `alerts_list` mit
+  `suche`/`companyId`/Fenster bis ein Jahr, Lösungskarte `personalwechsel`.
+- 2026-11-19 H3: app.ava.bi Zeitachsen-Art „Personal“ (lokal committet, nicht gepusht);
+  Desktop-Reiter „Zeitachse“ (Port der App-Zeitachse plus Personal) und „Wechsel in der Leitung“ in der Übersicht gebaut.
+- 2026-11-19 H4 gebaut: `GET /v1/companies/{id}/fluktuation`, Bereich `fluktuation` in
+  `company_get`/`firma_lesen`, „Auf einen Blick“ in der App. Lehre aus der Probe: „3× gewechselt“
+  war meist Wachstum (drei neue Leitungen, kein Abgang) → Hinweise nennen Zu- und Abgänge getrennt
+  und erst ab Auffälligem. E5 umgesetzt: anonymes Mitzählen vor jeder Löschung
+  (`PersonalEreignisAnonym`, Kontakt-DB). Offen: Weitergabe an Relevanz (Gewicht kommt vom
+  Desktop) und Alarm-Judge, als eigener kleiner Schritt nach dem Rollout.

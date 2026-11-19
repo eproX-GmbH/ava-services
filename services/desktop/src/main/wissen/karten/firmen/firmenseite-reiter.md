@@ -7,14 +7,15 @@ fragen:
   - wo finde ich die infos zu einer firma
   - firmenansicht erklären
   - company detail page tabs
-schlagworte: [firmenseite, firmenansicht, reiter, tabs, übersicht, finanzen, geschäftsführung, kontakte, erkenntnisse, stellenanzeigen, expansion, verflechtungen, buying center, referenzen, mein fokus]
+schlagworte: [firmenseite, firmenansicht, reiter, tabs, übersicht, zeitachse, finanzen, geschäftsführung, kontakte, erkenntnisse, stellenanzeigen, expansion, verflechtungen, buying center, referenzen, mein fokus]
 gilt_fuer: [desktop]
-stand: 2026-11-07
+stand: 2026-11-19
 ---
 Oben auf der Firmenseite stehen Name, Landeschip, Statuschips (etwa gelöscht oder insolvent), Registerzeile, Schlagworte und Kacheln wie Standort, Register, Gegründet, Mitarbeiter, Website und Social Media. Rechts der Knopf „Übernehmen und verarbeiten“ bzw. „Neu verarbeiten“.
 
 Die Reiter:
-- Übersicht: Firmenprofil, Geschäftszweck, Rechtsform, Kontakt & Standort, Insolvenzstand
+- Übersicht: Firmenprofil, Geschäftszweck, Rechtsform, Wechsel in der Leitung (wenn auffällig), Kontakt & Standort, Insolvenzstand
+- Zeitachse: alles, was bei der Firma passiert ist, neueste zuerst: Personalwechsel, Register- und Geschäftsführungsänderungen, Insolvenz, Meldungen, Recherchen, Jahresabschlüsse und deine Notizen
 - Finanzen: Jahresübersicht und Jahresberichte
 - Geschäftsführung, Kontakte
 - Erkenntnisse: Branche, Firmenalter, Unternehmensgegenstand, aktuelle Finanzen
