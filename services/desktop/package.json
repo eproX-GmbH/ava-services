@@ -53,6 +53,7 @@
     "test:email-zuordnung": "node scripts/test-email-zuordnung.mjs",
     "test:telegram-sprachantwort": "node scripts/test-telegram-sprachantwort.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
+    "test:ansprache": "node scripts/test-ansprache.mjs",
     "test:post-nachladen": "node scripts/test-post-nachladen.mjs",
     "test:post-lauf": "node scripts/test-post-lauf.mjs",
     "test:netz-layout": "node scripts/test-netz-layout.mjs",

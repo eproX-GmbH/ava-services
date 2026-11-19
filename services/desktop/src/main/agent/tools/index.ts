@@ -36,6 +36,7 @@ import { buildMemoryTools } from "./memory";
 import { buildImportTools } from "./imports";
 import { buildProblemTools } from "./problem";
 import { buildAlertsTools } from "./alerts";
+import { buildAnspracheTools, STIL_TAG } from "./ansprache";
 import { buildFreshnessTools } from "./freshness";
 import { buildProfileTools } from "./profile";
 import { buildWatchesTools } from "./watches";
@@ -481,5 +482,17 @@ export function buildReadOnlyRegistry(deps: {
   if (deps.problemMelden) {
     for (const t of buildProblemTools({ melden: deps.problemMelden })) registry.register(t);
   }
+  // Erstansprache (docs/PLAN_ERSTANSPRACHE.md): nutzt die schon registrierten Werkzeuge.
+  for (const t of buildAnspracheTools({
+    rufe: async (name, args, ctx) => {
+      const tool = registry.get(name);
+      if (!tool) throw new Error(`Werkzeug ${name} nicht verfuegbar`);
+      return tool.run(tool.parseArgs(args), ctx);
+    },
+    icp: () => deps.icp.get(),
+    profil: () => deps.profile.get() ?? null,
+    stil: () => deps.generalMemory.list().filter((e) => (e.tags ?? []).includes(STIL_TAG)),
+  }))
+    registry.register(t);
   return registry;
 }

@@ -309,6 +309,10 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // ueber alerts_list und fand nur die persoenlich gemeldete Auswahl der letzten
   // Tage (Befund Patrick 2026-11-19). Always-on wie bestand_suchen.
   "firmen_ereignisse",
+  // 2026-11-19 (Erstansprache, Patrick): Ansprachen nutzten erst nach 8-10
+  // Runden alle Daten. Vorbereitung und Pruefung immer da, wie bestand_suchen.
+  "ansprache_vorbereiten",
+  "ansprache_pruefen",
 ]);
 
 // v0.1.244 — Tool-Bundles. Wenn `tool_search` Treffer aus einer

@@ -156,3 +156,18 @@ die Endfassung nach Raster.
 
 - 2026-11-19: Befund und Plan geschrieben (Sprachnachricht lokal transkribiert, Prompt und
   Werkzeuge gesichtet). Wartet auf Abnahme.
+- 2026-11-19: Abgenommen („Ja, so umsetzen“) und gebaut:
+  * `ansprache_vorbereiten` / `ansprache_pruefen` im Desktop-Kern (tools/ansprache.ts, Logik
+    rein in agent/ansprache-logik.ts mit Prüfsatz `npm run test:ansprache`, Fall IEF-Werner).
+    Abweichung von 3.: keine eigene Gateway-Route; die Vorbereitung ruft die vorhandenen Werkzeuge
+    (company_get mit Bereichen, firmen_ereignisse, alerts_list, buying_center_anzeigen), damit
+    Steckbrief-, Rechte- und Kompaktregeln an einer Stelle bleiben. Copilot/MCP bekommen beide
+    Werkzeuge über das Kopf-Relais (eigenes Angebot und Stil liegen ohnehin lokal).
+  * A4 ohne neues Profilfeld: Das Idealkundenprofil hat schon Angebot, Nutzen und Kundenbeispiele,
+    befüllt aus der eigenen Website bei der Start-Analyse und im ICP-Assistenten pflegbar.
+  * A5: Grundsätzliche Korrekturen → `remember` mit Tag „ansprache“, die Vorbereitung liefert sie
+    als `stil`.
+  * Echter Lauf (lokaler Build gegen Prod, gpt-6.1-sol): „Erstansprache an den Vertriebsleiter der
+    Berentzen-Gruppe“ → EIN Durchgang, 24 s, Empfänger nach Rolle gewählt, zwei belegte Aufhänger,
+    Sie-Form, ~130 Wörter, Prüfung bestanden. Dabei behoben: Du/Sie-Rückfrage (Erstansprache jetzt
+    Sie ohne Frage) und Rolle statt Name als Empfänger.

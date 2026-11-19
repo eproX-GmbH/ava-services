@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-11-19
-Anzahl Tools: 319
+Anzahl Tools: 321
 
 ## Firmen (32)
 
@@ -1226,6 +1226,32 @@ _Datei:_ `services/desktop/src/main/agent/tools/account.ts`
 Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle, Mitgliederzahl, ob die Tenant-ID aus dem Token-Claim oder dem Kompatibilitaets-Fallback stammt) und die weiteren Konten, die auf diesem Geraet bekannt sind. Read-only. Kontowechsel und 'Anderes Konto hinzufuegen' laufen ueber das Konto-Menue in der Kopfzeile, weil AVA dafuer neu startet.
 
 _Parameter:_ keine.
+
+## ansprache (2)
+
+### `ansprache_pruefen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/ansprache.ts`
+
+Prueft einen fertigen Ansprache-Entwurf (nur den Text, mit Anrede und Gruss) gegen die letzte ansprache_vorbereiten-Antwort derselben Firma: mindestens zwei Fakten aus den Aufhaengern, konkreter Bezug in den ersten zwei Saetzen, Laenge je Kanal, keine Floskeln, keine Platzhalter, kein Ueberwachungston. Vor JEDER Ausgabe einer Ansprache aufrufen. bestanden=false → EINMAL anhand von `maengel` ueberarbeiten und dann ausgeben (nicht erneut pruefen, nicht den Nutzer fragen). `hinweise` sind Empfehlungen.
+
+_Parameter:_
+- `companyId: string` (required)
+- `text: string` (required) — Der Entwurf als Klartext
+- `betreff: string`
+
+### `ansprache_vorbereiten`
+
+_Datei:_ `services/desktop/src/main/agent/tools/ansprache.ts`
+
+Vorbereitung einer Erstansprache oder Nachfass-Nachricht an eine Firma bzw. Person (Mail oder LinkedIn). IMMER der erste Schritt, bevor du eine Ansprache schreibst, ohne Rueckfrage. Liefert in einem Aufruf: firma (Profil, Gegenstand, Status), empfaenger (Rolle, Adresse samt emailStatus), aufhaenger (die 3-5 staerksten Anlaesse nach Frische und Staerke: Personalwechsel, Meldungen, Expansion, Fokus-Themen, Stellen, Finanzen mit Umsatz/Mitarbeitern, Referenzen, Produkte; je mit Quelle und Datum), weitereAnsprechpartner, angebot (was der Nutzer anbietet: Angebot, Nutzen, Kundenbeispiele), stil (gemerkte Wuensche des Nutzers fuer Ansprachen), vorgeschichte (CRM), buyingCenter und regeln (Laenge, Aufbau). `empfaenger` = Name der Person (z. B. 'Herr Schwer' oder 'Anna Muster'), `kanal` mail (Standard) oder linkedin, `anlass` = was der Nutzer selbst als Anlass nennt.
+
+_Parameter:_
+- `companyId: string` (required)
+- `empfaenger: string` — Name des Empfaengers, wenn bekannt
+- `personId: string`
+- `kanal: string (enum: mail, linkedin)`
+- `anlass: string` — Anlass in den Worten des Nutzers, falls genannt
 
 ## app-oeffnen (1)
 

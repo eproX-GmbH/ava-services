@@ -1333,5 +1333,17 @@
   {
     "frage": "wer ist neu als head of sales",
     "erwartet": "personalwechsel"
+  },
+  {
+    "frage": "schreib mir eine akquise mail an ief-werner",
+    "erwartet": "erstansprache"
+  },
+  {
+    "frage": "die mail ist viel zu allgemein, nimm doch alle daten",
+    "erwartet": "erstansprache"
+  },
+  {
+    "frage": "kaltakquise per linkedin an den einkaufsleiter",
+    "erwartet": "erstansprache"
   }
 ]

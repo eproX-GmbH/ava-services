@@ -88,6 +88,9 @@ const KERNMENGE = [
   // Vertiefung über die Gateway-Lesewerkzeuge hinaus
   "publication_search",
   "kunden_umkehrsuche",
+  // Erstansprache: Vorbereitung und Pruefung auch fuer Copilot/MCP (eigenes Angebot und Stil liegen lokal).
+  "ansprache_vorbereiten",
+  "ansprache_pruefen",
   "company_network",
   "buying_center_anzeigen",
   "evaluation_start_best_match",
