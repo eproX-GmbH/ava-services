@@ -55,6 +55,7 @@
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:post-nachladen": "node scripts/test-post-nachladen.mjs",
     "test:post-lauf": "node scripts/test-post-lauf.mjs",
+    "test:netz-layout": "node scripts/test-netz-layout.mjs",
     "test:skills": "node scripts/test-skills-loader.mjs",
     "test:skills:agent": "node scripts/test-skills-agent.mjs",
     "test:skills:bundled": "node scripts/test-skills-bundled.mjs",

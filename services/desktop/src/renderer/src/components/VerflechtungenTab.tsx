@@ -4,7 +4,9 @@
 // Gesellschaftertabelle der neuesten Liste, Beteiligungen der Firma und der
 // Stand der Rekursion (Kontexte) mit "tiefer verfolgen".
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { PERSON_R, WURZEL_ZEICHEN, kurz, knotenGroesse, labelLage, radialLayout, randPunkt, umriss, type Punkt } from "../lib/netz-layout";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch, GatewayError } from "../api/gateway";
@@ -26,90 +28,30 @@ const ART_FARBE: Record<Kante["art"], string> = { BETEILIGUNG: "#00C0A7", GESCHA
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const datum = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateString("de-DE") : "–");
 
-// ---- Layout: kleine Kraftsimulation, deterministisch (kein Zufall) --------
-type Punkt = { x: number; y: number };
-function layout(knoten: Knoten[], kanten: Kante[], breite: number, hoehe: number, wurzel: string): Map<string, Punkt> {
-  const pos = new Map<string, Punkt>();
-  const cx = breite / 2;
-  const cy = hoehe / 2;
-  const jeTiefe = new Map<number, Knoten[]>();
-  for (const k of knoten) jeTiefe.set(k.tiefe, [...(jeTiefe.get(k.tiefe) ?? []), k]);
-  for (const [t, liste] of jeTiefe) {
-    const r = t === 0 ? 0 : Math.min(breite, hoehe) * (0.16 + 0.14 * t);
-    liste.forEach((k, i) => {
-      const w = (2 * Math.PI * i) / Math.max(liste.length, 1) + t * 0.7;
-      pos.set(k.id, { x: cx + r * Math.cos(w), y: cy + r * Math.sin(w) });
-    });
-  }
-  const ids = knoten.map((k) => k.id);
-  const idx = new Map(ids.map((id, i) => [id, i]));
-  const vx = new Float64Array(ids.length);
-  const vy = new Float64Array(ids.length);
-  const kantenIdx = kanten.map((k) => [idx.get(k.von), idx.get(k.nach)] as const).filter(([a, b]) => a !== undefined && b !== undefined) as Array<readonly [number, number]>;
-  const p = ids.map((id) => pos.get(id)!);
-  for (let iter = 0; iter < 260; iter++) {
-    const temp = 1 - iter / 260;
-    for (let i = 0; i < p.length; i++) {
-      const pi = p[i]!;
-      for (let j = i + 1; j < p.length; j++) {
-        const pj = p[j]!;
-        let dx = pj.x - pi.x;
-        let dy = pj.y - pi.y;
-        let d2 = dx * dx + dy * dy;
-        if (d2 < 1) {
-          dx = 0.5;
-          dy = 0.5;
-          d2 = 0.5;
-        }
-        const f = 7000 / d2;
-        const fx = (dx / Math.sqrt(d2)) * f;
-        const fy = (dy / Math.sqrt(d2)) * f;
-        vx[i] = (vx[i] ?? 0) - fx;
-        vy[i] = (vy[i] ?? 0) - fy;
-        vx[j] = (vx[j] ?? 0) + fx;
-        vy[j] = (vy[j] ?? 0) + fy;
-      }
-    }
-    for (const [a, b] of kantenIdx) {
-      const pa = p[a]!;
-      const pb = p[b]!;
-      const dx = pb.x - pa.x;
-      const dy = pb.y - pa.y;
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const f = (d - 190) * 0.02;
-      vx[a] = (vx[a] ?? 0) + (dx / d) * f;
-      vy[a] = (vy[a] ?? 0) + (dy / d) * f;
-      vx[b] = (vx[b] ?? 0) - (dx / d) * f;
-      vy[b] = (vy[b] ?? 0) - (dy / d) * f;
-    }
-    for (let i = 0; i < p.length; i++) {
-      const pi = p[i]!;
-      if (ids[i] === wurzel) {
-        p[i] = { x: cx, y: cy };
-        vx[i] = 0;
-        vy[i] = 0;
-        continue;
-      }
-      const sx = (vx[i] ?? 0) + (cx - pi.x) * 0.004;
-      const sy = (vy[i] ?? 0) + (cy - pi.y) * 0.004;
-      const nx = Math.min(breite - 70, Math.max(70, pi.x + Math.max(-12, Math.min(12, sx * temp))));
-      const ny = Math.min(hoehe - 30, Math.max(30, pi.y + Math.max(-12, Math.min(12, sy * temp))));
-      p[i] = { x: nx, y: ny };
-      vx[i] = sx * 0.6;
-      vy[i] = sy * 0.6;
-    }
-  }
-  ids.forEach((id, i) => pos.set(id, p[i]!));
-  return pos;
+// ---- Netzgrafik (2026-11-19): echte Pixel, radiales Layout, Zoom und Verschieben ----------
+// Vorher: feste Zeichenflaeche 920 × 560, auf die Panelbreite hochskaliert — Kreise, Schrift
+// und Linien wuchsen mit der Fensterbreite („riesig und bulky“). Jetzt misst die Grafik ihre
+// Breite, zeichnet 1:1 und passt den Inhalt nur verkleinernd ein.
+
+function personLabel(k: Knoten): string {
+  return `${kurz(k.name, 28)}${k.geburtsjahr ? ` *${k.geburtsjahr}` : ""}`;
 }
 
-function kurz(s: string, n = 26): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+function initialen(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter((t) => /^\p{L}/u.test(t))
+    .map((t) => t[0]!.toUpperCase())
+    .join("")
+    .slice(0, 2);
 }
 
-function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten: Set<Kante["art"]> }) {
-  const breite = 920;
-  const hoehe = 560;
+type Ansicht = { k: number; tx: number; ty: number };
+const HOEHE_MIN = 320;
+const HOEHE_MAX = 780;
+const RAND = 28;
+
+export function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten: Set<Kante["art"]> }) {
   const kanten = useMemo(() => netz.kanten.filter((k) => arten.has(k.art)), [netz, arten]);
   const knoten = useMemo(() => {
     const verbunden = new Set<string>([wurzel]);
@@ -119,144 +61,261 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
     }
     return netz.knoten.filter((k) => verbunden.has(k.id));
   }, [netz, kanten, wurzel]);
-  const berechnet = useMemo(() => layout(knoten, kanten, breite, hoehe, wurzel), [knoten, kanten, wurzel]);
-  // Knoten lassen sich mit der Maus verschieben; die Positionen leben im State, das Layout ist nur der Startwert.
+  const netzKnoten = useMemo(() => new Map(knoten.map((k) => [k.id, k])), [knoten]);
+  const berechnet = useMemo(() => radialLayout(knoten, kanten, wurzel, (k) => personLabel(k as Knoten)), [knoten, kanten, wurzel]);
   const [pos, setPos] = useState<Map<string, Punkt>>(berechnet);
   useEffect(() => setPos(berechnet), [berechnet]);
+  const groesse = useMemo(() => new Map(knoten.map((k) => [k.id, knotenGroesse(k, k.id === wurzel)])), [knoten, wurzel]);
+
+  // Breite messen; die Zeichenflaeche ist so breit wie das Panel und wird nie skaliert.
+  const huelle = useRef<HTMLDivElement | null>(null);
+  const [breite, setBreite] = useState(860);
+  useEffect(() => {
+    const el = huelle.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => e && setBreite(Math.max(320, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const rahmen = useMemo(() => umriss(knoten, berechnet, wurzel, (k) => personLabel(k as Knoten)), [knoten, berechnet, wurzel]);
+  const hoehe = Math.round(Math.min(HOEHE_MAX, Math.max(HOEHE_MIN, rahmen.y1 - rahmen.y0 + 2 * RAND)));
+  const einpassen = useCallback((): Ansicht => {
+    const b = rahmen.x1 - rahmen.x0;
+    const h = rahmen.y1 - rahmen.y0;
+    const k = Math.min(1, (breite - 2 * RAND) / Math.max(b, 1), (hoehe - 2 * RAND) / Math.max(h, 1));
+    return { k, tx: breite / 2 - k * (rahmen.x0 + b / 2), ty: hoehe / 2 - k * (rahmen.y0 + h / 2) };
+  }, [rahmen, breite, hoehe]);
+  const [ansicht, setAnsicht] = useState<Ansicht>(() => einpassen());
+  useEffect(() => setAnsicht(einpassen()), [einpassen]);
+
   const [aktiv, setAktiv] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const drag = useRef<{ id: string; bewegt: boolean } | null>(null);
-  const svgPunkt = (e: React.PointerEvent): Punkt => {
+  const zug = useRef<{ art: "knoten"; id: string; bewegt: boolean } | { art: "flaeche"; x: number; y: number; tx: number; ty: number } | null>(null);
+  const bildschirm = (e: { clientX: number; clientY: number }): Punkt => {
+    const r = svgRef.current?.getBoundingClientRect();
+    return r ? { x: e.clientX - r.left, y: e.clientY - r.top } : { x: 0, y: 0 };
+  };
+  const inhalt = (s: Punkt): Punkt => ({ x: (s.x - ansicht.tx) / ansicht.k, y: (s.y - ansicht.ty) / ansicht.k });
+
+  // Zoomen mit Trackpad (Zwei-Finger-Geste) oder ⌘/Strg + Mausrad; normales Scrollen bleibt der Seite.
+  useEffect(() => {
     const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const m = svg.getScreenCTM();
-    if (!m) return { x: 0, y: 0 };
-    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
-    return { x: p.x, y: p.y };
-  };
-  const dragStart = (id: string) => (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    drag.current = { id, bewegt: false };
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-  };
-  const dragMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    const p = svgPunkt(e);
-    d.bewegt = true;
-    setPos((alt) => {
-      const neu = new Map(alt);
-      neu.set(d.id, { x: Math.min(breite - 70, Math.max(70, p.x)), y: Math.min(hoehe - 30, Math.max(30, p.y)) });
-      return neu;
+    if (!svg) return;
+    const rad = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const r = svg.getBoundingClientRect();
+      const sx = e.clientX - r.left;
+      const sy = e.clientY - r.top;
+      setAnsicht((a) => {
+        const k = Math.min(3, Math.max(0.25, a.k * Math.exp(-e.deltaY * 0.01)));
+        return { k, tx: sx - ((sx - a.tx) / a.k) * k, ty: sy - ((sy - a.ty) / a.k) * k };
+      });
+    };
+    svg.addEventListener("wheel", rad, { passive: false });
+    return () => svg.removeEventListener("wheel", rad);
+  }, []);
+  const zoom = (f: number) =>
+    setAnsicht((a) => {
+      const k = Math.min(3, Math.max(0.25, a.k * f));
+      return { k, tx: breite / 2 - ((breite / 2 - a.tx) / a.k) * k, ty: hoehe / 2 - ((hoehe / 2 - a.ty) / a.k) * k };
     });
+
+  const knotenStart = (id: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    zug.current = { art: "knoten", id, bewegt: false };
+    svgRef.current?.setPointerCapture?.(e.pointerId);
   };
-  const dragEnd = () => {
+  const flaecheStart = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    zug.current = { art: "flaeche", x: e.clientX, y: e.clientY, tx: ansicht.tx, ty: ansicht.ty };
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+  };
+  const bewegen = (e: React.PointerEvent) => {
+    const z = zug.current;
+    if (!z) return;
+    if (z.art === "flaeche") {
+      setAnsicht((a) => ({ ...a, tx: z.tx + e.clientX - z.x, ty: z.ty + e.clientY - z.y }));
+      return;
+    }
+    z.bewegt = true;
+    const p = inhalt(bildschirm(e));
+    setPos((alt) => new Map(alt).set(z.id, p));
+  };
+  const loslassen = () => {
     // Nach einem Ziehen den Klick (Link) unterdruecken; nach einem reinen Klick nicht.
-    if (drag.current?.bewegt) setTimeout(() => (drag.current = null), 0);
-    else drag.current = null;
+    const z = zug.current;
+    if (z?.art === "knoten" && z.bewegt) setTimeout(() => (zug.current = null), 0);
+    else zug.current = null;
   };
   const klickUnterdruecken = (e: React.MouseEvent) => {
-    if (drag.current?.bewegt) {
+    const z = zug.current;
+    if (z?.art === "knoten" && z.bewegt) {
       e.preventDefault();
       e.stopPropagation();
     }
   };
 
   if (knoten.length <= 1) return <p className="muted">Noch keine Verbindungen bekannt.</p>;
+  const nachbarVonAktiv = (id: string) => aktiv === null || aktiv === id || kanten.some((e) => (e.von === aktiv && e.nach === id) || (e.nach === aktiv && e.von === id));
+  const knopf: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, padding: 0, borderRadius: 8 };
   return (
-    <div style={{ overflowX: "auto", position: "relative" }}>
-      <button type="button" className="secondary small" style={{ position: "absolute", right: 8, top: 8 }} onClick={() => setPos(berechnet)}>
-        Anordnung zurücksetzen
-      </button>
-      <svg ref={svgRef} viewBox={`0 0 ${breite} ${hoehe}`} width="100%" style={{ minWidth: 640, background: "var(--panel-bg, transparent)", borderRadius: 8, touchAction: "none" }} role="img" aria-label="Netzgrafik der Verflechtungen" onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragEnd}>
+    <div ref={huelle} className="netz" style={{ position: "relative", marginTop: 12 }}>
+      <div className="netz__steuerung" style={{ position: "absolute", right: 8, top: 8, display: "flex", gap: 4, zIndex: 1 }}>
+        <button type="button" className="secondary small" style={knopf} title="Vergrößern" aria-label="Vergrößern" onClick={() => zoom(1.25)}>
+          <ZoomIn size={15} />
+        </button>
+        <button type="button" className="secondary small" style={knopf} title="Verkleinern" aria-label="Verkleinern" onClick={() => zoom(0.8)}>
+          <ZoomOut size={15} />
+        </button>
+        <button type="button" className="secondary small" style={knopf} title="Einpassen" aria-label="Einpassen" onClick={() => setAnsicht(einpassen())}>
+          <Maximize2 size={14} />
+        </button>
+        <button
+          type="button"
+          className="secondary small"
+          style={knopf}
+          title="Anordnung zurücksetzen"
+          aria-label="Anordnung zurücksetzen"
+          onClick={() => {
+            setPos(berechnet);
+            setAnsicht(einpassen());
+          }}
+        >
+          <RotateCcw size={14} />
+        </button>
+      </div>
+      <svg
+        ref={svgRef}
+        width={breite}
+        height={hoehe}
+        viewBox={`0 0 ${breite} ${hoehe}`}
+        style={{ display: "block", borderRadius: 12, background: "var(--color-bg-0)", border: "1px solid var(--color-border)", touchAction: "none", cursor: zug.current?.art === "flaeche" ? "grabbing" : "default" }}
+        role="img"
+        aria-label="Netzgrafik der Verflechtungen"
+        onPointerDown={flaecheStart}
+        onPointerMove={bewegen}
+        onPointerUp={loslassen}
+        onPointerCancel={loslassen}
+      >
         <defs>
-          <marker id="pfeil" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#00C0A7" />
-          </marker>
+          {(Object.keys(ART_FARBE) as Kante["art"][]).map((a) => (
+            <marker key={a} id={`netz-pfeil-${a}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill={ART_FARBE[a]} />
+            </marker>
+          ))}
         </defs>
-        {kanten.map((k, i) => {
-          const a = pos.get(k.von);
-          const b = pos.get(k.nach);
-          if (!a || !b) return null;
-          const hervor = aktiv === null || aktiv === k.von || aktiv === k.nach;
-          // Leicht gebogene Kante: Verbindungen ueber eine dazwischen liegende Firma hinweg
-          // bleiben sichtbar (kollineare Knoten), zwei Kanten desselben Paares trennen sich.
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const len = Math.sqrt(dx * dx + dy * dy) || 1;
-          const bogen = (i % 2 === 0 ? 1 : -1) * Math.min(40, 0.12 * len);
-          const cx = (a.x + b.x) / 2 + (-dy / len) * bogen;
-          const cy = (a.y + b.y) / 2 + (dx / len) * bogen;
-          const mx = 0.25 * a.x + 0.5 * cx + 0.25 * b.x;
-          const my = 0.25 * a.y + 0.5 * cy + 0.25 * b.y;
-          return (
-            <g key={`${k.von}-${k.nach}-${k.art}-${i}`} opacity={hervor ? 1 : 0.15}>
-              <title>{k.art === "ADRESSE" ? `Gleiche Adresse: ${k.quelle}` : `${ART_LABEL[k.art]}${k.prozent != null ? ` ${k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 2 })} %` : ""}${k.seit ? ` seit ${new Date(k.seit).toLocaleDateString("de-DE")}` : ""}${k.bis ? ` bis ${new Date(k.bis).toLocaleDateString("de-DE")}` : ""}`}</title>
-              <path d={`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`} fill="none" stroke={ART_FARBE[k.art]} strokeWidth={k.aktuell ? 1.8 : 1} strokeDasharray={k.aktuell ? undefined : "4 4"} markerEnd={k.art === "BETEILIGUNG" ? "url(#pfeil)" : undefined} />
-              {k.art === "BETEILIGUNG" && k.prozent != null && (
-                <text x={mx} y={my - 4} fontSize={11} textAnchor="middle" fill="currentColor" opacity={0.85}>
-                  {k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %
-                </text>
-              )}
-            </g>
-          );
-        })}
-        {knoten.map((k) => {
-          const p = pos.get(k.id);
-          if (!p) return null;
-          const istWurzel = k.id === wurzel;
-          const hervor = aktiv === null || aktiv === k.id || kanten.some((e) => (e.von === aktiv && e.nach === k.id) || (e.nach === aktiv && e.von === k.id));
-          const tot = k.registerStatus === "CLOSED";
-          const insolvent = !!k.insolvencyStatus && k.insolvencyStatus !== "NONE";
-          const inhalt =
-            k.typ === "FIRMA" ? (
-              <>
-                <rect x={p.x - 66} y={p.y - 17} width={132} height={34} rx={7} fill={istWurzel ? "#00C0A7" : "#0A1F2A"} stroke={insolvent ? "#d9534f" : "#00C0A7"} strokeWidth={istWurzel ? 2.5 : 1.2} opacity={tot ? 0.55 : 1} />
-                <text x={p.x} y={p.y + 4} fontSize={11} textAnchor="middle" fill="#F2F7F6" fontWeight={istWurzel ? 700 : 500}>
-                  {kurz(k.name, 22)}
-                </text>
-              </>
-            ) : (
-              <>
-                <circle cx={p.x} cy={p.y} r={16} fill="#F2F7F6" stroke="#5b7cfa" strokeWidth={1.5} />
-                <text x={p.x} y={p.y + 4} fontSize={11} textAnchor="middle" fill="#0A1F2A" fontWeight={600}>
-                  {k.name
-                    .split(/\s+/)
-                    .map((t) => t[0])
-                    .join("")
-                    .slice(0, 3)}
-                </text>
-                <text x={p.x} y={p.y + 30} fontSize={10.5} textAnchor="middle" fill="currentColor">
-                  {kurz(k.name, 28)}
-                  {k.geburtsjahr ? ` (*${k.geburtsjahr})` : ""}
-                </text>
-              </>
-            );
-          const g = (
-            <g key={k.id} opacity={hervor ? 1 : 0.25} onMouseEnter={() => setAktiv(k.id)} onMouseLeave={() => setAktiv(null)} onPointerDown={dragStart(k.id)} style={{ cursor: drag.current?.id === k.id ? "grabbing" : "grab" }}>
-              <title>
-                {k.name}
-                {k.typ === "PERSON" && k.wohnort ? `, ${k.wohnort}` : ""}
-                {k.typ === "FIRMA" && k.registerStatus ? ` · ${k.registerStatus}` : ""}
-                {insolvent ? ` · Insolvenz ${k.insolvencyStatus}` : ""}
-              </title>
-              {inhalt}
-            </g>
-          );
-          if (k.typ === "PERSON")
+        <g transform={`translate(${ansicht.tx} ${ansicht.ty}) scale(${ansicht.k})`}>
+          {kanten.map((k, i) => {
+            const a = pos.get(k.von);
+            const b = pos.get(k.nach);
+            const ka = netzKnoten.get(k.von);
+            const kb = netzKnoten.get(k.nach);
+            if (!a || !b || !ka || !kb) return null;
+            const hervor = aktiv !== null && (aktiv === k.von || aktiv === k.nach);
+            const blass = aktiv !== null && !hervor;
+            const s = randPunkt(a, b, groesse.get(k.von)!, ka.typ === "PERSON");
+            const z = randPunkt(b, a, groesse.get(k.nach)!, kb.typ === "PERSON");
+            const mx = (s.x + z.x) / 2;
+            const my = (s.y + z.y) / 2;
             return (
-              <Link key={k.id} to={`/personen/${encodeURIComponent(k.id)}`} onClick={klickUnterdruecken}>
+              <g key={`${k.von}-${k.nach}-${k.art}-${i}`} opacity={blass ? 0.12 : 1}>
+                <title>{k.art === "ADRESSE" ? `Gleiche Adresse: ${k.quelle}` : `${ART_LABEL[k.art]}${k.prozent != null ? ` ${k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 2 })} %` : ""}${k.seit ? ` seit ${new Date(k.seit).toLocaleDateString("de-DE")}` : ""}${k.bis ? ` bis ${new Date(k.bis).toLocaleDateString("de-DE")}` : ""}`}</title>
+                <line
+                  x1={s.x}
+                  y1={s.y}
+                  x2={z.x}
+                  y2={z.y}
+                  stroke={ART_FARBE[k.art]}
+                  strokeOpacity={hervor ? 0.95 : 0.45}
+                  strokeWidth={hervor ? 1.8 : 1.15}
+                  strokeLinecap="round"
+                  strokeDasharray={k.aktuell ? undefined : "3 4"}
+                  markerEnd={k.art === "BETEILIGUNG" ? `url(#netz-pfeil-${k.art})` : undefined}
+                />
+                {k.art === "BETEILIGUNG" && k.prozent != null && (
+                  <text x={mx} y={my - 3} fontSize={10.5} textAnchor="middle" fill="var(--color-fg-muted)" stroke="var(--color-bg-0)" strokeWidth={3} paintOrder="stroke" fontWeight={600}>
+                    {k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {knoten.map((k) => {
+            const p = pos.get(k.id);
+            if (!p) return null;
+            const istWurzel = k.id === wurzel;
+            const g0 = groesse.get(k.id)!;
+            const tot = k.registerStatus === "CLOSED";
+            const insolvent = !!k.insolvencyStatus && k.insolvencyStatus !== "NONE";
+            const blass = !nachbarVonAktiv(k.id);
+            const istAktiv = aktiv === k.id;
+            let zeichnung: React.ReactNode;
+            if (k.typ === "PERSON") {
+              const l = labelLage(p);
+              zeichnung = (
+                <>
+                  <circle cx={p.x} cy={p.y} r={PERSON_R + (istAktiv ? 1.5 : 0)} fill="var(--color-bg-1)" stroke={ART_FARBE.GESCHAEFTSFUEHRUNG} strokeOpacity={istAktiv ? 1 : 0.7} strokeWidth={istAktiv ? 2 : 1.25} />
+                  <text x={p.x} y={p.y + 3.5} fontSize={9.5} textAnchor="middle" fill="var(--color-fg-muted)" fontWeight={700} style={{ letterSpacing: 0.2 }}>
+                    {initialen(k.name)}
+                  </text>
+                  <text x={l.x} y={l.y} fontSize={12} textAnchor={l.anker} fill="var(--color-fg)" stroke="var(--color-bg-0)" strokeWidth={4} paintOrder="stroke" fontWeight={istAktiv ? 600 : 500}>
+                    {kurz(k.name, 28)}
+                    {k.geburtsjahr ? (
+                      <tspan fill="var(--color-fg-faint)" fontWeight={400} fontSize={11}>
+                        {" "}*{k.geburtsjahr}
+                      </tspan>
+                    ) : null}
+                  </text>
+                </>
+              );
+            } else if (istWurzel) {
+              zeichnung = (
+                <>
+                  <rect x={p.x - g0.b / 2} y={p.y - g0.h / 2} width={g0.b} height={g0.h} rx={g0.h / 2} fill="#00C0A7" stroke={insolvent ? "#d9534f" : "none"} strokeWidth={2} style={{ filter: "drop-shadow(0 2px 6px rgba(0, 160, 138, 0.28))" }} />
+                  <text x={p.x} y={p.y + 4.2} fontSize={12.5} textAnchor="middle" fill="#ffffff" fontWeight={700}>
+                    {kurz(k.name, WURZEL_ZEICHEN)}
+                  </text>
+                </>
+              );
+            } else {
+              zeichnung = (
+                <>
+                  <rect x={p.x - g0.b / 2} y={p.y - g0.h / 2} width={g0.b} height={g0.h} rx={8} fill="var(--color-bg-1)" stroke={insolvent ? "#d9534f" : istAktiv ? "#00C0A7" : "var(--color-border-strong)"} strokeWidth={istAktiv || insolvent ? 1.6 : 1} />
+                  <rect x={p.x - g0.b / 2 + 6} y={p.y - 5} width={3} height={10} rx={1.5} fill="#00C0A7" />
+                  <text x={p.x + 4} y={p.y + 4} fontSize={11.5} textAnchor="middle" fill="var(--color-fg)" fontWeight={600} textDecoration={tot ? "line-through" : undefined}>
+                    {kurz(k.name, 28)}
+                  </text>
+                </>
+              );
+            }
+            const g = (
+              <g key={k.id} opacity={blass ? 0.22 : tot ? 0.6 : 1} onMouseEnter={() => setAktiv(k.id)} onMouseLeave={() => setAktiv(null)} onPointerDown={knotenStart(k.id)} style={{ cursor: "pointer" }}>
+                <title>
+                  {k.name}
+                  {k.typ === "PERSON" && k.wohnort ? `, ${k.wohnort}` : ""}
+                  {k.typ === "FIRMA" && k.registerStatus ? ` · ${k.registerStatus}` : ""}
+                  {insolvent ? ` · Insolvenz ${k.insolvencyStatus}` : ""}
+                </title>
+                {zeichnung}
+              </g>
+            );
+            if (k.typ === "PERSON")
+              return (
+                <Link key={k.id} to={`/personen/${encodeURIComponent(k.id)}`} onClick={klickUnterdruecken}>
+                  {g}
+                </Link>
+              );
+            return k.typ === "FIRMA" && !istWurzel ? (
+              <Link key={k.id} to={`/companies/${encodeURIComponent(k.id)}`} onClick={klickUnterdruecken}>
                 {g}
               </Link>
+            ) : (
+              g
             );
-          return k.typ === "FIRMA" && !istWurzel ? (
-            <Link key={k.id} to={`/companies/${encodeURIComponent(k.id)}`} onClick={klickUnterdruecken}>
-              {g}
-            </Link>
-          ) : (
-            g
-          );
-        })}
+          })}
+        </g>
       </svg>
     </div>
   );
@@ -429,7 +488,7 @@ export function VerflechtungenTab({ id, name }: { id: string; name: string | nul
         {netz.data && <NetzGrafik netz={netz.data} wurzel={id} arten={arten} />}
         {netz.data?.abgeschnitten && <p className="muted small">Netz gekürzt: mehr als 300 Knoten. Tiefe verringern oder gezielt weiterklicken.</p>}
         <p className="muted small" style={{ marginBottom: 0 }}>
-          Pfeile zeigen vom Gesellschafter zur gehaltenen Firma. Gestrichelt = frühere Verbindung. Knoten lassen sich mit der Maus verschieben. Firmen anklicken öffnet die Firmendetails, Personen die Personenseite.
+          Pfeile zeigen vom Gesellschafter zur gehaltenen Firma, gestrichelt heißt frühere Verbindung. Knoten und Fläche lassen sich verschieben, zoomen geht mit zwei Fingern auf dem Trackpad oder ⌘ und Mausrad. Ein Klick öffnet Firma oder Person.
         </p>
       </article>
 
