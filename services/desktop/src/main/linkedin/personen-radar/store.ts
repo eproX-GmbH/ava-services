@@ -27,8 +27,6 @@ export interface PersonenRadarConfig {
   postUrls: string[];
   intervalHours: 24 | 168;
   maxItemsPerPost: number;
-  /** Teuerster Hebel: Profil-Aufloesungen je Lauf ($4/1000 + Company-Calls). */
-  maxResolvesPerRun: number;
   actorIds: typeof ENGAGEMENT_DEFAULT_ACTORS;
   lastRunAt: string | null;
   lastOutcome: string | null;
@@ -50,7 +48,6 @@ const DEFAULT_CONFIG: PersonenRadarConfig = {
   postUrls: [],
   intervalHours: 168,
   maxItemsPerPost: 50,
-  maxResolvesPerRun: 10,
   actorIds: { ...ENGAGEMENT_DEFAULT_ACTORS },
   lastRunAt: null,
   lastOutcome: null,
@@ -110,10 +107,6 @@ export class PersonenRadarStore {
             typeof p.maxItemsPerPost === "number" && Number.isFinite(p.maxItemsPerPost)
               ? Math.min(200, Math.max(5, Math.floor(p.maxItemsPerPost)))
               : DEFAULT_CONFIG.maxItemsPerPost,
-          maxResolvesPerRun:
-            typeof p.maxResolvesPerRun === "number" && Number.isFinite(p.maxResolvesPerRun)
-              ? Math.min(500, Math.max(1, Math.floor(p.maxResolvesPerRun)))
-              : DEFAULT_CONFIG.maxResolvesPerRun,
           actorIds: {
             ...ENGAGEMENT_DEFAULT_ACTORS,
             ...(p.actorIds && typeof p.actorIds === "object" ? p.actorIds : {}),
@@ -186,7 +179,7 @@ export class PersonenRadarStore {
     this.setConfig({ postStand: stand });
   }
 
-  /** PM-2026-0052 — Personen, die ein Lauf geholt, aber wegen des Budgets nicht aufgeloest
+  /** PM-2026-0052 — Personen, die ein Lauf geholt, aber (noch) nicht aufgeloest
    *  hat. Ohne diese Warteschlange gingen sie verloren, sobald Folgelaeufe nur noch neue
    *  Kommentare holen. Haelt 30 Tage. */
   async offeneAblegen(engager: Engager[]): Promise<void> {

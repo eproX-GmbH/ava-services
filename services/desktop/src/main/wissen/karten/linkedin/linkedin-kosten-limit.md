@@ -16,9 +16,9 @@ schlagworte: [linkedin, kosten, preis, monatslimit, limit, verbrauch, budget, ap
 aktionen:
   - { art: chat_vorschlag, ziel: "Wie viel hat die LinkedIn-Beobachtung diesen Monat gekostet?", label: "Verbrauch ansehen" }
   - { art: app_oeffnen, ziel: plan, label: "Plan & Abrechnung öffnen" }
-stand: 2026-11-07
+stand: 2026-11-19
 ---
-Personen-Watchlist und beobachtete Posts holen ihre Daten über den LinkedIn-Datendienst Apify, den AVA bereitstellt. Kosten entstehen je abgefragtem Item und vor allem je Person, die ich einer Firma zuordne. Steuern kannst du das mit „Items je Person“ in der Watchlist und „Auflösungen je Lauf“ bei den beobachteten Posts, außerdem über täglich oder wöchentlich. Der LinkedIn-Beobachter für deinen eigenen Feed nutzt diesen Dienst nicht.
+Personen-Watchlist und beobachtete Posts holen ihre Daten über den LinkedIn-Datendienst Apify, den AVA bereitstellt. Kosten entstehen je abgefragtem Item und vor allem je Person, die ich einer Firma zuordne. Steuern kannst du das mit „Items je Person“ in der Watchlist und über täglich oder wöchentlich; bei beobachteten Posts ordne ich jede neue Person zu, die Obergrenze setzt dein Monatslimit. Der LinkedIn-Beobachter für deinen eigenen Feed nutzt diesen Dienst nicht.
 
 In Pro, Max und Ultra wird die Beobachtung nach Verbrauch berechnet und kommt mit der nächsten Rechnung, zusätzlich zum Plan. Dafür braucht es ein Monatslimit in Euro; ohne Limit läuft keine Beobachtung. Du setzt es unter Plan & Abrechnung an der Karte „LinkedIn-Beobachtung · nach Verbrauch“, dort stehen unter „Preise“ auch die Preise je 1.000 Einheiten. Beim ersten Einschalten von „Regelmäßig prüfen“ fragt die App danach und zeigt die Preise je 1.000 Einheiten. Ist das Limit erreicht, pausiert die Beobachtung bis zum Monatsanfang oder bis das Limit steigt, und du bekommst dazu eine Meldung. Setzen oder ändern dürfen es nur Owner oder Admin, weil die Kosten auf der Rechnung der Organisation landen.
 

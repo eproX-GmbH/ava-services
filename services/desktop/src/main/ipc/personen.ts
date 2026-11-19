@@ -165,7 +165,7 @@ export function registerPersonenIpc(deps: PersonenIpcDeps): void {
   ipcMain.handle("pradar:setConfig", (_e, patch: Record<string, unknown>) => {
     if (!personenRadarStore.current) return { error: "nicht initialisiert" };
     const allowed: Record<string, unknown> = {};
-    for (const k of ["enabled", "postUrls", "intervalHours", "maxItemsPerPost", "maxResolvesPerRun"]) {
+    for (const k of ["enabled", "postUrls", "intervalHours", "maxItemsPerPost"]) {
       if (patch && k in patch) allowed[k] = patch[k];
     }
     return personenRadarStore.current.setConfig(allowed);

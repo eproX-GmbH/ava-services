@@ -7,15 +7,15 @@ fragen:
   - personen radar einrichten
   - post url hinzufügen
   - wie oft prüfst du die posts
-schlagworte: [linkedin, post, beitrag, beobachtete posts, personen-radar, reaktionen, kommentare, engagement, automatik, auflösungen, apify]
+schlagworte: [linkedin, post, beitrag, beobachtete posts, personen-radar, reaktionen, kommentare, engagement, automatik, apify]
 aktionen:
   - { art: app_oeffnen, ziel: linkedin, label: "Beobachtete Posts öffnen" }
   - { art: chat_vorschlag, ziel: "Welche LinkedIn-Posts beobachtest du für mich?", label: "Posts anzeigen" }
-stand: 2026-11-16
+stand: 2026-11-19
 ---
 Wer auf einen Beitrag reagiert oder ihn kommentiert, zeigt Interesse. Ich beobachte solche Posts für dich, ordne den Personen ihre Firma zu und lege sie als Leads mit Anlass ab.
 
-Schick mir einfach den Link zum Post, dann nehme ich ihn auf und prüfe auf Wunsch sofort. Selbst geht es unter „Signale“ im Reiter „Beobachtete Posts“: eine Adresse je Zeile, bis zu 25 Posts, etwa deine eigenen oder relevante Branchen-Posts. Unter „Automatik“ schaltest du „Regelmäßig prüfen“ ein, wöchentlich oder täglich. „Auflösungen je Lauf“ begrenzt, wie viele Personen ich je Lauf einer Firma zuordne; das ist der teuerste Schritt.
+Schick mir einfach den Link zum Post, dann nehme ich ihn auf und prüfe auf Wunsch sofort. Selbst geht es unter „Signale“ im Reiter „Beobachtete Posts“: eine Adresse je Zeile, bis zu 25 Posts, etwa deine eigenen oder relevante Branchen-Posts. Unter „Automatik“ schaltest du „Regelmäßig prüfen“ ein, wöchentlich oder täglich. Jede Person aus einem Lauf bekommt ihren Arbeitgeber zugeordnet, ohne Obergrenze je Lauf; die Kosten begrenzt dein LinkedIn-Monatslimit.
 
 Ein Lauf sieht je Post nur die ersten Kommentare. Bei großen Posts holst du mit „Alle Kommentare nachladen“ einmal alles, danach kommen bei jedem Lauf nur die neuen dazu. Personen, die ein Lauf nicht mehr zuordnen kann, warten und kommen beim nächsten Lauf zuerst dran.
 

@@ -29,22 +29,20 @@ export function buildLinkedInSelfserviceTools(
   const pradarConfig = defineTool({
     name: "personen_radar_config",
     summary:
-      "Personen-Radar-Einstellungen anzeigen oder aendern (Post-URLs, Automatik, Intervall, Budgets).",
+      "Personen-Radar-Einstellungen anzeigen oder aendern (Post-URLs, Automatik, Intervall, Items je Post).",
     category: "linkedin personen-radar einstellungen",
     description:
       "Ohne Parameter: aktuelle Personen-Radar-Konfiguration. Mit " +
       "Parametern: Einstellungen aendern (Wirkungsklasse mutating). " +
       "addPostUrls/removePostUrls pflegen die beobachteten " +
-      "LinkedIn-Post-URLs (max. 25). maxResolvesPerRun ist der " +
-      "teuerste Hebel (Profil-Aufloesungen, 4 $ je 1.000 beim " +
-      "Apify-Anbieter — der Nutzer zahlt).",
+      "LinkedIn-Post-URLs (max. 25). Jede Person aus einem Lauf wird ihrer Firma zugeordnet " +
+      "(seit v0.1.973 ohne Deckel je Lauf); die Kosten begrenzt das LinkedIn-Monatslimit.",
     parameters: {
       type: "object",
       properties: {
         automatik: { type: "boolean", description: "Automatische Laeufe an/aus." },
         intervalHours: { type: "number", enum: [24, 168], description: "24 = taeglich, 168 = woechentlich." },
         maxItemsPerPost: { type: "number", description: "Engagement-Items je Post (1-200)." },
-        maxResolvesPerRun: { type: "number", description: "Profil-Aufloesungen je Lauf (1-500), Kosten-Hebel; das Nachladen eines Posts ordnet ohne Deckel zu." },
         addPostUrls: { type: "array", items: { type: "string" }, description: "LinkedIn-Post-URLs hinzufuegen." },
         removePostUrls: { type: "array", items: { type: "string" }, description: "Post-URLs entfernen." },
       },
@@ -53,7 +51,6 @@ export function buildLinkedInSelfserviceTools(
       automatik: yup.boolean().optional(),
       intervalHours: yup.number().oneOf([24, 168]).optional(),
       maxItemsPerPost: yup.number().min(1).max(200).optional(),
-      maxResolvesPerRun: yup.number().min(1).max(500).optional(),
       addPostUrls: yup.array().of(yup.string().required()).optional(),
       removePostUrls: yup.array().of(yup.string().required()).optional(),
     }),
@@ -76,10 +73,6 @@ export function buildLinkedInSelfserviceTools(
       if (args.maxItemsPerPost !== undefined) {
         patch.maxItemsPerPost = args.maxItemsPerPost;
         aenderungen.push(`Items/Post → ${args.maxItemsPerPost}`);
-      }
-      if (args.maxResolvesPerRun !== undefined) {
-        patch.maxResolvesPerRun = args.maxResolvesPerRun;
-        aenderungen.push(`Aufloesungen/Lauf → ${args.maxResolvesPerRun}`);
       }
       if (
         (args.addPostUrls && args.addPostUrls.length > 0) ||
@@ -104,7 +97,6 @@ export function buildLinkedInSelfserviceTools(
           automatik: vorher.enabled,
           intervalHours: vorher.intervalHours,
           maxItemsPerPost: vorher.maxItemsPerPost,
-          maxResolvesPerRun: vorher.maxResolvesPerRun,
           postUrls: vorher.postUrls,
           letzterLauf: vorher.lastRunAt,
           letztesErgebnis: vorher.lastOutcome,
@@ -130,7 +122,6 @@ export function buildLinkedInSelfserviceTools(
         automatik: nach.enabled,
         intervalHours: nach.intervalHours,
         maxItemsPerPost: nach.maxItemsPerPost,
-        maxResolvesPerRun: nach.maxResolvesPerRun,
         postUrls: nach.postUrls,
       };
     },

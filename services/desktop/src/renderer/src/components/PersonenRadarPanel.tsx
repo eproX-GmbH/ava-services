@@ -1,7 +1,7 @@
 // §8 Personen-Radar (PLAN_LINKEDIN_WATCHLIST.md) — Quellen-UI (PR4).
 //
 // Quellen v1: konkrete Post-URLs. Wer darauf reagiert/kommentiert,
-// wird (budgetiert) zur Firma aufgeloest und landet als Kandidat im
+// wird zur Firma aufgeloest und landet als Kandidat im
 // normalen Firmen-Radar. Teilt sich den Apify-Key mit der Watchlist.
 
 import { useCallback, useEffect, useState } from "react";
@@ -16,7 +16,6 @@ interface PrState {
     postUrls: string[];
     intervalHours: 24 | 168;
     maxItemsPerPost: number;
-    maxResolvesPerRun: number;
     lastRunAt: string | null;
     lastOutcome: string | null;
     postStand?: Record<string, { vollGeladenAt: string | null; letzterAbrufAt: string | null }>;
@@ -176,24 +175,6 @@ export function PersonenRadarPanel(): JSX.Element {
               <option value={168}>wöchentlich</option>
               <option value={24}>täglich</option>
             </select>
-            <label className="field-inline" title="Personen-Auflösungen je Lauf — der teuerste Schritt (~1 Cent/Person)">
-              <span className="muted small">Auflösungen je Lauf</span>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={cfg.maxResolvesPerRun}
-                disabled={busy}
-                style={{ width: 64 }}
-                onChange={(e) =>
-                  void run(() =>
-                    window.api.linkedin.personenRadar.setConfig({
-                      maxResolvesPerRun: Number(e.target.value),
-                    }),
-                  )
-                }
-              />
-            </label>
             <button
               type="button"
               className="btn"

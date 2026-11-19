@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-17
+Stand: 2026-11-19
 Anzahl Tools: 318
 
 ## Firmen (31)
@@ -1829,13 +1829,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
 
-Ohne Parameter: aktuelle Personen-Radar-Konfiguration. Mit Parametern: Einstellungen aendern (Wirkungsklasse mutating). addPostUrls/removePostUrls pflegen die beobachteten LinkedIn-Post-URLs (max. 25). maxResolvesPerRun ist der teuerste Hebel (Profil-Aufloesungen, 4 $ je 1.000 beim Apify-Anbieter — der Nutzer zahlt).
+Ohne Parameter: aktuelle Personen-Radar-Konfiguration. Mit Parametern: Einstellungen aendern (Wirkungsklasse mutating). addPostUrls/removePostUrls pflegen die beobachteten LinkedIn-Post-URLs (max. 25). Jede Person aus einem Lauf wird ihrer Firma zugeordnet (seit v0.1.973 ohne Deckel je Lauf); die Kosten begrenzt das LinkedIn-Monatslimit.
 
 _Parameter:_
 - `automatik: boolean` — Automatische Laeufe an/aus.
 - `intervalHours: number (enum: 24, 168)` — 24 = taeglich, 168 = woechentlich.
 - `maxItemsPerPost: number` — Engagement-Items je Post (1-200).
-- `maxResolvesPerRun: number` — Profil-Aufloesungen je Lauf (1-500), Kosten-Hebel; das Nachladen eines Posts ordnet ohne Deckel zu.
 - `addPostUrls: array` — LinkedIn-Post-URLs hinzufuegen.
 - `removePostUrls: array` — Post-URLs entfernen.
 

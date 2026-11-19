@@ -8,7 +8,7 @@ const pruefe = async (name, fn) => { try { await fn(); console.log(`  ok   ${nam
 const POST = "https://www.linkedin.com/posts/test-post";
 
 function speicher() {
-  let cfg = { enabled: true, postUrls: [POST], intervalHours: 24, maxItemsPerPost: 50, maxResolvesPerRun: 10, actorIds: { postReactionsActorId: "harvestapi~linkedin-post-reactions", postCommentsActorId: "harvestapi~linkedin-post-comments", profileActorId: "harvestapi~linkedin-profile-scraper", companyActorId: "harvestapi~linkedin-company" }, lastRunAt: null, lastOutcome: null, unklarFreigegebenAm: null, postStand: {} };
+  let cfg = { enabled: true, postUrls: [POST], intervalHours: 24, maxItemsPerPost: 50, actorIds: { postReactionsActorId: "harvestapi~linkedin-post-reactions", postCommentsActorId: "harvestapi~linkedin-post-comments", profileActorId: "harvestapi~linkedin-profile-scraper", companyActorId: "harvestapi~linkedin-company" }, lastRunAt: null, lastOutcome: null, unklarFreigegebenAm: null, postStand: {} };
   const gesehen = new Set(), offen = new Map(), cache = new Map();
   return {
     offen, gesehen,
@@ -34,6 +34,8 @@ function apifyAttrappe(personen, { authAbProfil = Infinity } = {}) {
     const body = init?.body ? JSON.parse(init.body) : {};
     const json = (x, s = 200) => new Response(JSON.stringify(x), { status: s });
     if (u.includes("post-comments/runs?")) return json({ data: { id: "lauf", status: "SUCCEEDED", defaultDatasetId: "ds" } }, 201);
+    if (u.includes("post-comments/run-sync")) return json(Array.from({ length: Math.min(personen, body.maxItems ?? 50) }, (_, i) => ({ actor: { linkedinUrl: `https://www.linkedin.com/in/p${i}`, name: `P ${i}` }, commentary: "Spannend" })));
+    if (u.includes("post-reactions/run-sync")) return json([]);
     if (u.includes("/datasets/ds/items")) return json(new URL(u).searchParams.get("offset") === "0" ? Array.from({ length: personen }, (_, i) => ({ actor: { linkedinUrl: `https://www.linkedin.com/in/p${i}`, name: `P ${i}` }, commentary: "Spannend" })) : []);
     if (u.includes("profile-scraper")) {
       profile++;
@@ -110,6 +112,15 @@ await pruefe("Vorgemerkt: unterbrochener Lauf hinterlaesst die offenen Personen"
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(store.offen.size, 8);
   assert.equal(sup.getFortschritt()?.phase, "zuordnen");
+});
+await pruefe("Normaler Lauf ohne Deckel: 18 neue Personen, alle zugeordnet (Patrick 2026-11-19)", async () => {
+  globalThis.fetch = apifyAttrappe(18);
+  const store = speicher();
+  const { sup, pakete } = lauf(store);
+  const r = await sup.runNow("manuell");
+  assert.match(r, /18 aufgeloest/);
+  assert.equal(pakete.reduce((a, n) => a + n, 0), 18);
+  assert.equal(store.offen.size, 0);
 });
 globalThis.fetch = echt;
 console.log(fehler ? `\n${fehler} Fehler.` : "\nAlles gruen.");

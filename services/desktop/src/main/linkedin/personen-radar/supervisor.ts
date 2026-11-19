@@ -1,7 +1,7 @@
 // Personen-Radar PR3 (PLAN §8) — Supervisor.
 //
 // Lauf: Quell-Posts → Engagement (Reaktionen + Kommentare) →
-// Personen-Dedupe (90 Tage) → Budget-Aufloesung (Kaskade §8.1,
+// Personen-Dedupe (90 Tage) → Aufloesung (Kaskade §8.1,
 // teuerster Schritt zuerst gedeckelt) → gematchte Firmen als
 // DIREKT-Kandidaten in den normalen Radar-Trichter (Gateway-Route,
 // eigener Tages-Deckel) MIT Ausloeser-Person im meta. Profiler +
@@ -160,7 +160,7 @@ export class PersonenRadarSupervisor {
 
   /**
    * PM-2026-0052 — `nachladen`: fuer EINEN beobachteten Post alle Kommentare (mit Antworten)
-   * holen und mit groesserem Budget zuordnen. Ist der Post schon voll geladen, holt der Lauf
+   * holen und zuordnen. Ist der Post schon voll geladen, holt der Lauf
    * nur neue Kommentare und arbeitet die Warteschlange weiter ab.
    */
   async runNow(trigger: "automatik" | "manuell", opts: { nachladen?: string } = {}): Promise<string> {
@@ -232,7 +232,7 @@ export class PersonenRadarSupervisor {
       //    zweiten Profil-Lookup (Firmen-Cache 90 Tage). Je Paar den staerksten Auftritt
       //    behalten (Kommentar > Reaktion).
       const proPaar = new Map<string, Engager>();
-      // PM-2026-0052: zuerst die Personen, die frueher am Budget gescheitert sind.
+      // PM-2026-0052: zuerst die Personen, die ein frueherer Lauf nicht fertig bekam.
       const wartend = await this.deps.store.offeneHolen(WARTESCHLANGE_JE_LAUF, nachladen);
       for (const e of [...wartend, ...alle]) {
         const k = `${e.profileUrl}|${e.postUrl}`;
@@ -253,12 +253,12 @@ export class PersonenRadarSupervisor {
 
       // 3. Aufloesung. PM-2026-0053: parallel (ZUORDNUNG_PARALLEL), jede Person mit Zeitlimit,
       //    Ergebnisse in Paketen gespeichert — ein haengender Aufruf blockiert nicht mehr den
-      //    ganzen Lauf, und ein Abbruch verliert hoechstens das letzte Paket. Gecachte Personen
-      //    kosten nichts und zaehlen nicht gegen das Budget; beim Nachladen gibt es keinen Deckel.
+      //    ganzen Lauf, und ein Abbruch verliert hoechstens das letzte Paket. Seit v0.1.973
+      //    (Patrick) ohne Deckel je Lauf: zugeordnet wird alles, was der Lauf geholt hat; die
+      //    Kosten begrenzt das LinkedIn-Monatslimit im Gateway.
       type Kandidat = { name: string; domain: string; meta: Record<string, unknown> };
       type Unklar = { profileUrl: string; name: string | null; headline: string | null; grund: string };
       const zuordnen = [...proPerson.entries()];
-      let budget = nachladen ? Number.POSITIVE_INFINITY : cfg.maxResolvesPerRun;
       const zurueckgestellt: Engager[] = [];
       const firmenImLauf = new Set<string>();
       let unklarGesamt = 0;
@@ -336,12 +336,11 @@ export class PersonenRadarSupervisor {
         let matches = firmenCache.get(url) as Array<{ domain: string; companyName: string; rolle: string | null; konfidenz: "hart" | "mittel" }> | undefined;
         let grund: string | null = null;
         if (!matches) {
-          // Budget aufgebraucht oder Lauf abgebrochen: merken statt verwerfen.
-          if (abbruch || budget <= 0) {
+          // Lauf abgebrochen (Zugang, Limit): merken statt verwerfen.
+          if (abbruch) {
             zurueckgestellt.push(...auftritte);
             return;
           }
-          budget--;
           try {
             const r = await resolveEngagerCompanies({
               access: key,

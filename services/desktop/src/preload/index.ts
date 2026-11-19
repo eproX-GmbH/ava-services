@@ -2070,7 +2070,6 @@ const api = {
           postUrls: string[];
           intervalHours: 24 | 168;
           maxItemsPerPost: number;
-          maxResolvesPerRun: number;
           lastRunAt: string | null;
           lastOutcome: string | null;
           postStand?: Record<string, { vollGeladenAt: string | null; letzterAbrufAt: string | null }>;
