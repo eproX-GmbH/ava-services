@@ -16,6 +16,7 @@
 // Lokalisierung nicht mehr ueber CI ausgerollt); der generierte Prisma-
 // Client bleibt unveraendert, die neuen Spalten werden per SQL gelesen.
 
+import { anonymMerken } from "./fluktuation";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 import { nameIdentityForm } from "./contact-extraction/sanitize-person";
@@ -394,6 +395,8 @@ export async function deletePerson(pool: pg.Pool, args: { personId: string; tena
       if (h) hashes.add(h);
     }
   }
+  // Firmenhistorie (E5): Personalereignisse anonym festhalten, bevor die Kaskade sie loescht.
+  await anonymMerken(pool, [args.personId]);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -444,12 +447,15 @@ export async function purgeStalePersons(pool: pg.Pool, args: { retentionByTenant
   );
   const now = Date.now();
   let getilgt = 0;
-  for (const row of r.rows) {
+  const faellig = r.rows.filter((row) => {
     const tage = row.tenants.length
       ? Math.min(...row.tenants.map((t) => args.retentionByTenant.get(t) ?? defaultDays))
       : defaultDays;
-    const alter = (now - new Date(row.lastSeen).getTime()) / 86_400_000;
-    if (alter < tage) continue;
+    return (now - new Date(row.lastSeen).getTime()) / 86_400_000 >= tage;
+  });
+  // Firmenhistorie (E5): Abgaenge zaehlen weiter, auch wenn die Person getilgt wird.
+  if (!args.dryRun) await anonymMerken(pool, faellig.map((row) => row.id));
+  for (const row of faellig) {
     if (!args.dryRun) {
       await pool.query(`DELETE FROM "Person" WHERE "id" = $1`, [row.id]);
       await pool.query(`DELETE FROM "PersonNotice" WHERE "personId" = $1`, [row.id]);

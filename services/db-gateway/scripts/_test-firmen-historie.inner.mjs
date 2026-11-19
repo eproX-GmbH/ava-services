@@ -1,6 +1,7 @@
 // Firmenhistorie (docs/PLAN_FIRMEN_HISTORIE.md): Rollengruppen, echte Wechsel, Pendel.
 import assert from "node:assert/strict";
 import R0 from "../src/lib/rollengruppe.ts";
+import Z0 from "../src/lib/fluktuation-zaehlen.ts";
 const R = R0.default ?? R0;
 const F = R;
 let fehler = 0;
@@ -40,5 +41,26 @@ pruefe("echter Rueckweg nach einem Jahr bleibt", () => {
   assert.equal(l.length, 2);
 });
 pruefe("einfacher Aufstieg bleibt", () => assert.equal(F.pendelEntfernen([e("a", 0, "Vertriebsingenieur", "Vertriebsleiter")]).length, 1));
+console.log("Fluktuation");
+const Z = Z0.default ?? Z0;
+const ev = (art, nach, von = null) => { const b = R.rolleEinordnen(nach); const a = von ? R.rolleEinordnen(von) : null; return { art, gruppe: b.gruppe, ebene: b.ebene, gruppeVorher: a?.gruppe ?? null, ebeneVorher: a?.ebene ?? null }; };
+pruefe("neu besetzte Vertriebsleitung = ein Wechsel", () => {
+  const g = Z.leitungZaehlen([ev("verlassen", "Vertriebsleiter", "Vertriebsleiter"), ev("neu", "Head of Sales")]);
+  assert.deepEqual(g.map((x) => [x.gruppe, x.zugaenge, x.abgaenge, x.wechsel]), [["vertrieb", 1, 1, 1]]);
+});
+pruefe("Aufstieg zaehlt als Zugang der Leitung, Mitarbeit zaehlt nicht", () => {
+  const g = Z.leitungZaehlen([ev("wechsel", "Vertriebsleitung", "Vertriebsingenieur"), ev("neu", "Vertriebsmitarbeiter")]);
+  assert.deepEqual(g.map((x) => [x.gruppe, x.zugaenge, x.abgaenge]), [["vertrieb", 1, 0]]);
+});
+pruefe("Register zaehlt bei der Geschaeftsfuehrung, groessere Quelle gewinnt", () => {
+  const g = Z.leitungZaehlen([ev("neu", "Geschäftsführer")], { zu: 2, ab: 1 });
+  assert.deepEqual(g.map((x) => [x.gruppe, x.zugaenge, x.abgaenge, x.wechsel]), [["geschaeftsfuehrung", 2, 1, 2]]);
+});
+pruefe("Hinweis erst, wenn es auffaellt, mit ehrlichen Zahlen", () => {
+  const g = Z.leitungZaehlen([ev("neu", "Vertriebsleiter"), ev("neu", "Head of Sales"), ev("verlassen", "Vertriebsleiter", "Vertriebsleiter"), ev("neu", "Leiter IT")]);
+  assert.deepEqual(Z.hinweiseAus(g, 24), ["Vertriebsleitung: 2 neu, 1 ausgeschieden in 2 Jahren"]);
+  assert.deepEqual(Z.hinweiseAus(Z.leitungZaehlen([ev("neu", "Vertriebsleiter"), ev("neu", "Leiter IT")]), 24), []);
+  assert.deepEqual(Z.hinweiseAus(Z.leitungZaehlen([], { zu: 1, ab: 1 }), 24), ["Geschäftsführung: 1 neu, 1 ausgeschieden in 2 Jahren"]);
+});
 console.log(fehler ? `\n${fehler} Fehler.` : "\nAlles gruen.");
 process.exit(fehler ? 1 : 0);

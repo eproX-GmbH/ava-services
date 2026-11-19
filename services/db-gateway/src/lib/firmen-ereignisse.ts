@@ -53,6 +53,10 @@ export interface EreignisAbfrage {
   gruppen?: Rollengruppe[] | null;
   ebene?: Ebene | null;
   limit?: number;
+  /** Nur Ereignisse dieser Personen (anonymes Mitzaehlen vor dem Loeschen, fluktuation.ts). */
+  personIds?: string[] | null;
+  /** Ohne Obergrenze (nur intern: Kennzahl, Loeschung). */
+  ohneLimit?: boolean;
 }
 
 const TAG = 86_400_000;
@@ -217,7 +221,9 @@ export async function firmenEreignisse(q: EreignisAbfrage): Promise<FirmenEreign
   for (const e of out) if (e.art === "neu" && e.zeitpunktArt === "erstmals_gesehen") schub.set(schubKey(e), (schub.get(schubKey(e)) ?? 0) + 1);
   const ohneSchub = out.filter((e) => !(e.art === "neu" && e.zeitpunktArt === "erstmals_gesehen" && (schub.get(schubKey(e)) ?? 0) >= 3));
 
+  const nurPersonen = q.personIds && q.personIds.length > 0 ? new Set(q.personIds) : null;
   const gefiltert = ohneSchub.filter((e) => {
+    if (nurPersonen && !(e.personId && nurPersonen.has(e.personId))) return false;
     const t = Date.parse(e.zeitpunkt);
     if (!(t >= seit && t <= bis)) return false;
     if (gruppen && !gruppen.has(e.gruppe) && !(e.gruppeVorher && gruppen.has(e.gruppeVorher))) return false;
@@ -225,5 +231,5 @@ export async function firmenEreignisse(q: EreignisAbfrage): Promise<FirmenEreign
     return true;
   });
   gefiltert.sort((a, b) => b.zeitpunkt.localeCompare(a.zeitpunkt));
-  return gefiltert.slice(0, Math.max(1, Math.min(500, q.limit ?? 100)));
+  return q.ohneLimit ? gefiltert : gefiltert.slice(0, Math.max(1, Math.min(500, q.limit ?? 100)));
 }

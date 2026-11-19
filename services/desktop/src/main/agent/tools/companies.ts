@@ -966,6 +966,25 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   };
 
+  // Firmenhistorie H4: Fluktuation der Leitung als Bereich (kein eigenes Werkzeug).
+  const fluktuationBereich = {
+    run: async (args: { companyId: string }, c: { signal?: AbortSignal }) => {
+      const r = await gateway.request<{
+        fensterMonate: number; beobachtetSeit: string | null; hinweise: string[];
+        gruppen: Array<{ label: string; zugaenge: number; abgaenge: number }>;
+        leitungVerweildauer: { medianMonate: number; anzahl: number } | null;
+      }>(`/v1/companies/${encodeURIComponent(args.companyId)}/fluktuation`, { signal: c.signal });
+      return {
+        zeitraumMonate: r.fensterMonate,
+        hinweise: r.hinweise,
+        leitung: r.gruppen.map((g) => ({ bereich: g.label, neu: g.zugaenge, ausgeschieden: g.abgaenge })),
+        ...(r.leitungVerweildauer ? { verweildauerLeitungMonate: r.leitungVerweildauer.medianMonate, verweildauerBasis: r.leitungVerweildauer.anzahl } : {}),
+        ...(r.beobachtetSeit ? { personenBeobachtetSeit: r.beobachtetSeit.slice(0, 10) } : {}),
+        hinweisFuerAntwort: "Zugaenge mit Profildatum reichen weiter zurueck als die Beobachtung; Abgaenge sieht AVA erst ab personenBeobachtetSeit. Einzelne Personen liefert firmen_ereignisse.",
+      };
+    },
+  };
+
   // Stellen und Expansionen als Bereiche von company_get (docs/PLAN_RECHERCHE_PERSIST.md R4):
   // kompakt, mit Quelle je Eintrag — keine eigenen Werkzeugnamen.
   type WebsiteAntwort = {
@@ -1151,6 +1170,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     gesellschafter: shareholders,
     kunden,
     konzern,
+    fluktuation: fluktuationBereich,
   } as const;
   type Bereich = keyof typeof BEREICHE;
   const BEREICH_NAMEN = Object.keys(BEREICHE) as Bereich[];
@@ -1160,7 +1180,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
       "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
-      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss), stellen (Stellenanzeigen + Leistungen laut Karriereseite, je mit Quelle), expansion (Expansionen, Ausschreibungen, Beschaffung laut Recherche, je mit Quelle), fokus (Befund der Fokus-Themen des Nutzers auf der Website: gefunden/unklar/nicht gefunden mit Zitat und Quelle). " +
+      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss), stellen (Stellenanzeigen + Leistungen laut Karriereseite, je mit Quelle), expansion (Expansionen, Ausschreibungen, Beschaffung laut Recherche, je mit Quelle), fokus (Befund der Fokus-Themen des Nutzers auf der Website: gefunden/unklar/nicht gefunden mit Zitat und Quelle), fluktuation (Zu- und Abgaenge der Leitung je Bereich in 24 Monaten, Verweildauer der Leitung). " +
       "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug. " +
       "`verarbeitung` sagt, ob die Firma im Bestand des Nutzers aufbereitet ist (stand fehlt | laeuft | unvollstaendig | vollstaendig, fehlende Stufen, transactionId) und was zu tun ist: bei fehlt SOFORT import_companies, bei unvollstaendig retry_stage, ohne Rueckfrage. Leere Bereiche einer nicht aufbereiteten Firma sind kein Befund.",
     parameters: {

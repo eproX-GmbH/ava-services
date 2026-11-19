@@ -8,6 +8,7 @@ import { requireScope } from "../../middleware/auth";
 import { firmenEreignisse, type EreignisArt } from "../../lib/firmen-ereignisse";
 import { ROLLENGRUPPEN, type Rollengruppe } from "../../lib/rollengruppe";
 import { firmenDesNutzers } from "../../lib/neuigkeiten-cron";
+import { fluktuation } from "../../lib/fluktuation";
 import { ErrorShape } from "./schemas";
 
 export const firmenEreignisseRouter = new OpenAPIHono();
@@ -83,5 +84,38 @@ firmenEreignisseRouter.openapi(
       limit: q.limit,
     });
     return c.json({ firmen: ids.length, items: items.map((e) => ({ ...e, gruppeLabel: ROLLENGRUPPEN[e.gruppe] })) }, 200);
+  },
+);
+
+// H4: Kennzahl Fluktuation je Firma (Leitungswechsel je Rollengruppe in 24 Monaten,
+// mittlere Verweildauer der Leitung, Hinweise fuer Kopf/Uebersicht/Chat).
+firmenEreignisseRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/companies/{id}/fluktuation",
+    tags: ["firmen"],
+    summary: "Fluktuation der Leitung je Rollengruppe (24 Monate) und Verweildauer",
+    request: { params: z.object({ id: z.string().min(1).max(200) }) },
+    responses: {
+      200: {
+        description: "Kennzahl",
+        content: {
+          "application/json": {
+            schema: z.object({
+              companyId: z.string(),
+              fensterMonate: z.number(),
+              beobachtetSeit: z.string().nullable(),
+              gruppen: z.array(z.object({ gruppe: z.string(), label: z.string(), zugaenge: z.number(), abgaenge: z.number(), wechsel: z.number() })),
+              leitungVerweildauer: z.object({ medianMonate: z.number(), anzahl: z.number() }).nullable(),
+              hinweise: z.array(z.string()),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    return c.json(await fluktuation(id), 200);
   },
 );
