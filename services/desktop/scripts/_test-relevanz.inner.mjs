@@ -134,6 +134,8 @@ pruefe("Gewicht bleibt zwischen 1 und 10", () => {
   assert.ok(alles <= 10 && alles >= 1);
   assert.equal(gewichtFuer({ icpScore: -50 }), 1, "Unfug darf nicht unter 1 druecken");
   assert.equal(gewichtFuer({ icpScore: NaN }), 1);
+  assert.equal(gewichtFuer({ leitungImWandel: true }), 2, "Wechsel in der Leitung ist ein Anlass");
+  assert.equal(gewichtFuer({ meineFirma: true, leitungImWandel: true }), 4);
 });
 
 console.log("Reihenfolge des Heartbeats");

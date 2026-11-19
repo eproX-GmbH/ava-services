@@ -48,6 +48,9 @@ import type {
 // behaves this way on macOS/Windows event loops, but we don't lean on
 // it; `lastTickAt` is the source of truth.
 
+/** Kandidatenarten, bei denen die Fluktuation der Leitung den Judge interessiert. */
+const PERSONAL_ARTEN = new Set<string>(["contact-change", "profile-change", "linkedin-signal"]);
+
 export interface HeartbeatCandidate {
   /** Maps onto `Alert.kind`; the same taxonomy. */
   kind: AlertCreateInput["kind"];
@@ -106,6 +109,9 @@ export interface HeartbeatOptions {
   ) => Promise<void>;
   /** BC5 — Firmen mit eigenem aktiven Buying Center: Positivliste im Alarmweg. */
   fokusFirmen?: () => Promise<Set<string>>;
+  /** Firmenhistorie H4 — auffaellige Fluktuation der Leitung je Firma
+   *  (Hinweissaetze), nur fuer Personal-Kandidaten an den Judge. */
+  fluktuation?: (companyId: string) => Promise<string[]>;
   /** BC5 — Buying Center, die seit einem Monat unveraendert sind; einmal
    *  taeglich abgefragt, je Treffer eine Erinnerung. Der Aufruf gilt als
    *  "gefragt" — was zurueckkommt, wird gemeldet. */
@@ -170,6 +176,7 @@ export class Heartbeat extends EventEmitter {
   private rueckstand: HeartbeatCandidate[] = [];
   private readonly onTick?: (info: TickInfo) => void;
   private readonly fokusFirmen?: () => Promise<Set<string>>;
+  private readonly fluktuation?: (companyId: string) => Promise<string[]>;
   private readonly faelligeNachfragen?: HeartbeatOptions["faelligeNachfragen"];
   /** Datum (JJJJ-MM-TT) der letzten Nachfrage-Pruefung — einmal am Tag reicht. */
   private nachfrageGeprueftAm: string | null = null;
@@ -202,6 +209,7 @@ export class Heartbeat extends EventEmitter {
     this.urteile = options.urteile ?? null;
     this.postCandidateHook = options.postCandidateHook ?? null;
     this.fokusFirmen = options.fokusFirmen;
+    this.fluktuation = options.fluktuation;
     this.faelligeNachfragen = options.faelligeNachfragen;
     this.onTick = options.onTick;
   }
@@ -362,6 +370,19 @@ export class Heartbeat extends EventEmitter {
       }
       const jetzt = candidates.slice(0, this.maxPerTick);
       let rest = candidates.slice(this.maxPerTick);
+      // Fluktuation je Firma einmal je Durchgang; nur fuer Personalthemen,
+      // ohne Netz oder Route einfach ohne (Bewertung wie bisher).
+      const fluktuationJeFirma = new Map<string, string[]>();
+      const fluktuationFuer = async (c: HeartbeatCandidate): Promise<string[] | null> => {
+        if (!this.fluktuation || !PERSONAL_ARTEN.has(c.kind) || !c.companyId) return null;
+        if (!fluktuationJeFirma.has(c.companyId)) {
+          let h: string[] = [];
+          try { h = await this.fluktuation(c.companyId); } catch { /* ohne */ }
+          fluktuationJeFirma.set(c.companyId, h);
+        }
+        const h = fluktuationJeFirma.get(c.companyId) ?? [];
+        return h.length > 0 ? h : null;
+      };
       for (let i = 0; i < jetzt.length; i++) {
         const c = jetzt[i]!;
         let verdict;
@@ -375,6 +396,7 @@ export class Heartbeat extends EventEmitter {
               ...c.payload,
               nutzerNaehe: this.rangImDurchgang.get(c.companyId) ?? null,
               fokuskunde: fokus.has(c.companyId),
+              fluktuationLeitung: await fluktuationFuer(c),
             },
           };
           verdict = await this.judge(mitBeziehung, startedAt);

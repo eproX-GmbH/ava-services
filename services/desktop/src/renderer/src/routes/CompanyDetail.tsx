@@ -703,21 +703,34 @@ export function CompanyDetail() {
   // mit: die sachliche Passung, die ohne jedes Verhalten zustande kommt und
   // verhindert, dass der Heartbeat nur noch dorthin sieht, wo er schon war.
   const uebernommen = useIstUebernommen(id);
+  // Gleicher Schluessel wie in der Uebersicht: einmal geladen, zweimal genutzt.
+  const fluktuationFirma = useQuery<{ hinweise: string[] }>({
+    queryKey: ["company", id, "fluktuation"],
+    queryFn: () => gatewayFetch(`/v1/companies/${encodeURIComponent(id!)}/fluktuation`),
+    enabled: Boolean(id),
+    retry: false,
+    staleTime: 10 * 60_000,
+  });
+  const fluktuationFertig = fluktuationFirma.isFetched || fluktuationFirma.isError;
   useEffect(() => {
-    if (!id || !summary.data) return;
+    if (!id || !summary.data || !fluktuationFertig) return;
     const d = summary.data;
     const statusWarnung =
       Boolean(d.insolvencyStatus) ||
       Boolean(d.closedAt) ||
       (d.registerStatus ?? "").toLowerCase().includes("gelöscht");
     void window.api.relevanz.erfasse("firma.ansicht", id, {
-      gewicht: gewichtFuer({ statusWarnung, meineFirma: uebernommen }),
+      gewicht: gewichtFuer({
+        statusWarnung,
+        meineFirma: uebernommen,
+        leitungImWandel: (fluktuationFirma.data?.hinweise ?? []).length > 0,
+      }),
     });
     // Absichtlich nur an `id` haengend: Ein Nachladen derselben Firma soll
     // kein zweites Signal ausloesen. Die Entprellung im Hauptprozess faengt
     // den Rest ab.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, Boolean(summary.data)]);
+  }, [id, Boolean(summary.data), fluktuationFertig]);
 
   const adresse = ermittleAdresse({
     land: landAusCompanyId(id),

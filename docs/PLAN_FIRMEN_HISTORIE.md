@@ -180,3 +180,8 @@ Reihenfolge: H0 → H1 → H2 (damit ist Patricks Frage beantwortet), dann H3 un
   und erst ab Auffälligem. E5 umgesetzt: anonymes Mitzählen vor jeder Löschung
   (`PersonalEreignisAnonym`, Kontakt-DB). Offen: Weitergabe an Relevanz (Gewicht kommt vom
   Desktop) und Alarm-Judge, als eigener kleiner Schritt nach dem Rollout.
+- 2026-11-19 H4 Rest: Relevanz-Gewicht bekommt das Merkmal `leitungImWandel` (+1, wenn die Firma
+  einen Fluktuationshinweis hat; Spiegel in main/relevanz/gewicht.ts und renderer
+  relevanz-gewicht.ts), Alarm-Judge bekommt bei Personal-Kandidaten (contact-change,
+  profile-change, linkedin-signal) die Fluktuationshinweise und eine Regel dazu (Anlass oder
+  Warnzeichen, allein nie alarmwürdig). Damit ist der Plan komplett.

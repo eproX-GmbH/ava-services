@@ -11,10 +11,10 @@ schlagworte: [meldenswert, alarmwürdig, bewertung, kriterien, profil, icp, idea
 aktionen:
   - { art: app_oeffnen, ziel: meldungen_einstellen, label: "Letzte Prüfläufe ansehen" }
   - { art: app_oeffnen, ziel: profil, label: "Profil pflegen" }
-stand: 2026-11-07
+stand: 2026-11-19
 ---
 Jeden neuen Fund bei deinen Firmen bewerte ich mit deinem KI-Modell, deinem Profil und deinem Idealkundenprofil. Die Leitfrage: Interessiert dich das jetzt, als Anlass für ein Gespräch, als Risiko oder als Tür, die sich öffnet?
 
-Dafür gelten feste Regeln. Was ich beim ersten Aufbereiten einer Firma finde, ist keine Neuigkeit. Ein Wechsel muss frisch sein: Ist belegt, dass eine Rolle schon länger als etwa ein halbes Jahr besteht, melde ich ihn nicht. Jahresabschlüsse dürfen bis zu vier Jahre alt sein, weil sie spät veröffentlicht werden. Routine-Änderungen, reine Selbstdarstellung und Titel-Umformulierungen fallen weg.
+Dafür gelten feste Regeln. Was ich beim ersten Aufbereiten einer Firma finde, ist keine Neuigkeit. Ein Wechsel muss frisch sein: Ist belegt, dass eine Rolle schon länger als etwa ein halbes Jahr besteht, melde ich ihn nicht. Jahresabschlüsse dürfen bis zu vier Jahre alt sein, weil sie spät veröffentlicht werden. Routine-Änderungen, reine Selbstdarstellung und Titel-Umformulierungen fallen weg. Bei Personalwechseln schaue ich zusätzlich, ob die Leitung in diesem Bereich in den letzten zwei Jahren schon öfter gewechselt hat; das nenne ich dann in der Begründung.
 
 Die Wichtigkeit ist Info, Achtung oder Dringend. Bei Firmen, an denen du gerade arbeitest, stufe ich höher, falls „Nähe & Vorrang“ an ist. Warum ich etwas gemeldet oder verworfen habe, steht unter Einstellungen → Meldungen bei „Letzte Prüfläufe“. Ein gutes Profil macht die Auswahl treffsicherer.

@@ -237,6 +237,12 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
     "      auch wenn er inhaltlich gewichtig wäre. Ist der Beginn unbekannt",
     "      und das Fenster kurz, gilt der Wechsel als aktuell.",
     "",
+    "Steht beim Kandidaten eine Fluktuation der Leitung: Ein Personalwechsel",
+    "in einem Bereich, der schon mehrfach gewechselt hat, ist eher ein",
+    "Anlass (neue Ansprechpartner, offene Tür) oder ein Warnzeichen für eine",
+    "laufende Beziehung; nenne das in der Begründung. Allein macht die",
+    "Fluktuation nichts alarmwürdig, die Aktualitätsregel gilt weiter.",
+    "",
     "Nicht alarmwürdig sind:",
     "  - Positionen, die laut Beleg schon seit Monaten oder Jahren bestehen",
     "    (z. B. „Gründer seit 2009“ wird nicht zum neuen Geschäftsführer)",
@@ -310,9 +316,10 @@ function buildUserPrompt(c: HeartbeatCandidate): string {
   // seinem Verhalten) und Fokuskunde (eigenes Buying Center) kommen vom
   // Heartbeat in den Payload. Beides sagt dem Judge, ob hier eine
   // laufende Beziehung betroffen ist oder eine kalte Firma.
-  const { nutzerNaehe, fokuskunde, ...rohdaten } = c.payload as {
+  const { nutzerNaehe, fokuskunde, fluktuationLeitung, ...rohdaten } = c.payload as {
     nutzerNaehe?: number | null;
     fokuskunde?: boolean;
+    fluktuationLeitung?: string[] | null;
   } & Record<string, unknown>;
   const beziehung =
     fokuskunde
@@ -328,6 +335,9 @@ function buildUserPrompt(c: HeartbeatCandidate): string {
     `Kandidat (kind=${c.kind}):`,
     `  Firma:        ${c.companyName} (id: ${c.companyId})`,
     `  Beziehung des Nutzers zur Firma: ${beziehung}`,
+    ...(Array.isArray(fluktuationLeitung) && fluktuationLeitung.length > 0
+      ? [`  Fluktuation der Leitung (24 Monate): ${fluktuationLeitung.join("; ")}`]
+      : []),
     `  Datum:        ${c.occurredAt}`,
     `  Zusammenfassung: ${c.summary}`,
     `  Rohdaten:     ${JSON.stringify(rohdaten)}`,

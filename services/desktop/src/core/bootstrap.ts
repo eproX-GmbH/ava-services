@@ -1386,6 +1386,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     // BC6 — abgeschaltet heisst: keine Fokuskunden im Alarmweg, keine Nachfrage.
     fokusFirmen: () => (featureEnabled("buyingcenter") ? fokusFirmen(gatewayClient) : Promise.resolve(new Set<string>())),
     faelligeNachfragen: (now) => (featureEnabled("buyingcenter") ? faelligeNachfragen(gatewayClient, now) : Promise.resolve([])),
+    // Firmenhistorie H4: Fluktuation der Leitung als Zusatz fuer Personal-Kandidaten.
+    fluktuation: async (companyId) =>
+      (await gatewayClient.request<{ hinweise?: string[] }>(`/v1/companies/${encodeURIComponent(companyId)}/fluktuation`)).hinweise ?? [],
     // 8.f3 — read cadence from persisted prefs (default 15 min). The
     // store fires `changed` on every patch; we re-route that into
     // `setIntervalMs` below so the cadence radio in Settings takes

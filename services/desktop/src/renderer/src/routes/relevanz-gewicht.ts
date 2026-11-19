@@ -19,6 +19,9 @@ export interface GewichtMerkmale {
   meineFirma?: boolean;
   crmVerknuepft?: boolean;
   groesseImKorridor?: boolean;
+  /** Auffaellige Wechsel in der Leitung (Fluktuation, 24 Monate): neue
+   *  Ansprechpartner, offene Tueren — ein Anlass, auch ohne Verhalten. */
+  leitungImWandel?: boolean;
 }
 
 /** 1 bis 10. Ohne Merkmale 1 — unbekannt, nicht schlecht. */
@@ -31,5 +34,6 @@ export function gewichtFuer(m: GewichtMerkmale): number {
   if (m.meineFirma) summe += 2;
   if (m.crmVerknuepft) summe += 2;
   if (m.groesseImKorridor) summe += 1;
+  if (m.leitungImWandel) summe += 1;
   return Math.round(Math.max(1, Math.min(10, summe)) * 10) / 10;
 }
