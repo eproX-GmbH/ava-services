@@ -30,7 +30,7 @@ Aufbereitung (Schritt 4), Notiz (5), Durchlauf (6).
 
 Firmen für Schritt 4 (lesend geprüft: je mindestens zwei neue Leitungsrollen im letzten Jahr):
 `OSNABRUECK_HRB_120444` Berentzen-Gruppe AG, `FREIBURG_HRB_611072` IEF-Werner GmbH,
-`BIELEFELD_HRB_44081` Bechtle IT-Systemhaus GmbH, `AUGSBURG_HRB_7921` KUKA Systems GmbH,
+`BREMEN_HRB_36032` KUKA Assembly & Test GmbH (ersetzt Bechtle IT-Systemhaus, `BIELEFELD_HRB_44081` liefert im Handelsregister keinen Eintrag), `AUGSBURG_HRB_7921` KUKA Systems GmbH,
 `BADOEYNHAUSEN_HRB_3362` Herbert Kannegiesser GmbH, `CHEMNITZ_HRB_17128` Aumann
 Limbach-Oberfrohna GmbH, `PADERBORN_HRB_2663` Net at Work GmbH, `BIELEFELD_HRB_37959` Böllhoff
 Automation GmbH, `STUTTGART_HRB_21275` Trelleborg Sealing Solutions Germany GmbH,
