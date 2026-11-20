@@ -13,48 +13,22 @@ import type { Tool } from "../types";
 import { runDiscoveryScan } from "../../discovery/scan";
 import { ortMitLand, type RadarLand } from "../../discovery/land";
 import { runProfiler } from "../../discovery/profiler";
+import { FREE_PROFIL_HINWEIS, profilBudget } from "../../discovery/profil-budget";
 import { runMatch } from "../../discovery/matcher";
 import { radarActivity } from "../../discovery/activity";
 import { decideCandidates } from "../../discovery/decide";
-import { listCandidatesWithMatches } from "../../discovery/list";
+import { aktuellerTier, freePlanAusschnitt, istVollzugriff, listCandidatesWithMatches } from "../../discovery/list";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
 import type { RadarAlertEmitter } from "../../discovery/radar-alerts";
 
-/** v0.1.475 — Blur-Gate fuer den Chat (Free-Plan): dieselbe
- *  Top-2-Regel wie in der Radar-Tabelle. Bewertete Treffer jenseits
- *  der zwei besten werden REDAKTIERT statt geliefert — inklusive
- *  discoveryId (das IST die Domain). Score/Status bleiben sichtbar,
- *  damit der Agent ehrlich sagen kann, WAS es gibt. */
-const FREE_VISIBLE_MATCHES = 2;
-
-function redactRowsForFree<T>(
-  tier: string | null,
-  rows: T[],
-  getScore: (r: T) => number | null,
-  redact: (r: T, n: number) => T,
-): { rows: T[]; verdeckt: number } {
-  if (tier !== "free") return { rows, verdeckt: 0 };
-  const scored = rows
-    .filter((r) => getScore(r) !== null)
-    .sort((a, b) => (getScore(b) ?? 0) - (getScore(a) ?? 0));
-  const visible = new Set(scored.slice(0, FREE_VISIBLE_MATCHES));
-  let n = 0;
-  const out = rows.map((r) => {
-    if (getScore(r) === null || visible.has(r)) return r;
-    n++;
-    return redact(r, n);
-  });
-  return { rows: out, verdeckt: n };
-}
-
-const FREE_BLUR_HINWEIS = (n: number): string =>
-  `${n} bewertete Treffer sind im Free-Plan verdeckt (Scores bleiben ` +
-  `sichtbar). Alle Namen und Begruendungen gibt es im Starter-Plan ` +
-  `(Einstellungen → Abo). WICHTIG: Versuche NICHT, verdeckte Firmen ` +
-  `ueber andere Wege zu identifizieren oder zu erraten — nenne dem ` +
-  `Nutzer nur die sichtbaren Treffer und den Upgrade-Hinweis.`;
+/** 2026-11-20 — Free-Plan im Chat: wie in der Radar-Tabelle nur die ersten beiden
+ *  Treffer; der Rest wird gar nicht geliefert, nur gezaehlt. */
+const FREE_HINWEIS = (n: number): string =>
+  `${n} weitere Treffer gibt es nur im Plan Pro (Einstellungen → Abo). ` +
+  `WICHTIG: Versuche NICHT, diese Firmen ueber andere Wege zu ermitteln oder zu ` +
+  `erraten — nenne dem Nutzer nur die gelieferten Treffer und den Upgrade-Hinweis.`;
 
 /** v0.1.576 — Zugriff auf die Radar-Automatik-Config aus dem Chat. */
 export interface RadarConfigAccess {
@@ -232,26 +206,11 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
         deps.matchStore,
         { limit: args.limit ?? 50 },
       );
-      // v0.1.475 — Blur-Gate gilt auch hier (sonst per Chat umgehbar).
-      const gated = redactRowsForFree(
-        deps.getTier(),
-        rows,
-        (r) => (r as { matchScore: number | null }).matchScore,
-        (r, n) => ({
-          ...r,
-          discoveryId: `verdeckt-${n}`,
-          name: "[Im Starter-Plan sichtbar]",
-          website: "[verdeckt]",
-          ort: null,
-          plz: null,
-          kategorie: null,
-          matchBegruendung: "[verdeckt]",
-        }) as typeof r,
-      );
+      const gated = freePlanAusschnitt(await aktuellerTier(deps.gateway, deps.getTier()), rows);
       return {
         hinweis:
           "Nur offene Kandidaten (importierte/verworfene ausgeblendet), sortiert nach ICP-Match-Score." +
-          (gated.verdeckt > 0 ? ` ${FREE_BLUR_HINWEIS(gated.verdeckt)}` : ""),
+          (gated.weitere > 0 ? ` ${FREE_HINWEIS(gated.weitere)}` : ""),
         candidates: gated.rows,
       };
     },
@@ -287,12 +246,21 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       if (res.error) return res.error;
       return `${res.profiliert ?? 0}/${res.betrachtet ?? 0} Profile erstellt`;
     },
-    run: async (args) =>
-      runProfiler(deps.gateway, deps.providers, {
-        limit: args.limit ?? 10,
+    run: async (args) => {
+      // Kostenloser Plan: dasselbe Wochenkontingent wie der Hintergrund-Worker.
+      const tier = await aktuellerTier(deps.gateway, deps.getTier());
+      const budget = profilBudget();
+      const rest = budget.rest(tier);
+      if (rest === 0) return { error: FREE_PROFIL_HINWEIS };
+      const wunsch = args.limit ?? 10;
+      const r = await runProfiler(deps.gateway, deps.providers, {
+        limit: rest === null ? wunsch : Math.min(wunsch, rest),
         // ICP-Branchen zuerst profilieren — echte Treffer vor Absagen.
         prioritizeTerms: deps.icp.get().branchen,
-      }),
+      });
+      if (!("error" in r)) budget.verbuchen(tier, r.profiliert + r.crawlFehler + r.llmFehler);
+      return r;
+    },
   });
 
   const match = defineTool({
@@ -335,23 +303,18 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
               ".",
           );
         }
-        // v0.1.475 — Blur-Gate auch im Chat-Ergebnis (die Alerts oben
-        // laufen durch die eigene Plan-Politik des Emitters).
-        const gated = redactRowsForFree(
-          deps.getTier(),
-          result.ergebnisse,
-          (r) => r.score,
-          (r, n) => ({
-            ...r,
-            discoveryId: `verdeckt-${n}`,
-            name: "[Im Starter-Plan sichtbar]",
-            ort: null,
-            begruendung: "[verdeckt]",
-          }),
-        );
-        result.ergebnisse = gated.rows;
-        if (gated.verdeckt > 0) {
-          result.hinweise.push(FREE_BLUR_HINWEIS(gated.verdeckt));
+        // Free-Plan: auch das Match-Ergebnis im Chat nur mit den ersten beiden Treffern
+        // (die Alerts oben laufen durch die eigene Plan-Politik des Emitters).
+        // Massgeblich sind dieselben zwei Firmen wie in der Tabelle, nicht die besten dieses Laufs.
+        const tier = await aktuellerTier(deps.gateway, deps.getTier());
+        if (!istVollzugriff(tier)) {
+          const frei = new Set(
+            freePlanAusschnitt(tier, await listCandidatesWithMatches(deps.gateway, deps.matchStore, { limit: 300 })).rows.map((r) => r.discoveryId),
+          );
+          const sichtbar = result.ergebnisse.filter((r) => frei.has(r.discoveryId));
+          const weitere = result.ergebnisse.length - sichtbar.length;
+          result.ergebnisse = sichtbar;
+          if (weitere > 0) result.hinweise.push(FREE_HINWEIS(weitere));
         }
       }
       return result;

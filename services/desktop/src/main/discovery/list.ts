@@ -71,3 +71,31 @@ export async function listCandidatesWithMatches(
   rows.sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
   return rows;
 }
+
+/** Free-Plan: so viele echte Radar-Treffer verlassen den Hauptprozess (Tabelle und Chat). */
+export const FREE_SICHTBARE_TREFFER = 2;
+
+/** Nur bezahlte Plaene sehen die ganze Liste; unbekannter Plan zaehlt als Free. */
+export function istVollzugriff(tier: string | null | undefined): boolean {
+  return tier === "starter" || tier === "pro" || tier === "enterprise";
+}
+
+/**
+ * 2026-11-20 (Joyce): Im Free-Plan gehen NIE mehr als die ersten beiden Treffer an die
+ * Oberflaeche oder den Chat. Der Rest wird nicht verdeckt, sondern gar nicht erst
+ * geliefert; die Tabelle zeigt stattdessen eine kurze Platzhalterliste ohne echte Daten.
+ */
+export function freePlanAusschnitt<T>(tier: string | null | undefined, rows: T[]): { rows: T[]; weitere: number } {
+  if (istVollzugriff(tier)) return { rows, weitere: 0 };
+  return { rows: rows.slice(0, FREE_SICHTBARE_TREFFER), weitere: Math.max(0, rows.length - FREE_SICHTBARE_TREFFER) };
+}
+
+/** Plan frisch vom Gateway; offline gilt der zuletzt bekannte Wert (null = wie Free). */
+export async function aktuellerTier(gateway: GatewayClient, zuletzt: string | null = null): Promise<string | null> {
+  try {
+    const u = await gateway.request<{ tier?: string }>("/v1/usage");
+    return u.tier ?? zuletzt;
+  } catch {
+    return zuletzt;
+  }
+}

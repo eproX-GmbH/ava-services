@@ -1,7 +1,7 @@
 {
  "modell": "embeddinggemma:latest",
  "digest": "82f094e4c0e19bc4208c692996d4f1ecf14e82a8dee579ee1d2ca1175260058e",
- "ollama": "0.40.5",
+ "ollama": "0.40.16",
  "dim": 768,
  "karten": {
   "abo-kuendigen": {

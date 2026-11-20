@@ -13,7 +13,7 @@ aktionen:
   - { art: chat_vorschlag, ziel: "Schalte die Radar-Automatik auf täglich ein.", label: "Radar täglich laufen lassen" }
   - { art: app_oeffnen, ziel: radar, label: "Radar öffnen" }
 gilt_fuer: [alle]
-stand: 2026-11-07
+stand: 2026-11-20
 ---
 Die Automatik ist anfangs aus. Ich schalte sie dir nach deinem OK ein: täglich, wöchentlich oder in den bezahlten Plänen auch viermal täglich. Dann läuft der Radar selbstständig: Scan, Mini-Profile, Bewertung und bei heißen Treffern eine Meldung. Jede Firma melde ich nur einmal. Stehen mehrere Orte in deinem Profil, kommen sie abwechselnd dran.
 
@@ -21,4 +21,4 @@ In der Desktop-App schaltest du das unter Firmen → Radar mit „Automatik“ u
 
 „Sofortige Mini-Profil-Verarbeitung“ arbeitet alle offenen Kandidaten so schnell wie möglich ab. Der Chat behält Vorrang, es braucht aber mehr KI-Aufrufe in kurzer Zeit.
 
-Im kostenlosen Plan gibt es keine Automatik, nur einen Scan pro Woche.
+Im kostenlosen Plan gibt es keine Automatik und keine sofortige Mini-Profil-Verarbeitung, nur einen Scan pro Woche und höchstens 30 Mini-Profile pro Woche.

@@ -11,10 +11,10 @@ schlagworte: [radar, verdeckt, schloss, free, kostenlos, plan pro, upgrade, gren
 aktionen:
   - { art: app_oeffnen, ziel: plan, label: "Plan ansehen" }
 gilt_fuer: [alle]
-stand: 2026-11-07
+stand: 2026-11-20
 ---
-Im kostenlosen Plan zeige ich von den bewerteten Radar-Treffern nur die zwei besten mit Namen und Begründung. Bei den übrigen siehst du den Score, damit du weißt, was da ist; Name, Website und Begründung bleiben verdeckt, auch im Chat. Ab dem Plan Pro siehst du alle.
+Im kostenlosen Plan zeige ich im Radar nur die zwei besten Treffer, auch im Chat. Darunter siehst du, wie viele weitere Treffer warten; die verschwommenen Zeilen dort sind nur Beispiele, keine echten Firmen. Ab dem Plan Pro siehst du die ganze Liste mit allen Namen und Begründungen.
 
-Außerdem gilt im kostenlosen Plan: ein Scan pro Woche, Umkreis bis 25 km, ein Gebiet und keine Automatik. Meldungen zu heißen Treffern kommen dort höchstens drei pro Woche.
+Außerdem gilt im kostenlosen Plan: ein Scan pro Woche, Umkreis bis 25 km, ein Gebiet und keine Automatik. Mini-Profile erstelle ich dort höchstens 30 pro Woche, Firmen aus deinen Zielbranchen zuerst. Meldungen zu heißen Treffern kommen dort höchstens drei pro Woche.
 
 Den Plan wechselst du unter Einstellungen → Konto → Plan & Abrechnung.

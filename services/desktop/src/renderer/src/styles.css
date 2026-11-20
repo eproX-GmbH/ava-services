@@ -8377,14 +8377,16 @@ tr.held-row td:first-child::after {
   cursor: default;
 }
 
-/* v0.1.474 — Radar Blur-Gate (Free-Plan): Namen/Begruendungen jenseits
- * der frei sichtbaren Top-Treffer sind unkenntlich, Scores bleiben. */
+/* Radar im Free-Plan: unter den zwei echten Treffern eine kurze Platzhalterliste
+ * aus erfundenen Zeilen, geblurrt und nach unten ausblendend (2026-11-20). */
 .radar-blur {
   filter: blur(5px);
   user-select: none;
   pointer-events: none;
 }
-.radar-locked-row { opacity: 0.9; }
+.radar-platzhalter { pointer-events: none; user-select: none; }
+.radar-platzhalter:nth-last-child(2) { opacity: 0.7; }
+.radar-platzhalter:last-child { opacity: 0.45; }
 .radar-lockbanner {
   margin: 0 0 0.6rem;
   padding: 0.5rem 0.75rem;

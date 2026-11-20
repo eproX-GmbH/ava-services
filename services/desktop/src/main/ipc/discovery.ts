@@ -10,7 +10,7 @@ import { RadarImportWarteschlange } from "../discovery/import-warteschlange";
 import { windows } from "../../core/platform";
 import type { RadarWarteKandidat } from "../../shared/radar-warteschlange-types";
 import { buildCustomerInputs, icpAusText, runIcpAnalysis } from "../discovery/icp-assistant";
-import { listCandidatesWithMatches } from "../discovery/list";
+import { aktuellerTier, freePlanAusschnitt, listCandidatesWithMatches } from "../discovery/list";
 import { runMatch } from "../discovery/matcher";
 import { domainFromUrl } from "../discovery/scan";
 import { join } from "node:path";
@@ -48,13 +48,17 @@ export function registerDiscoveryIpc(deps: DiscoveryIpcDeps): void {
 
   ipcMain.handle("discovery:candidates", async () => {
     try {
+      // Plan frisch lesen: im Free-Plan verlassen nur die ersten beiden Treffer den
+      // Hauptprozess, der Rest erreicht die Oberflaeche nie (auch nicht geblurred).
+      const [rows, tier] = await Promise.all([
+        listCandidatesWithMatches(gatewayClient, discoveryMatches, { limit: 300 }),
+        aktuellerTier(gatewayClient),
+      ]);
+      const ausschnitt = freePlanAusschnitt(tier, rows);
       return {
         ok: true,
-        candidates: await listCandidatesWithMatches(
-          gatewayClient,
-          discoveryMatches,
-          { limit: 300 },
-        ),
+        candidates: ausschnitt.rows,
+        ...(ausschnitt.weitere > 0 ? { gesperrt: { weitere: ausschnitt.weitere } } : {}),
       };
     } catch (err) {
       return {

@@ -32,9 +32,15 @@ interface RadarRow {
   matchBegruendung: string | null;
 }
 
-/** v0.1.474 — Blur-Gate: so viele bewertete Treffer sieht der
- *  Free-Plan KLAR; der Rest ist geblurred (Score bleibt sichtbar). */
-const FREE_VISIBLE_MATCHES = 2;
+/** 2026-11-20 — Free-Plan: der Hauptprozess liefert nur die ersten beiden Treffer.
+ *  Darunter steht eine kurze, geblurrte Liste aus erfundenen Zeilen: sie verdeckt
+ *  keine echten Daten, sondern soll nur neugierig machen. */
+const PLATZHALTER: ReadonlyArray<{ name: string; website: string; ort: string; kategorie: string; score: number; warum: string }> = [
+  { name: "Muster Maschinenbau GmbH", website: "muster-maschinenbau.de", ort: "00000 Musterstadt", kategorie: "Maschinenbau", score: 88, warum: "Passt zu Branche, Größe und Region deines Idealkundenprofils." },
+  { name: "Beispiel Technik AG", website: "beispiel-technik.de", ort: "00000 Beispielort", kategorie: "Elektrotechnik", score: 81, warum: "Wächst gerade und sucht nach passenden Lösungen." },
+  { name: "Platzhalter Logistik KG", website: "platzhalter-logistik.de", ort: "00000 Platzhausen", kategorie: "Logistik", score: 74, warum: "Ähnlich wie deine bestehenden Kunden aufgestellt." },
+  { name: "Vorlage Holding GmbH", website: "vorlage-holding.de", ort: "00000 Vorlagenstadt", kategorie: "Industrie", score: 67, warum: "Mehrere Signale aus den letzten Wochen sprechen für einen Kontakt." },
+];
 
 /** Ergebnis eines Laufs bleibt so lange sichtbar. */
 const ERGEBNIS_SICHTBAR_MS = 15 * 60_000;
@@ -73,6 +79,8 @@ export function DiscoveryRadar(): JSX.Element {
   const ausblenden = useMemo(() => new Set([...(warte?.eintraege.map((e) => e.discoveryId) ?? []), ...weg]), [warte, weg]);
   const rows = useMemo(() => alleRows.filter((r) => !ausblenden.has(r.discoveryId)), [alleRows, ausblenden]);
   const [lastImportTx, setLastImportTx] = useState<string | null>(null);
+  // Free-Plan: so viele weitere Treffer gibt es (nur die Zahl, keine Daten).
+  const [weitereGesperrt, setWeitereGesperrt] = useState(0);
   const [icpGesetzt, setIcpGesetzt] = useState<boolean>(true);
   // v0.1.574 — Radar-Lauf nur mit vollstaendigem ICP.
   const [icpVollstaendig, setIcpVollstaendig] = useState<boolean>(true);
@@ -168,6 +176,7 @@ export function DiscoveryRadar(): JSX.Element {
         setRows([]);
       } else {
         setRows(r.candidates);
+        setWeitereGesperrt(r.gesperrt?.weitere ?? 0);
         setWeg(new Set());
         setSelected((prev) => {
           const ids = new Set(r.candidates!.map((c) => c.discoveryId));
@@ -255,25 +264,13 @@ export function DiscoveryRadar(): JSX.Element {
     }
   };
 
-  // v0.1.474 — Blur-Gate fuer den Free-Plan: Matches laufen fuer alle
-  // gleich oft und frisch, aber Free sieht nur die Top-Treffer klar.
-  // Der Score bleibt sichtbar ("es GIBT 12 weitere ab 70"), Name,
-  // Website und Begruendung sind geblurred. Reines UI-Gate.
+  // Kostenloser Plan: Mini-Profile laufen im Wochenkontingent, der Sofort-Modus entfaellt.
   const usage = useUsage();
-  const lockedIds = useMemo(() => {
-    if (usage.data?.tier !== "free") return new Set<string>();
-    const scored = rows
-      .filter((r) => r.matchScore !== null)
-      .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
-    return new Set(scored.slice(FREE_VISIBLE_MATCHES).map((r) => r.discoveryId));
-  }, [rows, usage.data?.tier]);
+  const kostenlos = usage.data !== undefined && usage.data.tier !== "starter" && usage.data.tier !== "pro" && usage.data.tier !== "enterprise";
 
-  // v0.1.575 — "Alle" meint nur die frei sichtbaren Zeilen; gesperrte
-  // (Free-Plan) haben ohnehin keine aktive Checkbox.
-  const waehlbar = rows.filter((r) => !lockedIds.has(r.discoveryId));
-  const allSelected = waehlbar.length > 0 && waehlbar.every((r) => selected.has(r.discoveryId));
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.discoveryId));
   const toggleAll = (): void => {
-    setSelected(allSelected ? new Set() : new Set(waehlbar.map((r) => r.discoveryId)));
+    setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.discoveryId)));
   };
 
   const hotCount = useMemo(
@@ -344,6 +341,7 @@ export function DiscoveryRadar(): JSX.Element {
             />
             <strong>Automatik</strong> — Radar läuft selbstständig
           </label>
+          {!kostenlos && (
           <label
             className="radar-auto-toggle"
             title="Alle offenen Kandidaten so schnell wie möglich profilieren: mehr parallel, Minutentakt. Der Chat behält Vorrang. Braucht entsprechend mehr KI-Aufrufe in kurzer Zeit."
@@ -359,6 +357,7 @@ export function DiscoveryRadar(): JSX.Element {
             />
             <strong>Sofortige Mini-Profil-Verarbeitung</strong> — Backlog ohne Schonung abarbeiten
           </label>
+          )}
           <label
             className="radar-auto-toggle radar-auto-deckel"
             title="Höchstzahl offener, noch nicht entschiedener Kandidaten. Ist sie erreicht, startet kein Scan mehr, bis du Kandidaten importierst oder ignorierst. 0 = unbegrenzt."
@@ -554,17 +553,17 @@ export function DiscoveryRadar(): JSX.Element {
       ) : (
         <>
           <div className="radar-meta">
-            {rows.length} offene Kandidaten
+            {rows.length + weitereGesperrt} offene Kandidaten
             {hotCount > 0 ? ` · ${hotCount} heiß (Score ≥ 70)` : ""}
             {rows.filter((r) => !r.profiliert).length > 0
               ? ` · ${rows.filter((r) => !r.profiliert).length} ohne Mini-Profil (⧗) — „Mini-Profile erstellen" arbeitet den Rückstand in 25er-Schritten ab`
               : ""}
           </div>
-          {lockedIds.size > 0 && (
+          {weitereGesperrt > 0 && (
             <div className="radar-lockbanner">
-              🔒 {lockedIds.size} weitere bewertete Treffer{hotCount > FREE_VISIBLE_MATCHES ? ` (davon ${hotCount - FREE_VISIBLE_MATCHES} heiß)` : ""} — im{" "}
-              <Link to="/settings#plan-section">Plan Pro</Link> siehst du
-              alle Namen und Begründungen. Die Scores unten zeigen, was da ist.
+              🔒 {weitereGesperrt} weitere Treffer warten — im{" "}
+              <Link to="/settings#plan-section">Plan Pro</Link> siehst du die ganze
+              Liste mit allen Namen und Begründungen.
             </div>
           )}
           <div className="radar-tablewrap">
@@ -589,27 +588,20 @@ export function DiscoveryRadar(): JSX.Element {
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const locked = lockedIds.has(r.discoveryId);
                   return (
                   <tr
                     key={r.discoveryId}
-                    className={
-                      ((r.matchScore ?? 0) >= 70 ? "radar-row radar-hot" : "radar-row") +
-                      (locked ? " radar-locked-row" : "")
-                    }
+                    className={(r.matchScore ?? 0) >= 70 ? "radar-row radar-hot" : "radar-row"}
                   >
                     <td className="radar-check">
                       <input
                         type="checkbox"
-                        checked={!locked && selected.has(r.discoveryId)}
-                        disabled={locked}
+                        checked={selected.has(r.discoveryId)}
                         onChange={() => toggle(r.discoveryId)}
                         aria-label={`${r.name} auswählen`}
                       />
                     </td>
                     <td className="radar-aktionen">
-                      {!locked && (
-                        <>
                           <button
                             type="button"
                             className="radar-zeile-import"
@@ -629,13 +621,11 @@ export function DiscoveryRadar(): JSX.Element {
                               <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
                           </button>
-                        </>
-                      )}
                     </td>
                     <td>
-                      <div className={locked ? "radar-name radar-blur" : "radar-name"}>
+                      <div className="radar-name">
                         {r.name}
-                        {!locked && r.bereitsInAva && (
+                        {r.bereitsInAva && (
                           <span
                             className="radar-badge radar-known"
                             title="Diese Firma ist in AVA bereits bekannt"
@@ -645,27 +635,18 @@ export function DiscoveryRadar(): JSX.Element {
                         )}
                       </div>
                       <button
-                        className={locked ? "radar-domain radar-blur" : "radar-domain"}
-                        disabled={locked}
-                        onClick={() =>
-                          locked
-                            ? undefined
-                            : void window.api.shell.openExternal(`https://${r.website}`)
-                        }
-                        title={
-                          locked
-                            ? "Ab dem Plan Pro sichtbar"
-                            : `https://${r.website} im Browser öffnen`
-                        }
+                        className="radar-domain"
+                        onClick={() => void window.api.shell.openExternal(`https://${r.website}`)}
+                        title={`https://${r.website} im Browser öffnen`}
                       >
                         {r.website}
                       </button>
                     </td>
-                    <td className={locked ? "radar-blur" : undefined}>
+                    <td>
                       {[r.plz, r.ort].filter(Boolean).join(" ") || "—"}
                       {r.land && r.land !== "DE" && <span className="pill" style={{ marginLeft: 6 }}>{r.land}</span>}
                     </td>
-                    <td className={locked ? "radar-kat radar-blur" : "radar-kat"}>{r.kategorie ?? "—"}</td>
+                    <td className="radar-kat">{r.kategorie ?? "—"}</td>
                     <td>
                       {r.matchScore !== null ? (
                         <span
@@ -692,15 +673,31 @@ export function DiscoveryRadar(): JSX.Element {
                         </span>
                       )}
                     </td>
-                    <td
-                      className={locked ? "radar-why radar-blur" : "radar-why"}
-                      title={locked ? "Ab dem Plan Pro sichtbar" : (r.matchBegruendung ?? undefined)}
-                    >
+                    <td className="radar-why" title={r.matchBegruendung ?? undefined}>
                       {r.matchBegruendung ?? "—"}
                     </td>
                   </tr>
                   );
                 })}
+                {weitereGesperrt > 0 &&
+                  PLATZHALTER.slice(0, Math.min(PLATZHALTER.length, weitereGesperrt)).map((p, i) => (
+                    <tr key={`platzhalter-${i}`} className="radar-row radar-platzhalter" aria-hidden="true">
+                      <td className="radar-check">
+                        <input type="checkbox" disabled tabIndex={-1} />
+                      </td>
+                      <td className="radar-aktionen" />
+                      <td className="radar-blur">
+                        <div className="radar-name">{p.name}</div>
+                        <span className="radar-domain">{p.website}</span>
+                      </td>
+                      <td className="radar-blur">{p.ort}</td>
+                      <td className="radar-kat radar-blur">{p.kategorie}</td>
+                      <td className="radar-blur">
+                        <span className={p.score >= 70 ? "radar-score radar-score-hot" : "radar-score radar-score-mid"}>{p.score}</span>
+                      </td>
+                      <td className="radar-why radar-blur">{p.warum}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

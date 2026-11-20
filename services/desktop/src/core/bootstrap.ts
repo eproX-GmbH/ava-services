@@ -2858,6 +2858,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     isSignedIn: () => auth.getStatus().signedIn,
     isLlmBusy: () => agent.getStatus().inFlightRequestId !== null,
     onDrained: () => void runIncrementalMatch(),
+    getTier: () => getTenantTierCached(),
     onAudit: (entry) =>
       audit({
         actorType: "system",

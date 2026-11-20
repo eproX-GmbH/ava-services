@@ -22,6 +22,7 @@ import type { LlmProviderManager } from "../agent/providers";
 import { runProfiler, type ProfilerSummary } from "./profiler";
 import { radarActivity } from "./activity";
 import { arbeitAbbrechen } from "../worker-modus";
+import { FREE_PROFIL_HINWEIS, profilBudget } from "./profil-budget";
 
 const TICK_MS = 10 * 60_000;
 const FIRST_TICK_DELAY_MS = 2 * 60_000;
@@ -46,6 +47,9 @@ export interface ProfileWorkerDeps {
   isLlmBusy: () => boolean;
   /** Neue Profile sind da → inkrementelles Matching anstossen. */
   onDrained: (profiliert: number) => void;
+  /** Plan (Cache); im kostenlosen Plan gilt das Wochenkontingent aus profil-budget.ts,
+   *  unbekannt zaehlt wie kostenlos. Fehlt der Hook: unbegrenzt. */
+  getTier?: () => string | null;
   onAudit?: (entry: {
     severity: "info" | "warning" | "error";
     summary: string;
@@ -135,6 +139,12 @@ export class ProfileWorker {
       radarActivity.fehler("Mini-Profile: kein KI-Modell bereit");
       return { error: "Kein KI-Modell bereit." };
     }
+    const tier = this.deps.getTier ? this.deps.getTier() : "pro";
+    const budget = profilBudget();
+    if (budget.rest(tier) === 0) {
+      radarActivity.profileEnde(FREE_PROFIL_HINWEIS);
+      return { error: FREE_PROFIL_HINWEIS };
+    }
     radarActivity.profileStart(0);
     const total: ProfilerSummary = {
       betrachtet: 0,
@@ -151,8 +161,10 @@ export class ProfileWorker {
     for (let round = 0; round < MAX_ROUNDS_PER_DRAIN; round++) {
       // Worker-Modus: keine weitere Runde anfangen.
       if (arbeitAbbrechen()) break;
+      const rest = budget.rest(tier);
+      if (rest === 0) break;
       const r = await runProfiler(this.deps.gateway, this.deps.providers, {
-        limit: ROUND_LIMIT,
+        limit: rest === null ? ROUND_LIMIT : Math.min(ROUND_LIMIT, rest),
         prioritizeTerms: this.deps.getPrioritizeTerms(),
         exclude: this.exclude(),
         // Chat-Turns haben immer Vorrang, auch im Sofort-Modus.
@@ -170,6 +182,7 @@ export class ProfileWorker {
         }
         break;
       }
+      budget.verbuchen(tier, r.profiliert + r.crawlFehler + r.llmFehler);
       total.betrachtet += r.betrachtet;
       total.profiliert += r.profiliert;
       total.uebersprungenFrisch += r.uebersprungenFrisch;

@@ -386,6 +386,8 @@ const api = {
         matchScore: number | null;
         matchBegruendung: string | null;
       }>;
+      /** Free-Plan: so viele weitere Treffer gibt es, ohne dass sie geliefert werden. */
+      gesperrt?: { weitere: number };
     }> => ipcRenderer.invoke("discovery:candidates"),
     decide: (
       decisions: Array<{
