@@ -219,5 +219,7 @@ ChatGPT (Web und Desktop) und Claude, hell und dunkel.
     erste-schritte/erstansprache/personalwechsel), `EINREICHUNG.md` (Demo-Konto, 5+3 Testfälle,
     Video-Ablauf, Begründungen, Datenschutz-Entwurf), `npm run plugin:zip`,
     `npm run test:mcp-plugin` (Schnappschuss `werkzeuge.snapshot.json`).
-  * Offen: Gateway-Deploy, Demo-Tenant in Prod, Durchlauf im ChatGPT-Entwicklermodus (dabei
+  * Gateway deployt 2026-11-20: Resource-/AS-Metadata unter mcp.ava.bi/…/chatgpt live,
+    `POST /chatgpt` ohne Token → 401 mit Verweis auf die Plugin-Metadata; `/mcp` unverändert.
+  * Offen: Demo-Tenant in Prod, Durchlauf im ChatGPT-Entwicklermodus (dabei
     `aud`-Prüfung mit echtem Keycloak-Token), C0 bei Joyce, Demo-Video, Einreichung.
