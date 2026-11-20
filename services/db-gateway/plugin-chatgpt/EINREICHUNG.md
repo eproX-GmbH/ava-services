@@ -21,6 +21,21 @@ Nicht Teil des ZIP. Das ZIP baut `npm run plugin:zip` (Gateway-Paket) nach `dist
 Prüfer brauchen ein Konto, das ohne MFA, Mail-Code oder Magic Link funktioniert, mit
 Beispieldaten statt eines echten Kunden.
 
+**Stand 2026-11-20:** Schritte 1 (ohne Passwort) bis 3 erledigt. Keycloak-Nutzer
+`chatgpt-review@ava.bi` (ID `6a43374a-318a-46b2-bc1e-88c0c9cc3062`, E-Mail bestätigt, keine
+Pflichtaktionen), Organisation `org_eSKV2mWShqe2` „AVA Demo (ChatGPT-Prüfung)“ mit ihm als
+Owner, Keycloak-Gruppe gesetzt, Schalter `mcp`, `mcp.lesen`, `mcp.auftraege`, `mcp.kontakte` an.
+Offen: Passwort (Joyce, Keycloak-Konsole → Users → Credentials, nicht temporär), Importe und
+Aufbereitung (Schritt 4), Notiz (5), Durchlauf (6).
+
+Firmen für Schritt 4 (lesend geprüft: je mindestens zwei neue Leitungsrollen im letzten Jahr):
+`OSNABRUECK_HRB_120444` Berentzen-Gruppe AG, `FREIBURG_HRB_611072` IEF-Werner GmbH,
+`BIELEFELD_HRB_44081` Bechtle IT-Systemhaus GmbH, `AUGSBURG_HRB_7921` KUKA Systems GmbH,
+`BADOEYNHAUSEN_HRB_3362` Herbert Kannegiesser GmbH, `CHEMNITZ_HRB_17128` Aumann
+Limbach-Oberfrohna GmbH, `PADERBORN_HRB_2663` Net at Work GmbH, `BIELEFELD_HRB_37959` Böllhoff
+Automation GmbH, `STUTTGART_HRB_21275` Trelleborg Sealing Solutions Germany GmbH,
+`STUTTGART_HRB_480839` Schwäbische Werkzeugmaschinen GmbH.
+
 1. Keycloak: Nutzer `chatgpt-review@ava.bi` (Postfach muss nicht existieren), Passwort aus dem
    Passwort-Manager, **E-Mail bestätigt**, keine Pflichtaktionen (kein OTP, kein „Verify Email“,
    kein „Update Password“).
