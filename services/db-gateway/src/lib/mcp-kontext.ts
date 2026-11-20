@@ -66,7 +66,15 @@ function arbeitsweise(s: KontextSchalter, verbunden: boolean): string[] {
   }
   if (!s.kontakte) z.push("- Kontaktdaten sind über diese Verbindung abgeschaltet (Vorgabe der Organisation).");
   if (s.auftraege) z.push("- Gesprächsprotokolle und Hinweise (aus Teams, Outlook, Dynamics oder dem Chat) mit protokoll_ablegen bei der Firma ablegen; AVA verändert dabei nichts im CRM des Nutzers.");
-  if (s.plugin) return z;
+  if (s.plugin) {
+    // Erstansprache-Regeln auch ohne Skills (reine MCP-Verbindung in ChatGPT laedt keine Skills).
+    z.push(
+      "- Erstansprache (Mail oder LinkedIn an eine Firma): ohne Rückfrage zuerst sammeln – firma_lesen mit bereiche profil, register, publikationen, kunden, fluktuation, notizen; firmen_ereignisse für die Firma (seitTage 365); meldungen (90 Tage); firma_kontakte nur für den Empfänger. Ist nur eine Rolle genannt, die passende aktuelle Person wählen und im Antwortsatz nennen.",
+      "- Schreiben: Sie-Form ohne Du/Sie-Frage; Aufbau Anlass (stärkster belegter Fakt, schon im ersten oder zweiten Satz) → These für den Empfänger → Nutzen in einem Satz, passend zum Angebot des Nutzers aus dem Kontext → kleiner konkreter Vorschlag → genau eine Frage. Mindestens zwei Fakten, 60–200 Wörter, Betreff mit konkretem Bezug, keine Floskeln, keine Platzhalter, kein Überwachungston („Mir ist aufgefallen …“ statt „Wir haben ausgewertet …“). Datum „erstmals gesehen/festgestellt“ nie als echtes Datum ausgeben.",
+      "- Antwort: zuerst „Aufhänger“ als kurze Liste (Fakt · Quelle · Datum), dann Betreff und Mail; eine aus dem Firmenmuster abgeleitete Adresse als solche kennzeichnen.",
+    );
+    return z;
+  }
   if (s.kopf && verbunden) {
     z.push(
       "- Die AVA des Nutzers ist verbunden: Zusätzlich gibt es ihre eigenen Werkzeuge (Gedächtnis, Workflows, Buying Center, Bewertung, Mail, CRM, Skills), dazu werkzeug_suchen (q: '*' für den Überblick) und werkzeug_ausfuehren für alle übrigen.",
