@@ -23,6 +23,10 @@
     "erwartet": "firmen-importieren"
   },
   {
+    "frage": "Kann ich dir auch Firmen-IDs wie OSNABRUECK_HRB_120444 zum Importieren geben?",
+    "erwartet": "firmen-importieren"
+  },
+  {
     "frage": "Kannst du mir kurz sagen, was AVA eigentlich ist?",
     "erwartet": "was-ist-ava"
   },

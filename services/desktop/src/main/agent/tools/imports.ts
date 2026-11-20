@@ -1,3 +1,4 @@
+import { firmenIdsAusZeilen } from "../firmen-id";
 import { randomUUID } from "node:crypto";
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
@@ -728,6 +729,10 @@ export function buildImportTools(deps: {
       "no city, use the best-known HQ — the dry-run report flags wrong guesses. " +
       "BEST: when company_search already gave you the company, pass its id in " +
       "`companyIds` — exact, works for every country, no dry-run needed. " +
+      "Strings the USER pastes in this shape ARE companyIds, not register numbers to look up: " +
+      "German `<COURT>_<HRB|HRA|GNR|PR|VR>_<number>` (e.g. OSNABRUECK_HRB_120444, KLEVE_HRA_3232), " +
+      "AT_FN…, CH_CHE…, UK_…, NO_…, FI_…, WEB_<DOMAIN>. Pass them straight in `companyIds` " +
+      "(no company_search, no register_live_suche) and commit with dryRun=false when the user said import. " +
       "When company_get reports `verarbeitung.stand: fehlt` for a company the " +
       "user is asking about, call this IMMEDIATELY with that id — no " +
       "confirmation, no 'soll ich?': the user expects AVA to simply know the " +
@@ -751,7 +756,7 @@ export function buildImportTools(deps: {
           maxItems: 500,
           items: { type: "string", minLength: 1 },
           description:
-            "PREFERRED when you have them: companyIds from company_search (e.g. \"UK_11171399\", \"AT_FN56247T\", German ids). The id identifies the company exactly in every register country — no name/city matching, no dry-run needed, no country needed. Can be combined with `companies` for rows you only know by name.",
+            "PREFERRED when you have them: companyIds from company_search or pasted by the user (e.g. \"OSNABRUECK_HRB_120444\", \"UK_11171399\", \"AT_FN56247T\", \"CH_CHE105805080\"). The id identifies the company exactly in every register country — no name/city matching, no dry-run needed, no country needed. Can be combined with `companies` for rows you only know by name.",
         },
         companies: {
           type: "array",
@@ -839,6 +844,8 @@ export function buildImportTools(deps: {
         isFuzzy: yup.boolean().optional(),
         dryRun: yup.boolean().optional(),
       })
+      // Firmen-IDs, die das Modell als Namen/Zeilen uebergibt, nach companyIds heben (firmen-id.ts).
+      .transform((v: unknown) => firmenIdsAusZeilen(v))
       .noUnknown(true)
       .test("firmen", "companyIds oder companies angeben", (v) => (v.companyIds?.length ?? 0) + (v.companies?.length ?? 0) > 0),
     preview: (r: {
@@ -881,7 +888,7 @@ export function buildImportTools(deps: {
           status: "vorschau" as const,
           importiert: false,
           hinweis:
-            "Firmen-IDs sind eindeutig; eine Vorschau ist nicht noetig. Nach Bestaetigung import_companies mit denselben companyIds und dryRun=false aufrufen.",
+            "Firmen-IDs sind eindeutig; eine Vorschau ist nicht noetig. Hat der Nutzer ausdruecklich importieren gesagt, JETZT ohne Rueckfrage import_companies mit denselben companyIds und dryRun=false aufrufen; sonst nach Bestaetigung.",
           providedCount: ids.length,
           matchedCount: ids.length,
           unmatchedCount: 0,
