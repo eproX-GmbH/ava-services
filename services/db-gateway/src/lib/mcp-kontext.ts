@@ -16,6 +16,9 @@ export interface KontextSchalter {
   auftraege: boolean;
   kontakte: boolean;
   kopf: boolean;
+  /** ChatGPT-Plugin (docs/PLAN_CHATGPT_PLUGIN.md): feste Werkzeugmenge, keine Kopf-Werkzeuge,
+   *  keine eigene Mail-Adresse; vom Kopf nur die persoenlichen Abschnitte (Profil, ICP, Gemerktes). */
+  plugin?: boolean;
 }
 
 export const KONTEXT_WERKZEUG = "ava_kontext";
@@ -52,13 +55,18 @@ function arbeitsweise(s: KontextSchalter, verbunden: boolean): string[] {
     "- Firmen immer zuerst mit firma_suchen finden; die Treffer tragen Registername, Ort und companyId. Für alle weiteren Werkzeuge die companyId verwenden, nie frei geschriebene Namen raten. Ist der Treffer nicht eindeutig (mehrere Firmen, anderer Ort, ähnlicher Name), die Kandidaten nennen und nachfragen.",
     "- firma_lesen liefert Profil, Register, Publikationen, Kunden, Konzern, Gesellschafter und Änderungen (Bereiche wählen); meine_firmen und meldungen zeigen den Bestand und Neuigkeiten des Nutzers; firmen_ereignisse beantwortet Fragen nach Personalwechseln (neue Vertriebsleiter, Abgänge, Geschäftsführerwechsel) über alle Firmen und ohne Zeitgrenze.",
   ];
-  if (s.auftraege) {
+  if (s.auftraege && s.plugin) {
+    z.push(
+      "- Import und Neuverarbeitung laufen asynchron, sobald AVA beim Nutzer läuft (Desktop-App oder Server); Ergebnisse brauchen Minuten bis Stunden. Nach dem Anlegen den Stand später mit auftrag_status prüfen statt zu warten. Recherchen zu Stellen und Expansion stößt der Nutzer in der AVA-App an.",
+    );
+  } else if (s.auftraege) {
     z.push(
       "- Import, Recherche und Neuverarbeitung laufen asynchron, sobald AVA beim Nutzer läuft (Desktop-App oder Server); Ergebnisse brauchen Minuten bis Stunden. Nach dem Anlegen die transactionId nennen und den Stand später mit auftrag_status prüfen statt zu warten.",
     );
   }
   if (!s.kontakte) z.push("- Kontaktdaten sind über diese Verbindung abgeschaltet (Vorgabe der Organisation).");
   if (s.auftraege) z.push("- Gesprächsprotokolle und Hinweise (aus Teams, Outlook, Dynamics oder dem Chat) mit protokoll_ablegen bei der Firma ablegen; AVA verändert dabei nichts im CRM des Nutzers.");
+  if (s.plugin) return z;
   if (s.kopf && verbunden) {
     z.push(
       "- Die AVA des Nutzers ist verbunden: Zusätzlich gibt es ihre eigenen Werkzeuge (Gedächtnis, Workflows, Buying Center, Bewertung, Mail, CRM, Skills), dazu werkzeug_suchen (q: '*' für den Überblick) und werkzeug_ausfuehren für alle übrigen.",
@@ -195,7 +203,7 @@ export async function avaKontext(auth: AuthContext, s: KontextSchalter, wartezei
     arbeitsweise(s, verbunden).join("\n"),
     "## Konto",
     [
-      `- Nutzer: ${auth.name ?? "unbekannt"}${auth.email ? ` (${auth.email})` : ""}`,
+      `- Nutzer: ${auth.name ?? "unbekannt"}${auth.email && !s.plugin ? ` (${auth.email})` : ""}`,
       organisation ? `- Organisation: ${organisation}${orgRolle ? `, Rolle ${orgRolle}` : ""}` : "- Persönlicher Bereich (keine Organisation)",
     ].join("\n"),
   ];
@@ -203,8 +211,9 @@ export async function avaKontext(auth: AuthContext, s: KontextSchalter, wartezei
     const alle = await kopfRelais.aufrufenAlle(auth.actorId, KONTEXT_WERKZEUG, {}, wartezeitMs);
     const erg = alle.find((x) => x.mcpZiel) ?? { text: "", isError: true };
     const andere = alle.filter((x) => !x.mcpZiel && !x.isError && x.text.trim());
-    if (!erg.isError && erg.text.trim()) teile.push(zusammenfuehren(erg.text.trim(), andere));
-    else if (andere.length) teile.push(zusammenfuehren(andere[0]!.text.trim(), andere.slice(1)));
+    const nurPersoenlich = (t: string) => (s.plugin ? abschnitte(t).filter((a) => PERSOENLICH.includes(a.kopf)).map((a) => `${a.kopf}\n${a.inhalt}`).join("\n\n") : t);
+    if (!erg.isError && erg.text.trim()) teile.push(nurPersoenlich(zusammenfuehren(erg.text.trim(), andere)));
+    else if (andere.length) teile.push(nurPersoenlich(zusammenfuehren(andere[0]!.text.trim(), andere.slice(1))));
     else {
       // AVA vor v0.1.800 kennt ava_kontext nicht: Profil, ICP und Gemerktes ueber
       // Werkzeuge holen, die jede Version hat.

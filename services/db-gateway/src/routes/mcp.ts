@@ -28,8 +28,9 @@ import { kopfRelais } from "../lib/kopf-relais";
 import { getGatewayPool } from "../lib/producer-pools";
 import { mcpClient, vermerkeNutzung } from "../lib/nutzer-aktivitaet";
 import { loadFeatures } from "../lib/policy-guard";
-import { istMcpHost, mcpBasis } from "./mcp-oauth";
+import { istMcpHost, mcpBasis, pluginBasis } from "./mcp-oauth";
 import { avaKontext, KONTEXT_BESCHREIBUNG, KONTEXT_WERKZEUG } from "../lib/mcp-kontext";
+import { ANNOTATIONEN, PLUGIN_PFAD, PLUGIN_TOOLS, pluginAntwort, pluginSperre, pluginToolListe } from "../lib/mcp-plugin";
 
 const PROTOKOLL_VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "ava", version: "1.0.0" };
@@ -51,9 +52,10 @@ export interface ToolDef {
   schalter: "lesen" | "auftraege" | "kontakte";
 }
 
-/** MCP-Annotationen: lesende Werkzeuge ohne Bestaetigungsdialog im Client (z. B. ChatGPT). */
+/** MCP-Annotationen je Werkzeug (lib/mcp-plugin.ts, gilt fuer /mcp und /chatgpt): lesende ohne
+ *  Bestaetigungsdialog im Client; destructiveHint immer ausdruecklich, sonst gilt laut Standard true. */
 function annotationen(t: ToolDef): Record<string, unknown> {
-  return t.schalter === "auftraege" ? { readOnlyHint: false, openWorldHint: false } : { readOnlyHint: true, openWorldHint: false };
+  return { ...(ANNOTATIONEN[t.name] ?? (t.schalter === "auftraege" ? { readOnlyHint: false, destructiveHint: false, openWorldHint: false } : { readOnlyHint: true, destructiveHint: false, openWorldHint: false })) };
 }
 
 export const TOOLS: ToolDef[] = [
@@ -270,6 +272,11 @@ function kompakt(v: unknown): string {
   return s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n… (gekuerzt, ${s.length} Zeichen)` : s;
 }
 
+/** Ergebnis mit Text (fuer /mcp, A2A) und den Rohdaten (fuer die schlanke Plugin-Fassung). */
+function antwort(v: unknown): { text: string; daten: unknown } {
+  return { text: kompakt(v), daten: v };
+}
+
 function qs(obj: Record<string, string | number | undefined>): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(obj)) if (v !== undefined && v !== "") p.set(k, String(v));
@@ -277,7 +284,7 @@ function qs(obj: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : "";
 }
 
-export async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Record<string, unknown>, quelle = "mcp"): Promise<{ text: string; isError?: boolean }> {
+export async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Record<string, unknown>, quelle = "mcp"): Promise<{ text: string; isError?: boolean; daten?: unknown }> {
   // Herkunft (mcp | a2a) an jeder /v1-Anfrage dieses Aufrufs.
   const api = (a: OpenAPIHono, t: string, m: "GET" | "POST", p: string, b?: unknown, e?: { formData?: FormData }) => apiAufruf(a, t, m, p, b, { ...e, quelle });
   switch (name) {
@@ -288,7 +295,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
       if (!r.ok) return { text: fehlerText(r), isError: true };
       const j = r.json as { items?: Array<Record<string, unknown>>; total?: number };
       const items = (j.items ?? []).map((c) => ({ companyId: c.companyId, name: c.name, ort: c.location, land: c.country ?? "DE", register: [c.registerType, c.registerNumber].filter(Boolean).join(" "), status: c.registerStatus, insolvenz: c.insolvencyStatus }));
-      return { text: kompakt({ treffer: j.total ?? items.length, firmen: items }) };
+      return antwort({ treffer: j.total ?? items.length, firmen: items });
     }
     case "protokoll_ablegen": {
       const id = String(args.companyId ?? "").trim();
@@ -301,7 +308,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
         quelle: "mcp",
       });
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt({ abgelegt: true, notiz: r.json }) };
+      return antwort({ abgelegt: true, notiz: r.json });
     }
     case "firma_lesen": {
       const id = String(args.companyId ?? "").trim();
@@ -323,16 +330,14 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
           const felder = ["id", "name", "legalName", "legalForm", "registerType", "registerNumber", "districtCourt", "location", "city", "country", "registerStatus", "closedAt", "insolvencyStatus", "insolvencyAt"];
           const steckbrief: Record<string, unknown> = {};
           for (const k of felder) if (st[k] !== undefined) steckbrief[k] = st[k];
-          return {
-            text: kompakt({
+          return antwort({
               zustand: ruhend ? "ruhend" : "nicht_in_liste",
               steckbrief,
               aktivierung: zj.aktivierung ?? null,
               hinweis: ruhend
                 ? "Die Firma ruht beim Nutzer: nur Grunddaten, keine Aufbereitung, keine Meldungen. Aktivieren in der AVA-App (Meine Firmen) oder mit import_anlegen (companyIds); reicht das Kontingent nicht, steht der Weg in aktivierung.ablehnung (Plan wechseln, ab Monatswechsel)."
                 : "Die Firma steht nicht in Meine Firmen des Nutzers. Mit import_anlegen (companyIds) aufnehmen; die Antwort sagt, ob sie aktiv oder ruhend wurde.",
-            }),
-          };
+          });
         }
       }
       const out: Record<string, unknown> = { stammdaten: basis.json, verarbeitung: verarbeitungsstand(id, zeile) };
@@ -346,19 +351,19 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
         const r = await api(app, token, "GET", `/v1/companies/${encodeURIComponent(id)}${pfad}`);
         out[b] = r.ok ? r.json : { fehler: r.status === 404 ? "noch nicht aufbereitet (siehe verarbeitung)" : fehlerText(r) };
       }
-      return { text: kompakt(out) };
+      return antwort(out);
     }
     case "firma_kontakte": {
       const id = String(args.companyId ?? "").trim();
       if (!id) return { text: "companyId fehlt.", isError: true };
       const r = await api(app, token, "GET", `/v1/companies/${encodeURIComponent(id)}/contacts`);
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt(r.json) };
+      return antwort(r.json);
     }
     case "meine_firmen": {
       const r = await api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: Number(args.seite) || 1, pageSize: Number(args.proSeite) || 50, search: typeof args.suche === "string" ? args.suche : undefined, country: typeof args.land === "string" ? args.land : undefined, zustand: args.zustand === "ruhend" ? "ruhend" : undefined })}`);
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt(r.json) };
+      return antwort(r.json);
     }
     case "meldungen": {
       let ids = Array.isArray(args.companyIds) ? args.companyIds.filter((x): x is string => typeof x === "string") : [];
@@ -372,7 +377,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
       const seit = typeof args.seit === "string" && args.seit ? args.seit : new Date(Date.now() - 14 * 86_400_000).toISOString();
       const r = await api(app, token, "POST", "/v1/alerts/neuheiten", { companyIds: ids.slice(0, MAX_FIRMEN_MELDUNGEN), since: seit });
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt({ seit, firmen: Math.min(ids.length, MAX_FIRMEN_MELDUNGEN), ...(r.json as object) }) };
+      return antwort({ seit, firmen: Math.min(ids.length, MAX_FIRMEN_MELDUNGEN), ...(r.json as object) });
     }
     case "firmen_ereignisse": {
       const ids = Array.isArray(args.companyIds) ? args.companyIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim()) : [];
@@ -387,7 +392,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
         limit: Math.min(500, Math.max(1, Number(args.limit) || 100)),
       })}`);
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt({ seitTage: tage, ...(r.json as object) }) };
+      return antwort({ seitTage: tage, ...(r.json as object) });
     }
     case "import_anlegen": {
       const name = typeof args.name === "string" && args.name.trim() ? args.name.trim().slice(0, 120) : `Import über MCP ${new Date().toLocaleDateString("de-DE")}`;
@@ -402,7 +407,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
         fd.append("file", new Blob([new Uint8Array(bytes)]), dateiName);
         const r = await api(app, token, "POST", `/v1/imports/excel${qs({ companyNameIdentifiers: spalteFirma, city: spalteOrt, name, isFuzzy: String(unscharf) })}`, undefined, { formData: fd });
         if (!r.ok) return { text: fehlerText(r), isError: true };
-        return { text: kompakt({ hinweis: "Vorgang angelegt. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) }) };
+        return antwort({ hinweis: "Vorgang angelegt. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) });
       }
       const firmen = Array.isArray(args.firmen) ? args.firmen : [];
       const zeilen = firmen
@@ -433,7 +438,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
         if (!r.ok) return { text: fehlerText(r), isError: true };
         ergebnisse.push({ land, ...(r.json as object) });
       }
-      return { text: kompakt({ hinweis: "Vorgang angelegt. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(unbekannt.length ? { nichtGefunden: unbekannt } : {}), vorgaenge: ergebnisse }) };
+      return antwort({ hinweis: "Vorgang angelegt. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(unbekannt.length ? { nichtGefunden: unbekannt } : {}), vorgaenge: ergebnisse });
     }
     case "recherche_anstossen": {
       const id = String(args.companyId ?? "").trim();
@@ -443,7 +448,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
       const r = await api(app, token, "POST", `/v1/companies/${encodeURIComponent(id)}/research`, { feature, stufe });
       if (!r.ok) return { text: fehlerText(r), isError: true };
       const j = r.json as { angestossen?: boolean; grund?: string; transactionId?: string | null };
-      return { text: kompakt({ ...j, hinweis: j.angestossen ? "Die Recherche laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Ergebnis spaeter ueber firma_lesen." : undefined }) };
+      return antwort({ ...j, hinweis: j.angestossen ? "Die Recherche laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Ergebnis spaeter ueber firma_lesen." : undefined });
     }
     case "neu_verarbeiten": {
       const id = String(args.companyId ?? "").trim();
@@ -459,7 +464,7 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
       if (!zeile || !transactionId) return { text: "Die Firma steht nicht in „Meine Firmen“ — zuerst import_anlegen mit der companyId.", isError: true };
       const r = await api(app, token, "POST", `/v1/transactions/${encodeURIComponent(transactionId)}/entities/${encodeURIComponent(id)}/retry`, { stage: stufe, ...(zeile.name ? { companyName: zeile.name } : {}) });
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt({ transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) }) };
+      return antwort({ transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) });
     }
     case "auftrag_status": {
       const id = String(args.transactionId ?? "").trim();
@@ -469,12 +474,12 @@ export async function fuehreAus(app: OpenAPIHono, token: string, name: string, a
         api(app, token, "GET", `/v1/transactions/${encodeURIComponent(id)}/fortschritt`),
       ]);
       if (!t.ok) return { text: fehlerText(t), isError: true };
-      return { text: kompakt({ vorgang: t.json, fortschritt: f.ok ? f.json : null }) };
+      return antwort({ vorgang: t.json, fortschritt: f.ok ? f.json : null });
     }
     case "auftraege": {
       const r = await api(app, token, "GET", `/v1/transactions${qs({ page: Number(args.seite) || 1, pageSize: Number(args.proSeite) || 25 })}`);
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt(r.json) };
+      return antwort(r.json);
     }
     default:
       return { text: `Unbekanntes Werkzeug: ${name}`, isError: true };
@@ -535,6 +540,42 @@ export const mcpAuth = createMiddleware(async (c, next) => {
   return direkt;
 });
 
+function nichtBerechtigt(meta: string, beschreibung: string): Response {
+  return new Response(JSON.stringify({ error: "invalid_token", message: beschreibung }), {
+    status: 401,
+    headers: { "content-type": "application/json", "WWW-Authenticate": `Bearer error="invalid_token", resource_metadata="${meta}"` },
+  });
+}
+
+/**
+ * Auth fuer das ChatGPT-Plugin (docs/PLAN_CHATGPT_PLUGIN.md, C3): wie mcpAuth, Hinweis auf die
+ * Plugin-Resource-Metadata, und das Token muss fuer die Plugin-Resource ausgestellt sein
+ * (`aud`, Audience-Mapper am Client aus der Plugin-Registrierung). Abschaltbar nur fuer
+ * Notfaelle mit MCP_PLUGIN_AUD_STRIKT=0.
+ */
+export const pluginAuth = createMiddleware(async (c, next) => {
+  const b = pluginBasis(mcpBasis(c.req.header("host")));
+  const meta = `${b.base}/.well-known/oauth-protected-resource${b.mcpPfad}`;
+  let ausgelassen = false;
+  const direkt = await authMiddleware(c, async () => {
+    const auth = c.get("auth") as { aud?: string[] } | undefined;
+    const resource = `${b.base}${b.mcpPfad}`;
+    if (process.env.MCP_PLUGIN_AUD_STRIKT !== "0" && !(auth?.aud ?? []).includes(resource)) {
+      ausgelassen = true;
+      return;
+    }
+    await next();
+  });
+  if (ausgelassen) return nichtBerechtigt(meta, "Token ist nicht fuer diese Resource ausgestellt.");
+  const res = direkt ?? c.res;
+  if (res && res.status === 401) {
+    const neu = new Response(res.body, res);
+    neu.headers.set("WWW-Authenticate", `Bearer resource_metadata="${meta}"`);
+    return neu;
+  }
+  return direkt;
+});
+
 export function makeMcpRouter(app: OpenAPIHono): Hono {
   const r = new Hono();
   // Zwei Adressen, ein Handler: /mcp auf dem Fly-Host, / auf mcp.ava.bi.
@@ -556,7 +597,22 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
 
   r.post("/mcp", (c) => bearbeite(c));
 
-  async function bearbeite(c: Context) {
+  // ChatGPT-Plugin (docs/PLAN_CHATGPT_PLUGIN.md): <mcp-host>/chatgpt bzw. <fly>/mcp/chatgpt,
+  // feste Werkzeugmenge, eigene Resource. Der Host bleibt fuer immer (OpenAI-Vorgabe).
+  const pluginNurEigenerHost = createMiddleware(async (c, next) => {
+    if (!istMcpHost(c.req.header("host"))) return next();
+    return pluginAuth(c, next);
+  });
+  r.use(`/mcp${PLUGIN_PFAD}`, pluginAuth);
+  r.use(PLUGIN_PFAD, pluginNurEigenerHost);
+  r.get(`/mcp${PLUGIN_PFAD}`, methodeNichtErlaubt);
+  r.delete(`/mcp${PLUGIN_PFAD}`, (c) => c.body(null, 200));
+  r.post(`/mcp${PLUGIN_PFAD}`, (c) => bearbeite(c, true));
+  r.get(PLUGIN_PFAD, (c, next) => (istMcpHost(c.req.header("host")) ? methodeNichtErlaubt(c) : next()));
+  r.delete(PLUGIN_PFAD, (c, next) => (istMcpHost(c.req.header("host")) ? c.body(null, 200) : next()));
+  r.post(PLUGIN_PFAD, (c, next) => (istMcpHost(c.req.header("host")) ? bearbeite(c, true) : next()));
+
+  async function bearbeite(c: Context, plugin = false) {
     const auth = c.get("auth");
     const token = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
     // Konsole „Aktive Nutzer“: nur tools/call zaehlt als Nutzung (Connector-Abfragen wie tools/list nicht).
@@ -587,11 +643,16 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
           // Kontext gleich beim Verbindungsaufbau (Clients, die Server-Anweisungen
           // auswerten, haben ihn ohne Werkzeugaufruf); ava_kontext liefert dasselbe.
           const instructions = schalter.aktiv
-            ? `Lade zu Beginn jedes Gespraechs einmal ${KONTEXT_WERKZEUG} (ohne Rueckfrage), falls dieser Kontext dir nicht schon vorliegt.\n\n${await avaKontext(auth, schalter, 2500)}`
+            ? `Lade zu Beginn jedes Gespraechs einmal ${KONTEXT_WERKZEUG} (ohne Rueckfrage), falls dieser Kontext dir nicht schon vorliegt.\n\n${await avaKontext(auth, { ...schalter, plugin }, 2500)}`
             : "Der MCP-Zugang ist fuer diese Organisation nicht freigeschaltet (Einstellungen → Organisation → MCP).";
           antworten.push({ jsonrpc: "2.0", id, result: { protocolVersion: version, capabilities: { tools: { listChanged: false } }, serverInfo: SERVER_INFO, instructions } });
         } else if (n.method === "ping") {
           antworten.push({ jsonrpc: "2.0", id, result: {} });
+        } else if (n.method === "tools/list" && plugin) {
+          // Feste Liste, auch wenn die Org Bereiche abgeschaltet hat (Aufruf erklaert es dann).
+          antworten.push({ jsonrpc: "2.0", id, result: { tools: pluginToolListe() } });
+        } else if (n.method === "tools/call" && plugin) {
+          antworten.push({ jsonrpc: "2.0", id, ...(await pluginAufruf(c, auth, token, ua, schalter, n.params)) });
         } else if (n.method === "tools/list") {
           const tools = schalter.aktiv ? sichtbareTools(schalter) : [];
           const kopf = schalter.aktiv ? kopfWerkzeuge(auth.actorId, schalter) : [];
@@ -634,6 +695,38 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
     }
     if (antworten.length === 0) return c.body(null, 202);
     return c.json(stapel ? antworten : antworten[0]);
+  }
+
+  /** tools/call im Plugin: feste Menge, Sperr-Hinweise statt Fehler, schlanke Antwort plus structuredContent. */
+  async function pluginAufruf(
+    c: Context,
+    auth: { actorId: string; tenantId?: string | null },
+    token: string,
+    ua: string | null,
+    schalter: McpSchalter,
+    params: Record<string, unknown> | undefined,
+  ): Promise<{ result: unknown } | { error: { code: number; message: string } }> {
+    const name = String(params?.name ?? "");
+    const args = (params?.arguments ?? {}) as Record<string, unknown>;
+    const t = PLUGIN_TOOLS.find((x) => x.name === name);
+    if (!t) return { error: { code: -32602, message: `Unknown tool: ${name}` } };
+    const sperre = pluginSperre(t, schalter);
+    if (sperre) return { result: { content: [{ type: "text", text: sperre }], isError: true } };
+    const start = Date.now();
+    vermerkeNutzung(getGatewayPool(), { actorId: auth.actorId, tenantId: auth.tenantId ?? null, art: `${mcpClient(ua)}: ${name}` });
+    if (name === KONTEXT_WERKZEUG) {
+      // Ohne Kopf-Werkzeuge: der Kontext nennt nur, was das Plugin kann (Profil/ICP vom Kopf bleiben).
+      const text = await avaKontext(c.get("auth"), { ...schalter, plugin: true }, 20_000);
+      logger.info({ actorId: auth.actorId, tenantId: auth.tenantId, tool: name, ms: Date.now() - start, plugin: true }, "[mcp] tools/call");
+      return { result: { content: [{ type: "text", text }] } };
+    }
+    const erg = await fuehreAus(app, token, name, args, "chatgpt");
+    logger.info({ actorId: auth.actorId, tenantId: auth.tenantId, tool: name, ms: Date.now() - start, fehler: erg.isError === true, plugin: true }, "[mcp] tools/call");
+    if (erg.isError || erg.daten === undefined) {
+      return { result: { content: [{ type: "text", text: erg.text }], ...(erg.isError ? { isError: true } : {}) } };
+    }
+    const schlank = pluginAntwort(name, erg.daten, args, (z) => verarbeitungsstand(String(z.companyId ?? ""), z as unknown as MatrixZeile).stand);
+    return { result: { content: [{ type: "text", text: kompakt(schlank) }], structuredContent: schlank } };
   }
   return r;
 }

@@ -21,6 +21,7 @@ import type { Context } from "hono";
 import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { createMcpClient, RegistrationDisabledError } from "../lib/keycloak-admin";
+import { PLUGIN_PFAD } from "../lib/mcp-plugin";
 
 export const mcpOauthRouter = new Hono();
 
@@ -63,6 +64,15 @@ export function mcpBasis(hostHeader: string | undefined): McpBasis {
     return { base: `https://${host}`, mcpPfad: "", oauthPfad: "/oauth", eigenerHost: true };
   }
   return { base: env.GATEWAY_PUBLIC_URL.replace(/\/+$/, ""), mcpPfad: "/mcp", oauthPfad: "/mcp/oauth", eigenerHost: false };
+}
+
+/**
+ * ChatGPT-Plugin (docs/PLAN_CHATGPT_PLUGIN.md, C1/C3): eigene Resource <basis>/chatgpt mit
+ * eigenem (Proxy-)Issuer <basis>/chatgpt/oauth. Clients, die sich dort registrieren, bekommen
+ * einen Audience-Mapper auf genau diese Resource; das Plugin akzeptiert nur solche Tokens.
+ */
+export function pluginBasis(b: McpBasis): McpBasis {
+  return { ...b, mcpPfad: `${b.mcpPfad}${PLUGIN_PFAD}`, oauthPfad: `${b.mcpPfad}${PLUGIN_PFAD}/oauth` };
 }
 
 export function istMcpHost(hostHeader: string | undefined): boolean {
@@ -124,6 +134,31 @@ mcpOauthRouter.get("/.well-known/oauth-authorization-server/oauth", asMetadata);
 mcpOauthRouter.get("/oauth/.well-known/oauth-authorization-server", asMetadata);
 mcpOauthRouter.get("/oauth/.well-known/openid-configuration", asMetadata);
 
+// ChatGPT-Plugin: Resource- und AS-Metadata unter /chatgpt (eigener Host) bzw. /mcp/chatgpt (Fly-Host).
+const pluginResource = (c: Context) => c.json(resourceMetadata(pluginBasis(mcpBasis(c.req.header("host")))));
+const pluginAs = (c: Context) => {
+  const m = authorizationServerMetadata(pluginBasis(mcpBasis(c.req.header("host"))));
+  if (!m) return c.json({ error: "keycloak_not_configured" }, 503);
+  return c.json(m);
+};
+for (const vor of ["", "/mcp"]) {
+  const p = `${vor}${PLUGIN_PFAD}`;
+  mcpOauthRouter.get(`/.well-known/oauth-protected-resource${p}`, pluginResource);
+  mcpOauthRouter.get(`/.well-known/oauth-authorization-server${p}/oauth`, pluginAs);
+  mcpOauthRouter.get(`/.well-known/openid-configuration${p}/oauth`, pluginAs);
+  mcpOauthRouter.get(`${p}/oauth/.well-known/oauth-authorization-server`, pluginAs);
+  mcpOauthRouter.get(`${p}/oauth/.well-known/openid-configuration`, pluginAs);
+}
+
+// Domain-Bestaetigung fuer die OpenAI-Plugin-Einreichung: Klartext-Token unter dem Pfad,
+// den das Dashboard vorgibt (beides Fly-Secrets, nichts im Repo).
+mcpOauthRouter.get("*", async (c, next) => {
+  const pfad = process.env.OPENAI_DOMAIN_CHALLENGE_PFAD;
+  const token = process.env.OPENAI_DOMAIN_CHALLENGE_TOKEN;
+  if (pfad && token && c.req.path === pfad) return c.text(token, 200, { "cache-control": "no-store" });
+  return next();
+});
+
 // ---- Dynamic Client Registration (RFC 7591) --------------------------------
 
 const REGISTRIERUNGEN = new Map<string, number[]>();
@@ -138,7 +173,7 @@ function rateLimitOk(key: string): boolean {
   return true;
 }
 
-async function registriere(c: Context) {
+async function registriere(c: Context, audience?: string) {
   const ip = c.req.header("fly-client-ip") ?? c.req.header("x-forwarded-for") ?? "unbekannt";
   if (!rateLimitOk(ip)) {
     return c.json({ error: "invalid_client_metadata", error_description: "Zu viele Registrierungen, spaeter erneut versuchen." }, 429);
@@ -164,8 +199,8 @@ async function registriere(c: Context) {
   }
   const clientName = typeof body.client_name === "string" && body.client_name.trim() ? body.client_name.trim().slice(0, 80) : "MCP-Client";
   try {
-    const erzeugt = await createMcpClient({ clientName, redirectUris });
-    logger.info({ clientId: erzeugt.clientId, clientName, redirectUris, ip }, "[mcp-oauth] Client registriert");
+    const erzeugt = await createMcpClient({ clientName, redirectUris, ...(audience ? { audience } : {}) });
+    logger.info({ clientId: erzeugt.clientId, clientName, redirectUris, ip, audience: audience ?? null }, "[mcp-oauth] Client registriert");
     return c.json(
       {
         client_id: erzeugt.clientId,
@@ -188,5 +223,11 @@ async function registriere(c: Context) {
   }
 }
 
-mcpOauthRouter.post("/mcp/oauth/register", registriere);
-mcpOauthRouter.post("/oauth/register", registriere);
+mcpOauthRouter.post("/mcp/oauth/register", (c) => registriere(c));
+mcpOauthRouter.post("/oauth/register", (c) => registriere(c));
+const pluginRegistrierung = (c: Context) => {
+  const b = pluginBasis(mcpBasis(c.req.header("host")));
+  return registriere(c, `${b.base}${b.mcpPfad}`);
+};
+mcpOauthRouter.post(`${PLUGIN_PFAD}/oauth/register`, pluginRegistrierung);
+mcpOauthRouter.post(`/mcp${PLUGIN_PFAD}/oauth/register`, pluginRegistrierung);

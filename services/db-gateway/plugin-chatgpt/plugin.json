@@ -1,0 +1,48 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ava",
+  "version": "1.0.0",
+  "description": "AVA, the B2B sales assistant: company data, news, personnel changes and first outreach for companies in Germany, Austria and Switzerland.",
+  "author": {
+    "name": "eproX GmbH",
+    "email": "info@eprox-gmbh.de",
+    "url": "https://www.ava.bi"
+  },
+  "homepage": "https://www.ava.bi",
+  "keywords": ["sales", "b2b", "companies", "crm", "germany", "dach"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "AVA",
+        "shortDescription": "B2B-Vertrieb für DACH-Firmen",
+        "longDescription": "AVA ist der Vertriebsassistent für Firmen in Deutschland, Österreich und der Schweiz. Mit deinem AVA-Konto fragst du in ChatGPT nach deinen Firmen: Handelsregister, Jahresabschlüsse, Profil und Kunden, neue Meldungen und Personalwechsel wie neue Vertriebsleiter oder Geschäftsführer. ChatGPT schreibt damit Erstansprachen mit echten, belegten Aufhängern, legt Gesprächsnotizen bei der Firma in AVA ab und nimmt neue Firmen in deine Liste auf.\n\nDu siehst nur die Daten deines eigenen AVA-Kontos. Ansprechpartner sind nur verfügbar, wenn deine Organisation sie freigegeben hat. Für die Nutzung brauchst du ein AVA-Konto (www.ava.bi).",
+        "developerName": "eproX GmbH",
+        "category": "Productivity",
+        "capabilities": ["Read company data", "Get news and personnel changes", "Write first outreach", "Save notes", "Add companies"],
+        "websiteURL": "https://www.ava.bi",
+        "supportURL": "https://www.ava.bi/kontakt",
+        "privacyPolicyURL": "https://www.ava.bi/datenschutz",
+        "termsOfServiceURL": "https://www.ava.bi/agb",
+        "defaultPrompt": [
+          "Welche neuen Vertriebsleiter gab es bei meinen Firmen in den letzten 90 Tagen?",
+          "Was gibt es Neues bei meinen Firmen seit letzter Woche?",
+          "Schreib eine Erstansprache an den Vertriebsleiter von Berentzen."
+        ],
+        "brandColor": "#00C0A7",
+        "brandColorDark": "#00C0A7",
+        "composerIcon": "./assets/logo.png",
+        "logo": "./assets/logo.png"
+      },
+      "onboardingSkill": "./skills/erste-schritte/SKILL.md",
+      "review": {
+        "demo_recording_url": "https://www.ava.bi/chatgpt-demo",
+        "commerce": false,
+        "commerce_description": "The plugin does not sell products or process payments. Using it requires an existing AVA account."
+      },
+      "publication": {
+        "countries": ["DE", "AT", "CH"],
+        "release_notes": "Erste Version: Firmen lesen, Meldungen, Personalwechsel, Erstansprache, Notizen und Importe."
+      }
+    }
+  }
+}

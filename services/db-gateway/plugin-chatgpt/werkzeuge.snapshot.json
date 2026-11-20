@@ -1,0 +1,440 @@
+[
+  {
+    "name": "ava_kontext",
+    "title": "Load AVA context",
+    "description": "Call this once at the start of every conversation, without asking the user. Returns who AVA is (a B2B sales assistant for companies in Germany, Austria and Switzerland), how to work with the other tools, and the user's account and organization. Answer the user in their language (usually German).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "annotations": {
+      "title": "Load AVA context",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "firma_suchen",
+    "title": "Search companies",
+    "description": "Search AVA's company register data (about 10.5 million companies from DE, AT, CH, UK, NO, FI) by name, city or register number. Returns companyId, name, city, country and register status. Continue with firma_lesen using the companyId.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string",
+          "description": "Search text, at least 2 characters (name, city or register number)"
+        },
+        "land": {
+          "type": "string",
+          "enum": [
+            "DE",
+            "AT",
+            "CH",
+            "UK",
+            "NO",
+            "FI"
+          ],
+          "description": "Optional country filter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Default 10"
+        }
+      },
+      "required": [
+        "q"
+      ]
+    },
+    "annotations": {
+      "title": "Search companies",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "firma_lesen",
+    "title": "Read company",
+    "description": "Read one company: register master data plus optional sections. bereiche: profil (AI summary, website), register (managing directors, capital, purpose), publikationen (annual and group accounts with key figures), kunden (customers and partners named on the website), konzern (subsidiaries, parent), gesellschafter (shareholders, DE only), aenderungen (changes of managing directors and master data), verlauf (register history), notizen (the user's notes), fluktuation (leadership turnover over 24 months). `verarbeitung.stand` tells whether the company is fully processed for the user (fehlt | laeuft | unvollstaendig | vollstaendig). If fehlt, call import_anlegen with the companyId right away; if unvollstaendig, call neu_verarbeiten. Do not ask the user first, and never present empty sections of an unprocessed company as a finding.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyId": {
+          "type": "string",
+          "description": "companyId from firma_suchen or meine_firmen"
+        },
+        "bereiche": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "profil",
+              "register",
+              "publikationen",
+              "kunden",
+              "konzern",
+              "gesellschafter",
+              "aenderungen",
+              "verlauf",
+              "notizen",
+              "fluktuation"
+            ]
+          },
+          "description": "Sections to include; without it only master data"
+        }
+      },
+      "required": [
+        "companyId"
+      ]
+    },
+    "annotations": {
+      "title": "Read company",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "meine_firmen",
+    "title": "List my companies",
+    "description": "The companies in the user's list (\"Meine Firmen\"), paged, with processing state per company. Optional search text and country.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "suche": {
+          "type": "string",
+          "description": "Optional search text"
+        },
+        "land": {
+          "type": "string",
+          "enum": [
+            "DE",
+            "AT",
+            "CH",
+            "UK",
+            "NO",
+            "FI"
+          ]
+        },
+        "seite": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page, default 1"
+        },
+        "proSeite": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Page size, default 50"
+        }
+      }
+    },
+    "annotations": {
+      "title": "List my companies",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "meldungen",
+    "title": "Get news on my companies",
+    "description": "News on the user's companies since a point in time: changes of managing directors and master data, new annual accounts, contact changes, new customers and references. Without companyIds the first 300 companies of the user's list are used.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional: only these companies"
+        },
+        "seit": {
+          "type": "string",
+          "description": "ISO timestamp, e.g. 2026-10-01T00:00:00Z; default 14 days ago"
+        }
+      }
+    },
+    "annotations": {
+      "title": "Get news on my companies",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "firmen_ereignisse",
+    "title": "Get personnel changes",
+    "description": "Personnel and management changes at the user's companies (or at given companies), e.g. \"Which new sales directors were there recently?\". Kinds: neu (new in the role), verlassen (left the company), wechsel (promotion or other department), geschaeftsfuehrung (appointment or removal per register). Each event has person, role before and after, company, date with zeitpunktArt (laut_profil = date from the profile; erstmals_gesehen or festgestellt = when AVA noticed it, may be later than the real change; register) and a source URL. Mention the kind of date in the answer. Contains names of people; use them only for the user's question.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Only these companies; default all of the user's companies"
+        },
+        "gruppen": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "geschaeftsfuehrung",
+              "aufsicht",
+              "vertrieb",
+              "marketing",
+              "einkauf",
+              "it",
+              "personal",
+              "finanzen",
+              "technik",
+              "service"
+            ]
+          },
+          "description": "Role areas, e.g. ['vertrieb'] for sales"
+        },
+        "ebene": {
+          "type": "string",
+          "enum": [
+            "leitung",
+            "mitarbeit"
+          ],
+          "description": "leitung = heads, directors, chiefs, VPs, managing directors"
+        },
+        "arten": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "neu",
+              "verlassen",
+              "wechsel",
+              "geschaeftsfuehrung"
+            ]
+          }
+        },
+        "seitTage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "description": "Days back, default 90"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Default 100"
+        }
+      }
+    },
+    "annotations": {
+      "title": "Get personnel changes",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "firma_kontakte",
+    "title": "Get company contacts",
+    "description": "Contact persons at a company with role, department and, where known, business e-mail, phone and profile link, plus the source. Personal data: call only when the user asks for contacts or a recipient, and mention only what the question needs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "companyId"
+      ]
+    },
+    "annotations": {
+      "title": "Get company contacts",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "protokoll_ablegen",
+    "title": "Save a note",
+    "description": "Save a meeting note or remark on a company in AVA, optionally linked to a person (personId from firma_kontakte). The note appears in AVA at the company (firma_lesen, section notizen) and can be deleted there. datum = time of the meeting (ISO), default now.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyId": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "description": "Content, 3 to 20,000 characters"
+        },
+        "personId": {
+          "type": "string",
+          "description": "Optional: person the note is about"
+        },
+        "datum": {
+          "type": "string",
+          "description": "Optional: ISO time of the meeting"
+        }
+      },
+      "required": [
+        "companyId",
+        "text"
+      ]
+    },
+    "annotations": {
+      "title": "Save a note",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "import_anlegen",
+    "title": "Add companies",
+    "description": "Add companies to the user's list and start processing (register, website, annual accounts, contacts). Preferred: companyIds from firma_suchen. Alternatively a list of {name, ort, land} (fuzzy matching). Processing runs as soon as the AVA app runs for the user and can take hours; the answer contains a transactionId for auftrag_status. Counts against the user's quota like an import in the app; companies can be removed again in AVA.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "description": "companyIds from firma_suchen (preferred)"
+        },
+        "firmen": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "ort": {
+                "type": "string",
+                "description": "City"
+              },
+              "land": {
+                "type": "string",
+                "enum": [
+                  "DE",
+                  "AT",
+                  "CH",
+                  "UK",
+                  "NO",
+                  "FI"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "ort"
+            ]
+          }
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional label for the job"
+        }
+      }
+    },
+    "annotations": {
+      "title": "Add companies",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "neu_verarbeiten",
+    "title": "Reprocess a company",
+    "description": "Run one processing stage again for a company in the user's list: structuredContent (register), companyPublication (annual accounts), website, companyProfile, companyContact (contacts). Runs as soon as the AVA app runs for the user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "companyId": {
+          "type": "string"
+        },
+        "stufe": {
+          "type": "string",
+          "enum": [
+            "structuredContent",
+            "companyPublication",
+            "website",
+            "companyProfile",
+            "companyContact"
+          ]
+        }
+      },
+      "required": [
+        "companyId",
+        "stufe"
+      ]
+    },
+    "annotations": {
+      "title": "Reprocess a company",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "auftrag_status",
+    "title": "Get job status",
+    "description": "Status of a job (transactionId from import_anlegen or auftraege): companies total, done and failed, open steps, last sign of life.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "transactionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "transactionId"
+      ]
+    },
+    "annotations": {
+      "title": "Get job status",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "auftraege",
+    "title": "List my jobs",
+    "description": "The user's jobs (imports and processing runs), newest first, paged.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "seite": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "proSeite": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "annotations": {
+      "title": "List my jobs",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  }
+]

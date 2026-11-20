@@ -31,6 +31,8 @@ export type AuthContext = {
   name?: string | null;
   /** Keycloak-Rollen (realm_access.roles und resource_access.*.roles); "admin" = Betreiber von AVA. */
   roles: string[];
+  /** JWT `aud` als Liste (ChatGPT-Plugin prueft die eigene Resource darin). */
+  aud?: string[];
 };
 
 /** Betreiber-Pruefung (2026-10-13, Joyce): Keycloak-Rolle `admin` (Realm- oder Client-Rolle, z. B. Client "ava"), nicht die
@@ -238,7 +240,8 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     if (sperre) {
       return c.json({ error: "konto_geloescht", message: "Dieses Konto wurde gelöscht oder deaktiviert." }, 401);
     }
-    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles: [...roles] });
+    const aud = Array.isArray(payload.aud) ? payload.aud.filter((x): x is string => typeof x === "string") : typeof payload.aud === "string" ? [payload.aud] : [];
+    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName, roles: [...roles], aud });
     // Betreiber-Konsole „Aktive Nutzer“: letzte Anfrage je Nutzer vermerken (gedrosselt, nie blockierend).
     try {
       vermerkeAktivitaet(getGatewayPool(), {

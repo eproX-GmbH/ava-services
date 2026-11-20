@@ -274,6 +274,8 @@ export async function moveUserToTenantGroup(userId: string, tenantId: string, te
 export interface CreateMcpClientInput {
   clientName: string;
   redirectUris: string[];
+  /** Resource-URL, die als `aud` in jedes Access-Token soll (ChatGPT-Plugin, RFC 8707). */
+  audience?: string;
 }
 
 interface ClientScopeRep {
@@ -330,6 +332,21 @@ export async function createMcpClient(input: CreateMcpClientInput): Promise<{ cl
       }
     } else {
       logger.warn({ vorlageId }, "[mcp] Vorlage-Client nicht gefunden — Client ohne kopierte Scopes");
+    }
+  }
+  // Audience-Mapper: Tokens tragen die Resource in `aud`; das Plugin weist andere ab.
+  // Ohne Mapper waeren die Tokens am Plugin wertlos, deshalb Fehler statt stillem Weiter.
+  if (input.audience) {
+    const mapper = {
+      name: "mcp-resource-audience",
+      protocol: "openid-connect",
+      protocolMapper: "oidc-audience-mapper",
+      config: { "included.custom.audience": input.audience, "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true" },
+    };
+    const m = await adminFetch(`/clients/${encodeURIComponent(uuid)}/protocol-mappers/models`, { method: "POST", body: JSON.stringify(mapper) });
+    if (!m.ok) {
+      await adminFetch(`/clients/${encodeURIComponent(uuid)}`, { method: "DELETE" }).catch(() => undefined);
+      throw new KeycloakAdminError(m.status, await m.text(), "keycloak_error");
     }
   }
   // offline_access als optionaler Scope (langlebige Refresh-Tokens fuer MCP-Clients).
