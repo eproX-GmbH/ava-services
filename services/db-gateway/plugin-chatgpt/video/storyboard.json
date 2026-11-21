@@ -1,0 +1,396 @@
+{
+  "logo": "/Users/mac/Desktop/Repos/ava-services/services/db-gateway/plugin-chatgpt/assets/logo.png",
+  "clips": {
+    "s1a": {
+      "abdecken": [
+        [
+          1120,
+          45,
+          1456,
+          165
+        ],
+        [
+          0,
+          766,
+          54,
+          820
+        ]
+      ]
+    },
+    "s1b": {
+      "abdecken": [
+        [
+          1120,
+          45,
+          1456,
+          165
+        ],
+        [
+          0,
+          766,
+          54,
+          820
+        ]
+      ]
+    },
+    "s2a": {
+      "abdecken": [
+        [
+          1120,
+          45,
+          1456,
+          165
+        ],
+        [
+          0,
+          766,
+          54,
+          820
+        ]
+      ],
+      "css_faktor": 0.9905,
+      "weich": {
+        "14": [
+          [
+            426,
+            340,
+            214,
+            17
+          ]
+        ],
+        "15": [
+          [
+            426,
+            301,
+            214,
+            17
+          ]
+        ],
+        "16": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "17": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "18": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "19": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "20": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "21": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "22": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "23": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "24": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "25": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ]
+      }
+    },
+    "s2b": {
+      "abdecken": [
+        [
+          1120,
+          45,
+          1456,
+          165
+        ],
+        [
+          0,
+          766,
+          54,
+          820
+        ]
+      ],
+      "css_faktor": 0.9905,
+      "weich": {
+        "1": [
+          [
+            426,
+            299,
+            214,
+            17
+          ]
+        ],
+        "2": [
+          [
+            426,
+            80,
+            214,
+            17
+          ]
+        ]
+      }
+    },
+    "s3": {
+      "abdecken": [
+        [
+          1120,
+          45,
+          1456,
+          165
+        ],
+        [
+          0,
+          766,
+          54,
+          820
+        ]
+      ]
+    },
+    "s4": {}
+  },
+  "ablauf": [
+    {
+      "art": "karte",
+      "titel": "AVA für ChatGPT",
+      "unter": "Firmendaten, Personalwechsel und Erstansprache – direkt im Chat",
+      "zeile3": "Mit dem eigenen AVA-Konto verbunden",
+      "dauer": 3.5
+    },
+    {
+      "art": "szene",
+      "clip": "s1a",
+      "von": 1,
+      "bis": 8,
+      "doppelte_weg": false,
+      "zoom": [
+        0.518,
+        0.5,
+        1.7
+      ],
+      "dauern": {
+        "1": 1.2,
+        "2": 0.8,
+        "3": 1.0,
+        "4": 1.2,
+        "5": 0.9,
+        "6": 2.2,
+        "7": 0.5,
+        "8": 0.6
+      },
+      "halten": 0.6,
+      "klicks": {
+        "2": [
+          640,
+          410
+        ]
+      },
+      "text": "AVA im Chat auswählen und frei fragen"
+    },
+    {
+      "art": "szene",
+      "clip": "s1a",
+      "von": 9,
+      "bis": 29,
+      "zoom": [
+        0.518,
+        0.5,
+        1.12
+      ],
+      "je_bild": 0.8,
+      "halten": 3.5,
+      "text": "Personalwechsel aus den eigenen Firmen – mit Datum laut Profil"
+    },
+    {
+      "art": "szene",
+      "clip": "s1b",
+      "von": 1,
+      "bis": 13,
+      "zoom": [
+        0.518,
+        0.5,
+        1.12
+      ],
+      "je_bild": 1.7,
+      "halten": 3.5,
+      "text": "Neue Vertriebsleitungen über alle Firmen des Kontos"
+    },
+    {
+      "art": "szene",
+      "clip": "s2a",
+      "von": 1,
+      "bis": 8,
+      "doppelte_weg": false,
+      "zoom": [
+        0.518,
+        0.5,
+        1.7
+      ],
+      "dauern": {
+        "1": 0.8,
+        "2": 0.7,
+        "3": 0.9,
+        "4": 1.0,
+        "5": 0.8,
+        "6": 2.2,
+        "7": 0.5,
+        "8": 0.6
+      },
+      "halten": 0.6,
+      "klicks": {
+        "2": [
+          640,
+          410
+        ]
+      },
+      "text": "Erstansprache in einem Durchgang anfordern"
+    },
+    {
+      "art": "szene",
+      "clip": "s2a",
+      "von": 9,
+      "bis": 25,
+      "zoom": [
+        0.518,
+        0.5,
+        1.12
+      ],
+      "je_bild": 0.8,
+      "halten": 4.0,
+      "text": "Belegte Aufhänger und der passende Empfänger nach Rolle"
+    },
+    {
+      "art": "szene",
+      "clip": "s2b",
+      "von": 1,
+      "bis": 8,
+      "zoom": [
+        0.518,
+        0.5,
+        1.12
+      ],
+      "je_bild": 2.0,
+      "halten": 4.5,
+      "text": "Sie-Form, konkreter Anlass, ein klarer Vorschlag"
+    },
+    {
+      "art": "szene",
+      "clip": "s3",
+      "von": 1,
+      "bis": 8,
+      "doppelte_weg": false,
+      "zoom": [
+        0.518,
+        0.5,
+        1.7
+      ],
+      "dauern": {
+        "1": 0.8,
+        "2": 0.7,
+        "3": 0.9,
+        "4": 1.0,
+        "5": 0.8,
+        "6": 2.4,
+        "7": 0.5,
+        "8": 0.6
+      },
+      "halten": 0.6,
+      "klicks": {
+        "2": [
+          640,
+          410
+        ]
+      },
+      "text": "Gesprächsnotizen direkt aus dem Chat ablegen"
+    },
+    {
+      "art": "szene",
+      "clip": "s3",
+      "von": 9,
+      "bis": 17,
+      "zoom": [
+        0.518,
+        0.5,
+        1.12
+      ],
+      "je_bild": 0.8,
+      "halten": 3.0,
+      "text": "Gesprächsnotizen direkt aus dem Chat ablegen"
+    },
+    {
+      "art": "szene",
+      "clip": "s4",
+      "von": 1,
+      "bis": 13,
+      "zoom": [
+        0.56,
+        0.5,
+        1.12
+      ],
+      "je_bild": 1.5,
+      "halten": 4.0,
+      "url": "app.ava.bi",
+      "hell": true,
+      "text": "…und sofort in der AVA-App bei der Firma sehen"
+    },
+    {
+      "art": "karte",
+      "titel": "AVA",
+      "unter": "Der Vertriebsassistent für Firmen in Deutschland, Österreich und der Schweiz",
+      "zeile3": "www.ava.bi",
+      "dauer": 4.0
+    }
+  ]
+}

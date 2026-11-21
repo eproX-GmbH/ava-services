@@ -4,3 +4,7 @@ dist
 .env.local
 prisma/generated
 generated
+
+# Demo-Video (gross, wird extern abgelegt)
+plugin-chatgpt/video/*.mp4
+plugin-chatgpt/video/frames/

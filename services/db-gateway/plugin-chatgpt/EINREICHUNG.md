@@ -83,7 +83,14 @@ Aufrufe über `/chatgpt` ohne Fehler (Gateway-Log). Befunde:
 - Demo-Liste enthält 15 statt 10 Firmen (Vorschläge der Start-Analyse, Bechtle noch drin);
   für die Prüfung unschädlich.
 
-## 4. Demo-Video (2–3 Minuten)
+## 4. Demo-Video
+
+Stand 2026-11-21: `video/ava-chatgpt-demo.mp4` (86 s, 1920 × 1080, nicht im Git), gebaut mit
+`video/compose.py` aus echten Aufnahmen mit dem Demo-Konto: neue Vertriebsleiter →
+Erstansprache (Mailadresse weichgezeichnet) → Notiz → Notiz in der AVA-App. Offen: Ablageort
+(HTTPS) und Adresse in `plugin.json`.
+
+Ursprünglicher Ablauf:
 
 1. Plugin in ChatGPT verbinden (Anmeldung mit dem Demo-Konto).
 2. Testfall 2 (neue Vertriebsleiter) → Tabelle.
