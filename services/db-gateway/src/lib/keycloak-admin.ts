@@ -421,9 +421,17 @@ export async function widerrufeEinwilligung(userId: string, clientId: string): P
   if (clientId.startsWith("mcp-")) {
     const client = await clientUuidVon(clientId).catch(() => null);
     if (client) {
-      const sessions = await adminFetch(`/clients/${encodeURIComponent(client.id)}/session-count`).catch(() => null);
-      const n = sessions && sessions.ok ? ((await sessions.json()) as { count?: number }).count ?? 0 : 0;
-      if (n === 0) {
+      // Online- UND Offline-Sitzungen zaehlen: ChatGPT haelt nur ein Offline-Token, und
+      // ein Client kann von mehreren Nutzern verwendet werden (2026-11-21, Plugin-Einreichung:
+      // Joyces alte Sitzung + Pruefkonto am selben Client). Bei Fehlern nie loeschen.
+      const zaehle = async (art: "session-count" | "offline-session-count"): Promise<number | null> => {
+        const r = await adminFetch(`/clients/${encodeURIComponent(client.id)}/${art}`).catch(() => null);
+        if (!r || !r.ok) return null;
+        return ((await r.json()) as { count?: number }).count ?? 0;
+      };
+      const online = await zaehle("session-count");
+      const offline = await zaehle("offline-session-count");
+      if (online === 0 && offline === 0) {
         const del = await adminFetch(`/clients/${encodeURIComponent(client.id)}`, { method: "DELETE" });
         entfernt = del.ok;
       }
