@@ -9,7 +9,14 @@
     "url": "https://www.ava.bi"
   },
   "homepage": "https://www.ava.bi",
-  "keywords": ["sales", "b2b", "companies", "crm", "germany", "dach"],
+  "keywords": [
+    "sales",
+    "b2b",
+    "companies",
+    "crm",
+    "germany",
+    "dach"
+  ],
   "extensions": {
     "com.openai": {
       "interface": {
@@ -18,7 +25,13 @@
         "longDescription": "AVA ist der Vertriebsassistent für Firmen in Deutschland, Österreich und der Schweiz. Mit deinem AVA-Konto fragst du in ChatGPT nach deinen Firmen: Handelsregister, Jahresabschlüsse, Profil und Kunden, neue Meldungen und Personalwechsel wie neue Vertriebsleiter oder Geschäftsführer. ChatGPT schreibt damit Erstansprachen mit echten, belegten Aufhängern, legt Gesprächsnotizen bei der Firma in AVA ab und nimmt neue Firmen in deine Liste auf.\n\nDu siehst nur die Daten deines eigenen AVA-Kontos. Ansprechpartner sind nur verfügbar, wenn deine Organisation sie freigegeben hat. Für die Nutzung brauchst du ein AVA-Konto (www.ava.bi).",
         "developerName": "eproX GmbH",
         "category": "Productivity",
-        "capabilities": ["Read company data", "Get news and personnel changes", "Write first outreach", "Save notes", "Add companies"],
+        "capabilities": [
+          "Read company data",
+          "Get news and personnel changes",
+          "Write first outreach",
+          "Save notes",
+          "Add companies"
+        ],
         "websiteURL": "https://www.ava.bi",
         "supportURL": "https://www.ava.bi/kontakt",
         "privacyPolicyURL": "https://www.ava.bi/datenschutz",
@@ -38,31 +51,31 @@
         "test_cases": {
           "positive": [
             {
-              "description": "News for the user's companies since a date",
+              "description": "News for the user's companies since a date. Prompt (German): \"Was gibt es Neues bei meinen Firmen seit dem 1. Oktober?\"",
               "prompt": "Was gibt es Neues bei meinen Firmen seit dem 1. Oktober?",
               "tools_triggered": "meldungen",
               "expected_behavior": "Calls meldungen with seit 2026-10-01 and lists the alerts per company (managing director changes, annual reports, contact changes), or says there are none."
             },
             {
-              "description": "New heads of sales across the user's companies",
+              "description": "New heads of sales across the user's companies. Prompt (German): \"Welche neuen Vertriebsleiter gab es bei meinen Firmen im letzten Jahr?\"",
               "prompt": "Welche neuen Vertriebsleiter gab es bei meinen Firmen im letzten Jahr?",
               "tools_triggered": "firmen_ereignisse",
               "expected_behavior": "Calls firmen_ereignisse with gruppen [\"vertrieb\"], ebene \"leitung\" and about 365 days; answers with a table of company, person, change and date, noting that dates come from public profiles."
             },
             {
-              "description": "Revenue and headcount trend of one company",
+              "description": "Revenue and headcount trend of one company. Prompt (German): \"Wie haben sich Umsatz und Mitarbeiterzahl bei Berentzen entwickelt?\"",
               "prompt": "Wie haben sich Umsatz und Mitarbeiterzahl bei Berentzen entwickelt?",
               "tools_triggered": "firma_suchen, firma_lesen",
               "expected_behavior": "Finds Berentzen-Gruppe AG, reads its annual reports and states revenue and employee figures with the fiscal year of each value."
             },
             {
-              "description": "First outreach email to a head of sales",
+              "description": "First outreach email to a head of sales. Prompt (German): \"Schreib eine Erstansprache an den Vertriebsleiter von Berentzen.\"",
               "prompt": "Schreib eine Erstansprache an den Vertriebsleiter von Berentzen.",
               "tools_triggered": "firma_suchen, firma_lesen, firmen_ereignisse, meldungen, firma_kontakte",
               "expected_behavior": "Collects company data, events, alerts and contacts without asking back; lists the hooks with their sources, then writes a subject line and a formal German email of 60 to 200 words with a concrete fact in the first two sentences and no placeholders."
             },
             {
-              "description": "Save a note to a company",
+              "description": "Save a note to a company. Prompt (German): \"Leg bei Berentzen eine Notiz ab: Telefonat mit dem Vertriebsleiter, Interesse an einer Demo im Januar.\"",
               "prompt": "Leg bei Berentzen eine Notiz ab: Telefonat mit dem Vertriebsleiter, Interesse an einer Demo im Januar.",
               "tools_triggered": "firma_suchen, protokoll_ablegen",
               "expected_behavior": "Calls protokoll_ablegen with the companyId of Berentzen-Gruppe AG and the note text, then confirms the note was saved."
@@ -70,15 +83,15 @@
           ],
           "negative": [
             {
-              "description": "Unrelated question (weather)",
+              "description": "Unrelated question (weather). Prompt (German): \"Wie wird morgen das Wetter in Berlin?\"",
               "prompt": "Wie wird morgen das Wetter in Berlin?"
             },
             {
-              "description": "Request to delete all companies (no delete tool exists)",
+              "description": "Request to delete all companies (no delete tool exists). Prompt (German): \"Lösch alle Firmen aus meiner AVA-Liste.\"",
               "prompt": "Lösch alle Firmen aus meiner AVA-Liste."
             },
             {
-              "description": "Request for private contact data of a person",
+              "description": "Request for private contact data of a person. Prompt (German): \"Gib mir die private Handynummer und Wohnadresse des Geschäftsführers von Berentzen.\"",
               "prompt": "Gib mir die private Handynummer und Wohnadresse des Geschäftsführers von Berentzen."
             }
           ]
@@ -88,7 +101,11 @@
         "commerce_description": "The plugin does not sell products or process payments. Using it requires an existing AVA account."
       },
       "publication": {
-        "countries": ["DE", "AT", "CH"],
+        "countries": [
+          "DE",
+          "AT",
+          "CH"
+        ],
         "release_notes": "Erste Version: Firmen lesen, Meldungen, Personalwechsel, Erstansprache, Notizen und Importe."
       }
     }
