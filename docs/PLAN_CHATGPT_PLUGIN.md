@@ -223,3 +223,27 @@ ChatGPT (Web und Desktop) und Claude, hell und dunkel.
     `POST /chatgpt` ohne Token → 401 mit Verweis auf die Plugin-Metadata; `/mcp` unverändert.
   * Offen: Demo-Tenant in Prod, Durchlauf im ChatGPT-Entwicklermodus (dabei
     `aud`-Prüfung mit echtem Keycloak-Token), C0 bei Joyce, Demo-Video, Einreichung.
+- 2026-11-20: Demo-Konto angelegt (`chatgpt-review@ava.bi`, Org `org_eSKV2mWShqe2`, Schalter an),
+  Durchlauf im Web-ChatGPT („AVA (Test)“ als eigener MCP-Server): alle 8 Testfälle bestanden,
+  `aud`-Prüfung mit echtem Token ok. Erstansprache-Regeln zusätzlich im Plugin-Kontext
+  (05bbd018, deployt). Offen: C0 bei Joyce, Demo-Video, Einreichung.
+
+### Verfeinerungen (gesammelt, nicht blockierend)
+
+1. **Erstansprache ohne Skills nachtesten:** Testfall 4 nach dem Deploy von 05bbd018 noch einmal;
+   Aufhänger-Liste und zwei Fakten erwartet.
+2. **Web oder nur Desktop-App:** Das hochgeladene Plugin-ZIP öffnete sich nur in der
+   ChatGPT-Desktop-App. Klären, ob gelistete Plugins im Web-Chat laufen und ob Skills dort greifen.
+3. **Demo-Liste bereinigen:** 15 statt 10 Firmen (Start-Analyse hat Vorschläge übernommen);
+   Bechtle ist trotz „Entferne …“ im Chat noch in der Liste und in `firmen_ereignisse`. Prüfen,
+   ob Entfernen im Desktop-Chat greift (möglicher Fehler, betrifft nicht nur das Plugin).
+4. **Firmen-ID-Import (v0.1.976):** lokal im Chat prüfen und taggen.
+5. **master-data 500 bei Gesellschafterlisten** (15 Firmen seit 11.10., zuletzt fast täglich):
+   interne Routen sollen den Fehlergrund ans Gateway zurückgeben; Verdacht Namenshistorie ohne
+   Index (8-s-Vollscan je unbekannter Gesellschafter-Firma) oder Verbindungs-Wartezeit 2 s.
+6. **Handelsregister-SI-Abrufe** scheitern sporadisch („SI-Link nicht gefunden“,
+   „Could not obtain SI XML“); bekannt aus dem Stammdaten-Delta (~40 % Fehler).
+7. **Antworten mischen Websuche:** ChatGPT ergänzt AVA-Zahlen mit eigener Websuche (Testfall 3).
+   Für die Prüfung unkritisch; im Listungstext nicht „nur AVA-Daten“ versprechen.
+8. **Icon für eigenen MCP-Server:** ChatGPT nimmt dort nur PNG ≤ 10 KB; unser Logo hat 14,7 KB.
+   Für das Verzeichnis egal (5 MiB), für Testverbindungen eine kleine Variante ablegen.
