@@ -34,7 +34,8 @@ for (const t of liste) {
 }
 const schreibend = liste.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name).sort();
 pruefe("schreibend genau Notiz, Import, Neuverarbeitung", () => assert.deepEqual(schreibend, ["import_anlegen", "neu_verarbeiten", "protokoll_ablegen"]));
-pruefe("kein Werkzeug als zerstoererisch markiert", () => assert.ok(liste.every((t) => t.annotations.destructiveHint === false)));
+pruefe("zerstoererisch genau neu_verarbeiten (ueberschreibt eine Stufe, Richtlinie 6.3)", () =>
+  assert.deepEqual(liste.filter((t) => t.annotations.destructiveHint).map((t) => t.name), ["neu_verarbeiten"]));
 pruefe("Import und Neuverarbeitung offen (Websites, Register)", () => {
   assert.equal(liste.find((t) => t.name === "import_anlegen").annotations.openWorldHint, true);
   assert.equal(liste.find((t) => t.name === "neu_verarbeiten").annotations.openWorldHint, true);
@@ -112,6 +113,28 @@ pruefe("Meine Firmen: kompakt", () => assert.deepEqual(mf, { seite: 1, gesamt: 2
 ] }));
 pruefe("pluginAntwort liefert immer ein Objekt", () => {
   assert.deepEqual(P.pluginAntwort("auftraege", [{ id: "t1", tenantId: "x" }], {}, () => "x"), { ergebnis: [{ id: "t1" }] });
+});
+
+console.log("ChatGPT-Plugin: keine Plaene/Preise (Richtlinie 5.1)");
+const ablehnung = { error: "kontingent_erschoepft", code: "kontingent_erschoepft", fehltCents: 150, passenNoch: ["DE_1"], passenNochAnzahl: 1,
+  naechsterPlan: "pro", paygMoeglich: true, kannSelbstWechseln: true, plan: "free", kontingentCents: 500, verbrauchtCents: 450, benoetigtCents: 200,
+  meldung: "Dein Kontingent reicht für 1 von 2 Firmen (0,50 € übrig, benötigt 2,00 €)." };
+pruefe("Kontingent-Ablehnung neutral, ohne Plan und Betraege", () => {
+  const a = P.saeubern({ companyId: "DE_2", aktivierung: { moeglich: false, ablehnung } });
+  assert.deepEqual(a.aktivierung.ablehnung, { code: "kontingent_erschoepft", hinweis: "Das Firmen-Kontingent des AVA-Kontos reicht dafür nicht aus. Details stehen in der AVA-App.", passenNochAnzahl: 1, passenNoch: ["DE_1"] });
+  assert.ok(!/plan|€|cents/i.test(JSON.stringify(a)), JSON.stringify(a));
+});
+pruefe("Firmen-Limit neutral", () => assert.match(P.saeubern({ code: "firmen_limit", meldung: "x" }).hinweis, /Firmen-Limit der Organisation/));
+pruefe("Hinweis ruhende Firma ohne Planwechsel", () => {
+  const h = "Die Firma ruht beim Nutzer: nur Grunddaten, keine Aufbereitung, keine Meldungen. Aktivieren in der AVA-App (Meine Firmen) oder mit import_anlegen (companyIds); reicht das Kontingent nicht, steht der Weg in aktivierung.ablehnung (Plan wechseln, ab Monatswechsel).";
+  const s = P.saeubern({ hinweis: h }).hinweis;
+  assert.ok(!/Plan/.test(s), s);
+  assert.match(s, /sagt AVA das in der App\.$/);
+});
+pruefe("402-Fehlertext neutral, andere Fehler unveraendert", () => {
+  assert.match(P.pluginFehlertext("Gateway 402: kontingent_erschoepft"), /Firmen-Kontingent/);
+  assert.match(P.pluginFehlertext("Gateway 402: firmen_limit"), /Firmen-Limit/);
+  assert.equal(P.pluginFehlertext("Gateway 404: nicht gefunden"), "Gateway 404: nicht gefunden");
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

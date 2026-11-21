@@ -30,7 +30,7 @@ import { mcpClient, vermerkeNutzung } from "../lib/nutzer-aktivitaet";
 import { loadFeatures } from "../lib/policy-guard";
 import { istMcpHost, mcpBasis, pluginBasis } from "./mcp-oauth";
 import { avaKontext, KONTEXT_BESCHREIBUNG, KONTEXT_WERKZEUG } from "../lib/mcp-kontext";
-import { ANNOTATIONEN, PLUGIN_PFAD, PLUGIN_TOOLS, pluginAntwort, pluginSperre, pluginToolListe } from "../lib/mcp-plugin";
+import { ANNOTATIONEN, PLUGIN_PFAD, PLUGIN_TOOLS, pluginAntwort, pluginFehlertext, pluginSperre, pluginToolListe } from "../lib/mcp-plugin";
 
 const PROTOKOLL_VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "ava", version: "1.0.0" };
@@ -723,7 +723,7 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
     const erg = await fuehreAus(app, token, name, args, "chatgpt");
     logger.info({ actorId: auth.actorId, tenantId: auth.tenantId, tool: name, ms: Date.now() - start, fehler: erg.isError === true, plugin: true }, "[mcp] tools/call");
     if (erg.isError || erg.daten === undefined) {
-      return { result: { content: [{ type: "text", text: erg.text }], ...(erg.isError ? { isError: true } : {}) } };
+      return { result: { content: [{ type: "text", text: erg.isError ? pluginFehlertext(erg.text) : erg.text }], ...(erg.isError ? { isError: true } : {}) } };
     }
     const schlank = pluginAntwort(name, erg.daten, args, (z) => verarbeitungsstand(String(z.companyId ?? ""), z as unknown as MatrixZeile).stand);
     return { result: { content: [{ type: "text", text: kompakt(schlank) }], structuredContent: schlank } };

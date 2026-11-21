@@ -38,7 +38,9 @@ export const ANNOTATIONEN: Record<string, Annotationen> = {
   auftraege: LESEN,
   protokoll_ablegen: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   import_anlegen: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-  neu_verarbeiten: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
+  // destructiveHint true: die neue Fassung ersetzt die vorhandenen Daten der Stufe (OpenAI-Richtlinie 6.3:
+  // Ueberschreiben gilt als destruktiv, Wiederholbarkeit aendert daran nichts; 2026-11-21).
+  neu_verarbeiten: { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: true },
   recherche_anstossen: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
 };
 
@@ -200,7 +202,7 @@ export const PLUGIN_TOOLS: PluginTool[] = [
     title: "Reprocess a company",
     schalter: "auftraege",
     description:
-      "Run one processing stage again for a company in the user's list: structuredContent (register), companyPublication (annual accounts), website, companyProfile, companyContact (contacts). Runs as soon as the AVA app runs for the user.",
+      "Run one processing stage again for a company in the user's list: structuredContent (register), companyPublication (annual accounts), website, companyProfile, companyContact (contacts). Replaces the existing data of that stage with the new result. Runs as soon as the AVA app runs for the user.",
     inputSchema: {
       type: "object",
       properties: {
@@ -279,12 +281,40 @@ const WEG = new Set([
 
 const ISO_ZEIT = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}/;
 
+// OpenAI-Richtlinie 5.1 (2026-11-21): das Plugin darf sagen, dass etwas am Kontingent scheitert,
+// aber keine Plaene, Preise oder Wechsel nennen. Kontingent-Ablehnungen werden deshalb neutral.
+const KONTINGENT_HINWEIS = "Das Firmen-Kontingent des AVA-Kontos reicht dafür nicht aus. Details stehen in der AVA-App.";
+const LIMIT_HINWEIS = "Das Firmen-Limit der Organisation ist erreicht. Details stehen in der AVA-App.";
+const TARIF_FELDER = new Set([
+  "naechsterPlan", "paygMoeglich", "kannSelbstWechseln", "plan", "tier", "kontingentCents", "verbrauchtCents",
+  "benoetigtCents", "fehltCents", "preisCents", "preis", "upgradeUrl", "checkoutUrl", "preiseUrl",
+]);
+const PLAN_SATZ = /;?\s*reicht das Kontingent nicht, steht der Weg in aktivierung\.ablehnung \(Plan wechseln, ab Monatswechsel\)\.?/;
+
+/** Kontingent-Ablehnung (402-Nutzlast oder aktivierung.ablehnung) ohne Plan- und Preisangaben. */
+export function kontingentNeutral(v: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    code: v.code,
+    hinweis: v.code === "firmen_limit" ? LIMIT_HINWEIS : KONTINGENT_HINWEIS,
+  };
+  if (typeof v.passenNochAnzahl === "number") out.passenNochAnzahl = v.passenNochAnzahl;
+  if (Array.isArray(v.passenNoch) && v.passenNoch.length) out.passenNoch = v.passenNoch;
+  return out;
+}
+
+/** Fehlertext eines Plugin-Aufrufs: 402 (Kontingent) neutral, sonst unveraendert. */
+export function pluginFehlertext(text: string): string {
+  if (/^Gateway 402\b/.test(text)) return /firmen_limit/.test(text) ? LIMIT_HINWEIS : KONTINGENT_HINWEIS;
+  return text;
+}
+
 /** Rekursiv: interne Felder weg, Zeitstempel auf das Datum, leere Werte weg. */
 export function saeubern(v: unknown, tiefe = 0): unknown {
   if (tiefe > 12) return undefined;
   if (typeof v === "string") {
     const m = ISO_ZEIT.exec(v);
-    return m ? m[1] : v;
+    if (m) return m[1];
+    return PLAN_SATZ.test(v) ? v.replace(PLAN_SATZ, "; reicht das Kontingent nicht, sagt AVA das in der App.") : v;
   }
   if (Array.isArray(v)) {
     if (v.length > 200 && typeof v[0] === "number") return undefined;
@@ -292,9 +322,13 @@ export function saeubern(v: unknown, tiefe = 0): unknown {
     return out.length ? out : undefined;
   }
   if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (o.code === "kontingent_erschoepft" || o.code === "firmen_limit" || o.error === "kontingent_erschoepft" || o.error === "firmen_limit") {
+      return kontingentNeutral({ ...o, code: o.code ?? o.error });
+    }
     const out: Record<string, unknown> = {};
-    for (const [k, w] of Object.entries(v as Record<string, unknown>)) {
-      if (k.startsWith("_") || WEG.has(k)) continue;
+    for (const [k, w] of Object.entries(o)) {
+      if (k.startsWith("_") || WEG.has(k) || TARIF_FELDER.has(k)) continue;
       const s = saeubern(w, tiefe + 1);
       if (s === undefined || s === null || s === "") continue;
       out[k] = s;

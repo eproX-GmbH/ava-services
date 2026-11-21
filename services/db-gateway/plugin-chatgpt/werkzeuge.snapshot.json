@@ -359,7 +359,7 @@
   {
     "name": "neu_verarbeiten",
     "title": "Reprocess a company",
-    "description": "Run one processing stage again for a company in the user's list: structuredContent (register), companyPublication (annual accounts), website, companyProfile, companyContact (contacts). Runs as soon as the AVA app runs for the user.",
+    "description": "Run one processing stage again for a company in the user's list: structuredContent (register), companyPublication (annual accounts), website, companyProfile, companyContact (contacts). Replaces the existing data of that stage with the new result. Runs as soon as the AVA app runs for the user.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -385,7 +385,7 @@
     "annotations": {
       "title": "Reprocess a company",
       "readOnlyHint": false,
-      "destructiveHint": false,
+      "destructiveHint": true,
       "openWorldHint": true,
       "idempotentHint": true
     }

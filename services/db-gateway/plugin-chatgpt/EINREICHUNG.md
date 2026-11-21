@@ -138,7 +138,7 @@ Ursprünglicher Ablauf:
 | `ava_kontext`, `firma_suchen`, `firma_lesen`, `meine_firmen`, `meldungen`, `firmen_ereignisse`, `firma_kontakte`, `auftrag_status`, `auftraege` | Read-only: retrieve data of the user's own AVA account; nothing is changed. Not open world: limited to the user's account and AVA's register database. |
 | `protokoll_ablegen` | Writes a note to the user's own AVA account. Not destructive: the note can be edited or deleted in AVA. Not open world: stays in the user's account. |
 | `import_anlegen` | Adds companies to the user's list and starts processing. Not destructive: companies can be removed in AVA; counts against the user's quota, which the description states. Open world: processing fetches public websites and registers. |
-| `neu_verarbeiten` | Re-runs one processing stage for a company already in the list. Not destructive and idempotent: it refreshes data, nothing is deleted. Open world: fetches public websites and registers. |
+| `neu_verarbeiten` | Re-runs one processing stage for a company already in the list. Destructive: the new result replaces the existing data of that stage (OpenAI 6.3: overwriting counts as destructive). Idempotent. Open world: fetches public websites and registers. |
 
 ## 6. Entwurf Datenschutzerklärung: Abschnitt „AVA in ChatGPT“
 
