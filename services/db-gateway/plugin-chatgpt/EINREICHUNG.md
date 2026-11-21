@@ -13,7 +13,7 @@ Nicht Teil des ZIP. Das ZIP baut `npm run plugin:zip` (Gateway-Paket) nach `dist
 - [ ] Domain-Bestätigung: Pfad und Token aus dem Dashboard als Fly-Secrets setzen:
   `OPENAI_DOMAIN_CHALLENGE_PFAD` (z. B. `/.well-known/…`) und `OPENAI_DOMAIN_CHALLENGE_TOKEN`
   auf `ava-db-gateway`. Die Seite liefert dann unter `https://mcp.ava.bi<pfad>` nur das Token.
-- [ ] Demo-Video aufnehmen (Ablauf §4) und unter einer HTTPS-Adresse ablegen; Adresse in
+- [x] Demo-Video aufnehmen (Ablauf §4) und unter einer HTTPS-Adresse ablegen; Adresse in
   `plugin.json` → `review.demo_recording_url` eintragen.
 
 ## 2. Demo-Konto für die Prüfer (C4)
@@ -87,8 +87,10 @@ Aufrufe über `/chatgpt` ohne Fehler (Gateway-Log). Befunde:
 
 Stand 2026-11-21: `video/ava-chatgpt-demo.mp4` (86 s, 1920 × 1080, nicht im Git), gebaut mit
 `video/compose.py` aus echten Aufnahmen mit dem Demo-Konto: neue Vertriebsleiter →
-Erstansprache (Mailadresse weichgezeichnet) → Notiz → Notiz in der AVA-App. Offen: Ablageort
-(HTTPS) und Adresse in `plugin.json`.
+Erstansprache (Mailadresse weichgezeichnet) → Notiz → Notiz in der AVA-App. Abgelegt auf
+`https://www.ava.bi/chatgpt-demo` (Repo ava-website, `app/chatgpt-demo`, Video unter
+`public/videos/ava-chatgpt-demo.mp4`, noindex); diese Adresse steht schon in `plugin.json`.
+Neues Video: dort die Datei ersetzen, die Adresse bleibt.
 
 Ursprünglicher Ablauf:
 
