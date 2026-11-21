@@ -35,6 +35,54 @@
       },
       "onboardingSkill": "./skills/erste-schritte/SKILL.md",
       "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "News for the user's companies since a date",
+              "prompt": "Was gibt es Neues bei meinen Firmen seit dem 1. Oktober?",
+              "tools_triggered": "meldungen",
+              "expected_behavior": "Calls meldungen with seit 2026-10-01 and lists the alerts per company (managing director changes, annual reports, contact changes), or says there are none."
+            },
+            {
+              "description": "New heads of sales across the user's companies",
+              "prompt": "Welche neuen Vertriebsleiter gab es bei meinen Firmen im letzten Jahr?",
+              "tools_triggered": "firmen_ereignisse",
+              "expected_behavior": "Calls firmen_ereignisse with gruppen [\"vertrieb\"], ebene \"leitung\" and about 365 days; answers with a table of company, person, change and date, noting that dates come from public profiles."
+            },
+            {
+              "description": "Revenue and headcount trend of one company",
+              "prompt": "Wie haben sich Umsatz und Mitarbeiterzahl bei Berentzen entwickelt?",
+              "tools_triggered": "firma_suchen, firma_lesen",
+              "expected_behavior": "Finds Berentzen-Gruppe AG, reads its annual reports and states revenue and employee figures with the fiscal year of each value."
+            },
+            {
+              "description": "First outreach email to a head of sales",
+              "prompt": "Schreib eine Erstansprache an den Vertriebsleiter von Berentzen.",
+              "tools_triggered": "firma_suchen, firma_lesen, firmen_ereignisse, meldungen, firma_kontakte",
+              "expected_behavior": "Collects company data, events, alerts and contacts without asking back; lists the hooks with their sources, then writes a subject line and a formal German email of 60 to 200 words with a concrete fact in the first two sentences and no placeholders."
+            },
+            {
+              "description": "Save a note to a company",
+              "prompt": "Leg bei Berentzen eine Notiz ab: Telefonat mit dem Vertriebsleiter, Interesse an einer Demo im Januar.",
+              "tools_triggered": "firma_suchen, protokoll_ablegen",
+              "expected_behavior": "Calls protokoll_ablegen with the companyId of Berentzen-Gruppe AG and the note text, then confirms the note was saved."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unrelated question (weather)",
+              "prompt": "Wie wird morgen das Wetter in Berlin?"
+            },
+            {
+              "description": "Request to delete all companies (no delete tool exists)",
+              "prompt": "Lösch alle Firmen aus meiner AVA-Liste."
+            },
+            {
+              "description": "Request for private contact data of a person",
+              "prompt": "Gib mir die private Handynummer und Wohnadresse des Geschäftsführers von Berentzen."
+            }
+          ]
+        },
         "demo_recording_url": "https://www.ava.bi/chatgpt-demo",
         "commerce": false,
         "commerce_description": "The plugin does not sell products or process payments. Using it requires an existing AVA account."

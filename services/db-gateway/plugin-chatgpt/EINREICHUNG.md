@@ -5,14 +5,46 @@ Nicht Teil des ZIP. Das ZIP baut `npm run plugin:zip` (Gateway-Paket) nach `dist
 
 ## 1. Vorher erledigen (C0, Joyce)
 
-- [ ] OpenAI-Organisation als **eproX GmbH** verifizieren (Business-Verifizierung).
-- [ ] Rolle „Apps Management Write“ für die einreichende Person.
-- [ ] Projekt mit **globaler** Datenresidenz (nicht EU) für das Plugin.
+- [ ] Entwickler-Identität verifizieren: platform.openai.com/settings/organization/general,
+  Business-Verifizierung als **eproX GmbH**. Ohne sie sperrt das Dashboard schon den Upload
+  („Complete identity verification“, geprüft 2026-11-21).
+- [ ] Rolle „Apps Management Write“ für die einreichende Person (Owner dürfen ohnehin).
+- [ ] Projekt mit **globaler** Datenresidenz (nicht EU) für das Plugin; im Dashboard ist derzeit
+  das Projekt „AVA“ der Organisation eproX GmbH gewählt.
 - [ ] Datenschutzerklärung um den Abschnitt aus §6 ergänzen (rechtlich prüfen lassen).
 - [ ] AGB: Satz zur Nutzung über Drittanbieter-Assistenten (ChatGPT) prüfen.
-- [ ] Domain-Bestätigung: Pfad und Token aus dem Dashboard als Fly-Secrets setzen:
-  `OPENAI_DOMAIN_CHALLENGE_PFAD` (z. B. `/.well-known/…`) und `OPENAI_DOMAIN_CHALLENGE_TOKEN`
-  auf `ava-db-gateway`. Die Seite liefert dann unter `https://mcp.ava.bi<pfad>` nur das Token.
+- [ ] Domain-Bestätigung: Der Pfad ist fest `/.well-known/openai-apps-challenge` auf dem
+  MCP-Host (oder einer zulässigen Elterndomain). Token aus dem Reiter „MCPs“ als Fly-Secrets auf
+  `ava-db-gateway`: `OPENAI_DOMAIN_CHALLENGE_PFAD=/.well-known/openai-apps-challenge` und
+  `OPENAI_DOMAIN_CHALLENGE_TOKEN`. Danach liefert `https://mcp.ava.bi/.well-known/openai-apps-challenge`
+  nur das Token.
+
+## 1a. Ablauf im Dashboard (platform.openai.com/plugins)
+
+1. „Upload new or existing plugin“ → Entwickler-Identität eproX GmbH → ZIP
+   `dist/ava-chatgpt-plugin-1.0.0.zip` hochladen. Es enthält Listing, Skills, MCP-Adresse,
+   Demo-Video-Adresse, Länder, Versionsnotiz und die 5+3 Testfälle (`review.test_cases`).
+2. Reiter „Metadata & Skills“: Issues lesen; Paketfehler beheben, ZIP neu hochladen.
+3. Reiter „MCPs“ → „Connect“: MCP Server URL `https://mcp.ava.bi/chatgpt`, Authentication OAuth
+   (dynamische Client-Registrierung, kein Client-Secret). Domain-Token wie oben setzen.
+4. „Review information“ → „Review details“: Felder aus §2a eintragen, „Save details“.
+5. „Submit for review“ mit den Bestätigungen im Dialog (Joyce). Rückmeldung kommt per Mail.
+6. Nach Freigabe „Publish plugin“.
+
+## 2a. Review details (zum Einfügen, Englisch)
+
+- **Login URL:** keine eigene Seite nötig; ChatGPT öffnet beim Verbinden die AVA-Anmeldung
+  (`https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava/…`).
+- **Username:** `chatgpt-review@ava.bi`
+- **Password:** aus dem Passwort-Manager (trägt Joyce ein).
+- **Sign-in instructions:**
+
+  > Click "Connect" on the AVA plugin. ChatGPT opens the AVA sign-in page; sign in with the
+  > credentials above. No MFA, email code or further setup is needed: the account belongs to the
+  > demo organization "AVA Demo (ChatGPT-Prüfung)", which already contains 15 German companies with
+  > processed sample data (e.g. Berentzen-Gruppe AG, KUKA Systems GmbH, Net at Work GmbH). The
+  > interface and answers are in German; prompts in the test cases are German as well. All data is
+  > from public company registers, annual reports and public business profiles.
 - [x] Demo-Video aufnehmen (Ablauf §4) und unter einer HTTPS-Adresse ablegen; Adresse in
   `plugin.json` → `review.demo_recording_url` eintragen.
 
