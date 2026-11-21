@@ -93,9 +93,9 @@ pruefe("Kontakte: Musteradresse als abgeleitet, gefundene als gefunden", () => {
   assert.equal(k.personen.find((p) => p.name === "Ina Neu").emailArt, "gefunden");
   assert.equal(k.personen.find((p) => p.name === "Ina Neu").email, "i.neu@werner.de");
 });
-pruefe("Kontakte: Rolle, seit, Profil, Quelle", () => {
+pruefe("Kontakte: Rolle, seit, Quelle, ohne Profil-Link", () => {
   const m = k.personen.find((p) => p.name === "Max Schwer");
-  assert.deepEqual(m, { personId: "p1", name: "Max Schwer", rolle: "Vertriebsleiter", bereich: "Vertrieb", seit: "2025-03-01", email: "max.schwer@werner.de", emailArt: "abgeleitet", profil: "https://linkedin.com/in/maxschwer", quelle: "https://werner.de/team" });
+  assert.deepEqual(m, { personId: "p1", name: "Max Schwer", rolle: "Vertriebsleiter", bereich: "Vertrieb", seit: "2025-03-01", email: "max.schwer@werner.de", emailArt: "abgeleitet", quelle: "https://werner.de/team" });
 });
 pruefe("Kontakte: keine Rohfakten, Beobachtungen, Signale", () => {
   const s = JSON.stringify(k);
@@ -135,6 +135,28 @@ pruefe("402-Fehlertext neutral, andere Fehler unveraendert", () => {
   assert.match(P.pluginFehlertext("Gateway 402: kontingent_erschoepft"), /Firmen-Kontingent/);
   assert.match(P.pluginFehlertext("Gateway 402: firmen_limit"), /Firmen-Limit/);
   assert.equal(P.pluginFehlertext("Gateway 404: nicht gefunden"), "Gateway 404: nicht gefunden");
+});
+
+console.log("ChatGPT-Plugin: keine Links auf Berufsnetzwerke (Richtlinie 3.5a)");
+pruefe("Ereignis: LinkedIn-Quelle neutral, Profil-URL weg, Website-URL bleibt", () => {
+  const e = P.saeubern({ ereignisse: [
+    { person: "A B", quelle: "LinkedIn", url: "https://www.linkedin.com/in/ab", zeitpunktArt: "laut_profil" },
+    { person: "C D", quelle: "Website", url: "https://firma.de/team" },
+  ] }).ereignisse;
+  assert.deepEqual(e[0], { person: "A B", quelle: "öffentliches Berufsprofil", zeitpunktArt: "laut_profil" });
+  assert.deepEqual(e[1], { person: "C D", quelle: "Website", url: "https://firma.de/team" });
+});
+pruefe("Notiztext mit LinkedIn-Erwaehnung bleibt unveraendert", () => {
+  assert.equal(P.saeubern({ text: "Per LinkedIn angeschrieben: https://www.linkedin.com/in/x" }).text, "Per LinkedIn angeschrieben: https://www.linkedin.com/in/x");
+});
+pruefe("Kontakte: kein Profil-Link, Quelle neutral", () => {
+  const k = P.kontakteSchlank({ companyName: "X GmbH", companyFacts: [
+    { entityType: "PERSON", status: "ACTIVE", entityId: "p1", field: "fullName", value: "Eva Muster", lastSource: "https://de.linkedin.com/in/eva", companyId: "C1" },
+    { entityType: "PERSON", status: "ACTIVE", entityId: "p1", field: "linkedinUrl", value: "https://de.linkedin.com/in/eva", lastSource: "apify", companyId: "C1" },
+  ], employments: [{ personId: "p1", title: "Vertriebsleitung", isCurrent: true }] }, "C1");
+  const s = JSON.stringify(k);
+  assert.ok(!/linkedin/i.test(s), s);
+  assert.equal(k.personen[0].quelle, "öffentliches Berufsprofil");
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

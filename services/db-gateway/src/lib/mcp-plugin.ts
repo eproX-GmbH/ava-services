@@ -308,6 +308,13 @@ export function pluginFehlertext(text: string): string {
   return text;
 }
 
+// Quellen im Plugin wie bei anderen Kontaktdaten-Anbietern: keine Links auf Berufsnetzwerke,
+// Herkunft nur als "öffentliches Berufsprofil" (Entscheidung Joyce 2026-11-21, OpenAI-Richtlinie 3.5a).
+const PROFIL_URL = /^https?:\/\/([a-z0-9-]+\.)*(linkedin\.com|lnkd\.in|xing\.com)\b/i;
+const PROFIL_QUELLE = /linkedin|xing|apify|lnkd\.in/i;
+const QUELLEN_FELDER = new Set(["quelle", "source", "herkunft", "lastSource"]);
+const BERUFSPROFIL = "öffentliches Berufsprofil";
+
 /** Rekursiv: interne Felder weg, Zeitstempel auf das Datum, leere Werte weg. */
 export function saeubern(v: unknown, tiefe = 0): unknown {
   if (tiefe > 12) return undefined;
@@ -329,6 +336,8 @@ export function saeubern(v: unknown, tiefe = 0): unknown {
     const out: Record<string, unknown> = {};
     for (const [k, w] of Object.entries(o)) {
       if (k.startsWith("_") || WEG.has(k) || TARIF_FELDER.has(k)) continue;
+      if (typeof w === "string" && QUELLEN_FELDER.has(k) && PROFIL_QUELLE.test(w)) { out[k] = BERUFSPROFIL; continue; }
+      if (typeof w === "string" && PROFIL_URL.test(w.trim())) continue;
       const s = saeubern(w, tiefe + 1);
       if (s === undefined || s === null || s === "") continue;
       out[k] = s;
@@ -380,7 +389,7 @@ export function kontakteSchlank(roh: unknown, companyId: string): Record<string,
       // Adressen aus dem Firmenmuster sind abgeleitet, nicht gefunden.
       emailArt: mail ? (/^(pattern|zuordnung):/.test(mail.quelle ?? "") ? "abgeleitet" : "gefunden") : null,
       telefon: m?.get("phone")?.value ?? m?.get("mobilePhone")?.value ?? null,
-      profil: m?.get("linkedinUrl")?.value ?? m?.get("xingUrl")?.value ?? null,
+      // Kein Profil-Link im Plugin; die Quelle sagt nur "öffentliches Berufsprofil" (saeubern).
       quelle,
     };
     personen.push(saeubern(p) as Record<string, unknown>);
