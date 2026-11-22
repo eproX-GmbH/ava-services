@@ -312,3 +312,144 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
 | E10 | Updates | Selbstbedienungs-Instanzen automatisch nach jedem Release; Enterprise weiter per Knopf |
 | E11 | Fly-Org | **entschieden: `ava-447` („AVA“)**; Org-Token für das Gateway noch zu erzeugen |
 | E12 | Standardweg nach der Registrierung | Cloud als erster Vorschlag, Desktop-App als Alternative |
+
+## 10. Customer Journey und Benachrichtigungen (2026-11-22, Entwurf)
+
+Anstoß Joyce: Gerade Einzelkämpfer dürfen nach der Registrierung nicht „lost“ sein. Die Wahl
+„AVA läuft für mich im Hintergrund (Server)“ muss so einfach sein wie der Desktop-Download, und
+der Nutzer muss jederzeit wissen, was mit seiner AVA los ist – auch per Mail.
+
+### 10.1 Grundsätze
+
+1. **Eine Entscheidung, zwei gleichwertige Wege.** Nach der Registrierung fragt AVA einmal: „Wo
+   soll AVA für dich arbeiten?“ – *Im Hintergrund auf unserem Server* oder *Auf deinem Rechner
+   (Desktop-App)*. Kein automatischer Download mehr, bevor der Nutzer gewählt hat.
+2. **Später jederzeit wechselbar.** Wer mit der Desktop-App startet, sieht dort und in app.ava.bi
+   einen ruhigen Hinweis „AVA auch arbeiten lassen, wenn dein Rechner aus ist“ → Server dazubuchen;
+   die Daten zieht der vorhandene Umzug mit.
+3. **Immer ein sichtbarer Status.** Jeder Zustand der Instanz hat einen Satz in Nutzersprache, eine
+   Farbe und genau eine nächste Handlung (§10.3) – in app.ava.bi, in der Desktop-App und in der
+   Konsole der Organisation.
+4. **Mails nur bei Änderungen, die den Nutzer betreffen.** Jede Mail sagt: was ist passiert, was
+   bedeutet es für dich, was musst du tun (oft: nichts), mit genau einem Knopf. Keine Fachbegriffe
+   (Instanz, Fly, Maschine, Volume), keine Plan-Verweise.
+5. **Keine Mail-Flut.** Ausfälle erst nach 10 Minuten, je Instanz höchstens eine Ausfallmail in
+   6 Stunden; Wackeln wird zu einer Mail zusammengefasst. Geplante Updates erzeugen keine
+   Ausfallmail.
+
+### 10.2 Wege durch AVA
+
+**A. Einzelkämpfer, neu (Hauptfall)**
+
+| Schritt | Was der Nutzer sieht | Was im Hintergrund passiert |
+|---|---|---|
+| 1. Registrieren (www.ava.bi/registrieren) | wie heute | Keycloak-Konto, Start-Analyse |
+| 2. `/willkommen` | „Wo soll AVA für dich arbeiten?“ zwei Karten: **Server** (Vorteile: läuft rund um die Uhr, nichts installieren, Preis klar sichtbar) und **Desktop-App** (kostenlos, läuft, solange dein Rechner an ist) | – |
+| 3a. Server gewählt | Stripe-Checkout (Sitz + Server, ein Betrag) | nach `invoice.paid`: Instanz wird angelegt |
+| 4a. Weiterleitung zu app.ava.bi | Statuskarte „Deine AVA wird eingerichtet … (1–3 Minuten)“ mit Fortschritt; Mail M1 „Zahlung erhalten, AVA wird eingerichtet“ | Abgleicher legt an |
+| 5a. Instanz gesund | Karte: „Fast fertig: Bestätige, dass diese AVA für dich arbeiten darf“ → **ein Klick** (Keycloak-Bestätigung, Nutzer ist schon angemeldet) | Device-Code über Gateway (Z4) |
+| 6a. Verbunden | Karte „Deine AVA läuft“ + nächster Schritt „Modell wählen“ (ChatGPT-Abo, API-Schlüssel oder Org-Schlüssel) direkt in app.ava.bi; Mail M2 „Deine AVA läuft“ mit Links: app.ava.bi, Telegram verbinden, Desktop-App optional | Relais meldet Verbindung → `verbundenAt` |
+| 3b. Desktop gewählt | Download startet wie heute | – |
+| 4b+ später | Hinweis in Desktop/app.ava.bi „Server dazubuchen“ (siehe 10.1 Nr. 2) | Weg 3a ff., danach Umzug Desktop → Server angeboten |
+
+**B. Organisation:** Admin schaltet in der Konsole (Mitglieder) je Person „Server“ ein; die
+Person bekommt M2, sobald ihre AVA läuft, Admins sehen den Status in der Mitgliederliste.
+Mitglieder ohne Server sehen in app.ava.bi „Server anfragen“ → Mail an Admins.
+
+**C. Rückweg:** Server abbestellen (Einzelkämpfer: app.ava.bi → Deine AVA; Organisation:
+Konsole) → läuft bis Ende des Abrechnungszeitraums → Mail M9 mit Datum, Hinweis auf Umzug zurück
+auf den Desktop.
+
+### 10.3 Status in Nutzersprache
+
+| Zustand (intern) | Anzeige | Farbe | Nächste Handlung |
+|---|---|---|---|
+| Zahlung offen | „Zahlung wird bestätigt …“ | grau | – |
+| `wird_angelegt` | „Deine AVA wird eingerichtet (1–3 Minuten)“ | blau | – |
+| `wartet_auf_verbindung` | „Fast fertig: Bestätige, dass diese AVA für dich arbeiten darf“ | gelb | **Jetzt bestätigen** |
+| `laeuft`, ohne Modell | „Deine AVA läuft – wähle noch, mit welchem KI-Modell sie arbeitet“ | gelb | **Modell wählen** |
+| `laeuft`, gesund | „Deine AVA läuft im Hintergrund“ (+ zuletzt aktiv) | grün | – |
+| Update läuft | „Deine AVA wird gerade aktualisiert (wenige Minuten)“ | blau | – |
+| ungesund > 10 Min. | „Deine AVA ist gerade nicht erreichbar. Wir kümmern uns darum.“ | rot | Hilfe/Problem melden |
+| gestoppt (zahlung) | „Pausiert: Die letzte Zahlung ist nicht eingegangen. Deine Daten bleiben erhalten.“ | rot | **Zahlung aktualisieren** |
+| gestoppt (kuendigung/admin) | „Pausiert seit …. Deine Daten bleiben bis … erhalten.“ | grau | **Wieder starten** (bzw. Admin fragen) |
+| ruht | wie gestoppt, plus Löschdatum | grau | **Wieder starten** |
+
+### 10.4 Mail-Katalog
+
+Alle Mails gehen an den Nutzer der Instanz; Zahlungsmails zusätzlich an Owner/Admins der
+Organisation (bei Einzelkämpfern dieselbe Person). Dienstmails ohne Einwilligung
+(`DIENSTMAILS`), weil sie den gebuchten Dienst betreffen; nur M7 (Update) lässt sich abbestellen.
+
+| # | Mail | Auslöser | Zeitpunkt/Bremse | Knopf |
+|---|---|---|---|---|
+| M1 | „Zahlung erhalten – deine AVA wird eingerichtet“ | erste `invoice.paid` für den Server | sofort | Status ansehen |
+| M2 | „Deine AVA läuft“ | erstmals `laeuft` + gesund | sofort, einmalig | AVA öffnen (+ Telegram, Desktop optional) |
+| M3 | „Ein Schritt fehlt noch: AVA bestätigen“ | `wartet_auf_verbindung` > 30 Min. | einmal nach 30 Min., einmal nach 24 h | Jetzt bestätigen |
+| M4 | „Deine AVA ist gerade nicht erreichbar“ | ungesund ≥ 10 Min. (nicht bei Update/Stopp) | höchstens 1 je 6 h | Status ansehen |
+| M5 | „Deine AVA läuft wieder“ | nach M4 wieder gesund ≥ 5 Min. | sofort; mit Dauer des Ausfalls | – |
+| M6 | „Deine AVA wird heute Nacht aktualisiert“ | nur bei Updates mit spürbarer Änderung | am Vortag | Was ist neu |
+| M7 | „AVA ist jetzt auf dem neuesten Stand“ | Update erfolgreich | gesammelt höchstens 1 je Woche; abbestellbar | Was ist neu |
+| M8 | „Zahlung fehlgeschlagen – bitte Zahlungsmittel prüfen“ | `invoice.payment_failed` | sofort; Erinnerung Tag 3 und Tag 6 („morgen wird pausiert“) | Zahlung aktualisieren (Stripe-Portal) |
+| M9 | „Deine AVA ist pausiert“ | gestoppt wegen Zahlung/Kündigung/Admin | sofort; nennt Grund, Datenaufbewahrung bis … | Zahlung aktualisieren / Wieder starten |
+| M10 | „Deine AVA läuft wieder“ (nach Pause) | `invoice.paid` nach Pause bzw. Wieder starten | sofort | AVA öffnen |
+| M11 | „Deine Daten werden in 7 Tagen gelöscht“ | 23 Tage nach Stopp | einmal | Wieder starten / Daten auf den Desktop holen |
+| M12 | „Deine Daten wurden gelöscht“ | Löschung | sofort | – |
+| M13 | Zahlungsbeleg | jede erfolgreiche Zahlung | **Stripe** verschickt Rechnung/Beleg (Kundenmail in Stripe einschalten); AVA schickt keine eigene Mail | Rechnung |
+
+Erst M11 macht die automatische Löschung (`CLOUD_AUTO_LOESCHEN=1`) vertretbar.
+
+### 10.5 Zahlungsverlauf mit Folgen (Vorschlag zu E6)
+
+| Tag | Ereignis | Instanz | Mail |
+|---|---|---|---|
+| 0 | Zahlung scheitert (`past_due`) | läuft | M8 |
+| 3 | Stripe versucht erneut | läuft | M8 Erinnerung |
+| 6 | | läuft | M8 „morgen wird pausiert“ |
+| 7 | Cloud-Frist abgelaufen | **gestoppt** | M9 |
+| 14 | Org-Mahnlauf (`suspended`) | gestoppt | – |
+| 14 (gestoppt seit 7 Tagen) | | ruht | – |
+| 30 | | | M11 (Löschung in 7 Tagen) |
+| 37 | | **gelöscht** | M12 |
+| jederzeit | Zahlung geht ein | startet wieder | M10 |
+
+### 10.6 Updates für alle Instanzen
+
+- **Wellen:** nach jedem Release zuerst die Betreiber-Instanz, nach 24 h ohne Auffälligkeiten
+  10 % der Kunden-Instanzen, nach weiteren 24 h der Rest. Abbruch der Welle bei Fehlerquote > 5 %.
+- **Fenster:** nachts 02:00–05:00 Uhr (Berlin), außer der Nutzer startet es selbst („Jetzt
+  aktualisieren“ in app.ava.bi).
+- **Ablauf je Instanz:** Image tauschen → warten bis gesund (max. 10 Min.) → sonst automatisch
+  zurück auf die alte Version + Betreiber-Meldung. Während des Updates keine Ausfallmail.
+- **Information:** M6 nur bei spürbaren Änderungen, M7 gesammelt; „Was ist neu“ verlinkt die
+  Release-Notiz in Nutzersprache.
+
+### 10.7 Wo der Nutzer was sieht
+
+- **app.ava.bi → Deine AVA:** Statuskarte (§10.3), Server buchen/abbestellen, Bestätigen,
+  Modellzugang, Telegram, Postfach, „Jetzt aktualisieren“, Daten auf den Desktop holen.
+- **Desktop-App:** Hinweis „Server dazubuchen“ und, falls gebucht, Status der Server-AVA.
+- **Konsole (Organisation):** Mitgliederliste mit Server-Schalter und Status je Person; Abrechnung
+  mit Server-Posten.
+- **Telegram** (falls verbunden): dieselben Statusmeldungen wie M4/M5/M9/M10 als Nachricht – kommt
+  vom Gateway, nicht von der Instanz (die bei einem Ausfall nichts senden kann).
+
+### 10.8 Neue Entscheidungen
+
+| # | Frage | Vorschlag |
+|---|---|---|
+| E13 | Einzelkämpfer-Preis | Paket „Pro + Server“ als ein Betrag (z. B. 99 € statt 49 + 59), damit der Server-Weg nicht teurer wirkt als nötig |
+| E14 | Testphase für den Server | keine kostenlose Testphase (Kosten ab Minute 1); stattdessen monatlich kündbar, anteilige Abrechnung |
+| E15 | Wahl auf `/willkommen` | zwei gleichwertige Karten, **Server zuerst** (empfohlen), kein automatischer Download mehr |
+| E16 | Wer bekommt Zahlungsmails | Nutzer + Owner/Admins; Einzelkämpfer nur einmal |
+| E17 | Update-Mails | M7 gesammelt wöchentlich und abbestellbar; M6 nur bei spürbaren Änderungen |
+| E18 | Update-Wellen und Fenster | wie §10.6 |
+
+### 10.9 Auswirkung auf die Stufen
+
+- **Z3** (Abrechnung) bringt M1, M8, M9, M10 und die Cloud-Frist (§10.5) mit.
+- **Z4** (Erstverbindung) bringt M2, M3, M4, M5, M11, M12 und die Telegram-Spiegelung.
+- **Z5** (Oberflächen) baut die Statuskarte (§10.3) an allen drei Orten.
+- **Z6** (Registrierung) baut `/willkommen` mit der Wahl (E15) und den Desktop-Hinweis.
+- **Z7** (Updates) baut die Wellen (§10.6) mit M6/M7.
+- Aufwand zusätzlich ca. 1 Woche (Mail-Vorlagen, Statuskarte an drei Orten, Wellen).
