@@ -423,6 +423,30 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
   App-Funktion je Kunde mit Termin).
 - Test: `npm run test:cloud` (81 Prüfungen).
 
+## 8i. Start (2026-11-22, freigeschaltet)
+
+- **Stripe (Konto AVA.BI):** Produkt „AVA-Server“ (`prod_Vg04xcX6UUBx8N`, Steuercode wie Pro),
+  Preis 50 € netto/Monat (`price_1Uee3x0r0BPxCh2sa6ALDYJZ`, exklusiv) → `STRIPE_PRICE_CLOUD`.
+  Am Webhook fehlte `invoice.paid` (auch für K8-Reaktivierung und Sammelrechnungen); ergänzt.
+  Zahlungsbelege (M13) im Dashboard eingeschaltet („Erfolgreiche Zahlungen“; Standardsprache der
+  Kunden-Mails steht noch auf Englisch).
+- **Fix:** `freigeben` atomar (`CloudRepo.zustandWechseln`), weil `invoice.paid` und
+  `checkout.session.completed` fast gleichzeitig kommen; Sitz erst nach dem Zuschlag.
+- **Betreiber-Alarme** ohne Telegram per Mail: `CLOUD_BETREIBER_MAIL=info@eprox-gmbh.de`.
+- **Release v0.1.976:** Server-Image mit `/anmeldung` in `ava-kunden-image`; Desktop mit
+  Abschnitt „AVA-Server“, Werkzeug `server_stand`, Lösungskarten (lokal gegen Prod geprüft).
+- **Rechtstexte live (ava-website):** AGB § 3 Abs. 9–13 und § 13 Abs. 3, Datenschutz 6/9b,
+  neue Seite `/avv` (Unterauftragsverarbeiter Fly.io und Vercel, TOM nach tatsächlichem Betrieb).
+- **Echttest** (Demo-Konto, Gateway v409): angelegt durch den Abgleicher in ~5,5 Min. bis
+  `wartet_auf_verbindung` mit Image v0.1.976; `/anmeldung` liefert nach ~40 s den Link
+  `<realm>/device?user_code=…`; `/cloud/bestaetigen?t=` → 302 dorthin, manipuliert → 404;
+  danach gelöscht (App weg, Ereigniskette vollständig). Nicht live getestet: Bestätigen selbst
+  (Keycloak-Login des Demo-Kontos) und ein Kauf mit echter Zahlung.
+- **Freigeschaltet:** `CLOUD_SELBSTBEDIENUNG=1` (Gateway v410), `/v1/cloud/angebot` buchbar,
+  Website zeigt Wahl und Preise.
+- **Offen:** Bestandskunden nach AGB § 18 informieren (Mail-Text freigeben), ein echter Kauf mit
+  Zahlung (Joyce), Umzug der Alt-Instanzen.
+
 ## 9. Entscheidungen
 
 **Abgenommen 2026-11-22 (Joyce: „Ja, so umsetzen“): alle Vorschläge aus §9 und §10.8.**
