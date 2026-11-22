@@ -296,7 +296,7 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
 - **Notschalter:** `CLOUD_ABGLEICH=0`.
 - Test: `npm run test:cloud` (40 Prüfungen).
 
-## 8d. Stand Z3 (2026-11-22, gebaut, nicht deployt)
+## 8d. Stand Z3 (2026-11-22, live seit Gateway v403)
 
 - **Buchen:** `PUT /v1/tenants/me/mitglieder/{actorId}/cloud {an}` (Owner/Admin; Einzelkämpfer
   sind Owner). An = Buchung `zahlung_offen` + Server-Posten am Org-Abo mit Sofortrechnung
@@ -319,6 +319,35 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
 - **Offen vor dem Start:** Stripe-Preis „AVA-Server“ 50 € netto/Monat → `STRIPE_PRICE_CLOUD`;
   in Stripe Kundenbelege einschalten (M13); Proxy-Freigaben `cloud/*` in Konsole und App (Z5).
 - Test: `npm run test:cloud` (51 Prüfungen).
+
+## 8e. Stand Z4 (2026-11-22, gebaut, nicht deployt)
+
+- **Ein-Klick-Bestätigung:** Die Instanz bekommt beim Anlegen das Secret `AVA_GATEWAY_TOKEN`
+  (HMAC aus `INTERNAL_HMAC_SECRET` und Instanz-ID, nirgends gespeichert) und beantwortet damit
+  `GET /anmeldung` (angemeldet ja/nein, `verification_uri_complete`, Ablauf). Das Gateway reicht den
+  Link nur weiter, wenn er auf `<KEYCLOAK_REALM_URL>/device` zeigt.
+  - App: `GET /v1/cloud/mein` liefert bei „wartet“ `server.bestaetigen = { link, bis }`; der Knopf
+    selbst kommt mit der Statuskarte (Z5).
+  - Mail M3: signierter Link `GET /cloud/bestaetigen?t=…` (7 Tage gültig) leitet direkt auf die
+    Keycloak-Bestätigung mit eingetragenem Code; fremde Konten scheitern an der Kontobindung.
+  - Braucht ein Server-Image ab dem nächsten Release (Endpunkt in `services/desktop/src/server/main.ts`);
+    Instanzen ohne Endpunkt laufen wie bisher (Setup-Seite), M3 entfällt für sie.
+- **Verbunden:** meldet sich die Server-AVA über das Kopf-Relais (Konto geprüft, `flyApp` passt)
+  oder sagt `/anmeldung` „angemeldet“ → `verbundenAt`, Zustand `laeuft`, Mail M2 genau einmal
+  (atomar in SQL). Verliert die Instanz die Anmeldung (Device Flow mit Link), zurück auf „wartet“.
+- **Mails** M2 (verbunden), M3 (30 Min./24 h), M4 (ab 10 Min. nicht erreichbar, 1 je 6 h, nur
+  wenn verbunden, nie während Update/Neustart), M5 (nach M4 5 Min. stabil, mit Dauer), M11 (Tag 23
+  nach Stopp), M12 (gelöscht). M11/M12 auch an Owner/Admins.
+- **Automatisches Löschen jetzt Standard** (`CLOUD_AUTO_LOESCHEN=0` schaltet ab): frühestens
+  `CLOUD_LOESCH_TAGE` nach dem Stopp UND 7 Tage nach M11; Betreiber-Stopps nie automatisch.
+- **Betreiber-Alarme:** immer im Log (`[cloud-abgleich] Betreiber-Alarm`), dazu Telegram
+  (`OPERATOR_TELEGRAM_*`, am Gateway noch nicht gesetzt) bzw. ohne Telegram Mail an
+  `CLOUD_BETREIBER_MAIL` (optional).
+- **Telegram des Nutzers** (§10.7): bewusst noch nicht. Der Bot gehört dem Nutzer und sein Token
+  liegt nur in seiner AVA; das Gateway kann ihn nicht erreichen, ohne den Schlüssel zu bekommen
+  (E19).
+- Lösungskarten zum Server kommen mit Z5/Z6, sobald Nutzer ihn in App und Registrierung sehen.
+- Test: `npm run test:cloud` (70 Prüfungen).
 
 ## 9. Entscheidungen
 
@@ -475,6 +504,7 @@ Erst M11 macht die automatische Löschung (`CLOUD_AUTO_LOESCHEN=1`) vertretbar.
 | E16 | Wer bekommt Zahlungsmails | Nutzer + Owner/Admins; Einzelkämpfer nur einmal |
 | E17 | Update-Mails | M7 gesammelt wöchentlich und abbestellbar; M6 nur bei spürbaren Änderungen |
 | E18 | Update-Wellen und Fenster | wie §10.6 |
+| E19 | Statusmeldungen per Telegram an den Nutzer | Vorschlag: die AVA meldet „läuft wieder“ nach einem Ausfall selbst über ihren Bot (sie weiß es beim Start); Ausfall selbst nur per Mail, weil eine ausgefallene AVA nichts senden kann und das Gateway den Bot des Nutzers nicht kennen soll |
 
 ### 10.9 Auswirkung auf die Stufen
 

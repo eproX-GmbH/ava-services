@@ -22,6 +22,7 @@ import { v1 } from "./routes/v1";
 import { billingWebhookRouter } from "./routes/v1/billing";
 import { publicAuthRouter } from "./routes/v1/auth";
 import { mailLinksRouter } from "./routes/mail-links";
+import { cloudLinksRouter } from "./routes/cloud-links";
 import { plaeneRouter } from "./routes/v1/plaene";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { internalRegisterJobsRouter } from "./routes/internal-register-jobs";
@@ -108,6 +109,7 @@ app.route("/", webhookEmpfangRouter);
 app.route("/", publicAuthRouter);
 // Onboarding O5 — Bestaetigen/Abmelden aus den Mails (oeffentlich, Token im Link).
 app.route("/", mailLinksRouter);
+app.route("/", cloudLinksRouter);
 // docs/PLAN_PRICING_TIERS.md P1 — Plan-Katalog ohne Auth (Listenpreise fuer App, Konsole, Website).
 app.route("/v1", plaeneRouter);
 

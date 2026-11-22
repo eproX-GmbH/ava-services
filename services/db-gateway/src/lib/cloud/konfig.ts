@@ -9,6 +9,8 @@ import { kundenImageApp } from "./fly-maschinen";
 export const OLLAMA_IMAGE = "ollama/ollama:0.40.5"; // wie main/ollama-pin.ts (nie latest)
 /** Secrets, die NUR der AVA-Container bekommt (Fly reicht sie sonst nicht durch). */
 export const AVA_SECRETS = ["AVA_SECRETS_KEY", "AVA_SETUP_TOKEN", "AVA_KONTO"] as const;
+/** Lesezugriff des Gateways auf GET /anmeldung (Ein-Klick-Bestätigung, Z4); nur wenn gesetzt. */
+export const GATEWAY_SECRET = "AVA_GATEWAY_TOKEN";
 
 export const GROESSEN = {
   standard: { cpus: 2, memory_mb: 4096, volumeGb: 10 },
@@ -24,6 +26,8 @@ export interface KonfigEingabe {
   version: string;
   volumeId: string;
   groesse: Groesse;
+  /** Secret AVA_GATEWAY_TOKEN ist in der App gesetzt (fehlt bei Instanzen von vor Z4). */
+  gatewayToken?: boolean;
 }
 
 export function maschinenKonfig(e: KonfigEingabe): Record<string, unknown> {
@@ -57,7 +61,7 @@ export function maschinenKonfig(e: KonfigEingabe): Record<string, unknown> {
         name: "ava",
         image,
         depends_on: [{ name: "ollama", condition: "started" }],
-        secrets: AVA_SECRETS.map((n) => ({ env_var: n, name: n })),
+        secrets: [...AVA_SECRETS, ...(e.gatewayToken ? [GATEWAY_SECRET] : [])].map((n) => ({ env_var: n, name: n })),
       },
       {
         name: "ollama",

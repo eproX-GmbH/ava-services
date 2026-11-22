@@ -9,9 +9,14 @@ import { flyKunden, flyKundenEingerichtet } from "./fly-maschinen";
 import { CloudBetrieb, pgRepo } from "./instanzen";
 import { abgleichen, faktenAusDb, type AbgleichBericht, type CloudNachricht } from "./abgleich";
 import type { CloudInstanz } from "./instanzen";
+import { bestaetigenToken, bestaetigungsLink } from "./anmeldung";
+import { kopfRelais } from "../kopf-relais";
 import { loadEnv } from "../env";
 import { mailKonto, mailSenden } from "../mail/versand";
-import { serverBezahltMail, serverLaeuftWiederMail, serverPausiertMail, serverZahlungOffenMail, type Mail } from "../mail/vorlagen";
+import {
+  serverBestaetigenMail, serverBezahltMail, serverGeloeschtMail, serverLaeuftMail, serverLaeuftWiederMail, serverLoeschungMail,
+  serverNichtErreichbarMail, serverPausiertMail, serverWiederErreichbarMail, serverZahlungOffenMail, type Mail,
+} from "../mail/vorlagen";
 
 let betrieb: CloudBetrieb | null = null;
 export function cloudBetrieb(): CloudBetrieb {
@@ -26,7 +31,23 @@ export const letzterAbgleich = () => letzter;
 
 function deps() {
   const pool = getGatewayPool();
-  return { repo: pgRepo(pool), fly: flyKunden, betrieb: cloudBetrieb(), fakten: faktenAusDb(pool, kontoSperre), melden: betreiberBenachrichtigen, benachrichtigen: cloudMailen, warnen: (d: Record<string, unknown>, t: string) => logger.warn(d, t) };
+  return { repo: pgRepo(pool), fly: flyKunden, betrieb: cloudBetrieb(), fakten: faktenAusDb(pool, kontoSperre), melden: betreiberMelden, benachrichtigen: cloudMailen, warnen: (d: Record<string, unknown>, t: string) => logger.warn(d, t) };
+}
+
+/**
+ * Betreiber-Alarm: immer ins Protokoll, dazu Telegram (OPERATOR_TELEGRAM_*) und, falls
+ * CLOUD_BETREIBER_MAIL gesetzt ist, eine kurze Mail. Ohne beides blieben Alarme sonst unbemerkt.
+ */
+async function betreiberMelden(text: string): Promise<void> {
+  logger.warn({ alarm: text }, "[cloud-abgleich] Betreiber-Alarm");
+  const telegram = await betreiberBenachrichtigen(text).catch(() => false);
+  const an = process.env.CLOUD_BETREIBER_MAIL?.trim();
+  if (!an || telegram) return;
+  const pool = getGatewayPool();
+  // Kein Eintrag in MailEinstellung: feste Betreiber-Adresse, kein Abmelde-Token nötig.
+  const konto = { actorId: "betreiber-cloud", email: an, vorname: null, token: "betreiber", neuigkeiten: false, abgemeldet: false };
+  const zeile = text.replace(/[<>&]/g, "");
+  await mailSenden(pool, konto, "server_betreiber_alarm", { betreff: `AVA Cloud: ${zeile.slice(0, 90)}`, html: `<p style="font-family:sans-serif">${zeile}</p>`, text: zeile });
 }
 
 /** Ein Lauf (oder nur eine Instanz); nie zwei Volllläufe gleichzeitig. */
@@ -53,6 +74,7 @@ export function cloudAbgleichAnstossen(instanzId?: string): void {
 }
 
 export function startCloudAbgleich(): void {
+  verbindungEinhaken();
   if (process.env.CLOUD_ABGLEICH === "0") { logger.info("[cloud-abgleich] aus (CLOUD_ABGLEICH=0)"); return; }
   if (!flyKundenEingerichtet()) { logger.info("[cloud-abgleich] nicht eingerichtet (FLY_KUNDEN_TOKEN fehlt)"); return; }
   const tick = () => void cloudAbgleich().catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[cloud-abgleich] Lauf fehlgeschlagen"));
@@ -64,7 +86,10 @@ export function startCloudAbgleich(): void {
 // ---- Mails an Nutzer und Admins (§10.4) ---------------------------------------------
 
 type MailArt = CloudNachricht | "bezahlt";
-const ZAHLUNGSMAILS = new Set<MailArt>(["zahlung_offen"]);
+/** Diese Mails gehen zusätzlich an Owner/Admins (Zahlung, Daten). */
+const AUCH_ADMINS = new Set<MailArt>(["zahlung_offen", "loeschung_angekuendigt", "geloescht"]);
+/** Mail-Link „Jetzt bestätigen“ gilt so lange. */
+const BESTAETIGEN_GUELTIG_MS = 7 * 86_400_000;
 
 async function empfaenger(tenantId: string, actorId: string, auchAdmins: boolean) {
   const r = await getGatewayPool().query<{ actorId: string; email: string | null; name: string | null; role: string }>(
@@ -79,10 +104,11 @@ export async function cloudMailen(art: MailArt, i: CloudInstanz, extra: Record<s
   const pool = getGatewayPool();
   const env = loadEnv();
   const konsole = (process.env.ADMIN_KONSOLE_URL ?? "https://admin.ava.bi").replace(/\/+$/, "");
-  const zahlungsthema = ZAHLUNGSMAILS.has(art) || (art === "pausiert" && (extra.grund === "zahlung" || extra.grund === "kuendigung"));
-  for (const e of await empfaenger(i.tenantId, i.actorId, zahlungsthema)) {
+  const auchAdmins = AUCH_ADMINS.has(art) || (art === "pausiert" && (extra.grund === "zahlung" || extra.grund === "kuendigung"));
+  const gateway = env.GATEWAY_PUBLIC_URL.replace(/\/+$/, "");
+  for (const e of await empfaenger(i.tenantId, i.actorId, auchAdmins)) {
     const istNutzer = e.actorId === i.actorId;
-    const mailArt = `server_${art === "zahlung_offen" ? "zahlung_offen" : art === "bezahlt" ? "bezahlt" : art}`;
+    const mailArt = `server_${art}`;
     if (!istNutzer) {
       const schon = await pool.query(`SELECT 1 FROM "MailVersand" WHERE "actorId" = $1 AND art = $2 AND "createdAt" > now() - interval '20 hours' LIMIT 1`, [e.actorId, mailArt]);
       if (schon.rowCount) continue;
@@ -95,7 +121,16 @@ export async function cloudMailen(art: MailArt, i: CloudInstanz, extra: Record<s
     if (art === "bezahlt") mail = serverBezahltMail(basis);
     else if (art === "zahlung_offen") mail = serverZahlungOffenMail({ ...basis, stufe: (extra.stufe as 0 | 3 | 6) ?? 0, pauseAm: String(extra.pauseAm ?? new Date().toISOString()), zahlungUrl });
     else if (art === "pausiert") mail = serverPausiertMail({ ...basis, grund: (extra.grund as "zahlung" | "kuendigung" | "abbestellt" | "admin") ?? "admin", loeschenAb: String(extra.loeschenAb ?? new Date().toISOString()), zahlungUrl });
-    else mail = serverLaeuftWiederMail(basis);
+    else if (art === "laeuft_wieder") mail = serverLaeuftWiederMail(basis);
+    else if (art === "laeuft") mail = serverLaeuftMail(basis);
+    else if (art === "bestaetigen") {
+      const t = bestaetigenToken(i.id, Date.now() + BESTAETIGEN_GUELTIG_MS);
+      mail = serverBestaetigenMail({ ...basis, stufe: extra.stufe === "24h" ? "24h" : "30m", bestaetigenUrl: t ? `${gateway}/cloud/bestaetigen?t=${t}` : `${env.AVA_APP_URL.replace(/\/+$/, "")}/mehr` });
+    } else if (art === "nicht_erreichbar") mail = serverNichtErreichbarMail({ ...basis, seit: String(extra.seit ?? new Date().toISOString()) });
+    else if (art === "wieder_erreichbar") mail = serverWiederErreichbarMail({ ...basis, dauerMin: Number(extra.dauerMin ?? 0) });
+    else if (art === "loeschung_angekuendigt") {
+      mail = serverLoeschungMail({ ...basis, grund: (extra.grund as "zahlung" | "kuendigung" | "abbestellt" | "admin") ?? "admin", loeschenAm: String(extra.loeschenAm ?? new Date().toISOString()), zahlungUrl, fuerAdmin: !istNutzer || e.role === "owner" || e.role === "admin" });
+    } else mail = serverGeloeschtMail(basis);
     const konto = await mailKonto(pool, { actorId: e.actorId, email: e.email!, vorname });
     await mailSenden(pool, konto, mailArt, mail);
   }
@@ -121,4 +156,49 @@ export async function cloudNachStripe(tenantId: string, art: "bezahlt" | "fehlge
   } catch (err) {
     logger.warn({ tenantId, art, err: err instanceof Error ? err.message : String(err) }, "[cloud] Stripe-Anstoß fehlgeschlagen");
   }
+}
+
+// ---- Verbindung der Instanz (Z4) -----------------------------------------------------
+
+/** Verbunden gemeldet: Zustand setzen und beim ersten Mal M2 „Deine AVA läuft“. */
+export async function cloudVerbundenMelden(id: string, quelle: "system" | "abgleicher", details: Record<string, unknown> = {}): Promise<void> {
+  const r = await cloudBetrieb().verbindungMelden(id, quelle, details);
+  if (r !== "neu") return;
+  const i = await pgRepo(getGatewayPool()).holen(id);
+  if (i) await cloudMailen("laeuft", i).catch((err) => logger.warn({ id, err: err instanceof Error ? err.message : String(err) }, "[cloud] Mail M2 fehlgeschlagen"));
+}
+
+/**
+ * Stand der Bestätigung für App und Mail-Link: angemeldet (dann gleich als verbunden
+ * vermerkt) oder der aktuelle Ein-Klick-Link der Instanz (null, solange keiner bereitsteht).
+ */
+export async function cloudBestaetigung(i: CloudInstanz): Promise<{ angemeldet: boolean; bestaetigen: { link: string; bis: string | null } | null }> {
+  if (i.zustand !== "wartet_auf_verbindung") return { angemeldet: !!i.verbundenAt, bestaetigen: null };
+  const token = i.schritte.gatewayToken ? cloudBetrieb().gatewayToken(i.id) : null;
+  if (!token) return { angemeldet: false, bestaetigen: null };
+  const an = await flyKunden.anmeldung(i.flyApp, token);
+  if (an?.angemeldet) {
+    await cloudVerbundenMelden(i.id, "system", { ueber: "anmeldung" });
+    return { angemeldet: true, bestaetigen: null };
+  }
+  return { angemeldet: false, bestaetigen: bestaetigungsLink(an) };
+}
+
+let eingehakt = false;
+/** Meldet sich eine Server-AVA über das Relais, gilt ihre Cloud-Instanz als verbunden. */
+function verbindungEinhaken(): void {
+  if (eingehakt) return;
+  eingehakt = true;
+  kopfRelais.onInstanzVerbunden((actorId, _instanzId, info) => {
+    if (info.art !== "server" || !info.flyApp?.startsWith("ava-u-")) return;
+    void (async () => {
+      // flyApp meldet der Kopf selbst (ungeprüft); zusammen mit dem geprüften Konto reicht das:
+      // Wer sich so meldet, kann höchstens die eigene Instanz als verbunden markieren.
+      const r = await getGatewayPool().query<{ id: string }>(
+        `SELECT id FROM "CloudInstanz" WHERE "flyApp" = $1 AND lower("actorId") = lower($2) AND "geloeschtAt" IS NULL`,
+        [info.flyApp, actorId],
+      );
+      if (r.rows[0]) await cloudVerbundenMelden(r.rows[0].id, "system", { ueber: "relais" });
+    })().catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[cloud] Verbindung vermerken fehlgeschlagen"));
+  });
 }

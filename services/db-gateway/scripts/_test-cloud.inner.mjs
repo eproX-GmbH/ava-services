@@ -6,11 +6,13 @@ import I0 from "../src/lib/cloud/instanzen.ts";
 import A0 from "../src/lib/cloud/abgleich.ts";
 import AB0 from "../src/lib/cloud/posten.ts";
 import V0 from "../src/lib/mail/vorlagen.ts";
+import AN0 from "../src/lib/cloud/anmeldung.ts";
 const K = K0.default ?? K0;
 const I = I0.default ?? I0;
 const A = A0.default ?? A0;
 const AB = AB0.default ?? AB0;
 const V = V0.default ?? V0;
+const AN = AN0.default ?? AN0;
 let fehler = 0;
 const pruefe = async (name, fn) => { try { await fn(); console.log(`  ok   ${name}`); } catch (e) { fehler++; console.log(`  FEHL ${name}\n       ${e.stack?.split("\n").slice(0, 3).join("\n       ")}`); } };
 
@@ -48,6 +50,13 @@ function speicherRepo() {
     async ereignis(id, art, quelle, details) { ereignisse.push({ id, art, quelle, details }); },
     async ereignisse() { return []; },
     async liste() { return [...zeilen.values()]; },
+    async verbindungMelden(id) {
+      const z = zeilen.get(id);
+      if (!z || z.geloeschtAt || (z.verbundenAt && z.zustand !== "wartet_auf_verbindung")) return "nichts";
+      const neu = !z.verbundenAt; const s = { ...z.schritte }; delete s.wartetSeit; delete s.m3_30m; delete s.m3_24h;
+      zeilen.set(id, { ...z, verbundenAt: z.verbundenAt ?? new Date().toISOString(), zustand: z.zustand === "wartet_auf_verbindung" ? "laeuft" : z.zustand, schritte: s });
+      return neu ? "neu" : "wieder";
+    },
   };
 }
 function flyAttrappe({ scheitertBei } = {}) {
@@ -74,6 +83,8 @@ function flyAttrappe({ scheitertBei } = {}) {
     async appsListe() { return [...apps, "ava-kunden-image"]; },
     gesundWert: true,
     async gesund() { return this.gesundWert; },
+    anmeldungWert: null,
+    async anmeldung(app, tok) { merk("anmeldung", tok); return this.anmeldungWert; },
     apps,
   };
 }
@@ -180,8 +191,8 @@ await pruefe("Anlegen: fortsetzen, nach 5 Fehlversuchen nicht mehr", () => {
 await pruefe("Anlegen wird bei Soll gestoppt nicht fortgesetzt", () => assert.equal(A.naechsteAktion(inst({ zustand: "wird_angelegt" }), "gestoppt", null, T, R).art, "nichts"));
 
 console.log("Cloud: Abgleich-Läufe (Z2)");
-async function aufbau(zufall) {
-  const repo = speicherRepo(); const fly = flyAttrappe(); const betrieb = new I.CloudBetrieb(repo, fly, { zufall: () => zufall });
+async function aufbau(zufall, opt = {}) {
+  const repo = speicherRepo(); const fly = flyAttrappe(); const betrieb = new I.CloudBetrieb(repo, fly, { zufall: () => zufall, ...opt });
   const a = await betrieb.anlegen({ tenantId: "t1", actorId: "a1", quelle: "betreiber" });
   await betrieb.fortsetzen(a.id, "betreiber");
   const lage = { kontoSperre: null, abrechnung: "active" }; const meldungen = []; let uhr = T;
@@ -230,6 +241,11 @@ await pruefe("ruht 30 Tage: ohne Auto-Löschen nur Meldung, mit Auto-Löschen ge
   await A.abgleichen(w.deps);
   assert.equal((await w.repo.holen(w.id)).zustand, "ruht");
   assert.ok(w.meldungen.some((m) => m.includes("Löschung fällig")));
+  await A.abgleichen({ ...w.deps, regeln: { ...R, autoLoeschen: true } });
+  let z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "ruht", "erst Vorwarnung (M11), nicht sofort löschen");
+  assert.ok(z.schritte.m11);
+  await w.repo.aendern(w.id, { schritte: { ...z.schritte, m11: new Date(T - 8 * 86_400_000).toISOString() } });
   await A.abgleichen({ ...w.deps, regeln: { ...R, autoLoeschen: true } });
   assert.equal((await w.repo.holen(w.id)).zustand, "geloescht");
 });
@@ -371,6 +387,211 @@ await pruefe("Datum deutsch, Stufe 6 kündigt die Pause für morgen an", () => {
   assert.match(mails[2].betreff, /Morgen pausiere ich/);
   assert.match(mails[1].text, /8\. Dezember 2026/);
   assert.match(mails[3].text, /7\. Januar 2027/);
+});
+
+console.log("Cloud: Ein-Klick-Bestätigung (Z4)");
+const REALM = "https://auth.ava.bi/realms/ava";
+const LINK = `${REALM}/device?user_code=ABCD-EFGH`;
+await pruefe("Konfig: AVA_GATEWAY_TOKEN nur, wenn gesetzt", () => {
+  const mit = K.maschinenKonfig({ instanzId: "i1", tenantId: "t1", actorId: "a1", flyApp: "ava-u-abc", version: "0.1.980", volumeId: "vol_1", groesse: "standard", gatewayToken: true });
+  assert.deepEqual(mit.containers.find((c) => c.name === "ava").secrets.map((s) => s.env_var), ["AVA_SECRETS_KEY", "AVA_SETUP_TOKEN", "AVA_KONTO", "AVA_GATEWAY_TOKEN"]);
+});
+await pruefe("Tokens: ohne Geheimnis aus, mit Geheimnis fest; Mail-Link prüft Signatur und Ablauf", () => {
+  const alt = process.env.INTERNAL_HMAC_SECRET;
+  try {
+    delete process.env.INTERNAL_HMAC_SECRET;
+    assert.equal(AN.instanzToken("x"), null);
+    assert.equal(AN.bestaetigenToken("x", T), null);
+    process.env.INTERNAL_HMAC_SECRET = "test-geheim";
+    const id = "0b0f7c1e-1234-4a5b-9c8d-0123456789ab";
+    assert.equal(AN.instanzToken(id), AN.instanzToken(id));
+    assert.notEqual(AN.instanzToken(id), AN.instanzToken(id.replace("0b", "0c")));
+    const t = AN.bestaetigenToken(id, T + 60_000);
+    assert.equal(AN.bestaetigenTokenPruefen(t, T), id);
+    assert.equal(AN.bestaetigenTokenPruefen(t, T + 120_000), null, "abgelaufen");
+    assert.equal(AN.bestaetigenTokenPruefen(t.slice(0, -2) + "xx", T), null, "Signatur verändert");
+    const [teil, sig] = t.split(".");
+    const fremd = Buffer.from(`${id.replace("0b", "0c")}.${Buffer.from(teil, "base64url").toString().split(".")[1]}`).toString("base64url");
+    assert.equal(AN.bestaetigenTokenPruefen(`${fremd}.${sig}`, T), null, "andere Instanz");
+    assert.notEqual(AN.instanzToken(id), t.split(".")[1], "Zwecke getrennt");
+  } finally {
+    if (alt === undefined) delete process.env.INTERNAL_HMAC_SECRET; else process.env.INTERNAL_HMAC_SECRET = alt;
+  }
+});
+await pruefe("Link nur auf die Gerätebestätigung des eigenen Anmeldedienstes", () => {
+  assert.equal(AN.linkErlaubt(LINK, REALM), true);
+  assert.equal(AN.linkErlaubt(LINK, REALM + "/"), true);
+  assert.equal(AN.linkErlaubt("https://boese.example/realms/ava/device?user_code=X", REALM), false);
+  assert.equal(AN.linkErlaubt(`${REALM}/account`, REALM), false);
+  assert.equal(AN.linkErlaubt(LINK.replace("https:", "http:"), REALM), false);
+  assert.equal(AN.linkErlaubt(LINK, undefined), false);
+  assert.deepEqual(AN.bestaetigungsLink({ angemeldet: false, link: LINK, bis: "b" }, REALM), { link: LINK, bis: "b" });
+  assert.equal(AN.bestaetigungsLink({ angemeldet: true, link: LINK }, REALM), null);
+});
+await pruefe("Anlegen mit Token: Secret gesetzt, Maschine bekommt es, wartet seit jetzt", async () => {
+  const repo = speicherRepo(); const fly = flyAttrappe(); const b = new I.CloudBetrieb(repo, fly, { zufall: () => "tttttttttt", token: (id) => `tok-${id}` });
+  const a = await b.anlegen({ tenantId: "t1", actorId: "a1", quelle: "betreiber" });
+  await b.fortsetzen(a.id, "betreiber");
+  const z = await repo.holen(a.id);
+  assert.ok(fly.aufrufe.find((x) => x[0] === "secretsSetzen")[2].includes("AVA_GATEWAY_TOKEN"));
+  assert.equal(z.schritte.gatewayToken, true); assert.ok(z.schritte.wartetSeit);
+  const cfgM = [...fly.maschinen.values()][0].config;
+  assert.ok(cfgM.containers.find((c) => c.name === "ava").secrets.some((s) => s.env_var === "AVA_GATEWAY_TOKEN"));
+  assert.equal(z.zustand, "wartet_auf_verbindung");
+});
+await pruefe("Anlegen ohne Geheimnis: kein Token-Secret (Z4 aus, alles andere wie bisher)", async () => {
+  const repo = speicherRepo(); const fly = flyAttrappe(); const b = new I.CloudBetrieb(repo, fly, { zufall: () => "uuuuuuuuuu", token: () => null });
+  const a = await b.anlegen({ tenantId: "t1", actorId: "a1", quelle: "betreiber" });
+  await b.fortsetzen(a.id, "betreiber");
+  assert.ok(!fly.aufrufe.find((x) => x[0] === "secretsSetzen")[2].includes("AVA_GATEWAY_TOKEN"));
+  assert.ok(!(await repo.holen(a.id)).schritte.gatewayToken);
+});
+const mitToken = async (zufall) => {
+  const w = await mitMailsOpt(zufall, { token: (id) => `tok-${id}` });
+  w.fly.anmeldungWert = { angemeldet: false, link: LINK, bis: null };
+  return w;
+};
+async function mitMailsOpt(zufall, opt) {
+  const w = await aufbau(zufall, opt); const mails = [];
+  w.deps.benachrichtigen = async (art, i, extra) => { mails.push({ art, ...extra }); };
+  return { ...w, mails };
+}
+await pruefe("angemeldet → läuft, M2 genau einmal", async () => {
+  const w = await mitToken("v000000001");
+  w.fly.anmeldungWert = { angemeldet: true };
+  await A.abgleichen(w.deps); await A.abgleichen(w.deps);
+  const z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "laeuft"); assert.ok(z.verbundenAt);
+  assert.deepEqual(w.mails.map((m) => m.art), ["laeuft"]);
+  assert.ok(w.repo.ereignisseAlle.some((e) => e.art === "verbunden"));
+});
+await pruefe("M3: nach 30 Minuten und nach 24 Stunden je einmal", async () => {
+  const w = await mitToken("v000000002");
+  await w.repo.aendern(w.id, { schritte: { ...(await w.repo.holen(w.id)).schritte, wartetSeit: new Date(T).toISOString() } });
+  for (const min of [10, 31, 120, 25 * 60, 30 * 60]) { w.setzeUhr(T + min * 60_000); await A.abgleichen(w.deps); }
+  assert.deepEqual(w.mails.map((m) => `${m.art}:${m.stufe}`), ["bestaetigen:30m", "bestaetigen:24h"]);
+});
+await pruefe("M3 nicht ohne Ein-Klick-Endpunkt (älteres Image)", async () => {
+  const w = await mitToken("v000000003");
+  w.fly.anmeldungWert = null;
+  await w.repo.aendern(w.id, { schritte: { ...(await w.repo.holen(w.id)).schritte, wartetSeit: new Date(T - 2 * 86_400_000).toISOString() } });
+  await A.abgleichen(w.deps);
+  assert.equal(w.mails.length, 0);
+});
+await pruefe("Anmeldung verloren → wartet; wieder angemeldet → läuft ohne zweite M2", async () => {
+  const w = await mitToken("v000000004");
+  w.fly.anmeldungWert = { angemeldet: true }; await A.abgleichen(w.deps);
+  w.fly.anmeldungWert = { angemeldet: false, link: LINK }; await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "wartet_auf_verbindung");
+  w.fly.anmeldungWert = { angemeldet: false, link: null }; await A.abgleichen(w.deps);
+  w.fly.anmeldungWert = { angemeldet: true }; await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "laeuft");
+  assert.deepEqual(w.mails.map((m) => m.art), ["laeuft"]);
+  assert.ok(w.repo.ereignisseAlle.some((e) => e.art === "abgemeldet") && w.repo.ereignisseAlle.some((e) => e.art === "wieder_verbunden"));
+});
+await pruefe("Neustart ohne Link (Token wird geladen): bleibt läuft", async () => {
+  const w = await mitToken("v000000005");
+  w.fly.anmeldungWert = { angemeldet: true }; await A.abgleichen(w.deps);
+  w.fly.anmeldungWert = { angemeldet: false, link: null, phase: "komposition" }; await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "laeuft");
+});
+
+console.log("Cloud: Ausfall und Wiederkehr (Z4)");
+await pruefe("M4 ab 10 Minuten, Wackeln = eine Mail, M5 nach 5 Minuten stabil mit Dauer", async () => {
+  const w = await mitMails("w000000001");
+  await w.repo.aendern(w.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() });
+  const lauf = async (min, gesund) => { w.setzeUhr(T + min * 60_000); w.fly.gesundWert = gesund; await A.abgleichen(w.deps); };
+  await lauf(0, false); assert.equal(w.mails.length, 0);
+  await lauf(11, false);
+  assert.deepEqual(w.mails.map((m) => m.art), ["nicht_erreichbar"]);
+  assert.ok(w.meldungen.some((m) => m.includes("10 Minuten")), "Betreiber informiert");
+  await lauf(16, false); await lauf(20, true); await lauf(22, false); await lauf(30, true);
+  assert.deepEqual(w.mails.map((m) => m.art), ["nicht_erreichbar"], "kein M5 vor 5 Minuten stabil");
+  await lauf(36, true); await lauf(45, true);
+  assert.deepEqual(w.mails.map((m) => m.art), ["nicht_erreichbar", "wieder_erreichbar"]);
+  assert.equal(w.mails[1].dauerMin, 30);
+});
+await pruefe("kein Ausfall während Update (Fly nicht „started“)", async () => {
+  const w = await mitMails("w000000002");
+  await w.repo.aendern(w.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() });
+  const mid = (await w.repo.holen(w.id)).maschineId;
+  w.fly.maschinen.get(mid).state = "replacing"; w.fly.gesundWert = false;
+  for (const min of [0, 20, 40]) { w.setzeUhr(T + min * 60_000); await A.abgleichen(w.deps); }
+  assert.equal(w.mails.length, 0); assert.equal(w.meldungen.length, 0);
+  assert.equal((await w.repo.holen(w.id)).schritte.ungesundSeit, undefined);
+});
+await pruefe("noch nie verbunden: Ausfall nur an den Betreiber", async () => {
+  const w = await mitMails("w000000003");
+  w.fly.gesundWert = false;
+  for (const min of [0, 12]) { w.setzeUhr(T + min * 60_000); await A.abgleichen(w.deps); }
+  assert.equal(w.mails.length, 0); assert.equal(w.meldungen.length, 1);
+});
+
+console.log("Cloud: Löschung mit Vorwarnung (Z4)");
+await pruefe("Standard: Auto-Löschen an, mit CLOUD_AUTO_LOESCHEN=0 aus", () => {
+  const alt = process.env.CLOUD_AUTO_LOESCHEN;
+  delete process.env.CLOUD_AUTO_LOESCHEN; assert.equal(A.regelnAusEnv().autoLoeschen, true);
+  process.env.CLOUD_AUTO_LOESCHEN = "0"; assert.equal(A.regelnAusEnv().autoLoeschen, false);
+  if (alt === undefined) delete process.env.CLOUD_AUTO_LOESCHEN; else process.env.CLOUD_AUTO_LOESCHEN = alt;
+});
+await pruefe("M11 am 23. Tag, Löschen frühestens 7 Tage danach, dann M12", async () => {
+  const w = await mitMails("l000000001");
+  w.deps.regeln = { ...R, autoLoeschen: true };
+  await w.betrieb.stoppen(w.id, "admin", "admin", { absicht: true });
+  await w.betrieb.ruhen(w.id, "admin");
+  await w.repo.aendern(w.id, { gestopptAt: new Date(T - 22 * tag).toISOString() });
+  await A.abgleichen(w.deps); assert.equal(w.mails.length, 0, "Tag 22: noch nichts");
+  await w.repo.aendern(w.id, { gestopptAt: new Date(T - 24 * tag).toISOString() });
+  await A.abgleichen(w.deps);
+  assert.deepEqual(w.mails.map((m) => m.art), ["loeschung_angekuendigt"]);
+  assert.equal(w.mails[0].loeschenAm, new Date(T + 7 * tag).toISOString(), "frühestens 7 Tage nach der Mail");
+  w.setzeUhr(T + 6 * tag); await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "ruht", "Tag 30, aber Mail erst 6 Tage alt");
+  w.setzeUhr(T + 7 * tag); await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "geloescht");
+  assert.deepEqual(w.mails.map((m) => m.art), ["loeschung_angekuendigt", "geloescht"]);
+});
+await pruefe("Betreiber-Stopp: nie automatisch löschen, keine Mail", async () => {
+  const w = await mitMails("l000000002");
+  w.deps.regeln = { ...R, autoLoeschen: true };
+  await w.betrieb.stoppen(w.id, "betreiber", "betreiber", { absicht: true });
+  await w.betrieb.ruhen(w.id, "betreiber");
+  await w.repo.aendern(w.id, { gestopptAt: new Date(T - 40 * tag).toISOString() });
+  await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "ruht");
+  assert.equal(w.mails.length, 0); assert.ok(w.meldungen.some((m) => m.includes("Löschung fällig")));
+});
+await pruefe("Löschdatum für die Anzeige", () => {
+  assert.equal(A.loeschDatum({ gestopptAt: null, schritte: {} }, R), null);
+  assert.equal(A.loeschDatum({ gestopptAt: new Date(T).toISOString(), schritte: {} }, R), new Date(T + 30 * tag).toISOString());
+  assert.equal(A.loeschDatum({ gestopptAt: new Date(T).toISOString(), schritte: { m11: new Date(T + 25 * tag).toISOString() } }, R), new Date(T + 32 * tag).toISOString());
+});
+
+console.log("Cloud: Mails (Z4)");
+const mailsZ4 = [
+  V.serverLaeuftMail(basisMail),
+  V.serverBestaetigenMail({ ...basisMail, stufe: "30m", bestaetigenUrl: "https://ava-db-gateway.fly.dev/cloud/bestaetigen?t=abc" }),
+  V.serverBestaetigenMail({ ...basisMail, stufe: "24h", bestaetigenUrl: "https://ava-db-gateway.fly.dev/cloud/bestaetigen?t=abc" }),
+  V.serverNichtErreichbarMail({ ...basisMail, seit: "2026-12-01T11:00:00Z" }),
+  V.serverWiederErreichbarMail({ ...basisMail, dauerMin: 30 }),
+  V.serverLoeschungMail({ ...basisMail, grund: "zahlung", loeschenAm: "2027-01-07T10:00:00Z", zahlungUrl: "https://admin.ava.bi/abrechnung", fuerAdmin: true }),
+  V.serverLoeschungMail({ ...basisMail, grund: "admin", loeschenAm: "2027-01-07T10:00:00Z", zahlungUrl: "x", fuerAdmin: false }),
+  V.serverGeloeschtMail(basisMail),
+];
+await pruefe("keine Fachbegriffe, Anrede, höchstens ein Knopf", () => {
+  for (const m of mailsZ4) {
+    assert.ok(!verboten.test(m.betreff + m.text), `${m.betreff}: ${(m.betreff + m.text).match(verboten)}`);
+    assert.match(m.html, /Hallo Eva,/);
+    assert.ok((m.html.match(/border-radius:8px;">\s*<a /g) ?? []).length <= 1, m.betreff);
+  }
+});
+await pruefe("M3 mit Link, M4 mit Uhrzeit, M5 mit Dauer, M11 mit Datum und passendem Knopf", () => {
+  assert.ok(mailsZ4[1].html.includes("cloud/bestaetigen?t=abc")); assert.match(mailsZ4[2].betreff, /Erinnerung/);
+  assert.match(mailsZ4[3].text, /seit 12:00 Uhr/);
+  assert.match(mailsZ4[4].text, /etwa 30 Minuten/);
+  assert.match(mailsZ4[5].text, /7\. Januar 2027/); assert.match(mailsZ4[5].text, /Zahlung aktualisieren/);
+  assert.match(mailsZ4[6].text, /sprich bitte vorher mit ihr/);
+  assert.equal(V.dauerText(150), "etwa 3 Stunden"); assert.equal(V.dauerText(3000), "etwa 2 Tage"); assert.equal(V.dauerText(1), "etwa eine Minute");
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

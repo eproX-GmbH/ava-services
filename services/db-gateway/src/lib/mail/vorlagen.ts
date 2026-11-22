@@ -313,3 +313,85 @@ export function serverLaeuftWiederMail(d: ServerMailBasis): Mail {
   const text = [hallo, "", "dein AVA-Server läuft wieder. Alles ist da, wo du es gelassen hast.", "", `AVA öffnen: ${link}`].join("\n");
   return { betreff: "Deine AVA läuft wieder", html: rahmen({ vorschau: "Alles ist da, wo du es gelassen hast", inhalt, fusszeile: serverFuss() }), text };
 }
+
+// ---- 6b. AVA-Server: Verbindung, Ausfall, Löschung (§10.4, Z4) --------------------------
+
+const uhrzeit = (iso: string) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+const appMehr = (appUrl: string) => `${appUrl.replace(/\/+$/, "")}/mehr`;
+const hallo = (vorname: string | null) => (vorname ? `Hallo ${vorname},` : "Hallo,");
+
+/** „etwa 25 Minuten“, „etwa 3 Stunden“, „etwa 2 Tage“ */
+export function dauerText(minuten: number): string {
+  const m = Math.max(1, Math.round(minuten));
+  if (m < 60) return m === 1 ? "etwa eine Minute" : `etwa ${m} Minuten`;
+  const h = Math.round(m / 60);
+  if (h < 48) return h === 1 ? "etwa eine Stunde" : `etwa ${h} Stunden`;
+  return `etwa ${Math.round(h / 24)} Tage`;
+}
+
+/** M2: Die AVA ist eingerichtet und mit dem Konto verbunden. */
+export function serverLaeuftMail(d: ServerMailBasis): Mail {
+  const link = d.appUrl.replace(/\/+$/, "");
+  const kern = "dein AVA-Server ist eingerichtet und mit deinem Konto verbunden. Ab jetzt arbeite ich rund um die Uhr für dich, auch wenn dein Rechner aus ist.";
+  const weiter = "Als Nächstes wählst du in der App, mit welchem KI-Modell ich arbeite. Wenn du magst, verbindest du auch Telegram, dann erreichst du mich unterwegs. Die Desktop-App brauchst du dafür nicht.";
+  const inhalt = ueberschrift("Deine AVA läuft") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(weiter)) + knopf("AVA öffnen", link);
+  const text = [hallo(d.vorname), "", kern, "", weiter, "", `AVA öffnen: ${link}`].join("\n");
+  return { betreff: "Deine AVA läuft", html: rahmen({ vorschau: "Ab jetzt rund um die Uhr für dich da", inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M3: Bestätigung fehlt noch (nach 30 Minuten bzw. als Erinnerung nach 24 Stunden). */
+export function serverBestaetigenMail(d: ServerMailBasis & { stufe: "30m" | "24h"; bestaetigenUrl: string }): Mail {
+  const titel = d.stufe === "24h" ? "Erinnerung: Deine AVA wartet auf deine Bestätigung" : "Ein Schritt fehlt noch: Bestätige deine AVA";
+  const kern = "dein AVA-Server läuft, wartet aber noch auf deine Bestätigung, dass er für dich arbeiten darf. Das ist ein Klick: Du landest auf der Anmeldeseite von AVA und bestätigst dort.";
+  const sicher = "Nur dein eigenes Konto kann diese AVA bestätigen. Der Link gilt sieben Tage.";
+  const inhalt = ueberschrift(titel) + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + knopf("Jetzt bestätigen", d.bestaetigenUrl) + absatz(`<span style="font-size:13px;color:${FARBE.leise};">${esc(sicher)}</span>`);
+  const text = [hallo(d.vorname), "", kern, "", `Jetzt bestätigen: ${d.bestaetigenUrl}`, "", sicher].join("\n");
+  return { betreff: titel, html: rahmen({ vorschau: "Ein Klick, dann arbeite ich für dich", inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M4: Die AVA ist seit mindestens 10 Minuten nicht erreichbar. */
+export function serverNichtErreichbarMail(d: ServerMailBasis & { seit: string }): Mail {
+  const kern = `seit ${uhrzeit(d.seit)} Uhr ist dein AVA-Server nicht erreichbar. Wir sind informiert und kümmern uns darum. Deine Daten sind davon nicht betroffen.`;
+  const weiter = "Sobald ich wieder laufe, bekommst du eine kurze Nachricht. Du musst nichts tun.";
+  const inhalt = ueberschrift("Deine AVA ist gerade nicht erreichbar") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(weiter)) + knopf("Stand ansehen", appMehr(d.appUrl));
+  const text = [hallo(d.vorname), "", kern, weiter, "", `Stand ansehen: ${appMehr(d.appUrl)}`].join("\n");
+  return { betreff: "Deine AVA ist gerade nicht erreichbar", html: rahmen({ vorschau: "Wir kümmern uns darum, du musst nichts tun", inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M5: Nach einer Ausfallmail wieder stabil erreichbar. */
+export function serverWiederErreichbarMail(d: ServerMailBasis & { dauerMin: number }): Mail {
+  const kern = `dein AVA-Server ist wieder erreichbar. Die Unterbrechung dauerte ${dauerText(d.dauerMin)}. Deine Daten sind vollständig da.`;
+  const inhalt = ueberschrift("Deine AVA ist wieder da") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz("Danke für deine Geduld.");
+  const text = [hallo(d.vorname), "", kern, "", "Danke für deine Geduld."].join("\n");
+  return { betreff: "Deine AVA ist wieder da", html: rahmen({ vorschau: `Unterbrechung: ${dauerText(d.dauerMin)}`, inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M11: Die Daten einer pausierten AVA werden in 7 Tagen gelöscht. */
+export function serverLoeschungMail(d: ServerMailBasis & { grund: "zahlung" | "kuendigung" | "abbestellt" | "admin"; loeschenAm: string; zahlungUrl: string; fuerAdmin: boolean }): Mail {
+  const am = datum(d.loeschenAm);
+  const kern = `dein AVA-Server ist seit einiger Zeit pausiert. Am ${am} lösche ich ihn mitsamt seinen Daten endgültig.`;
+  let tun: string; let knopfText: string; let knopfUrl: string;
+  if (d.grund === "admin" && !d.fuerAdmin) {
+    tun = "Deine Organisation hat den Server pausiert. Wenn du die Daten noch brauchst, sprich bitte vorher mit ihr.";
+    knopfText = "AVA öffnen"; knopfUrl = appMehr(d.appUrl);
+  } else if ((d.grund === "zahlung" || d.grund === "kuendigung") && d.fuerAdmin) {
+    tun = "Wenn du die Daten behalten willst: Sobald die Zahlung bzw. das Abo wieder läuft, startet AVA von selbst und alles ist wieder da.";
+    knopfText = "Zahlung aktualisieren"; knopfUrl = d.zahlungUrl;
+  } else {
+    tun = "Wenn du die Daten behalten willst, starte deine AVA vorher wieder. Danach kannst du sie auch auf die Desktop-App holen.";
+    knopfText = "AVA öffnen"; knopfUrl = appMehr(d.appUrl);
+  }
+  const nichts = "Wenn du AVA nicht mehr brauchst, musst du nichts tun.";
+  const inhalt = ueberschrift("Deine Daten werden in 7 Tagen gelöscht") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(tun)) + absatz(esc(nichts)) + knopf(knopfText, knopfUrl);
+  const text = [hallo(d.vorname), "", kern, tun, nichts, "", `${knopfText}: ${knopfUrl}`].join("\n");
+  return { betreff: "Deine Daten werden in 7 Tagen gelöscht", html: rahmen({ vorschau: `Löschung am ${am}`, inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M12: Server und Daten sind gelöscht. */
+export function serverGeloeschtMail(d: ServerMailBasis): Mail {
+  const kern = "wie angekündigt habe ich deinen AVA-Server mitsamt seinen Daten gelöscht. Auch die letzten Sicherungen verschwinden innerhalb eines Tages.";
+  const weiter = "Du kannst jederzeit neu anfangen: kostenlos mit der Desktop-App oder mit einem neuen Server.";
+  const inhalt = ueberschrift("Deine Daten wurden gelöscht") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(weiter)) + knopf("AVA öffnen", appMehr(d.appUrl));
+  const text = [hallo(d.vorname), "", kern, weiter, "", `AVA öffnen: ${appMehr(d.appUrl)}`].join("\n");
+  return { betreff: "Deine Daten wurden gelöscht", html: rahmen({ vorschau: "Server und Daten sind entfernt", inhalt, fusszeile: "Du bekommst diese Mail, weil für dich ein AVA-Server gebucht war." }), text };
+}

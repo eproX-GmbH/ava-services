@@ -9,6 +9,8 @@
 // Org (→ FLY_KUNDEN_IMAGE_APP); App-Secrets erreichen Container nur, wenn sie je Container
 // genannt werden (konfig.ts).
 
+import { AnmeldeStandSchema, type AnmeldeStand } from "./anmeldung";
+
 const API = "https://api.machines.dev/v1";
 const REGISTRY = "https://registry.fly.io/v2";
 
@@ -53,6 +55,8 @@ export interface FlyKunden {
   appsListe(): Promise<string[]>;
   /** GET /healthz der Instanz (öffentliche fly.dev-Adresse). */
   gesund(app: string): Promise<boolean>;
+  /** GET /anmeldung der Instanz (Z4); null = nicht erreichbar oder Image ohne Endpunkt. */
+  anmeldung(app: string, token: string): Promise<AnmeldeStand | null>;
 }
 
 async function anfrage<T>(methode: string, pfad: string, body?: unknown, erlaubt: number[] = []): Promise<{ status: number; json: T | null }> {
@@ -144,6 +148,16 @@ export const flyKunden: FlyKunden = {
       return r.ok;
     } catch {
       return false;
+    }
+  },
+  async anmeldung(app, tok) {
+    try {
+      const r = await fetch(`https://${app}.fly.dev/anmeldung`, { headers: { authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(6_000) });
+      if (!r.ok) return null;
+      const p = AnmeldeStandSchema.safeParse(await r.json());
+      return p.success ? p.data : null;
+    } catch {
+      return null;
     }
   },
   async neuesteVersion() {

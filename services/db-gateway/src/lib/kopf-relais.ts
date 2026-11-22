@@ -230,7 +230,13 @@ export class KopfRelais {
       // Konsole „Aktive Nutzer“: Version auch von Apps, die x-ava-version noch nicht mitsenden.
       vermerkeAppVersion(getGatewayPool(), { actorId: k.actorId, version: k.version });
       this.verteileListe(k.actorId);
-      this.instanzVerbundenHandler?.(k.actorId, k.instanzId);
+      for (const cb of this.instanzVerbundenHandler) {
+        try {
+          cb(k.actorId, k.instanzId, { art: k.art, flyApp: k.flyApp });
+        } catch (err) {
+          logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[kopf-relais] Verbunden-Handler fehlgeschlagen");
+        }
+      }
       return;
     }
     // App-Kanal (docs/PLAN_APP_PWA.md §3.2): gestreamte Frames an die Apps des Nutzers.
@@ -367,11 +373,11 @@ export class KopfRelais {
   }
 
   private appFrameHandler: ((actorId: string, instanzId: string, frame: unknown) => void) | null = null;
-  private instanzVerbundenHandler: ((actorId: string, instanzId: string) => void) | null = null;
+  private readonly instanzVerbundenHandler: Array<(actorId: string, instanzId: string, info: { art: InstanzArt; flyApp: string | null }) => void> = [];
 
-  /** Eine Instanz hat sich (neu) angemeldet: z. B. um ihr sofort das App-Abo zu melden. */
-  onInstanzVerbunden(cb: (actorId: string, instanzId: string) => void): void {
-    this.instanzVerbundenHandler = cb;
+  /** Eine Instanz hat sich (neu) angemeldet: z. B. App-Abo melden (app.ts), Cloud-Instanz als verbunden vermerken (cloud/betrieb.ts). */
+  onInstanzVerbunden(cb: (actorId: string, instanzId: string, info: { art: InstanzArt; flyApp: string | null }) => void): void {
+    this.instanzVerbundenHandler.push(cb);
   }
 
   /** Empfaenger fuer App-Frames (lib/app-strom.ts). */

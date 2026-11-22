@@ -1,5 +1,6 @@
 // AVA-Server für Nutzer und Admins (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md Z3).
-//   GET  /cloud/mein                              eigener Server (App, Desktop)
+//   GET  /cloud/mein                              eigener Server (App, Desktop); wartet er auf die
+//                                                 Bestätigung, mit Ein-Klick-Link (Z4)
 //   GET  /tenants/me/cloud                        Admin: Server je Mitglied (Konsole)
 //   PUT  /tenants/me/mitglieder/{actorId}/cloud   Admin bzw. Einzelkämpfer: an/aus
 //   POST /cloud/kaufen                            Einzelkämpfer ohne Abo: Checkout Pro + Server
@@ -11,8 +12,8 @@ import { getGatewayPool } from "../../lib/producer-pools";
 import { loadEnv } from "../../lib/env";
 import { istAdmin } from "../../lib/tenants";
 import { istBetreiber, type AuthContext } from "../../middleware/auth";
-import { cloudBetrieb } from "../../lib/cloud/betrieb";
-import { regelnAusEnv } from "../../lib/cloud/abgleich";
+import { cloudBestaetigung, cloudBetrieb } from "../../lib/cloud/betrieb";
+import { loeschDatum, regelnAusEnv } from "../../lib/cloud/abgleich";
 import { CloudAbrechnungFehler, cloudAbbestellen, cloudCheckout, cloudEinschalten } from "../../lib/cloud/abrechnung";
 import type { CloudInstanz } from "../../lib/cloud/instanzen";
 import { ErrorShape } from "./schemas";
@@ -25,8 +26,7 @@ const offen = (auth: AuthContext) => process.env.CLOUD_SELBSTBEDIENUNG === "1" |
 
 /** Was App und Konsole anzeigen: nur nutzerrelevante Felder, keine Fly-Kennungen. */
 export function nutzerSicht(i: CloudInstanz) {
-  const r = regelnAusEnv();
-  const loeschenAb = i.gestopptAt ? new Date(Date.parse(i.gestopptAt) + r.loeschTage * 86_400_000).toISOString() : null;
+  const loeschenAb = loeschDatum(i, regelnAusEnv());
   return {
     zustand: i.zustand,
     laeuftSoll: i.soll === "laufen",
@@ -54,8 +54,15 @@ cloudRouter.openapi(
   createRoute({ method: "get", path: "/cloud/mein", tags: ["cloud"], summary: "Eigener AVA-Server (oder null)", responses: { 200: { content: { "application/json": { schema: Antwort } }, description: "Stand" } } }),
   async (c) => {
     const auth = c.get("auth");
-    const i = await instanzVon(auth.tenantId, auth.actorId);
-    return c.json({ server: i ? nutzerSicht(i) : null, buchbar: offen(auth) }, 200);
+    let i = await instanzVon(auth.tenantId, auth.actorId);
+    // Wartet sie auf die Bestätigung: aktuellen Ein-Klick-Link holen (oder gleich als verbunden vermerken).
+    let bestaetigen: { link: string; bis: string | null } | null = null;
+    if (i?.zustand === "wartet_auf_verbindung") {
+      const b = await cloudBestaetigung(i).catch(() => ({ angemeldet: false, bestaetigen: null }));
+      if (b.angemeldet) i = await instanzVon(auth.tenantId, auth.actorId);
+      bestaetigen = b.bestaetigen;
+    }
+    return c.json({ server: i ? { ...nutzerSicht(i), bestaetigen } : null, buchbar: offen(auth) }, 200);
   },
 );
 

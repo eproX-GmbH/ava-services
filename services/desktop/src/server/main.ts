@@ -12,7 +12,8 @@
 //     adresse einfügen). Geschützt durch ein Setup-Token aus `AVA_SETUP_TOKEN`
 //     oder, wenn es fehlt, ein beim Start erzeugtes, das im Log steht.
 //   - GET /healthz (Prozess lebt), GET /readyz (angemeldet und gestartet),
-//     GET /status (Kurzlage als JSON, nur mit Setup-Token).
+//     GET /status (Kurzlage als JSON, nur mit Setup-Token),
+//     GET /anmeldung (Bestätigungslink für das Gateway, nur mit AVA_GATEWAY_TOKEN).
 //   - SIGTERM/SIGINT: dieselben Stopp-Schritte wie die Beenden-Kette der App.
 //
 // Umgebung (siehe infra/.env.server.example): AVA_DATA_DIR, AVA_RESOURCES_DIR,
@@ -419,6 +420,34 @@ function tokenOk(url: URL): boolean {
   return timingSafeEqual(Buffer.from(t), Buffer.from(setupToken));
 }
 
+// Ein-Klick-Bestätigung für Cloud-Instanzen (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md Z4): Das Gateway
+// holt hier den Bestätigungslink des Device Flows ab und zeigt ihn nur dem gebundenen Nutzer
+// (App, Mail). Eigenes Token, das nichts anderes erlaubt; ohne AVA_GATEWAY_TOKEN gibt es den
+// Endpunkt nicht.
+const gatewayToken = process.env.AVA_GATEWAY_TOKEN?.trim() || "";
+
+function gatewayTokenOk(req: IncomingMessage): boolean {
+  if (!gatewayToken) return false;
+  const kopf = req.headers.authorization ?? "";
+  const t = kopf.startsWith("Bearer ") ? kopf.slice(7).trim() : "";
+  if (t.length !== gatewayToken.length) return false;
+  return timingSafeEqual(Buffer.from(t), Buffer.from(gatewayToken));
+}
+
+/** Anmeldestand für das Gateway: angemeldet ja/nein und, solange gültig, der Bestätigungslink. */
+function anmeldungJson(): Record<string, unknown> {
+  const angemeldet = core?.auth.getStatus().signedIn ?? false;
+  // Läuft der Code in weniger als 30 s ab, lieber auf den nächsten warten.
+  const c = !angemeldet && lage.code && lage.code.expiresAt > Date.now() + 30_000 ? lage.code : null;
+  return {
+    angemeldet,
+    phase: lage.phase,
+    link: c ? c.verificationUriComplete ?? null : null,
+    code: c ? c.userCode : null,
+    bis: c ? new Date(c.expiresAt).toISOString() : null,
+  };
+}
+
 async function formular(req: IncomingMessage): Promise<URLSearchParams> {
   const teile: Buffer[] = [];
   let groesse = 0;
@@ -552,6 +581,16 @@ function starteHttp(): void {
       const bereit = lage.phase === "laeuft" && (core?.auth.getStatus().signedIn ?? false);
       res.writeHead(bereit ? 200 : 503, { "content-type": "application/json" });
       res.end(JSON.stringify({ bereit, phase: lage.phase }));
+      return;
+    }
+    if (pfad === "/anmeldung") {
+      if (!gatewayTokenOk(req)) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(anmeldungJson()));
       return;
     }
     if (pfad === "/status") {

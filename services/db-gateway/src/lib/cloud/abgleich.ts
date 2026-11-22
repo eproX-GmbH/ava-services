@@ -11,9 +11,13 @@
 // Schalter (Env):
 //   CLOUD_ABGLEICH=0        Abgleicher aus (Notschalter; Instanzen bleiben, wie sie sind)
 //   CLOUD_RUHE_TAGE=7       gestoppt → Maschine löschen (Volume bleibt)
-//   CLOUD_LOESCH_TAGE=30    nach dem Stopp → endgültig löschen …
-//   CLOUD_AUTO_LOESCHEN=1   … aber nur damit; sonst nur Meldung „Löschung fällig“ (bis die
-//                           Vorwarn-Mail aus Z4 steht, löscht nichts automatisch)
+//   CLOUD_LOESCH_TAGE=30    nach dem Stopp → endgültig löschen, frühestens 7 Tage nach der
+//                           Vorwarn-Mail M11 (Z4); ohne Mail-Grund (Betreiber) nie automatisch
+//   CLOUD_AUTO_LOESCHEN=0   automatisches Löschen aus; dann nur Meldung „Löschung fällig“
+//
+// Mails an Nutzer (Z4, §10.4): M2 verbunden, M3 Bestätigung fehlt (30 Min./24 h), M4/M5 Ausfall
+// und Wiederkehr (ab 10 Min., höchstens 1 je 6 h, nicht während Update/Neustart), M11
+// Löschung in 7 Tagen, M12 gelöscht.
 
 import type pg from "pg";
 import type { FlyKunden } from "./fly-maschinen";
@@ -55,6 +59,7 @@ export function sollBestimmen(
 
 export type Aktion =
   | { art: "nichts" }
+  | { art: "vorwarnen" }
   | { art: "fortsetzen" }
   | { art: "starten"; warum: "soll_laufen" | "unerwartet_gestoppt" }
   | { art: "stoppen"; wiederGestartet: boolean }
@@ -64,6 +69,22 @@ export type Aktion =
   | { art: "gesundheit" };
 
 export interface Regeln { ruheTage: number; loeschTage: number; autoLoeschen: boolean; maxVersuche: number; fristTage: number }
+
+/** Vorwarnung M11 so viele Tage vor dem Löschen; gelöscht wird frühestens so lange danach. */
+export const VORWARN_TAGE = 7;
+const MIN = 60_000;
+const STUNDE = 60 * MIN;
+
+/** Pausen-Gründe, bei denen der Nutzer Mails bekommt (nicht: Betreiber, Konto). */
+export const MAIL_GRUENDE = new Set<Grund>(["zahlung", "kuendigung", "abbestellt", "admin"]);
+
+/** Wann die Daten frühestens gelöscht werden (für Anzeige und Mails); null = läuft. */
+export function loeschDatum(i: Pick<CloudInstanz, "gestopptAt" | "schritte">, r: Pick<Regeln, "loeschTage">): string | null {
+  if (!i.gestopptAt) return null;
+  const nachStopp = Date.parse(i.gestopptAt) + r.loeschTage * TAG;
+  const gewarnt = typeof i.schritte.m11 === "string" ? Date.parse(i.schritte.m11) + VORWARN_TAGE * TAG : 0;
+  return new Date(Math.max(nachStopp, gewarnt)).toISOString();
+}
 
 const LAEUFT = new Set(["started", "starting", "replacing", "updating"]);
 
@@ -82,7 +103,18 @@ export function naechsteAktion(i: CloudInstanz, soll: Soll, fly: string | null, 
     if (laeuft) return { art: "stoppen", wiederGestartet: i.zustand === "gestoppt" || i.zustand === "ruht" };
     const seit = i.gestopptAt ? Date.parse(i.gestopptAt) : null;
     if (i.zustand === "gestoppt" && seit !== null && jetzt - seit >= r.ruheTage * TAG) return { art: "ruhen" };
-    if (i.zustand === "ruht" && seit !== null && jetzt - seit >= r.loeschTage * TAG) return r.autoLoeschen ? { art: "loeschen" } : { art: "loeschen_faellig" };
+    if ((i.zustand === "ruht" || i.zustand === "gestoppt") && seit !== null) {
+      // Löschen nur nach Vorwarnung (M11) mit 7 Tagen Abstand; Betreiber-Stopps nie automatisch.
+      const mitMail = i.grund !== null && MAIL_GRUENDE.has(i.grund);
+      const gewarnt = typeof i.schritte.m11 === "string" ? Date.parse(i.schritte.m11) : null;
+      const automatisch = r.autoLoeschen && i.grund !== "betreiber";
+      if (automatisch && mitMail && gewarnt === null && jetzt - seit >= Math.max(0, r.loeschTage - VORWARN_TAGE) * TAG) return { art: "vorwarnen" };
+      if (i.zustand === "ruht" && jetzt - seit >= r.loeschTage * TAG) {
+        if (!automatisch) return { art: "loeschen_faellig" };
+        if (mitMail && (gewarnt === null || jetzt - gewarnt < VORWARN_TAGE * TAG)) return { art: "nichts" };
+        return { art: "loeschen" };
+      }
+    }
     // Soll gestoppt, Maschine steht, Datensatz sagt noch „läuft“ (z. B. Neustart des Gateways mitten im Stoppen)
     if (i.zustand === "laeuft" || i.zustand === "wartet_auf_verbindung") return { art: "stoppen", wiederGestartet: false };
     return { art: "nichts" };
@@ -100,10 +132,9 @@ export function alarmFaellig(i: Pick<CloudInstanz, "schritte">, art: string, jet
 }
 
 /** Nachrichten des Abgleichers an Nutzer (Mail-Katalog §10.4). */
-export type CloudNachricht = "zahlung_offen" | "pausiert" | "laeuft_wieder";
-
-/** Pausen-Gründe, bei denen der Nutzer eine Mail bekommt (nicht: Betreiber, Konto). */
-const MAIL_GRUENDE = new Set<Grund>(["zahlung", "kuendigung", "abbestellt", "admin"]);
+export type CloudNachricht =
+  | "zahlung_offen" | "pausiert" | "laeuft_wieder"
+  | "laeuft" | "bestaetigen" | "nicht_erreichbar" | "wieder_erreichbar" | "loeschung_angekuendigt" | "geloescht";
 
 /** Erinnerungsstufe bei offener Zahlung: 0, 3, 6 Tage (§10.5); null = keine. */
 export function zahlungsStufe(offenSeit: string | null | undefined, jetzt: number): 0 | 3 | 6 | null {
@@ -130,7 +161,7 @@ export interface AbgleichDeps {
 
 export function regelnAusEnv(): Regeln {
   const zahl = (n: string, d: number) => { const v = Number(process.env[n]); return Number.isFinite(v) && v > 0 ? v : d; };
-  return { ruheTage: zahl("CLOUD_RUHE_TAGE", 7), loeschTage: zahl("CLOUD_LOESCH_TAGE", 30), autoLoeschen: process.env.CLOUD_AUTO_LOESCHEN === "1", maxVersuche: 5, fristTage: zahl("CLOUD_FRIST_TAGE", 7) };
+  return { ruheTage: zahl("CLOUD_RUHE_TAGE", 7), loeschTage: zahl("CLOUD_LOESCH_TAGE", 30), autoLoeschen: process.env.CLOUD_AUTO_LOESCHEN !== "0", maxVersuche: 5, fristTage: zahl("CLOUD_FRIST_TAGE", 7) };
 }
 
 export interface AbgleichBericht { geprueft: number; aktionen: Record<string, number>; fehler: number; waisen: string[] }
@@ -193,6 +224,12 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
           break;
         case "stoppen":
           await d.betrieb.stoppen(i.id, grund ?? "betreiber", "abgleicher");
+          if (i.schritte.m4Offen || i.schritte.ungesundSeit || i.schritte.wiederSeit) {
+            // Ausfall-Zustand vergessen: nach der Pause kommt M10, nicht zusätzlich M5.
+            const s = { ...(await d.repo.holen(i.id))?.schritte };
+            delete s.m4Offen; delete s.wiederSeit; delete s.ungesundSeit;
+            await d.repo.aendern(i.id, { schritte: s });
+          }
           if (!a.wiederGestartet && grund && MAIL_GRUENDE.has(grund) && vorher.zustand !== "gestoppt" && vorher.zustand !== "ruht") {
             await melde("pausiert", { grund, loeschenAb: new Date(jetzt() + r.loeschTage * TAG).toISOString() });
           }
@@ -214,28 +251,22 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
           break;
         case "loeschen":
           await d.betrieb.loeschen(i.id, "abgleicher");
+          if (i.grund && MAIL_GRUENDE.has(i.grund)) await melde("geloescht", { grund: i.grund });
           await d.melden(`☁️ AVA Cloud ${i.flyApp}: nach ${r.loeschTage} Tagen gelöscht (${i.grund}).`).catch(() => undefined);
           break;
+        case "vorwarnen": {
+          i.schritte = { ...i.schritte, m11: new Date(jetzt()).toISOString() };
+          await d.repo.aendern(i.id, { schritte: i.schritte });
+          await d.repo.ereignis(i.id, "loeschung_angekuendigt", "abgleicher", { am: loeschDatum(i, r) });
+          await melde("loeschung_angekuendigt", { grund: i.grund, loeschenAm: loeschDatum(i, r) });
+          break;
+        }
         case "loeschen_faellig":
           await merkeAlarm("loeschen_faellig", `ist seit ${r.loeschTage} Tagen gestoppt (${i.grund}); Löschung fällig (CLOUD_AUTO_LOESCHEN aus).`);
           break;
-        case "gesundheit": {
-          const ok = await d.fly.gesund(i.flyApp);
-          if (ok) {
-            const alt = i.gesundAt ? Date.parse(i.gesundAt) : 0;
-            const s = { ...i.schritte }; delete s.ungesundSeit;
-            if (jetzt() - alt > 10 * 60_000 || i.schritte.ungesundSeit) await d.repo.aendern(i.id, { gesundAt: new Date(jetzt()).toISOString(), schritte: s });
-          } else {
-            const seit = typeof i.schritte.ungesundSeit === "string" ? Date.parse(i.schritte.ungesundSeit) : null;
-            if (seit === null) {
-              i.schritte = { ...i.schritte, ungesundSeit: new Date(jetzt()).toISOString() };
-              await d.repo.aendern(i.id, { schritte: i.schritte });
-            } else if (jetzt() - seit >= 15 * 60_000) {
-              await merkeAlarm("ungesund", "läuft, antwortet aber seit über 15 Minuten nicht auf /healthz.");
-            }
-          }
+        case "gesundheit":
+          await gesundheit(d, i, fly, jetzt(), melde, merkeAlarm);
           break;
-        }
       }
     } catch (err) {
       bericht.fehler++;
@@ -259,6 +290,83 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
     }
   }
   return bericht;
+}
+
+/**
+ * Gesundheit und Verbindung einer laufenden Instanz (Z4). Während Update/Neustart (Fly-Zustand
+ * nicht „started“) wird nichts bewertet: keine Ausfallmail bei geplanten Updates.
+ */
+async function gesundheit(
+  d: AbgleichDeps,
+  i: CloudInstanz,
+  fly: string | null,
+  t: number,
+  melde: (art: CloudNachricht, extra?: Record<string, unknown>) => Promise<void>,
+  merkeAlarm: (art: string, text: string) => Promise<void>,
+): Promise<void> {
+  if (fly !== "started") return;
+  const token = i.schritte.gatewayToken ? d.betrieb.gatewayToken(i.id) : null;
+  const an = token ? await d.fly.anmeldung(i.flyApp, token) : null;
+  // Verbindung: angemeldet → „läuft“ (+ M2 beim ersten Mal); wartet die Instanz wieder auf eine
+  // Bestätigung (Device Flow mit Link), zurück auf „wartet“.
+  if (an?.angemeldet) {
+    const r = await d.betrieb.verbindungMelden(i.id, "abgleicher");
+    if (r === "neu") await melde("laeuft");
+  } else if (an && an.link && i.zustand === "laeuft") {
+    await d.betrieb.verbindungVerloren(i.id, "abgleicher", t);
+  }
+  const frisch = an ? await d.repo.holen(i.id) : null;
+  if (frisch) Object.assign(i, frisch);
+
+  const ok = an !== null || (await d.fly.gesund(i.flyApp));
+  const iso = new Date(t).toISOString();
+  const s: CloudInstanz["schritte"] = { ...i.schritte };
+  const vorher = JSON.stringify(s);
+  let gesundAt: string | undefined;
+  let nachricht: [CloudNachricht, Record<string, unknown>] | null = null;
+  let alarm = false;
+
+  if (ok) {
+    delete s.ungesundSeit;
+    if (t - (i.gesundAt ? Date.parse(i.gesundAt) : 0) > 10 * MIN) gesundAt = iso;
+    // M5 erst, wenn sie nach einer Ausfallmail 5 Minuten stabil läuft (Wackeln = eine Mail).
+    if (typeof s.m4Offen === "string") {
+      if (typeof s.wiederSeit !== "string") s.wiederSeit = iso;
+      else if (t - Date.parse(s.wiederSeit) >= 5 * MIN) {
+        const dauerMin = Math.max(1, Math.round((Date.parse(s.wiederSeit) - Date.parse(s.m4Offen)) / MIN));
+        delete s.m4Offen; delete s.wiederSeit;
+        nachricht = ["wieder_erreichbar", { dauerMin }];
+      }
+    }
+    // M3: Bestätigung fehlt seit 30 Minuten bzw. 24 Stunden (nur mit Ein-Klick-Endpunkt).
+    if (i.zustand === "wartet_auf_verbindung" && an && !an.angemeldet && !nachricht) {
+      const basis = Date.parse(typeof s.wartetSeit === "string" ? s.wartetSeit : i.createdAt);
+      const stufe = t - basis >= 24 * STUNDE ? "24h" : t - basis >= 30 * MIN ? "30m" : null;
+      if (stufe && !s[`m3_${stufe}`]) {
+        s.m3_30m ??= iso;
+        if (stufe === "24h") s.m3_24h = iso;
+        nachricht = ["bestaetigen", { stufe }];
+      }
+    }
+  } else {
+    delete s.wiederSeit;
+    if (typeof s.ungesundSeit !== "string") s.ungesundSeit = iso;
+    else if (t - Date.parse(s.ungesundSeit) >= 10 * MIN) {
+      alarm = true;
+      const m4At = typeof s.m4At === "string" ? Date.parse(s.m4At) : 0;
+      if (i.zustand === "laeuft" && t - m4At >= 6 * STUNDE) {
+        if (typeof s.m4Offen !== "string") s.m4Offen = s.ungesundSeit;
+        s.m4At = iso;
+        nachricht = ["nicht_erreichbar", { seit: s.m4Offen }];
+      }
+    }
+  }
+  if (JSON.stringify(s) !== vorher || gesundAt) {
+    i.schritte = s;
+    await d.repo.aendern(i.id, { schritte: s, ...(gesundAt ? { gesundAt } : {}) });
+  }
+  if (alarm) await merkeAlarm("ungesund", "läuft, antwortet aber seit über 10 Minuten nicht (/healthz).");
+  if (nachricht) await melde(nachricht[0], nachricht[1]);
 }
 
 let waisenGemeldet = 0;

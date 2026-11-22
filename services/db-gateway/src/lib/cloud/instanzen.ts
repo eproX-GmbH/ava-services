@@ -10,7 +10,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { FlyKunden } from "./fly-maschinen";
-import { GROESSEN, type Groesse, maschinenKonfig } from "./konfig";
+import { GATEWAY_SECRET, GROESSEN, type Groesse, maschinenKonfig } from "./konfig";
+import { instanzToken } from "./anmeldung";
 
 export type Zustand = "zahlung_offen" | "wird_angelegt" | "wartet_auf_verbindung" | "laeuft" | "gestoppt" | "ruht" | "geloescht";
 export type Soll = "laufen" | "gestoppt";
@@ -53,6 +54,12 @@ export interface CloudRepo {
   ereignis(instanzId: string, art: string, quelle: Quelle, details?: Record<string, unknown>): Promise<void>;
   ereignisse(instanzId: string, anzahl: number): Promise<Array<{ art: string; quelle: string; details: unknown; createdAt: string }>>;
   liste(): Promise<CloudInstanz[]>;
+  /**
+   * Die Instanz ist mit dem Konto verbunden (Relais oder GET /anmeldung): verbundenAt setzen,
+   * „wartet_auf_verbindung“ → „laeuft“. Atomar, damit die Mail „Deine AVA läuft“ genau einmal
+   * rausgeht. "neu" = erstmals verbunden, "wieder" = nach einer Abmeldung, "nichts" = schon so.
+   */
+  verbindungMelden(id: string): Promise<"neu" | "wieder" | "nichts">;
 }
 
 const SPALTEN = ["tenantId", "actorId", "flyApp", "region", "groesse", "zustand", "gewuenscht", "soll", "grund", "imageVersion", "maschineId", "volumeId", "schritte", "letzterFehler", "verbundenAt", "gesundAt", "abbestelltZum", "gestopptAt", "geloeschtAt"] as const;
@@ -100,6 +107,24 @@ export function pgRepo(pool: pg.Pool): CloudRepo {
       const r = await pool.query(`SELECT * FROM "CloudInstanz" ORDER BY "createdAt" DESC LIMIT 500`);
       return r.rows.map(zeile);
     },
+    async verbindungMelden(id) {
+      const r = await pool.query<{ neu: boolean }>(
+        `WITH alt AS (
+           SELECT id, "verbundenAt" IS NULL AS neu FROM "CloudInstanz"
+           WHERE id = $1 AND "geloeschtAt" IS NULL AND ("verbundenAt" IS NULL OR zustand = 'wartet_auf_verbindung')
+           FOR UPDATE
+         )
+         UPDATE "CloudInstanz" c SET
+           "verbundenAt" = COALESCE(c."verbundenAt", now()),
+           zustand = CASE WHEN c.zustand = 'wartet_auf_verbindung' THEN 'laeuft' ELSE c.zustand END,
+           schritte = c.schritte - 'wartetSeit' - 'm3_30m' - 'm3_24h',
+           "updatedAt" = now()
+         FROM alt WHERE c.id = alt.id
+         RETURNING alt.neu`,
+        [id],
+      );
+      return r.rows[0] ? (r.rows[0].neu ? "neu" : "wieder") : "nichts";
+    },
   };
 }
 
@@ -114,10 +139,13 @@ export class CloudBetrieb {
   constructor(
     private readonly repo: CloudRepo,
     private readonly fly: FlyKunden,
-    private readonly opt: { zufall?: () => string; warteSek?: number } = {},
+    private readonly opt: { zufall?: () => string; warteSek?: number; token?: (instanzId: string) => string | null } = {},
   ) {}
 
   beschaeftigt(id: string) { return this.belegt.has(id); }
+
+  /** Lesetoken für GET /anmeldung der Instanz (null = Gateway ohne Geheimnis, Z4 aus). */
+  gatewayToken(instanzId: string): string | null { return (this.opt.token ?? instanzToken)(instanzId); }
 
   private async exklusiv<T>(id: string, f: () => Promise<T>): Promise<T> {
     if (this.belegt.has(id)) throw new Error("Für diese Instanz läuft bereits ein Vorgang.");
@@ -164,25 +192,31 @@ export class CloudBetrieb {
           s.app = true; await merke({});
         }
         if (!s.secrets) {
+          const gt = this.gatewayToken(z.id);
           await this.fly.secretsSetzen(z.flyApp, {
             AVA_SECRETS_KEY: randomBytes(32).toString("hex"),
             AVA_SETUP_TOKEN: randomBytes(24).toString("base64url"), // Notzugang Betreiber; nicht gespeichert
             AVA_KONTO: z.actorId.toLowerCase(),
+            ...(gt ? { [GATEWAY_SECRET]: gt } : {}), // abgeleitet, nicht gespeichert (anmeldung.ts)
           });
-          s.secrets = true; await merke({});
+          s.secrets = true;
+          if (gt) s.gatewayToken = true;
+          await merke({});
         }
         if (!z.volumeId) await merke({ volumeId: await this.fly.volumeAnlegen(z.flyApp, GROESSEN[z.groesse].volumeGb) });
         if (!s.ips) { await this.fly.ipsZuweisen(z.flyApp); s.ips = true; await merke({}); }
         if (!z.maschineId) {
           const version = z.imageVersion ?? (await this.fly.neuesteVersion());
           if (!version) throw new Error("Kein Server-Image in der Kunden-Registry gefunden.");
-          const m = await this.fly.maschineAnlegen(z.flyApp, maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId!, groesse: z.groesse }));
+          const m = await this.fly.maschineAnlegen(z.flyApp, maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId!, groesse: z.groesse, gatewayToken: !!s.gatewayToken }));
           await merke({ maschineId: m.id, imageVersion: version });
         }
         const gestartet = await this.fly.warte(z.flyApp, z.maschineId!, "started", this.opt.warteSek ?? 180);
         if (!gestartet) throw new Error("Die Maschine ist nicht rechtzeitig gestartet.");
         delete s.versuche;
-        await merke({ zustand: "wartet_auf_verbindung", letzterFehler: null });
+        const schonVerbunden = !!(await this.repo.holen(id))?.verbundenAt; // Relais kann schneller sein
+        if (!schonVerbunden) s.wartetSeit = new Date().toISOString(); // Erinnerung M3 (abgleich.ts)
+        await merke({ zustand: schonVerbunden ? "laeuft" : "wartet_auf_verbindung", letzterFehler: null });
         await this.repo.ereignis(id, "angelegt", quelle, { app: z.flyApp, version: z.imageVersion });
         return z;
       } catch (err) {
@@ -233,7 +267,7 @@ export class CloudBetrieb {
       if (!maschineId || !vorhanden || vorhanden.state === "destroyed") {
         const version = (await this.fly.neuesteVersion()) ?? z.imageVersion;
         if (!version || !z.volumeId) throw new Error("Neu anlegen nicht möglich (Image oder Volume fehlt).");
-        const m = await this.fly.maschineAnlegen(z.flyApp, maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId, groesse: z.groesse }));
+        const m = await this.fly.maschineAnlegen(z.flyApp, maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId, groesse: z.groesse, gatewayToken: !!z.schritte.gatewayToken }));
         maschineId = m.id;
         await this.repo.aendern(id, { maschineId, imageVersion: version });
         await this.repo.ereignis(id, "neu_angelegt", quelle, { version });
@@ -242,7 +276,8 @@ export class CloudBetrieb {
         await this.fly.starten(z.flyApp, maschineId);
       }
       if (!(await this.fly.warte(z.flyApp, maschineId, "started", this.opt.warteSek ?? 180))) throw new Error("Die Maschine ist nicht rechtzeitig gestartet.");
-      const zustand: Zustand = z.verbundenAt ? "laeuft" : "wartet_auf_verbindung";
+      // Frisch lesen: Die Verbindung kann während des Wartens gemeldet worden sein (Relais).
+      const zustand: Zustand = (await this.muss(id)).verbundenAt ? "laeuft" : "wartet_auf_verbindung";
       await this.repo.aendern(id, { zustand, gestopptAt: null, letzterFehler: null });
       await this.repo.ereignis(id, "gestartet", quelle, {});
       return { ...z, soll: "laufen", grund: null, zustand, maschineId, gestopptAt: null };
@@ -275,6 +310,23 @@ export class CloudBetrieb {
       await this.repo.ereignis(id, "geloescht", quelle, {});
       return { ...z, zustand: "geloescht", maschineId: null, volumeId: null, geloeschtAt };
     });
+  }
+
+  /** Verbunden gemeldet (Relais, GET /anmeldung): siehe CloudRepo.verbindungMelden. */
+  async verbindungMelden(id: string, quelle: Quelle, details: Record<string, unknown> = {}): Promise<"neu" | "wieder" | "nichts"> {
+    const r = await this.repo.verbindungMelden(id);
+    if (r !== "nichts") await this.repo.ereignis(id, r === "neu" ? "verbunden" : "wieder_verbunden", quelle, details);
+    return r;
+  }
+
+  /** Die Instanz wartet wieder auf eine Bestätigung (Anmeldung verloren): zurück auf „wartet“. */
+  async verbindungVerloren(id: string, quelle: Quelle, jetzt: number = Date.now()): Promise<void> {
+    const z = await this.muss(id);
+    if (z.zustand !== "laeuft") return;
+    const schritte: CloudInstanz["schritte"] = { ...z.schritte, wartetSeit: new Date(jetzt).toISOString() };
+    delete schritte.m3_30m; delete schritte.m3_24h;
+    await this.repo.aendern(id, { zustand: "wartet_auf_verbindung", schritte });
+    await this.repo.ereignis(id, "abgemeldet", quelle, {});
   }
 
   /** Datensatz plus Live-Zustand der Maschine bei Fly. */
