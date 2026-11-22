@@ -49,6 +49,10 @@ export interface FlyKunden {
   volumeLoeschen(app: string, volumeId: string): Promise<void>;
   appLoeschen(app: string): Promise<void>;
   neuesteVersion(): Promise<string | null>;
+  /** Alle Apps der Kunden-Org (für die Suche nach Apps ohne Datensatz). */
+  appsListe(): Promise<string[]>;
+  /** GET /healthz der Instanz (öffentliche fly.dev-Adresse). */
+  gesund(app: string): Promise<boolean>;
 }
 
 async function anfrage<T>(methode: string, pfad: string, body?: unknown, erlaubt: number[] = []): Promise<{ status: number; json: T | null }> {
@@ -130,6 +134,18 @@ export const flyKunden: FlyKunden = {
     await anfrage("DELETE", `/apps/${app}/volumes/${volumeId}`, undefined, [404]);
   },
   async appLoeschen(app) { await anfrage("DELETE", `/apps/${app}?force=true`, undefined, [404]); },
+  async appsListe() {
+    const { json } = await anfrage<{ apps?: Array<{ name: string }> }>("GET", `/apps?org_slug=${encodeURIComponent(kundenOrg())}`);
+    return (json?.apps ?? []).map((a) => a.name);
+  },
+  async gesund(app) {
+    try {
+      const r = await fetch(`https://${app}.fly.dev/healthz`, { signal: AbortSignal.timeout(8_000) });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  },
   async neuesteVersion() {
     if (versionGemerkt.bis > Date.now()) return versionGemerkt.wert;
     const fest = process.env.CLOUD_IMAGE_VERSION?.trim().replace(/^v/, "");

@@ -29,6 +29,7 @@ import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
 import { startBillingCron } from "./lib/billing-cron";
+import { startCloudAbgleich } from "./lib/cloud/betrieb";
 import { startRelevanzCron } from "./lib/relevanz-cron";
 import { startNeuigkeitenCron } from "./lib/neuigkeiten-cron";
 import { startGfRollenNachtrag } from "./lib/gf-rollen-nachtrag";
@@ -280,6 +281,8 @@ startPersonRetentionCron();
 // B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
 // Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
 startBillingCron();
+// AVA Cloud Z2: Soll-Ist-Abgleich der Kunden-Instanzen (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md §3.4).
+startCloudAbgleich();
 // A2A: offene Tasks pruefen, Push an fremde Agenten.
 startA2aTakt();
 // Vorabanalyse: Laeufe weiterfuehren, die beim letzten Neustart liefen.

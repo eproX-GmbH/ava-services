@@ -277,6 +277,25 @@ Live-Test mit dem Demo-Konto (im Gateway, echte Org und Datenbank, danach gelös
 Nebenbei: Kontoprüfung beim Image-Tausch (`instanz-update.ts`) liest die Bindung jetzt aus den
 Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in den Metadaten.
 
+## 8c. Stand Z2 (2026-11-22, gebaut)
+
+- **Wunsch und Soll getrennt:** `gewuenscht` (Admin/Betreiber) bleibt, wenn der Abgleicher wegen
+  Zahlung/Konto stoppt; ist das geklärt, läuft die Instanz von selbst wieder an.
+- **Soll-Regeln** (`lib/cloud/abgleich.ts`, `sollBestimmen`): Konto gesperrt/gelöscht → gestoppt
+  (konto); Abrechnung `canceled` → gestoppt (kuendigung); `suspended` → gestoppt (zahlung);
+  Wunsch gestoppt → gestoppt; sonst laufen. `past_due` läuft bis `suspended` (Cloud-Frist E6 kommt
+  mit Z3).
+- **Abgleicher** (`abgleichen`, alle 5 Min., erster Lauf 1 Min. nach Start; Betreiber-Route
+  `POST /v1/betreiber/cloud/abgleich`): je Instanz genau eine Aktion — Anlegen fortsetzen
+  (höchstens 5 Fehlversuche), stoppen (Meldung, wenn Fly sie selbst gestartet hat), nach 7 Tagen
+  ruhen, nach 30 Tagen löschen (nur mit `CLOUD_AUTO_LOESCHEN=1`, sonst Meldung „Löschung fällig“
+  bis die Vorwarn-Mail aus Z4 steht), Absturz neu starten, `/healthz` prüfen (Meldung nach
+  15 Min. ohne Antwort), Fly-Apps ohne Datensatz melden.
+- **Meldungen** an den Betreiber per Telegram (`betreiberBenachrichtigen`), je Art und Instanz
+  höchstens alle 6 Stunden.
+- **Notschalter:** `CLOUD_ABGLEICH=0`.
+- Test: `npm run test:cloud` (40 Prüfungen).
+
 ## 9. Offene Entscheidungen
 
 | # | Frage | Vorschlag |

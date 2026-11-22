@@ -7,18 +7,12 @@ import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import { istBetreiber } from "../../middleware/auth";
-import { flyKunden, flyKundenEingerichtet } from "../../lib/cloud/fly-maschinen";
-import { CloudBetrieb, pgRepo } from "../../lib/cloud/instanzen";
+import { flyKundenEingerichtet } from "../../lib/cloud/fly-maschinen";
+import { pgRepo } from "../../lib/cloud/instanzen";
+import { cloudAbgleich, cloudBetrieb, letzterAbgleich } from "../../lib/cloud/betrieb";
 import { ErrorShape } from "./schemas";
 
 export const betreiberCloudRouter = new OpenAPIHono();
-
-let betrieb: CloudBetrieb | null = null;
-/** Ein Betrieb je Gateway-Prozess (die Sperre je Instanz lebt darin). */
-export function cloudBetrieb(): CloudBetrieb {
-  betrieb ??= new CloudBetrieb(pgRepo(getGatewayPool()), flyKunden);
-  return betrieb;
-}
 
 const Antwort = z.object({}).passthrough();
 const fehler404 = { 404: { content: { "application/json": { schema: ErrorShape } }, description: "kein Betreiber / nicht gefunden" } };
@@ -46,7 +40,22 @@ betreiberCloudRouter.openapi(
     const instanzen = c.req.valid("query").live === "1"
       ? await Promise.all(liste.map((i) => b.stand(i.id).catch(() => ({ ...i, fly: null }))))
       : liste;
-    return c.json({ instanzen }, 200);
+    return c.json({ instanzen, letzterAbgleich: letzterAbgleich() }, 200);
+  },
+);
+
+betreiberCloudRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/betreiber/cloud/abgleich",
+    tags: ["betreiber"],
+    summary: "Betreiber: Abgleich sofort ausführen (alle oder eine Instanz)",
+    request: { body: { content: { "application/json": { schema: z.object({ instanzId: z.string().min(1).max(80).optional() }) } } } },
+    responses: { 200: { content: { "application/json": { schema: Antwort } }, description: "Bericht" }, ...fehler404 },
+  }),
+  async (c) => {
+    nurBetreiber(c);
+    return c.json({ bericht: await cloudAbgleich(c.req.valid("json").instanzId) }, 200);
   },
 );
 
@@ -136,8 +145,8 @@ betreiberCloudRouter.openapi(
     try {
       let instanz;
       if (aktion === "fortsetzen") instanz = await b.fortsetzen(id, "betreiber");
-      else if (aktion === "stoppen") instanz = await b.stoppen(id, "betreiber", "betreiber");
-      else if (aktion === "starten") instanz = await b.starten(id, "betreiber");
+      else if (aktion === "stoppen") instanz = await b.stoppen(id, "betreiber", "betreiber", { absicht: true });
+      else if (aktion === "starten") instanz = await b.starten(id, "betreiber", { absicht: true });
       else if (aktion === "ruhen") instanz = await b.ruhen(id, "betreiber");
       else {
         if (bestaetigen !== true) throw new Error("Löschen braucht bestaetigen=true.");

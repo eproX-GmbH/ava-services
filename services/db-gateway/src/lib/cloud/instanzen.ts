@@ -25,14 +25,18 @@ export interface CloudInstanz {
   region: string;
   groesse: Groesse;
   zustand: Zustand;
+  /** Wunsch von Admin/Betreiber; das Soll ermittelt der Abgleicher daraus (abgleich.ts). */
+  gewuenscht: Soll;
   soll: Soll;
   grund: Grund | null;
   imageVersion: string | null;
   maschineId: string | null;
   volumeId: string | null;
-  schritte: Record<string, boolean>;
+  /** Erledigte Anlege-Schritte, Fehlversuche, Alarm-Zeitpunkte (Abgleicher). */
+  schritte: Record<string, boolean | number | string>;
   letzterFehler: string | null;
   verbundenAt: string | null;
+  gesundAt: string | null;
   gestopptAt: string | null;
   geloeschtAt: string | null;
   createdAt: string;
@@ -49,14 +53,14 @@ export interface CloudRepo {
   liste(): Promise<CloudInstanz[]>;
 }
 
-const SPALTEN = ["tenantId", "actorId", "flyApp", "region", "groesse", "zustand", "soll", "grund", "imageVersion", "maschineId", "volumeId", "schritte", "letzterFehler", "verbundenAt", "gestopptAt", "geloeschtAt"] as const;
+const SPALTEN = ["tenantId", "actorId", "flyApp", "region", "groesse", "zustand", "gewuenscht", "soll", "grund", "imageVersion", "maschineId", "volumeId", "schritte", "letzterFehler", "verbundenAt", "gesundAt", "gestopptAt", "geloeschtAt"] as const;
 
 function zeile(r: Record<string, unknown>): CloudInstanz {
   const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null) ?? null);
   return {
     ...(r as unknown as CloudInstanz),
-    schritte: (r.schritte as Record<string, boolean>) ?? {},
-    verbundenAt: iso(r.verbundenAt), gestopptAt: iso(r.gestopptAt), geloeschtAt: iso(r.geloeschtAt),
+    schritte: (r.schritte as CloudInstanz["schritte"]) ?? {},
+    verbundenAt: iso(r.verbundenAt), gesundAt: iso(r.gesundAt), gestopptAt: iso(r.gestopptAt), geloeschtAt: iso(r.geloeschtAt),
     createdAt: iso(r.createdAt) ?? "", updatedAt: iso(r.updatedAt) ?? "",
   };
 }
@@ -128,8 +132,8 @@ export class CloudBetrieb {
     const z: CloudInstanz = {
       id: randomUUID(), tenantId: e.tenantId, actorId: e.actorId,
       flyApp: appName(this.opt.zufall ?? zufallKurz), region: "fra", groesse: e.groesse ?? "standard",
-      zustand: "wird_angelegt", soll: "laufen", grund: null, imageVersion: null, maschineId: null, volumeId: null,
-      schritte: {}, letzterFehler: null, verbundenAt: null, gestopptAt: null, geloeschtAt: null, createdAt: jetzt, updatedAt: jetzt,
+      zustand: "wird_angelegt", gewuenscht: "laufen", soll: "laufen", grund: null, imageVersion: null, maschineId: null, volumeId: null,
+      schritte: {}, letzterFehler: null, verbundenAt: null, gesundAt: null, gestopptAt: null, geloeschtAt: null, createdAt: jetzt, updatedAt: jetzt,
     };
     await this.repo.einfuegen(z);
     await this.repo.ereignis(z.id, "angefordert", e.quelle, { groesse: z.groesse });
@@ -166,11 +170,13 @@ export class CloudBetrieb {
         }
         const gestartet = await this.fly.warte(z.flyApp, z.maschineId!, "started", this.opt.warteSek ?? 180);
         if (!gestartet) throw new Error("Die Maschine ist nicht rechtzeitig gestartet.");
+        delete s.versuche;
         await merke({ zustand: "wartet_auf_verbindung", letzterFehler: null });
         await this.repo.ereignis(id, "angelegt", quelle, { app: z.flyApp, version: z.imageVersion });
         return z;
       } catch (err) {
         const meldung = err instanceof Error ? err.message : String(err);
+        s.versuche = Number(s.versuche ?? 0) + 1; // Zähler für den Abgleicher
         await this.repo.aendern(id, { letzterFehler: meldung.slice(0, 500), schritte: s });
         await this.repo.ereignis(id, "fehler", quelle, { schritt: "anlegen", meldung: meldung.slice(0, 300) });
         throw err;
@@ -179,11 +185,15 @@ export class CloudBetrieb {
   }
 
   /** Soll gestoppt: aus dem Proxy nehmen, stoppen. Die Maschine bleibt (Ruhen löscht sie). */
-  stoppen(id: string, grund: Grund, quelle: Quelle): Promise<CloudInstanz> {
+  /**
+   * `absicht`: Admin/Betreiber will sie aus (Wunsch wird „gestoppt“). Der Abgleicher stoppt
+   * ohne Absicht (z. B. Zahlung), damit sie nach Klärung von selbst wieder anläuft.
+   */
+  stoppen(id: string, grund: Grund, quelle: Quelle, opt: { absicht?: boolean } = {}): Promise<CloudInstanz> {
     return this.exklusiv(id, async () => {
       const z = await this.muss(id);
       if (z.zustand === "geloescht") throw new Error("Instanz ist gelöscht.");
-      await this.repo.aendern(id, { soll: "gestoppt", grund });
+      await this.repo.aendern(id, { soll: "gestoppt", grund, ...(opt.absicht ? { gewuenscht: "gestoppt" as const } : {}) });
       if (z.maschineId) {
         const m = await this.fly.maschineHolen(z.flyApp, z.maschineId);
         if (m && m.state !== "stopped" && m.state !== "destroyed") {
@@ -201,12 +211,12 @@ export class CloudBetrieb {
   }
 
   /** Soll laufen: gestoppte Maschine starten, ruhende neu anlegen (gleiches Volume). */
-  starten(id: string, quelle: Quelle): Promise<CloudInstanz> {
+  starten(id: string, quelle: Quelle, opt: { absicht?: boolean } = {}): Promise<CloudInstanz> {
     return this.exklusiv(id, async () => {
       const z = await this.muss(id);
       if (z.zustand === "geloescht") throw new Error("Instanz ist gelöscht.");
       if (z.zustand === "wird_angelegt") throw new Error("Instanz wird noch angelegt; erst fortsetzen.");
-      await this.repo.aendern(id, { soll: "laufen", grund: null });
+      await this.repo.aendern(id, { soll: "laufen", grund: null, ...(opt.absicht ? { gewuenscht: "laufen" as const } : {}) });
       let maschineId = z.maschineId;
       const vorhanden = maschineId ? await this.fly.maschineHolen(z.flyApp, maschineId) : null;
       if (!maschineId || !vorhanden || vorhanden.state === "destroyed") {
@@ -245,7 +255,7 @@ export class CloudBetrieb {
     return this.exklusiv(id, async () => {
       const z = await this.muss(id);
       if (z.zustand === "geloescht") return z;
-      await this.repo.aendern(id, { soll: "gestoppt" });
+      await this.repo.aendern(id, { soll: "gestoppt", gewuenscht: "gestoppt" });
       if (z.maschineId) await this.fly.maschineLoeschen(z.flyApp, z.maschineId);
       if (z.volumeId) await this.fly.volumeLoeschen(z.flyApp, z.volumeId);
       await this.fly.appLoeschen(z.flyApp);

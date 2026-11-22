@@ -3,8 +3,10 @@
 import assert from "node:assert/strict";
 import K0 from "../src/lib/cloud/konfig.ts";
 import I0 from "../src/lib/cloud/instanzen.ts";
+import A0 from "../src/lib/cloud/abgleich.ts";
 const K = K0.default ?? K0;
 const I = I0.default ?? I0;
+const A = A0.default ?? A0;
 let fehler = 0;
 const pruefe = async (name, fn) => { try { await fn(); console.log(`  ok   ${name}`); } catch (e) { fehler++; console.log(`  FEHL ${name}\n       ${e.stack?.split("\n").slice(0, 3).join("\n       ")}`); } };
 
@@ -65,6 +67,10 @@ function flyAttrappe({ scheitertBei } = {}) {
     async volumeLoeschen(app, v) { merk("volumeLoeschen", v); },
     async appLoeschen(app) { merk("appLoeschen", app); apps.delete(app); },
     async neuesteVersion() { merk("neuesteVersion"); return "0.1.975"; },
+    async appsListe() { return [...apps, "ava-kunden-image"]; },
+    gesundWert: true,
+    async gesund() { return this.gesundWert; },
+    apps,
   };
 }
 const namen = (fly) => fly.aufrufe.map((a) => a[0]);
@@ -137,6 +143,132 @@ await pruefe("nie zwei Vorgänge gleichzeitig je Instanz", async () => {
   const erst = b.fortsetzen(a.id, "betreiber");
   await assert.rejects(() => b.stoppen(a.id, "admin", "admin"), /bereits ein Vorgang/);
   await erst;
+});
+
+console.log("Cloud: Soll-Regeln (Z2)");
+const basis = { gewuenscht: "laufen", grund: null };
+await pruefe("Wunsch laufen, alles in Ordnung → laufen", () => assert.deepEqual(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: "active" }), { soll: "laufen", grund: null }));
+await pruefe("ohne Abrechnungszeile → laufen (Betreiber-Instanz)", () => assert.equal(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: null }).soll, "laufen"));
+await pruefe("past_due → läuft noch (Frist kommt mit Z3)", () => assert.equal(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: "past_due" }).soll, "laufen"));
+await pruefe("suspended → gestoppt/zahlung", () => assert.deepEqual(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: "suspended" }), { soll: "gestoppt", grund: "zahlung" }));
+await pruefe("canceled → gestoppt/kuendigung", () => assert.deepEqual(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: "canceled" }), { soll: "gestoppt", grund: "kuendigung" }));
+await pruefe("Konto gesperrt schlägt alles", () => assert.deepEqual(A.sollBestimmen(basis, { kontoSperre: "gesperrt", abrechnung: "active" }), { soll: "gestoppt", grund: "konto" }));
+await pruefe("Wunsch gestoppt behält Grund admin", () => assert.deepEqual(A.sollBestimmen({ gewuenscht: "gestoppt", grund: "admin" }, { kontoSperre: null, abrechnung: "active" }), { soll: "gestoppt", grund: "admin" }));
+
+console.log("Cloud: nächste Aktion (Z2)");
+const R = { ruheTage: 7, loeschTage: 30, autoLoeschen: false, maxVersuche: 5 };
+const T = Date.parse("2026-12-01T12:00:00Z");
+const inst = (teil) => ({ id: "x", flyApp: "ava-u-x", zustand: "laeuft", soll: "laufen", gewuenscht: "laufen", grund: null, schritte: {}, gestopptAt: null, maschineId: "m1", ...teil });
+const tage = (n) => new Date(T - n * 86_400_000).toISOString();
+await pruefe("läuft wie gewünscht → Gesundheit prüfen", () => assert.equal(A.naechsteAktion(inst({}), "laufen", "started", T, R).art, "gesundheit"));
+await pruefe("soll gestoppt, läuft → stoppen", () => assert.deepEqual(A.naechsteAktion(inst({}), "gestoppt", "started", T, R), { art: "stoppen", wiederGestartet: false }));
+await pruefe("gestoppt, aber Fly hat gestartet → stoppen + Meldung", () => assert.deepEqual(A.naechsteAktion(inst({ zustand: "gestoppt" }), "gestoppt", "started", T, R), { art: "stoppen", wiederGestartet: true }));
+await pruefe("gestoppt seit 6 Tagen → nichts", () => assert.equal(A.naechsteAktion(inst({ zustand: "gestoppt", gestopptAt: tage(6) }), "gestoppt", "stopped", T, R).art, "nichts"));
+await pruefe("gestoppt seit 7 Tagen → ruhen", () => assert.equal(A.naechsteAktion(inst({ zustand: "gestoppt", gestopptAt: tage(7) }), "gestoppt", "stopped", T, R).art, "ruhen"));
+await pruefe("ruht seit 30 Tagen → nur Meldung ohne CLOUD_AUTO_LOESCHEN", () => assert.equal(A.naechsteAktion(inst({ zustand: "ruht", maschineId: null, gestopptAt: tage(30) }), "gestoppt", null, T, R).art, "loeschen_faellig"));
+await pruefe("ruht seit 30 Tagen + Auto-Löschen → löschen", () => assert.equal(A.naechsteAktion(inst({ zustand: "ruht", maschineId: null, gestopptAt: tage(30) }), "gestoppt", null, T, { ...R, autoLoeschen: true }).art, "loeschen"));
+await pruefe("soll laufen, ruht → starten", () => assert.deepEqual(A.naechsteAktion(inst({ zustand: "ruht", maschineId: null }), "laufen", null, T, R), { art: "starten", warum: "soll_laufen" }));
+await pruefe("läuft laut Datensatz, Fly gestoppt → neu starten (Absturz)", () => assert.deepEqual(A.naechsteAktion(inst({}), "laufen", "stopped", T, R), { art: "starten", warum: "unerwartet_gestoppt" }));
+await pruefe("Anlegen: fortsetzen, nach 5 Fehlversuchen nicht mehr", () => {
+  assert.equal(A.naechsteAktion(inst({ zustand: "wird_angelegt", schritte: { versuche: 4 } }), "laufen", null, T, R).art, "fortsetzen");
+  assert.equal(A.naechsteAktion(inst({ zustand: "wird_angelegt", schritte: { versuche: 5 } }), "laufen", null, T, R).art, "nichts");
+});
+await pruefe("Anlegen wird bei Soll gestoppt nicht fortgesetzt", () => assert.equal(A.naechsteAktion(inst({ zustand: "wird_angelegt" }), "gestoppt", null, T, R).art, "nichts"));
+
+console.log("Cloud: Abgleich-Läufe (Z2)");
+async function aufbau(zufall) {
+  const repo = speicherRepo(); const fly = flyAttrappe(); const betrieb = new I.CloudBetrieb(repo, fly, { zufall: () => zufall });
+  const a = await betrieb.anlegen({ tenantId: "t1", actorId: "a1", quelle: "betreiber" });
+  await betrieb.fortsetzen(a.id, "betreiber");
+  const lage = { kontoSperre: null, abrechnung: "active" }; const meldungen = []; let uhr = T;
+  const deps = { repo, fly, betrieb, fakten: async () => lage, melden: async (t) => { meldungen.push(t); }, regeln: R, jetzt: () => uhr, pause: async () => {} };
+  return { repo, fly, betrieb, id: a.id, lage, meldungen, deps, setzeUhr: (u) => { uhr = u; } };
+}
+await pruefe("Zahlung ausgesetzt → gestoppt, Wunsch bleibt; bezahlt → läuft wieder", async () => {
+  const w = await aufbau("h000000001");
+  w.lage.abrechnung = "suspended";
+  await A.abgleichen(w.deps);
+  let z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "gestoppt"); assert.equal(z.soll, "gestoppt"); assert.equal(z.grund, "zahlung"); assert.equal(z.gewuenscht, "laufen");
+  w.lage.abrechnung = "active";
+  await A.abgleichen(w.deps);
+  z = await w.repo.holen(w.id);
+  assert.equal(z.soll, "laufen"); assert.ok(["wartet_auf_verbindung", "laeuft"].includes(z.zustand), z.zustand);
+});
+await pruefe("Fly startet gestoppte Maschine → wieder gestoppt, eine Meldung je 6 h", async () => {
+  const w = await aufbau("h000000002");
+  await w.betrieb.stoppen(w.id, "admin", "admin", { absicht: true });
+  const mid = (await w.repo.holen(w.id)).maschineId;
+  w.fly.maschinen.get(mid).state = "started"; // Fly hat sie von selbst gestartet
+  await A.abgleichen(w.deps);
+  assert.equal(w.fly.maschinen.get(mid).state, "stopped");
+  assert.equal(w.meldungen.filter((m) => m.includes("lief, obwohl")).length, 1);
+  w.fly.maschinen.get(mid).state = "started";
+  w.setzeUhr(T + 60 * 60_000);
+  await A.abgleichen(w.deps);
+  assert.equal(w.fly.maschinen.get(mid).state, "stopped");
+  assert.equal(w.meldungen.filter((m) => m.includes("lief, obwohl")).length, 1, "keine zweite Meldung binnen 6 h");
+  assert.ok(w.repo.ereignisseAlle.filter((e) => e.art === "wieder_gestoppt").length === 2);
+});
+await pruefe("nach 7 Tagen gestoppt → ruht (Maschine weg)", async () => {
+  const w = await aufbau("h000000003");
+  await w.betrieb.stoppen(w.id, "admin", "admin", { absicht: true });
+  await w.repo.aendern(w.id, { gestopptAt: new Date(T - 8 * 86_400_000).toISOString() });
+  await A.abgleichen(w.deps);
+  const z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "ruht"); assert.equal(z.maschineId, null); assert.equal(w.fly.maschinen.size, 0);
+});
+await pruefe("ruht 30 Tage: ohne Auto-Löschen nur Meldung, mit Auto-Löschen gelöscht", async () => {
+  const w = await aufbau("h000000004");
+  await w.betrieb.stoppen(w.id, "admin", "admin", { absicht: true });
+  await w.betrieb.ruhen(w.id, "admin");
+  await w.repo.aendern(w.id, { gestopptAt: new Date(T - 31 * 86_400_000).toISOString() });
+  await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).zustand, "ruht");
+  assert.ok(w.meldungen.some((m) => m.includes("Löschung fällig")));
+  await A.abgleichen({ ...w.deps, regeln: { ...R, autoLoeschen: true } });
+  assert.equal((await w.repo.holen(w.id)).zustand, "geloescht");
+});
+await pruefe("Absturz: läuft laut Datensatz, Fly gestoppt → neu gestartet + Meldung", async () => {
+  const w = await aufbau("h000000005");
+  await w.repo.aendern(w.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() });
+  const mid = (await w.repo.holen(w.id)).maschineId;
+  w.fly.maschinen.get(mid).state = "stopped";
+  await A.abgleichen(w.deps);
+  assert.equal(w.fly.maschinen.get(mid).state, "started");
+  assert.ok(w.meldungen.some((m) => m.includes("unerwartet aus")));
+  assert.equal((await w.repo.holen(w.id)).zustand, "laeuft");
+});
+await pruefe("ungesund > 15 Min → Meldung; gesund → gesundAt", async () => {
+  const w = await aufbau("h000000006");
+  await A.abgleichen(w.deps);
+  assert.ok((await w.repo.holen(w.id)).gesundAt);
+  w.fly.gesundWert = false;
+  await A.abgleichen(w.deps);
+  assert.equal(w.meldungen.length, 0);
+  w.setzeUhr(T + 16 * 60_000);
+  await A.abgleichen(w.deps);
+  assert.ok(w.meldungen.some((m) => m.includes("/healthz")));
+});
+await pruefe("Konto gesperrt → gestoppt/konto", async () => {
+  const w = await aufbau("h000000007");
+  w.lage.kontoSperre = "gesperrt";
+  await A.abgleichen(w.deps);
+  const z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "gestoppt"); assert.equal(z.grund, "konto");
+});
+await pruefe("Fly-App ohne Datensatz wird gemeldet, Image-App nicht", async () => {
+  const w = await aufbau("h000000008");
+  w.fly.apps.add("ava-u-verwaist01");
+  const b = await A.abgleichen(w.deps);
+  assert.deepEqual(b.waisen, ["ava-u-verwaist01"]);
+});
+await pruefe("Instanz mit laufendem Vorgang wird übersprungen", async () => {
+  const w = await aufbau("h000000009");
+  const p = w.betrieb.stoppen(w.id, "admin", "admin", { absicht: true });
+  const b = await A.abgleichen(w.deps);
+  await p;
+  assert.equal(b.geprueft, 0);
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");
