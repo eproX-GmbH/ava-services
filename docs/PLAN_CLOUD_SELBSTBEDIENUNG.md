@@ -230,6 +230,32 @@ Kalkulation heute: 59 € je Instanz. Bei Weg B bleibt wenig Marge; deshalb Z0 z
 Summe ca. 6–7 Wochen. Z0–Z2 sind ohne Preis- oder AGB-Entscheidung baubar; ab Z3 braucht es
 die Entscheidungen unten.
 
+## 8a. Ergebnis Z0 (2026-11-22)
+
+Test in der Fly-Org `ava-447` („AVA“, Entscheidung Joyce: wird die Kunden-Org) mit
+`scripts/cloud-z0.mjs`, ausschließlich über die Maschinen-REST-API. Testinstanz danach gelöscht.
+
+| Frage | Ergebnis |
+|---|---|
+| Anlegen ohne CLI (App mit eigenem Netz, Secrets, Volume, IPs, Maschine) | ✓ in unter 1 Minute bis `started`, `/healthz` 200 |
+| Image aus der persönlichen Org | ✗ Fly lädt keine Images über Org-Grenzen → Image-App `ava-kunden-image` in `ava-447` angelegt, Image kopiert. **Folge:** Release-CI muss jedes Server-Image zusätzlich dorthin schieben. |
+| AVA + Ollama als zwei Container in **einer** Maschine (Weg A) | ✓ AVA erreicht Ollama über `127.0.0.1:11434`, beide sehen das Volume `/data`, Modelle liegen unter `/data/ollama` |
+| Speicher (4 GB-Maschine) | Leerlauf: AVA ≈ 1,9 GB, Ollama ≈ 0,2 GB. Mit geladenem Modell und 20 Embeddings: gesamt ≈ 2,4 GB belegt, 1,5 GB frei. 4 GB reichen für den Start; unter echter Aufbereitung (Chromium) noch messen. |
+| Embeddings | `embeddinggemma` (621 MB), 20 Abrufe in 3,5 s inkl. Laden, 768 Dimensionen |
+| Secrets bei Containern | ✗→✓ Fly reicht App-Secrets **nicht** automatisch an Container durch; sie müssen je Container genannt werden (`containers[].secrets`). Vorteil: Ollama sieht keine AVA-Secrets. |
+| Gestoppt + 30 Anfragen über 5 Min. (mit `cordon`) | ✓ bleibt gestoppt, kein Startereignis |
+| Gestoppt ohne `cordon` + 25 Anfragen | ✓ bleibt gestoppt |
+| Konfig-Änderung an gestoppter Maschine (`skip_launch`) + 30 Anfragen | ✓ bleibt gestoppt (der in der Community gemeldete Wettlauf trat nicht auf) |
+| Maschine löschen, Volume behalten, neu anlegen | ✓ in 4 s angelegt, nach ~20 s gesund; Instanz-ID, Daten und Modell vorhanden |
+| Ein-Klick-Anmeldung | ✓ machbar: die Instanz hat den Keycloak-Link mit vorausgefülltem Code (`verification_uri_complete`); muss in Z4 ans Gateway gemeldet statt auf der Setup-Seite gezeigt werden |
+| API-Eigenheiten | `wait` höchstens 60 s je Aufruf; `fly auth token` läuft nach wenigen Minuten ab → für das Gateway ein dauerhaftes Org-Token für `ava-447` nötig |
+
+**Entscheidung E8 damit:** Weg A (ein Rechner, zwei Container). Kosten je laufender Instanz
+≈ 33 $/Monat (fra), gestoppt ≈ 2 $ (10-GB-Volume + Root-FS), ruhend ≈ 1,50 $.
+
+Bleibt in Z1: Org-Token für `ava-447` (Joyce bestätigt das Erzeugen), Release-CI schiebt das
+Image auch nach `registry.fly.io/ava-kunden-image`.
+
 ## 9. Offene Entscheidungen
 
 | # | Frage | Vorschlag |
@@ -241,8 +267,8 @@ die Entscheidungen unten.
 | E5 | Ausschalten durch Admin | läuft bis Zyklusende, keine Erstattung (wie Sitze) |
 | E6 | Frist bei gescheiterter Zahlung | 7 Tage, dann gestoppt (Org-Mahnlauf hat 14) |
 | E7 | Aufbewahrung nach Stopp/Kündigung | 7 Tage gestoppt, dann ruhend; nach 30 Tagen gelöscht, Mail 7 Tage vorher |
-| E8 | Embeddings | nach Z0: Weg A, sonst B; geteilt (C) nicht |
+| E8 | Embeddings | **entschieden durch Z0: Weg A** (zwei Container in einer Maschine) |
 | E9 | Adresse | keine Kunden-Adresse; alles über app.ava.bi; `<slug>.ava.bi` nur für Bestands-Instanzen |
 | E10 | Updates | Selbstbedienungs-Instanzen automatisch nach jedem Release; Enterprise weiter per Knopf |
-| E11 | Fly-Org `ava-kunden` | Joyce legt sie an (Zahlungsweg bei Fly) und erzeugt das Org-Token |
+| E11 | Fly-Org | **entschieden: `ava-447` („AVA“)**; Org-Token für das Gateway noch zu erzeugen |
 | E12 | Standardweg nach der Registrierung | Cloud als erster Vorschlag, Desktop-App als Alternative |
