@@ -223,3 +223,35 @@ Prod-Gateway, Desktop latest, Web-Apps, Server-Wellen.
 - Keycloak: gültige Weiterleitungsadressen für die Staging-Apps (per Admin-API, falls der
   Dienstzugang darf, sonst im Keycloak-Admin).
 - Optional DNS: app-staging.ava.bi, admin-staging.ava.bi, staging.ava.bi bei United Domains.
+
+## 10. Stand der Umsetzung (2026-11-22)
+
+Gebaut, getestet und ausgerollt (Abweichungen vom Plan in *kursiv*):
+
+| Stufe | Stand |
+|---|---|
+| ST1 | Tabellen + Spalte live (Migration `20261123_staging_kanal`, additiv); Betreiber-Routen; `/v1/kanal`; Konsole → Betreiber → **Staging** (admin.ava.bi) |
+| ST2 | Fly-App `ava-db-gateway-staging` (Org personal, 36 Prod-Secrets übernommen, ohne Live-Webhook-Geheimnis/Register-Worker/OpenAI-Domain). *Staging startet nur den Cloud-Abgleich für Staging-Server, alle anderen Jobs (Neuigkeiten, A2A, Start-Analyse, Abrechnung, Register …) laufen nur in Prod und bedienen alle Konten.* Progress-Bus mit eigener Queue (Ablauf 1 h) ohne Speichern. `scripts/migration-pruefen.mjs` |
+| ST3 | Weiche im Prod-Gateway (HTTP gestreamt, SSE, Relais-WebSocket, 503 statt stillem Rückfall), Wächter im Staging. Tests `npm run test:staging` (12) |
+| ST4 | Stripe-Modus je Organisation als Kontext; `/v1/billing/webhook/test`; Live-Cron überspringt Testmodus-Organisationen; Organisationen von Testkonten im Testmodus |
+| ST5 | Update-Feed `/v1/updates/{staging\|prod}/latest*.yml`; Desktop: Kanal-Wächter, Feed-Umschaltung, Hinweis „Staging · vX“ |
+| ST6 | Tags → Vorabversion (Kandidat); `staging-gateway.yml` (Tag → Staging-Gateway), `freigabe.yml` (Knopf → Latest, Prod-Gateway, Web-Zweige); Server-Rollout je Kanal; `instanzen-aktualisieren.mjs` nimmt die freigegebene Version |
+| ST7 | Vercel-Projekte `ava-app-staging`, `ava-admin-staging`, `ava-website-staging` (Produktionszweig `staging`, Adressen `*-staging.vercel.app`, Leiste, Website ohne Suchmaschinen). *Keycloak: eigener öffentlicher Client `ava-web-staging` (PKCE, nur Staging-Adressen) statt der Prod-Clients.* Staging-Website registriert über den Registrierungszugang des Gateways |
+
+Secrets/Zugänge: GitHub `FLY_STAGING_GATEWAY_TOKEN`, `FLY_GATEWAY_TOKEN` (je 1 Jahr, bis 2027-11-22).
+Prod-Gateway: `STAGING_GATEWAY_URL=http://ava-db-gateway-staging.internal:8080`.
+
+**Noch offen (Joyce):**
+1. Stripe-Testschlüssel als Secret an beide Gateways (Stripe-Dashboard → Testmodus → Entwickler →
+   API-Schlüssel), danach legt Claude Testprodukte, Testpreise und den Test-Webhook an.
+2. GitHub-Token für den Freigabe-Knopf: fein granular, nur `eproX-GmbH/ava-services`, Recht
+   „Actions: Read and write“ → `GH_FREIGABE_TOKEN` am Prod-Gateway. Optional `WEB_FREIGABE_PAT`
+   (Contents: write auf ava-app/ava-admin/ava-website) als GitHub-Secret, sonst spult Claude die
+   Web-Zweige bei der Freigabe von Hand vor.
+3. In der Konsole: Test-Adressen eintragen (z. B. `joyce+*@quikk.de`), Patrick/Henning als Konten
+   hinzufügen, Staging einschalten.
+
+**Bedienung:** Neue Version = Tag (Kandidat) → Staging-Konten bekommen sie (Desktop über den Feed,
+Server sofort, Gateway per CI, Web-Apps über den Zweig `staging`) → Konsole „Für Produktion
+freigeben“. Web-Änderungen gehen zuerst auf `staging` (Vercel baut die Staging-Projekte), die
+Freigabe spult `main` vor. Notschalter: Staging in der Konsole ausschalten.
