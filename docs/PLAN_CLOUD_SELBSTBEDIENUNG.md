@@ -256,6 +256,27 @@ Test in der Fly-Org `ava-447` („AVA“, Entscheidung Joyce: wird die Kunden-Or
 Bleibt in Z1: Org-Token für `ava-447` (Joyce bestätigt das Erzeugen), Release-CI schiebt das
 Image auch nach `registry.fly.io/ava-kunden-image`.
 
+## 8b. Stand Z1 (2026-11-22)
+
+Gebaut und deployt (Gateway v401): Tabellen `CloudInstanz`/`CloudEreignis`, Fly-Client
+`lib/cloud/fly-maschinen.ts` (Token `FLY_KUNDEN_TOKEN` nur für `ava-447`), Konfiguration
+`lib/cloud/konfig.ts`, Abläufe `lib/cloud/instanzen.ts`, Betreiber-Routen
+`/v1/betreiber/cloud/instanzen`, Test `npm run test:cloud`. Release-CI kopiert Images nach
+`ava-kunden-image` (Secret `FLY_KUNDEN_IMAGE_TOKEN`).
+
+Live-Test mit dem Demo-Konto (im Gateway, echte Org und Datenbank, danach gelöscht):
+
+| Schritt | Ergebnis |
+|---|---|
+| anlegen bis `wartet_auf_verbindung` | ✓ 116 s (erstes Laden des Images); `/healthz` 200 |
+| stoppen + 6 Anfragen | ✓ bleibt `stopped` |
+| ruhen | ✓ Maschine gelöscht, Volume bleibt |
+| starten aus `ruht` | ✓ neue Maschine mit altem Volume in 4 s `started`; `/healthz` 35 s danach noch nicht erreichbar → in Z2 erst nach erfolgreichem Health-Check als bereit werten |
+| löschen | ✓ App weg, Datensatz `geloescht`, Ereigniskette vollständig |
+
+Nebenbei: Kontoprüfung beim Image-Tausch (`instanz-update.ts`) liest die Bindung jetzt aus den
+Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in den Metadaten.
+
 ## 9. Offene Entscheidungen
 
 | # | Frage | Vorschlag |
