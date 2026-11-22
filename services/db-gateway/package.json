@@ -24,7 +24,8 @@
     "test:burggraben": "node scripts/test-burggraben.mjs",
     "test:mcp-plugin": "node scripts/test-mcp-plugin.mjs",
     "plugin:zip": "node scripts/plugin-zip.mjs",
-    "test:cloud": "node scripts/test-cloud.mjs"
+    "test:cloud": "node scripts/test-cloud.mjs",
+    "test:staging": "node scripts/test-staging.mjs"
   },
   "dependencies": {
     "@ava/event": "^1.1.40",

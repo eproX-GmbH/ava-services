@@ -26,6 +26,7 @@ import { vorabanalyseRouter } from "./v1/vorabanalyse";
 import { stammdatenRouter } from "./v1/stammdaten";
 import { betreiberNutzerRouter } from "./v1/betreiber-nutzer";
 import { betreiberCloudRouter } from "./v1/betreiber-cloud";
+import { betreiberStagingRouter } from "./v1/betreiber-staging";
 import { cloudRouter } from "./v1/cloud";
 import { linkedinLeadsRouter } from "./v1/linkedin-leads";
 import { billingRouter } from "./v1/billing";
@@ -121,6 +122,7 @@ v1.route("/", stammdatenRouter);
 v1.route("/", betreiberNutzerRouter);
 // AVA Cloud in Selbstbedienung, Z1 (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md).
 v1.route("/", betreiberCloudRouter);
+v1.route("/", betreiberStagingRouter);
 v1.route("/", cloudRouter);
 v1.route("/", linkedinLeadsRouter);
 

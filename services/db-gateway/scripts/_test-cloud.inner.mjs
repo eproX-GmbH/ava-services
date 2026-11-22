@@ -746,6 +746,21 @@ await pruefe("außerhalb des Fensters kein Update; M6 am Vorabend nur mit Hinwei
   await RO.rolloutSchritt(d, await w.repo.liste()); await RO.rolloutSchritt(d, await w.repo.liste());
   assert.deepEqual(mails, ["update_hinweis"]);
 });
+await pruefe("Staging-Kanal: Kandidat sofort, ohne Wellen/Fenster; Prod-Kanal nimmt die Zielversion statt des neuesten Tags", async () => {
+  const w = await aufbau("v00000000s", schnell);
+  await w.repo.aendern(w.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() });
+  w.fly.versionWert = "0.1.990"; // neuester Tag (Kandidat)
+  const rollouts = rolloutRepo(); const laeufe = [];
+  const mittag = Date.parse("2026-12-02T11:00:00Z"); // außerhalb des Nachtfensters
+  const basis = { repo: w.repo, fly: w.fly, betrieb: w.betrieb, rollouts, betreiberTenant: "op", melden: async () => {}, regeln: RR, jetzt: () => mittag, starte: (p) => laeufe.push(p) };
+  const s = await RO.rolloutSchritt({ ...basis, kanal: "staging", zielVersion: async () => "0.1.990" }, await w.repo.liste());
+  assert.equal(s.gestartet, 1); assert.equal(s.phase, "alle");
+  assert.equal(await rollouts.holen("0.1.990"), null, "keine Wellen-Zeile für Staging");
+  await Promise.all(laeufe);
+  assert.equal((await w.repo.holen(w.id)).imageVersion, "0.1.990");
+  const p = await RO.rolloutSchritt({ ...basis, kanal: "prod", zielVersion: async () => "0.1.976" }, await w.repo.liste());
+  assert.equal(p, null, "Prod-Ziel älter als die Instanz: kein Rollout, kein Zurückdrehen");
+});
 await pruefe("Jetzt aktualisieren: sofort, auch außerhalb des Fensters; nicht wenn angehalten", async () => {
   const w = await aufbau("v000000010", schnell);
   w.fly.versionWert = "0.1.980";

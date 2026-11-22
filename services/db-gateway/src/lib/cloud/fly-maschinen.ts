@@ -86,6 +86,19 @@ const versionen = (tags: string[]) =>
 
 let versionGemerkt: { wert: string | null; bis: number } = { wert: null, bis: 0 };
 
+let alleGemerkt: { wert: string[]; bis: number } = { wert: [], bis: 0 };
+/** Staging (docs/PLAN_STAGING.md): alle Versionen in der Kunden-Registry (5 Min. gemerkt). */
+export async function kundenImageVersionen(): Promise<string[]> {
+  if (alleGemerkt.bis > Date.now()) return alleGemerkt.wert;
+  const r = await fetch(`${REGISTRY}/${kundenImageApp()}/tags/list`, {
+    headers: { authorization: `Basic ${Buffer.from(`x:${token()}`).toString("base64")}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) throw new Error(`Registry ${kundenImageApp()} HTTP ${r.status}`);
+  alleGemerkt = { wert: versionen(((await r.json()) as { tags?: string[] }).tags ?? []), bis: Date.now() + 5 * 60_000 };
+  return alleGemerkt.wert;
+}
+
 export const flyKunden: FlyKunden = {
   async appVorhanden(app) {
     const { status } = await anfrage("GET", `/apps/${app}`, undefined, [404]);

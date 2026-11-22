@@ -154,8 +154,14 @@ export class CloudBetrieb {
       /** Abstand der Gesundheitsprüfungen nach einem Update (Standard 15 s). */
       pruefMs?: number;
       pause?: (ms: number) => Promise<void>;
+      /** Staging (docs/PLAN_STAGING.md): Version je Instanz nach Kanal; Standard neuester Registry-Tag. */
+      version?: (z: CloudInstanz) => Promise<string | null>;
     } = {},
   ) {}
+
+  private version(z: CloudInstanz): Promise<string | null> {
+    return this.opt.version ? this.opt.version(z) : this.fly.neuesteVersion();
+  }
 
   beschaeftigt(id: string) { return this.belegt.has(id); }
 
@@ -221,7 +227,7 @@ export class CloudBetrieb {
         if (!z.volumeId) await merke({ volumeId: await this.fly.volumeAnlegen(z.flyApp, GROESSEN[z.groesse].volumeGb) });
         if (!s.ips) { await this.fly.ipsZuweisen(z.flyApp); s.ips = true; await merke({}); }
         if (!z.maschineId) {
-          const version = z.imageVersion ?? (await this.fly.neuesteVersion());
+          const version = z.imageVersion ?? (await this.version(z));
           if (!version) throw new Error("Kein Server-Image in der Kunden-Registry gefunden.");
           const m = await this.fly.maschineAnlegen(z.flyApp, maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId!, groesse: z.groesse, gatewayToken: !!s.gatewayToken }));
           await merke({ maschineId: m.id, imageVersion: version });
@@ -280,7 +286,7 @@ export class CloudBetrieb {
       let maschineId = z.maschineId;
       const vorhanden = maschineId ? await this.fly.maschineHolen(z.flyApp, maschineId) : null;
       if (!maschineId || !vorhanden || vorhanden.state === "destroyed") {
-        const version = (await this.fly.neuesteVersion()) ?? z.imageVersion;
+        const version = (await this.version(z)) ?? z.imageVersion;
         if (!version || !z.volumeId) throw new Error("Neu anlegen nicht möglich (Image oder Volume fehlt).");
         const m = await this.fly.maschineAnlegen(z.flyApp, maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId, groesse: z.groesse, gatewayToken: !!z.schritte.gatewayToken }));
         maschineId = m.id;

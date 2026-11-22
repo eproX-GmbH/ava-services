@@ -163,7 +163,11 @@ class TransactionProgressBus {
       const client = new AMQPClient(env.EVENT_BUS_QUEUE);
       await client.connect(env.EVENT_BUS_URL);
       await client.assertExchange(env.EVENT_BUS_EXCHANGE);
-      await client.assertQueue();
+      // Staging-Gateway (docs/PLAN_STAGING.md): eigene Warteschlange (EVENT_BUS_QUEUE im fly.toml),
+      // die nach 1 h ohne Verbraucher verschwindet und Meldungen nach 10 Min. verwirft; sonst
+      // liefe sie voll, während Staging aus ist.
+      const staging = process.env.GATEWAY_ROLLE === "staging";
+      await client.assertQueue(undefined, staging ? { "x-expires": 3_600_000, "x-message-ttl": 600_000 } : undefined);
       await client.bindQueue(env.EVENT_BUS_EXCHANGE, "transaction.progress");
 
       const listener = client.getListener<TransactionProgressPayload>({
@@ -179,7 +183,8 @@ class TransactionProgressBus {
           // Persist the state so a reload of the matrix shows the
           // same thing the live SSE just showed. Fire-and-forget;
           // the helper logs its own failures.
-          void writeEntityProgressFromEvent(event.data);
+          // Gespeichert wird nur im Prod-Gateway (Staging zeigt nur live an).
+          if (process.env.GATEWAY_ROLLE !== "staging") void writeEntityProgressFromEvent(event.data);
         } catch (err) {
           logger.error({ err }, "transaction.progress dispatch failed");
         } finally {

@@ -45,11 +45,16 @@ import { webhookEmpfangRouter } from "./routes/v1/dienst-webhooks";
 import { startA2aTakt } from "./lib/a2a-tasks";
 import { appRouter } from "./routes/app";
 import { instanzRouter } from "./lib/instanz-router";
+import { gatewayRolle, startKanalCache } from "./lib/kanal";
+import { relaisWeiche, stagingWaechter, stagingWeiche } from "./lib/staging-weiche";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
 // Kunden-Instanzen <slug>.ava.bi per fly-replay, vor allem anderen (kein CORS, keine Anmeldung).
 app.use("*", instanzRouter);
+// Staging (docs/PLAN_STAGING.md): Prod reicht Staging-Konten weiter, Staging weist alle anderen ab.
+app.use("*", stagingWeiche);
+app.use("*", stagingWaechter);
 
 // CORS.
 //
@@ -232,13 +237,19 @@ kopfRelais.attach(server as import("node:http").Server, async (token) => {
   if (!res.ok) return null;
   const wer = (await res.json()) as { actorId?: string; tenantId?: string };
   return wer.actorId && wer.tenantId ? { actorId: wer.actorId, tenantId: wer.tenantId } : null;
-});
+}, relaisWeiche);
 
 // §8.v3 — gateway is now the single persist service. Subscribe the
 // 5 `tenant.persist.<producer>.v1` queues at boot. A failure here
 // must not crash the HTTP server (read paths still work without
 // persist), but it's loud in logs.
-import("./lib/persist-bus")
+// Staging (docs/PLAN_STAGING.md): Kanal je Konto laden (Weiche, Jobs, Kopfzeile).
+startKanalCache(getGatewayPool());
+const PROD = gatewayRolle() === "prod";
+if (!PROD) logger.info("GATEWAY_ROLLE=staging: nur Anfragen und Cloud-Abgleich für Staging-Konten, keine globalen Jobs");
+
+// Persist-Bus nur im Prod-Gateway (Staging würde Producer-Ergebnisse mit Kandidaten-Code speichern).
+if (PROD) import("./lib/persist-bus")
   .then(({ persistBus }) => persistBus.ensureConnected())
   .catch((err) => {
     logger.error({ err }, "persist-bus failed to start");
@@ -268,46 +279,46 @@ import("./lib/persist-bus")
 // Q-track v0.1.137 — Resume-worker 5-min cron tick. Scans for tenants
 // with parked rows + headroom and asks master-data to replay producer
 // triggers in batches. Stripe webhook trigger lives inside billing.ts.
-startQuotaResumeCron();
+if (PROD) startQuotaResumeCron();
 
 // Firmen-Verflechtungen V4 — wartende und geparkte Firmen-Gesellschafter
 // stuendlich erneut anstossen (docs/PLAN_VERFLECHTUNGEN.md §4 Nr. 6).
-startVerflechtungenCron(getGatewayPool());
+if (PROD) startVerflechtungenCron(getGatewayPool());
 
 // v0.1.378 — Stuck-progress reaper. Flips EntityProgress rows that hang
 // in `in_progress` past STUCK_PROGRESS_TIMEOUT_MINUTES to `failed`, so a
 // dead/crashed/offline producer step shows RED in the pipeline instead
 // of a frozen yellow "läuft". Self-healing — a later `completed` wins.
-startStuckProgressReaperCron();
+if (PROD) startStuckProgressReaperCron();
 
 // C1 — Aufbewahrung: Personen ohne Beobachtung seit N Tagen tilgen.
-startPersonRetentionCron();
+if (PROD) startPersonRetentionCron();
 
 // B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
 // Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
-startBillingCron();
+if (PROD) startBillingCron();
 // AVA Cloud Z2: Soll-Ist-Abgleich der Kunden-Instanzen (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md §3.4).
 startCloudAbgleich();
 // A2A: offene Tasks pruefen, Push an fremde Agenten.
-startA2aTakt();
+if (PROD) startA2aTakt();
 // Vorabanalyse: Laeufe weiterfuehren, die beim letzten Neustart liefen.
-void import("./lib/vorabanalyse/laeufer").then(({ laeuferStarten }) => laeuferStarten(getGatewayPool())).catch(() => undefined);
+if (PROD) void import("./lib/vorabanalyse/laeufer").then(({ laeuferStarten }) => laeuferStarten(getGatewayPool())).catch(() => undefined);
 
 // Onboarding O1 — Start-Analysen beim Registrieren (Wiederholungen aus der DB).
-void import("./lib/start-analyse/auftrag").then(({ startLaeuferStarten }) => startLaeuferStarten(getGatewayPool())).catch(() => undefined);
+if (PROD) void import("./lib/start-analyse/auftrag").then(({ startLaeuferStarten }) => startLaeuferStarten(getGatewayPool())).catch(() => undefined);
 
 // Verflechtungen V5 — Geschaeftsfuehrer-Rollen des Altbestands nachtragen.
 // Einmaliger Durchgang in kleinen Buendeln; endet von selbst.
-startGfRollenNachtrag();
+if (PROD) startGfRollenNachtrag();
 
 // Relevanz — taegliche Tilgung der Rohsignale (400 Tage), abgelaufene
 // Sperren aufraeumen, verfallene Werte nachrechnen.
-startRelevanzCron();
+if (PROD) startRelevanzCron();
 
 // Burggraben 3 (docs/PLAN_BURGGRABEN.md) — Neuigkeiten-Mail vom Server, wenn die
 // AVA des Nutzers seit einem Tag nicht lief (sonst mailt der Desktop-Takt mit Urteil).
-startNeuigkeitenCron();
+if (PROD) startNeuigkeitenCron();
 
 // Register-Delta S3 — Ersteller-Cron: Front-Jobs je Gericht, Bekanntmachungs-
 // Jobs je Tag im 8-Wochen-Fenster (taeglich ab 02:00 UTC, idempotent).
-startRegisterJobCron();
+if (PROD) startRegisterJobCron();

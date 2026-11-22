@@ -213,6 +213,16 @@ export async function ensureTenantForAuth(
     // Onboarding O1 — Rueckfall fuer Registrierungen, die nicht ueber
     // /v1/auth/register liefen (Keycloak-Seite): beim ersten Anlegen des Mitglieds.
     if ((neu.rowCount ?? 0) > 0) {
+      // Staging (docs/PLAN_STAGING.md): Test-Adresse → Staging-Testkonto, Organisation im Stripe-Testmodus.
+      try {
+        const { testkontoBeiErstkontakt, kanalLaden } = await import("./kanal");
+        if (await testkontoBeiErstkontakt(pool, { actorId: auth.actorId, tenantId: auth.tenantId, email: auth.email ?? null })) {
+          await kanalLaden(pool);
+          logger.info({ actorId: auth.actorId }, "[kanal] Test-Adresse: Konto in Staging mit Testzahlung");
+        }
+      } catch (err) {
+        logger.warn({ actorId: auth.actorId, err: err instanceof Error ? err.message : String(err) }, "[kanal] Testkonto-Prüfung fehlgeschlagen");
+      }
       void import("./start-analyse/auftrag")
         .then(({ auftragAnlegen }) => auftragAnlegen(pool, { actorId: auth.actorId, email: auth.email ?? null, vorname: auth.name ?? null }))
         .catch(() => undefined);

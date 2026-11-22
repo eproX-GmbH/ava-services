@@ -5,7 +5,8 @@ import { getGatewayPool } from "../producer-pools";
 import { logger } from "../logger";
 import { kontoSperre } from "../konto-loeschen";
 import { betreiberBenachrichtigen } from "../problem-meldungen";
-import { flyKunden, flyKundenEingerichtet } from "./fly-maschinen";
+import { flyKunden, flyKundenEingerichtet, kundenImageVersionen } from "./fly-maschinen";
+import { bedientKonto, gatewayRolle, kandidatenVermerken, kanalVon, neueKandidaten, releasesLesen, zielVersion, type Kanal } from "../kanal";
 import { CloudBetrieb, pgRepo } from "./instanzen";
 import { abgleichen, faktenAusDb, type AbgleichBericht, type CloudNachricht } from "./abgleich";
 import { pgRollouts, type RolloutDeps } from "./rollout";
@@ -21,8 +22,27 @@ import {
 
 let betrieb: CloudBetrieb | null = null;
 export function cloudBetrieb(): CloudBetrieb {
-  betrieb ??= new CloudBetrieb(pgRepo(getGatewayPool()), flyKunden);
+  betrieb ??= new CloudBetrieb(pgRepo(getGatewayPool()), flyKunden, { version: (z) => zielVersionFuer(kanalVon(z.actorId)) });
   return betrieb;
+}
+
+/**
+ * Staging (docs/PLAN_STAGING.md): Version für einen Kanal aus Registry-Tags und Freigaben.
+ * Ein fest gesetztes CLOUD_IMAGE_VERSION gilt weiter für alle (Notbremse). Neue Tags werden
+ * dabei als Kandidaten vermerkt.
+ */
+export async function zielVersionFuer(kanal: Kanal): Promise<string | null> {
+  const fest = process.env.CLOUD_IMAGE_VERSION?.trim().replace(/^v/, "");
+  if (fest) return fest;
+  const pool = getGatewayPool();
+  const tags = await kundenImageVersionen();
+  let zeilen = await releasesLesen(pool);
+  const neu = neueKandidaten(tags, zeilen);
+  if (neu.length) {
+    await kandidatenVermerken(pool, neu, "server");
+    zeilen = await releasesLesen(pool);
+  }
+  return zielVersion(tags, zeilen, kanal);
 }
 
 const TAKT_MS = 5 * 60_000;
@@ -36,7 +56,13 @@ function deps() {
     repo: pgRepo(pool), fly: flyKunden, betrieb: cloudBetrieb(), fakten: faktenAusDb(pool, kontoSperre), melden: betreiberMelden, benachrichtigen: cloudMailen,
     warnen: (d: Record<string, unknown>, t: string) => logger.warn(d, t),
     // Z7: Updates in Wellen; Betreiber-Instanzen = Organisation des Betreibers.
-    rollout: { rollouts: pgRollouts(pool), betreiberTenant: process.env.OPERATOR_TENANT_ID?.trim() || null },
+    // Staging: dieses Gateway gleicht nur Instanzen seines Kanals ab (Prod alle übrigen).
+    rollout: {
+      rollouts: pgRollouts(pool), betreiberTenant: process.env.OPERATOR_TENANT_ID?.trim() || null,
+      kanal: gatewayRolle(), zielVersion: () => zielVersionFuer(gatewayRolle()),
+    },
+    zustaendig: (i: CloudInstanz) => bedientKonto(i.actorId),
+    waisen: gatewayRolle() === "prod",
   };
 }
 

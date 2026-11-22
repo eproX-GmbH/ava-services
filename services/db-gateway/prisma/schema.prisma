@@ -309,6 +309,8 @@ model TenantBilling {
   betreiberLimitCents  Int?
   /// Enterprise-Vertrag: ausgehandelter Fixpreis je Monat (Cent, netto); NULL = keiner.
   enterprisePreisCents Int?
+  /// Staging (docs/PLAN_STAGING.md): live | test — gegen welches Stripe diese Organisation bucht.
+  stripeModus          String    @default("live")
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
 }
@@ -1649,5 +1651,49 @@ model CloudRollout {
   /// warum angehalten
   grund     String?
   createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// Staging (docs/PLAN_STAGING.md ST1): Konten im Kanal staging (fehlt die Zeile: prod).
+model KanalZugang {
+  actorId     String   @id
+  /// staging (prod = keine Zeile)
+  kanal       String   @default("staging")
+  /// neue Organisationen dieses Kontos buchen gegen Stripe im Testmodus
+  testZahlung Boolean  @default(false)
+  email       String?
+  notiz       String?
+  von         String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// Staging: E-Mail-Muster (z. B. joyce+*@quikk.de); passende Registrierungen werden Testkonten.
+model TestAdressMuster {
+  muster    String   @id
+  notiz     String?
+  von       String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// Staging: Release-Kandidaten und freigegebene Versionen (Desktop, Server-Image, Gateway).
+model AvaRelease {
+  version       String    @id
+  /// kandidat | freigegeben | verworfen
+  status        String    @default("kandidat")
+  commit        String?
+  komponenten   Json      @default("{}")
+  notiz         String?
+  von           String?
+  freigegebenAt DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+/// Staging: Weiche im Prod-Gateway (eine Zeile, id = 1). routing=false → alle Konten über Prod.
+model StagingSchalter {
+  id        Int      @id @default(1)
+  routing   Boolean  @default(false)
+  von       String?
   updatedAt DateTime @default(now()) @db.Timestamptz(6)
 }

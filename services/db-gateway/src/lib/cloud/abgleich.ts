@@ -160,7 +160,11 @@ export interface AbgleichDeps {
   /** Protokoll (im Gateway der Logger); ohne Angabe still. */
   warnen?: (daten: Record<string, unknown>, text: string) => void;
   /** Z7: Updates in Wellen (nur im Volllauf); ohne Angabe keine. */
-  rollout?: Pick<RolloutDeps, "rollouts" | "betreiberTenant" | "starte" | "regeln">;
+  rollout?: Pick<RolloutDeps, "rollouts" | "betreiberTenant" | "starte" | "regeln" | "kanal" | "zielVersion">;
+  /** Staging (docs/PLAN_STAGING.md): nur Instanzen, für die dieses Gateway zuständig ist; Standard alle. */
+  zustaendig?: (i: CloudInstanz) => boolean;
+  /** Waisensuche nur im Prod-Gateway (Standard an). */
+  waisen?: boolean;
 }
 
 export function regelnAusEnv(): Regeln {
@@ -178,7 +182,8 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
   const warnen = d.warnen ?? (() => undefined);
   const bericht: AbgleichBericht = { geprueft: 0, aktionen: {}, fehler: 0, waisen: [] };
   const alle = await d.repo.liste();
-  const liste = alle.filter((i) => i.zustand !== "geloescht" && (!nur || i.id === nur));
+  const zustaendig = d.zustaendig ?? (() => true);
+  const liste = alle.filter((i) => i.zustand !== "geloescht" && (!nur || i.id === nur) && zustaendig(i));
 
   for (const i of liste) {
     if (d.betrieb.beschaeftigt(i.id)) continue;
@@ -283,7 +288,7 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
 
   // Apps ohne Datensatz (Kostenleck), nur im Volllauf.
   if (!nur) {
-    try {
+    if (d.waisen !== false) try {
       const bekannt = new Set(alle.filter((i) => i.zustand !== "geloescht").map((i) => i.flyApp));
       bericht.waisen = (await d.fly.appsListe()).filter((a) => a.startsWith("ava-u-") && !bekannt.has(a));
       if (bericht.waisen.length && waisenAlarmFaellig(jetzt())) {
@@ -294,7 +299,7 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
     }
     if (d.rollout) {
       try {
-        const aktuell = (await d.repo.liste()).filter((i) => i.zustand !== "geloescht");
+        const aktuell = (await d.repo.liste()).filter((i) => i.zustand !== "geloescht" && zustaendig(i));
         bericht.rollout = await rolloutSchritt({ repo: d.repo, fly: d.fly, betrieb: d.betrieb, melden: d.melden, benachrichtigen: d.benachrichtigen, warnen, jetzt, ...d.rollout }, aktuell);
       } catch (err) {
         warnen({ err: err instanceof Error ? err.message : String(err) }, "[cloud-update] Schritt fehlgeschlagen");

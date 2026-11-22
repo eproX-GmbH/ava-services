@@ -110,7 +110,11 @@ export class KopfRelais {
 
   constructor(private readonly pfad: string = "/kopf-relais") {}
 
-  attach(server: Server, pruefe: (token: string) => Promise<KopfIdentitaet | null>): void {
+  /**
+   * @param weiche Staging (docs/PLAN_STAGING.md): darf eine geprüfte Verbindung übernehmen
+   *   (true = an das Staging-Gateway durchgereicht, das Relais hier tut nichts).
+   */
+  attach(server: Server, pruefe: (token: string) => Promise<KopfIdentitaet | null>, weiche?: (req: IncomingMessage, socket: Duplex, head: Buffer, wer: KopfIdentitaet) => boolean): void {
     this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_NACHRICHT_BYTES });
     server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       const url = new URL(req.url ?? "/", "http://ava.local");
@@ -123,6 +127,7 @@ export class KopfRelais {
             socket.destroy();
             return;
           }
+          if (weiche?.(req, socket, head, wer)) return;
           this.wss!.handleUpgrade(req, socket, head, (ws) => this.annehmen(ws, wer));
         })
         .catch((err) => {

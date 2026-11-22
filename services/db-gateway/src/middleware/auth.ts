@@ -59,6 +59,28 @@ declare module "hono" {
 //   - JWKS_URI mode: shared remote JWKS for the whole realm.
 //   - Static-PEM mode: per-tenant PEM map.
 // resolveVerifier returns the right input for jose.jwtVerify().
+/**
+ * Staging-Weiche (docs/PLAN_STAGING.md): nur prüfen, wem ein Token gehört (Signatur + Aussteller
+ * wie oben), Ergebnis bis zum Ablauf des Tokens gemerkt. null = ungültig.
+ */
+const tokenKonten = new Map<string, { sub: string; bis: number }>();
+export async function kontoAusToken(token: string): Promise<string | null> {
+  const jetzt = Date.now();
+  const g = tokenKonten.get(token);
+  if (g && g.bis > jetzt) return g.sub;
+  try {
+    const { JWT_ISSUER, JWKS_URI } = loadEnv();
+    if (!JWKS_URI) return null;
+    const { payload } = await jwtVerify(token, getRemoteJwks() as never, { issuer: JWT_ISSUER });
+    if (typeof payload.sub !== "string") return null;
+    if (tokenKonten.size > 5000) tokenKonten.clear();
+    tokenKonten.set(token, { sub: payload.sub, bis: Math.min((payload.exp ?? 0) * 1000, jetzt + 10 * 60_000) });
+    return payload.sub;
+  } catch {
+    return null;
+  }
+}
+
 const staticKeyCache = new Map<string, KeyLike>();
 let remoteJwks: JWTVerifyGetKey | undefined;
 

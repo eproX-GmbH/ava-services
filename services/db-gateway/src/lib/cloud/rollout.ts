@@ -110,7 +110,13 @@ export interface RolloutDeps {
   jetzt?: () => number;
   /** Startet ein Update im Hintergrund (im Test: sammeln und abwarten). */
   starte?: (p: Promise<unknown>) => void;
+  /** Staging (docs/PLAN_STAGING.md): Kanal dieses Abgleichs; staging = Kandidat sofort, ohne Wellen. */
+  kanal?: "prod" | "staging";
+  /** Zielversion des Kanals (Standard: neuester Tag der Registry). */
+  zielVersion?: () => Promise<string | null>;
 }
+
+const zielVon = (d: Pick<RolloutDeps, "zielVersion" | "fly">) => (d.zielVersion ? d.zielVersion() : d.fly.neuesteVersion());
 
 /** Laufende Updates je Gateway-Prozess (für das Parallel-Limit). */
 const laufend = new Set<string>();
@@ -160,8 +166,20 @@ export async function rolloutSchritt(d: RolloutDeps, instanzen: CloudInstanz[]):
   if (process.env.CLOUD_UPDATES === "0") return null;
   const r0: RolloutRegeln = { ...rolloutRegelnAusEnv(), ...d.regeln };
   const jetzt = (d.jetzt ?? Date.now)();
-  const version = await d.fly.neuesteVersion();
+  const version = await zielVon(d);
   if (!version) return null;
+  const starte = d.starte ?? ((p: Promise<unknown>) => void p.catch(() => undefined));
+  if (d.kanal === "staging") {
+    // Testerinnen und Tester bekommen den Kandidaten sofort, ohne Wellen und Nachtfenster.
+    const ziele = instanzen.filter((i) => aktualisierbar(i, version));
+    const bericht: RolloutBericht = { version, phase: "alle", ziele: ziele.length, gestartet: 0, m6: 0 };
+    const frei = Math.max(0, r0.parallel - laufend.size);
+    for (const i of ziele.filter((x) => !d.betrieb.beschaeftigt(x.id) && !laufend.has(x.id)).slice(0, frei)) {
+      starte(updateEinerInstanz(d, i, version, "abgleicher"));
+      bericht.gestartet++;
+    }
+    return bericht;
+  }
   let r = await d.rollouts.holen(version);
   if (!r) {
     if (!instanzen.some((i) => aktualisierbar(i, version))) return null;
@@ -196,7 +214,6 @@ export async function rolloutSchritt(d: RolloutDeps, instanzen: CloudInstanz[]):
 
   if (!imFenster(jetzt, r0)) return bericht;
   const frei = Math.max(0, r0.parallel - laufend.size);
-  const starte = d.starte ?? ((p: Promise<unknown>) => void p.catch(() => undefined));
   for (const i of ziele.filter((x) => !d.betrieb.beschaeftigt(x.id) && !laufend.has(x.id)).slice(0, frei)) {
     starte(updateEinerInstanz(d, i, version, "abgleicher"));
     bericht.gestartet++;
@@ -206,7 +223,7 @@ export async function rolloutSchritt(d: RolloutDeps, instanzen: CloudInstanz[]):
 
 /** „Jetzt aktualisieren“ (Nutzer): neueste Version sofort, außer der Rollout ist angehalten. */
 export async function jetztAktualisieren(d: RolloutDeps, i: CloudInstanz): Promise<{ gestartet: boolean; grund?: string; version?: string }> {
-  const version = await d.fly.neuesteVersion();
+  const version = await zielVon(d);
   if (!version) return { gestartet: false, grund: "Keine neue Version verfügbar." };
   if (!aktualisierbar({ ...i, schritte: { ...i.schritte, updateFehler: false } }, version)) return { gestartet: false, grund: "Deine AVA ist schon auf dem neuesten Stand." };
   const r = await d.rollouts.holen(version);
