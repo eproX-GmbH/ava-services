@@ -14,8 +14,21 @@ import { join } from "node:path";
 import { alleApps, APP_PREFIX, appName, args, desktopVersion, fly, imageRef } from "./lib/instanz-fly.mjs";
 
 const a = args();
+
+// Staging (docs/PLAN_STAGING.md ST6): Ohne --version gilt die zuletzt FREIGEGEBENE Version
+// (GitHub „Latest“ in ava-releases), nicht der Stand des Repos — der ist nach dem Taggen ein
+// Kandidat, den nur Staging-Konten bekommen. Kandidaten nur mit ausdrücklichem --version.
+async function freigegebeneVersion() {
+  try {
+    const r = await fetch("https://api.github.com/repos/eproX-GmbH/ava-releases/releases/latest", { headers: { accept: "application/vnd.github+json", "user-agent": "ava-skript" } });
+    if (r.ok) return String((await r.json()).tag_name).replace(/^v/, "");
+  } catch { /* unten */ }
+  throw new Error("Freigegebene Version nicht ermittelbar (GitHub). Bitte --version angeben.");
+}
+
 try {
-  const version = String(a.version || desktopVersion()).replace(/^v/, "");
+  const version = String(a.version || (await freigegebeneVersion())).replace(/^v/, "");
+  if (!a.version && version !== desktopVersion()) console.log(`Freigegebene Version ${version} (Repo-Stand ${desktopVersion()} ist ein Kandidat und wird nicht ausgerollt).`);
   const org = String(a.org || "personal");
   const nur = a.nur ? String(a.nur).split(",").map((s) => appName(s.trim())) : null;
   const auch = a.auch ? String(a.auch).split(",").map((s) => s.trim()) : [];

@@ -974,12 +974,16 @@ jobs:
     needs: [build-mac-arm64, build-windows]
     runs-on: ubuntu-latest
     steps:
-      - name: Promote release to Latest
+      # Staging (docs/PLAN_STAGING.md ST6): Jeder Tag ist zuerst ein KANDIDAT. Das Release wird
+      # als Vorabversion veroeffentlicht: Prod-Apps (GitHub /releases/latest) und die Website
+      # sehen es nicht, Staging-Konten bekommen es ueber den Update-Feed des Gateways. Erst die
+      # Freigabe in der Konsole (Workflow freigabe.yml) macht es zu „Latest“ — ohne Neubau.
+      - name: Publish release as candidate (prerelease)
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          gh release edit "$TAG" --draft=false --latest \
+          gh release edit "$TAG" --draft=false --prerelease \
             --repo "$RELEASE_REPO"
 
   build-windows:

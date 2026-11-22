@@ -1,0 +1,78 @@
+# Staging/UAT (docs/PLAN_STAGING.md ST6): Freigabe eines Kandidaten fuer Produktion. Wird vom
+# Knopf „Fuer Produktion freigeben“ in der Konsole gestartet (Gateway, GH_FREIGABE_TOKEN), der
+# die Version vorher in der Datenbank freigibt; die Kunden-Server ziehen dann von selbst nach.
+# Von Hand nur, wenn die Version in der Konsole schon freigegeben ist.
+#
+#   1. Desktop: Vorabversion in ava-releases → „Latest“ (kein Neubau; Prod-Apps updaten)
+#   2. Gateway: derselbe Commit nach ava-db-gateway (Migrationen liefen schon im Staging)
+#   3. Web-Apps: main von ava-app/ava-admin/ava-website auf ihren staging-Zweig vorspulen
+#
+# Secrets: RELEASE_PAT (wie Desktop-Release), FLY_GATEWAY_TOKEN (Deploy-Token ava-db-gateway),
+#          NPM_TOKEN, WEB_FREIGABE_PAT (optional: Push auf main der drei Web-Repos).
+name: Freigabe
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Freigegebene Version, z. B. v0.1.977"
+        required: true
+      von:
+        description: "Wer freigegeben hat (Protokoll)"
+        required: false
+
+concurrency:
+  group: freigabe
+  cancel-in-progress: false
+
+env:
+  RELEASE_REPO: eproX-GmbH/ava-releases
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desktop-Release auf Latest
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
+        run: |
+          V="${{ github.event.inputs.version }}"
+          gh release edit "$V" --prerelease=false --latest --repo "$RELEASE_REPO"
+          echo "Desktop $V ist jetzt Latest."
+
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }}
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Prod-Gateway ausrollen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_GATEWAY_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_GATEWAY_TOKEN fehlt."; exit 1; fi
+          flyctl deploy services/db-gateway \
+            -c services/db-gateway/fly.toml \
+            -a ava-db-gateway \
+            --remote-only \
+            --release-command-timeout 10m \
+            --build-secret "npm_token=$NPM_TOKEN"
+
+  web:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: [ava-app, ava-admin, ava-website]
+    steps:
+      - name: main auf staging vorspulen (nur Fast-Forward)
+        env:
+          PAT: ${{ secrets.WEB_FREIGABE_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then echo "::warning::WEB_FREIGABE_PAT fehlt — ${{ matrix.repo }} von Hand freigeben: git push origin origin/staging:main"; exit 0; fi
+          git clone --quiet "https://x-access-token:${PAT}@github.com/eproX-GmbH/${{ matrix.repo }}.git" r && cd r
+          if ! git rev-parse --verify --quiet origin/staging >/dev/null; then echo "Kein staging-Zweig in ${{ matrix.repo }} — nichts zu tun."; exit 0; fi
+          git push origin origin/staging:main
+          echo "${{ matrix.repo }}: main = staging ($(git rev-parse --short origin/staging))."
