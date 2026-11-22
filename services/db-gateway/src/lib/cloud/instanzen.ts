@@ -60,6 +60,8 @@ export interface CloudRepo {
    * rausgeht. "neu" = erstmals verbunden, "wieder" = nach einer Abmeldung, "nichts" = schon so.
    */
   verbindungMelden(id: string): Promise<"neu" | "wieder" | "nichts">;
+  /** Zustand nur wechseln, wenn er noch `von` ist (atomar; true = dieser Aufruf hat gewechselt). */
+  zustandWechseln(id: string, von: Zustand, nach: Zustand): Promise<boolean>;
 }
 
 const SPALTEN = ["tenantId", "actorId", "flyApp", "region", "groesse", "zustand", "gewuenscht", "soll", "grund", "imageVersion", "maschineId", "volumeId", "schritte", "letzterFehler", "verbundenAt", "gesundAt", "abbestelltZum", "gestopptAt", "geloeschtAt"] as const;
@@ -106,6 +108,10 @@ export function pgRepo(pool: pg.Pool): CloudRepo {
     async liste() {
       const r = await pool.query(`SELECT * FROM "CloudInstanz" ORDER BY "createdAt" DESC LIMIT 500`);
       return r.rows.map(zeile);
+    },
+    async zustandWechseln(id, von, nach) {
+      const r = await pool.query(`UPDATE "CloudInstanz" SET zustand = $3, "updatedAt" = now() WHERE id = $1 AND zustand = $2 AND "geloeschtAt" IS NULL`, [id, von, nach]);
+      return (r.rowCount ?? 0) > 0;
     },
     async verbindungMelden(id) {
       const r = await pool.query<{ neu: boolean }>(
@@ -182,8 +188,8 @@ export class CloudBetrieb {
   /** Zahlung eingegangen: aus „zahlung_offen“ wird „wird_angelegt“ (Anlegen übernimmt der Abgleicher). */
   async freigeben(id: string, quelle: Quelle): Promise<CloudInstanz | null> {
     const z = await this.muss(id);
-    if (z.zustand !== "zahlung_offen") return null;
-    await this.repo.aendern(id, { zustand: "wird_angelegt" });
+    // Atomar: invoice.paid und checkout.session.completed kommen fast gleichzeitig; nur einer gibt frei (eine Mail M1).
+    if (z.zustand !== "zahlung_offen" || !(await this.repo.zustandWechseln(id, "zahlung_offen", "wird_angelegt"))) return null;
     await this.repo.ereignis(id, "bezahlt", quelle, {});
     return { ...z, zustand: "wird_angelegt" };
   }

@@ -52,6 +52,10 @@ function speicherRepo() {
     async ereignis(id, art, quelle, details) { ereignisse.push({ id, art, quelle, details }); },
     async ereignisse() { return []; },
     async liste() { return [...zeilen.values()]; },
+    async zustandWechseln(id, von, nach) {
+      const z = zeilen.get(id); if (!z || z.geloeschtAt || z.zustand !== von) return false;
+      zeilen.set(id, { ...z, zustand: nach }); return true;
+    },
     async verbindungMelden(id) {
       const z = zeilen.get(id);
       if (!z || z.geloeschtAt || (z.verbundenAt && z.zustand !== "wartet_auf_verbindung")) return "nichts";
@@ -325,6 +329,13 @@ await pruefe("freigeben: zahlung_offen → wird_angelegt, sonst nichts", async (
   assert.equal(a.zustand, "zahlung_offen");
   assert.equal((await b.freigeben(a.id, "webhook")).zustand, "wird_angelegt");
   assert.equal(await b.freigeben(a.id, "webhook"), null);
+});
+await pruefe("freigeben: zwei Webhooks gleichzeitig → genau einer gibt frei (eine Mail M1)", async () => {
+  const repo = speicherRepo(); const b = new I.CloudBetrieb(repo, flyAttrappe(), { zufall: () => "kkkkkkkkk2" });
+  const a = await b.anlegen({ tenantId: "t1", actorId: "a1", quelle: "webhook", zahlungOffen: true });
+  const r = await Promise.all([b.freigeben(a.id, "webhook"), b.freigeben(a.id, "webhook")]);
+  assert.equal(r.filter(Boolean).length, 1);
+  assert.equal(repo.ereignisseAlle.filter((e) => e.art === "bezahlt").length, 1);
 });
 async function mitMails(zufall) {
   const w = await aufbau(zufall); const mails = [];

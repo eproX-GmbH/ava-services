@@ -136,6 +136,9 @@ export async function cloudZahlungEingegangen(pool: pg.Pool, betrieb: CloudBetri
   const offen = await pool.query<{ id: string; actorId: string }>(`SELECT id, "actorId" FROM "CloudInstanz" WHERE "tenantId" = $1 AND zustand = 'zahlung_offen' AND "geloeschtAt" IS NULL`, [tenantId]);
   const frei: CloudInstanz[] = [];
   for (const o of offen.rows) {
+    const z = await betrieb.freigeben(o.id, "webhook");
+    if (!z) continue; // ein gleichzeitiger Webhook hat schon freigegeben (und den Sitz vergeben)
+    frei.push(z);
     if (!(await hatSitz(pool, tenantId, o.actorId))) {
       const freierSitz = (await sitzeLesen(pool, tenantId)).find((s) => !s.actorId && !s.reduziertZum);
       if (freierSitz) {
@@ -152,8 +155,6 @@ export async function cloudZahlungEingegangen(pool: pg.Pool, betrieb: CloudBetri
         }
       }
     }
-    const z = await betrieb.freigeben(o.id, "webhook");
-    if (z) frei.push(z);
   }
   return frei;
 }
