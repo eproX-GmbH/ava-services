@@ -395,3 +395,12 @@ export function serverGeloeschtMail(d: ServerMailBasis): Mail {
   const text = [hallo(d.vorname), "", kern, weiter, "", `AVA öffnen: ${appMehr(d.appUrl)}`].join("\n");
   return { betreff: "Deine Daten wurden gelöscht", html: rahmen({ vorschau: "Server und Daten sind entfernt", inhalt, fusszeile: "Du bekommst diese Mail, weil für dich ein AVA-Server gebucht war." }), text };
 }
+
+/** Mitglied ohne Admin-Rechte fragt einen AVA-Server an (an Owner/Admins). */
+export function serverAnfrageMail(d: { vorname: string | null; wer: string; email: string | null; organisation: string; konsoleUrl: string }): Mail {
+  const kern = `${d.wer}${d.email ? ` (${d.email})` : ""} möchte einen AVA-Server. Damit arbeitet AVA rund um die Uhr, auch wenn der eigene Rechner aus ist, und ist überall in der AVA-App erreichbar.`;
+  const tun = "Du kannst den Server in der AVA Konsole bei den Mitgliedern einschalten. Er wird mit dem Abo der Organisation abgerechnet.";
+  const inhalt = ueberschrift("Anfrage: AVA-Server") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(tun)) + knopf("Mitglieder in der AVA Konsole öffnen", d.konsoleUrl);
+  const text = [hallo(d.vorname), "", kern, tun, "", `Mitglieder öffnen: ${d.konsoleUrl}`].join("\n");
+  return { betreff: `${d.wer} möchte einen AVA-Server`, html: rahmen({ vorschau: `Anfrage aus ${d.organisation}`, inhalt, fusszeile: "Du bekommst diese Mail als Owner oder Admin der Organisation." }), text };
+}

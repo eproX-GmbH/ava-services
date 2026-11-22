@@ -16,7 +16,7 @@ function logoLaden(): Buffer {
   return logo;
 }
 
-const DIENSTMAILS = new Set(["willkommen", "beitritt", "bestaetigung", "server_bezahlt", "server_zahlung_offen", "server_pausiert", "server_laeuft_wieder", "server_laeuft", "server_bestaetigen", "server_nicht_erreichbar", "server_wieder_erreichbar", "server_loeschung_angekuendigt", "server_geloescht", "server_betreiber_alarm"]);
+const DIENSTMAILS = new Set(["willkommen", "beitritt", "bestaetigung", "server_bezahlt", "server_zahlung_offen", "server_pausiert", "server_laeuft_wieder", "server_laeuft", "server_bestaetigen", "server_nicht_erreichbar", "server_wieder_erreichbar", "server_loeschung_angekuendigt", "server_geloescht", "server_betreiber_alarm", "server_anfrage"]);
 /** Vertragsmails zum gebuchten Server: gehen auch nach „Keine Mails mehr von AVA“ raus. */
 const VERTRAGSMAILS = new Set(["server_bezahlt", "server_zahlung_offen", "server_pausiert", "server_laeuft_wieder", "server_laeuft", "server_bestaetigen", "server_nicht_erreichbar", "server_wieder_erreichbar", "server_loeschung_angekuendigt", "server_geloescht", "server_betreiber_alarm"]);
 

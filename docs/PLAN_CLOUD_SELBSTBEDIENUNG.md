@@ -349,6 +349,33 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
 - Lösungskarten zum Server kommen mit Z5/Z6, sobald Nutzer ihn in App und Registrierung sehen.
 - Test: `npm run test:cloud` (70 Prüfungen).
 
+## 8f. Stand Z5 (2026-11-22, gebaut, nicht deployt/gepusht)
+
+- **Gateway:** `GET /v1/cloud/mein` liefert zusätzlich `stoerungSeit` (ab 10 Min., wie M4),
+  `wirdAktualisiert` (Fly replacing/updating), `modellGewaehlt` (vom Kopf über das Relais;
+  `ollama` = noch keins), `kopfId` (für „Modell wählen“ an genau diese AVA), `admin`,
+  `weg` (`buchen` mit Abo, `kaufen` ohne Abo, `anfragen` für Mitglieder) und `preis`
+  (`CLOUD_PREIS_CENTS`, Standard 5000; Paket = Server + Pro). Neu `POST /v1/cloud/anfragen`
+  (Mail an Owner/Admins, höchstens 1 je 24 h, BillingEvent `cloud_angefragt`).
+  Fix: Wieder-Einschalten NACH Ablauf der Abbestellung rechnet sofort ab (vorher kostenlos bis
+  zur nächsten Rechnung); vor Ablauf bleibt es ein kostenloser Widerruf.
+- **app.ava.bi** (ava-app `components/app/server-karte.tsx`, Mehr → Deine AVA): Statuskarte für
+  alle Zustände aus §10.3 mit genau einer Handlung (Buchen mit Rückfrage, Kauf über Stripe,
+  Anfragen, Jetzt bestätigen, Modell wählen, Zahlung aktualisieren, Wieder buchen, Doch
+  behalten, Abbestellen). Ohne Buchbarkeit und ohne Server: unsichtbar. Freigaben `cloud/*` und
+  `tenants/me/mitglieder/{id}/cloud` (nur PUT) im Durchreicher.
+- **Konsole** (ava-admin `mitglieder/server.tsx`): Spalte „AVA-Server“ mit Schalter je Mitglied
+  (an = buchen mit Rückfrage und Preis, aus = zum Zyklusende abbestellen) und Stand in
+  Nutzersprache; Free-Mitglieder gesperrt („braucht einen bezahlten Sitz“). Durchreicher deckt
+  `tenants/me/*` schon ab.
+- **Desktop-App** (`settings/ServerSection.tsx`, Konto unter Plan & Abrechnung): Hinweis zum
+  Dazubuchen bzw. Stand, Knopf in die AVA-App (Buchen nur dort); „Jetzt bestätigen“ direkt.
+- Geprüft: Karte in allen 17 Zuständen hell/dunkel, 1280/375 px (Vorschauseite mit Testdaten),
+  Konsole hell/dunkel, Desktop-Abschnitt mit echter styles.css; Typecheck/Lint aller drei.
+- **Mit dem Start (Z6), nicht vorher:** Lösungskarten und ein Chat-Werkzeug „Server-Stand“
+  (Buchen bleibt Knopf in der App, weil es Geld kostet), sonst erzählt AVA von etwas, das noch
+  niemand buchen kann.
+
 ## 9. Entscheidungen
 
 **Abgenommen 2026-11-22 (Joyce: „Ja, so umsetzen“): alle Vorschläge aus §9 und §10.8.**

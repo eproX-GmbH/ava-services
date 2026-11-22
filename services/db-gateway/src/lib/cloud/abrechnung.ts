@@ -71,10 +71,12 @@ export async function cloudEinschalten(pool: pg.Pool, betrieb: CloudBetrieb, a: 
   const da = await pool.query<{ id: string; abbestelltZum: Date | null }>(`SELECT id, "abbestelltZum" FROM "CloudInstanz" WHERE "tenantId" = $1 AND "actorId" = $2 AND "geloeschtAt" IS NULL`, [a.tenantId, a.actorId]);
   if (da.rows[0]) {
     if (da.rows[0].abbestelltZum) {
-      // Abbestellung widerrufen: Zeitraum ist bezahlt, keine neue Rechnung.
+      // Vor Zyklusende: Abbestellung widerrufen, der Zeitraum ist bezahlt, keine neue Rechnung.
+      // Danach (Server schon pausiert): wie eine neue Buchung sofort abrechnen.
+      const abgelaufen = da.rows[0].abbestelltZum.getTime() <= Date.now();
       await pool.query(`UPDATE "CloudInstanz" SET "abbestelltZum" = NULL, "gewuenscht" = 'laufen', "updatedAt" = now() WHERE id = $1`, [da.rows[0].id]);
-      await pool.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, 'abbestellung_widerrufen', 'admin', $2)`, [da.rows[0].id, JSON.stringify({ von: a.von })]);
-      await cloudStripeSync(pool, a.tenantId, { sofortRechnung: false });
+      await pool.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, $2, 'admin', $3)`, [da.rows[0].id, abgelaufen ? "wieder_gebucht" : "abbestellung_widerrufen", JSON.stringify({ von: a.von })]);
+      await cloudStripeSync(pool, a.tenantId, { sofortRechnung: abgelaufen });
     }
     return (await betrieb.stand(da.rows[0].id)) as CloudInstanz;
   }
@@ -85,6 +87,23 @@ export async function cloudEinschalten(pool: pg.Pool, betrieb: CloudBetrieb, a: 
   await cloudStripeSync(pool, a.tenantId, { sofortRechnung: true });
   await recordBillingEvent(pool, { billingAccountId: a.tenantId, kind: "cloud_eingeschaltet", source: "admin", actorId: a.von, payload: { instanzId: z.id, fuer: a.actorId } });
   return z;
+}
+
+/**
+ * Welcher Weg zum Server offen ist (App-Karte): Owner/Admin mit Abo bucht dazu, ohne Abo über
+ * den Kauf (Pro-Sitz + Server); Mitglieder fragen ihre Admins.
+ */
+export async function cloudWeg(pool: pg.Pool, tenantId: string, admin: boolean): Promise<"buchen" | "kaufen" | "anfragen"> {
+  if (!admin) return "anfragen";
+  const acc = await readBillingAccount(pool, tenantId);
+  return acc?.stripeSubscriptionId ? "buchen" : "kaufen";
+}
+
+/** Preise für die Anzeige (netto): Server allein und das Paket Pro + Server für den Kauf. */
+export function cloudPreise(proCents: number): { serverCents: number; paketCents: number } {
+  const v = Number(process.env.CLOUD_PREIS_CENTS);
+  const serverCents = Number.isFinite(v) && v > 0 ? Math.round(v) : 5000;
+  return { serverCents, paketCents: serverCents + proCents };
 }
 
 /** Server abbestellen: läuft bis Zyklusende; nie bezahlte Buchungen verschwinden sofort. */

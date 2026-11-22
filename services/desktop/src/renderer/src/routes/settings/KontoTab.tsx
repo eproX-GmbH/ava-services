@@ -7,12 +7,14 @@ import { InstanzenSection } from "./InstanzenSection";
 import { KonsoleSection } from "./KonsoleSection";
 import { KontoLoeschenSection } from "./KontoLoeschenSection";
 import { ErlaubnisseSection } from "./ErlaubnisseSection";
+import { ServerSection } from "./ServerSection";
 
 export function KontoTab() {
   return (
     <>
       <ProfileSection />
       <PlanSection />
+      <ServerSection />
       <GeneralMemorySection />
       <ErlaubnisseSection />
       <KonsoleSection />

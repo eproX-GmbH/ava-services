@@ -38,6 +38,9 @@ import type { AppConfig } from "./types";
  */
 export const KONSOLE_URL = "https://admin.ava.bi";
 
+/** AVA-App im Browser (Repo eproX-GmbH/ava-app): dort bucht und verwaltet man den AVA-Server. */
+export const AVA_APP_URL = "https://app.ava.bi";
+
 // ---- Hard-coded production defaults ----------------------------------------
 //
 // Shipping defaults: any user who installs the .dmg / .exe and does
