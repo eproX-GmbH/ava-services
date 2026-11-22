@@ -1594,14 +1594,16 @@ model CloudInstanz {
   flyApp        String    @unique
   region        String    @default("fra")
   groesse       String    @default("standard")
-  /// wird_angelegt | wartet_auf_verbindung | laeuft | gestoppt | ruht | geloescht
+  /// zahlung_offen | wird_angelegt | wartet_auf_verbindung | laeuft | gestoppt | ruht | geloescht
   zustand       String
   /// laufen | gestoppt — Wunsch von Admin/Betreiber (ab Z3 auch Abrechnung)
   gewuenscht    String    @default("laufen")
   /// laufen | gestoppt — vom Abgleicher: Wunsch UND Zahlung UND Konto in Ordnung
   soll          String
-  /// zahlung | admin | kuendigung | betreiber | konto
+  /// zahlung | admin | kuendigung | abbestellt | betreiber | konto
   grund         String?
+  /// Abbestellt: läuft bis zu diesem Zeitpunkt (Zyklusende), danach gestoppt (Grund abbestellt)
+  abbestelltZum DateTime? @db.Timestamptz(6)
   imageVersion  String?
   maschineId    String?
   volumeId      String?

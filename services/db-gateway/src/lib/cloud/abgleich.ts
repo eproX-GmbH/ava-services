@@ -26,13 +26,26 @@ export interface Fakten {
   kontoSperre: string | null;
   /** TenantBilling.status der Organisation oder null (keine Abrechnung) */
   abrechnung: string | null;
+  /** Seit wann die Zahlung offen ist (TenantBilling.pastDueSince), ISO */
+  offenSeit?: string | null;
 }
 
-/** Soll aus Wunsch und Fakten. Reihenfolge = Vorrang des Grundes. */
-export function sollBestimmen(i: Pick<CloudInstanz, "gewuenscht" | "grund">, f: Fakten): { soll: Soll; grund: Grund | null } {
+/**
+ * Soll aus Wunsch und Fakten. Reihenfolge = Vorrang des Grundes.
+ * Cloud-Frist (§10.5, E6): offene Zahlung → nach `fristTage` gestoppt, auch wenn die Organisation
+ * selbst erst später (graceDays) gesperrt wird.
+ */
+export function sollBestimmen(
+  i: Pick<CloudInstanz, "gewuenscht" | "grund"> & { abbestelltZum?: string | null },
+  f: Fakten,
+  jetzt: number = Date.now(),
+  fristTage = 7,
+): { soll: Soll; grund: Grund | null } {
   if (f.kontoSperre) return { soll: "gestoppt", grund: "konto" };
   if (f.abrechnung === "canceled") return { soll: "gestoppt", grund: "kuendigung" };
   if (f.abrechnung === "suspended") return { soll: "gestoppt", grund: "zahlung" };
+  if (f.abrechnung === "past_due" && f.offenSeit && jetzt - Date.parse(f.offenSeit) >= fristTage * TAG) return { soll: "gestoppt", grund: "zahlung" };
+  if (i.abbestelltZum && Date.parse(i.abbestelltZum) <= jetzt) return { soll: "gestoppt", grund: "abbestellt" };
   if (i.gewuenscht === "gestoppt") {
     const g = i.grund === "admin" || i.grund === "betreiber" ? i.grund : "betreiber";
     return { soll: "gestoppt", grund: g };
@@ -50,7 +63,7 @@ export type Aktion =
   | { art: "loeschen_faellig" }
   | { art: "gesundheit" };
 
-export interface Regeln { ruheTage: number; loeschTage: number; autoLoeschen: boolean; maxVersuche: number }
+export interface Regeln { ruheTage: number; loeschTage: number; autoLoeschen: boolean; maxVersuche: number; fristTage: number }
 
 const LAEUFT = new Set(["started", "starting", "replacing", "updating"]);
 
@@ -59,7 +72,7 @@ const LAEUFT = new Set(["started", "starting", "replacing", "updating"]);
  * (null = keine Maschine bzw. nicht gefunden).
  */
 export function naechsteAktion(i: CloudInstanz, soll: Soll, fly: string | null, jetzt: number, r: Regeln): Aktion {
-  if (i.zustand === "geloescht") return { art: "nichts" };
+  if (i.zustand === "geloescht" || i.zustand === "zahlung_offen") return { art: "nichts" };
   if (i.zustand === "wird_angelegt") {
     if (soll !== "laufen") return { art: "nichts" };
     return Number(i.schritte.versuche ?? 0) >= r.maxVersuche ? { art: "nichts" } : { art: "fortsetzen" };
@@ -86,6 +99,20 @@ export function alarmFaellig(i: Pick<CloudInstanz, "schritte">, art: string, jet
   return typeof zuletzt !== "string" || jetzt - Date.parse(zuletzt) >= 6 * 3_600_000;
 }
 
+/** Nachrichten des Abgleichers an Nutzer (Mail-Katalog §10.4). */
+export type CloudNachricht = "zahlung_offen" | "pausiert" | "laeuft_wieder";
+
+/** Pausen-Gründe, bei denen der Nutzer eine Mail bekommt (nicht: Betreiber, Konto). */
+const MAIL_GRUENDE = new Set<Grund>(["zahlung", "kuendigung", "abbestellt", "admin"]);
+
+/** Erinnerungsstufe bei offener Zahlung: 0, 3, 6 Tage (§10.5); null = keine. */
+export function zahlungsStufe(offenSeit: string | null | undefined, jetzt: number): 0 | 3 | 6 | null {
+  if (!offenSeit) return null;
+  const tage = Math.floor((jetzt - Date.parse(offenSeit)) / TAG);
+  if (tage < 0) return null;
+  return tage >= 6 ? 6 : tage >= 3 ? 3 : 0;
+}
+
 export interface AbgleichDeps {
   repo: CloudRepo;
   fly: FlyKunden;
@@ -95,13 +122,15 @@ export interface AbgleichDeps {
   regeln?: Partial<Regeln>;
   jetzt?: () => number;
   pause?: (ms: number) => Promise<void>;
+  /** Mails an Nutzer/Admins (M8–M10); ohne Angabe keine. */
+  benachrichtigen?: (art: CloudNachricht, i: CloudInstanz, extra: Record<string, unknown>) => Promise<unknown>;
   /** Protokoll (im Gateway der Logger); ohne Angabe still. */
   warnen?: (daten: Record<string, unknown>, text: string) => void;
 }
 
 export function regelnAusEnv(): Regeln {
   const zahl = (n: string, d: number) => { const v = Number(process.env[n]); return Number.isFinite(v) && v > 0 ? v : d; };
-  return { ruheTage: zahl("CLOUD_RUHE_TAGE", 7), loeschTage: zahl("CLOUD_LOESCH_TAGE", 30), autoLoeschen: process.env.CLOUD_AUTO_LOESCHEN === "1", maxVersuche: 5 };
+  return { ruheTage: zahl("CLOUD_RUHE_TAGE", 7), loeschTage: zahl("CLOUD_LOESCH_TAGE", 30), autoLoeschen: process.env.CLOUD_AUTO_LOESCHEN === "1", maxVersuche: 5, fristTage: zahl("CLOUD_FRIST_TAGE", 7) };
 }
 
 export interface AbgleichBericht { geprueft: number; aktionen: Record<string, number>; fehler: number; waisen: string[] }
@@ -126,7 +155,23 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
       await d.melden(`☁️ AVA Cloud ${i.flyApp}: ${text}`).catch(() => undefined);
     };
     try {
-      const { soll, grund } = sollBestimmen(i, await d.fakten(i));
+      const fakten = await d.fakten(i);
+      const { soll, grund } = sollBestimmen(i, fakten, jetzt(), r.fristTage);
+      const vorher = { zustand: i.zustand, grund: i.grund };
+      const melde = async (art: CloudNachricht, extra: Record<string, unknown> = {}) => {
+        if (!d.benachrichtigen) return;
+        await d.benachrichtigen(art, i, extra).catch((err) => warnen({ id: i.id, art, err: err instanceof Error ? err.message : String(err) }, "[cloud-abgleich] Mail fehlgeschlagen"));
+      };
+      // Erinnerungen bei offener Zahlung (Tag 0/3/6), solange die AVA noch läuft.
+      if (fakten.abrechnung === "past_due" && soll === "laufen" && i.zustand !== "zahlung_offen") {
+        const stufe = zahlungsStufe(fakten.offenSeit, jetzt());
+        const basis = fakten.offenSeit ?? "";
+        if (stufe !== null && i.schritte[`m8_${stufe}`] !== basis) {
+          i.schritte = { ...i.schritte, [`m8_${stufe}`]: basis };
+          await d.repo.aendern(i.id, { schritte: i.schritte });
+          await melde("zahlung_offen", { stufe, pauseAm: new Date(Date.parse(basis) + r.fristTage * TAG).toISOString() });
+        }
+      }
       if (soll !== i.soll || grund !== i.grund) {
         await d.repo.aendern(i.id, { soll, grund });
         await d.repo.ereignis(i.id, "soll_geaendert", "abgleicher", { von: i.soll, nach: soll, grund });
@@ -148,6 +193,9 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
           break;
         case "stoppen":
           await d.betrieb.stoppen(i.id, grund ?? "betreiber", "abgleicher");
+          if (!a.wiederGestartet && grund && MAIL_GRUENDE.has(grund) && vorher.zustand !== "gestoppt" && vorher.zustand !== "ruht") {
+            await melde("pausiert", { grund, loeschenAb: new Date(jetzt() + r.loeschTage * TAG).toISOString() });
+          }
           if (a.wiederGestartet) {
             await d.repo.ereignis(i.id, "wieder_gestoppt", "abgleicher", { fly });
             await merkeAlarm("wieder_gestartet", `lief, obwohl sie gestoppt sein soll (${grund}); wieder gestoppt.`);
@@ -159,6 +207,7 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
             await merkeAlarm("unerwartet_gestoppt", `war unerwartet aus (${fly ?? "keine Maschine"}); wird neu gestartet.`);
           }
           await d.betrieb.starten(i.id, "abgleicher");
+          if (a.warum === "soll_laufen" && vorher.grund && MAIL_GRUENDE.has(vorher.grund)) await melde("laeuft_wieder", { grund: vorher.grund });
           break;
         case "ruhen":
           await d.betrieb.ruhen(i.id, "abgleicher");
@@ -222,7 +271,8 @@ function waisenAlarmFaellig(jetzt: number) {
 /** Fakten aus der Gateway-Datenbank. */
 export function faktenAusDb(pool: pg.Pool, kontoSperre: (pool: pg.Pool, actorId: string) => Promise<string | null>) {
   return async (i: CloudInstanz): Promise<Fakten> => {
-    const b = await pool.query<{ status: string }>(`SELECT status FROM "TenantBilling" WHERE "tenantId" = $1`, [i.tenantId]);
-    return { kontoSperre: await kontoSperre(pool, i.actorId), abrechnung: b.rows[0]?.status ?? null };
+    const b = await pool.query<{ status: string; pastDueSince: Date | null }>(`SELECT status, "pastDueSince" FROM "TenantBilling" WHERE "tenantId" = $1`, [i.tenantId]);
+    const z = b.rows[0];
+    return { kontoSperre: await kontoSperre(pool, i.actorId), abrechnung: z?.status ?? null, offenSeit: z?.pastDueSince ? z.pastDueSince.toISOString() : null };
   };
 }

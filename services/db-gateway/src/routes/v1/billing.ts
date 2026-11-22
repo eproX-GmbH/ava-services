@@ -360,6 +360,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         payload: { sessionId: session.id, customerId, mode: session.mode },
       });
       logger.info({ tenantId, customerId }, "stripe checkout completed");
+      // AVA-Server (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md Z3): Kauf mit Server → Buchung anlegen.
+      if (session.metadata?.cloudFuer) {
+        const { cloudNachStripe } = await import("../../lib/cloud/betrieb");
+        await cloudNachStripe(tenantId, "checkout", { metadata: session.metadata as Record<string, string>, payment_status: session.payment_status });
+      }
       return;
     }
     case "customer.subscription.created":
@@ -383,6 +388,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           await sitzeAusStripeAbgleichen(getGatewayPool(), { tenantId, customerId, sub, eventCreated: event.created, status: st });
           logger.info({ tenantId, subscriptionId: sub.id, status: st }, "stripe Sitz-Abo abgeglichen");
           await resumeForBillingAccount(tenantId);
+          { const { cloudNachStripe } = await import("../../lib/cloud/betrieb"); await cloudNachStripe(tenantId, "abo"); }
           return;
         }
       }
@@ -457,6 +463,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           } catch (e) { await client.query("ROLLBACK").catch(() => undefined); throw e; } finally { client.release(); }
           invalidateBillingResolution(tenantId);
           logger.info({ tenantId }, "stripe Sitz-Abo beendet; Mitglieder auf Free");
+          { const { cloudNachStripe } = await import("../../lib/cloud/betrieb"); await cloudNachStripe(tenantId, "abo"); }
           return;
         }
       }
@@ -495,6 +502,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         payload: { invoiceId: inv.id, amountDue: inv.amount_due, attemptCount: inv.attempt_count },
       });
       logger.warn({ eventId: event.id, invoiceId: inv.id, tenantId }, "stripe invoice payment failed → past_due");
+      { const { cloudNachStripe } = await import("../../lib/cloud/betrieb"); await cloudNachStripe(tenantId, "fehlgeschlagen"); }
       return;
     }
     case "invoice.paid": {
@@ -523,6 +531,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         logger.info({ tenantId, invoiceId: inv.id }, "stripe invoice paid → active (K8)");
         await resumeForBillingAccount(tenantId);
       }
+      // AVA-Server: bezahlte Buchungen freigeben, pausierte Server wieder anlaufen lassen.
+      { const { cloudNachStripe } = await import("../../lib/cloud/betrieb"); await cloudNachStripe(tenantId, "bezahlt"); }
       return;
     }
     default:

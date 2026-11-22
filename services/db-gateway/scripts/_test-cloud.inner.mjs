@@ -4,9 +4,13 @@ import assert from "node:assert/strict";
 import K0 from "../src/lib/cloud/konfig.ts";
 import I0 from "../src/lib/cloud/instanzen.ts";
 import A0 from "../src/lib/cloud/abgleich.ts";
+import AB0 from "../src/lib/cloud/posten.ts";
+import V0 from "../src/lib/mail/vorlagen.ts";
 const K = K0.default ?? K0;
 const I = I0.default ?? I0;
 const A = A0.default ?? A0;
+const AB = AB0.default ?? AB0;
+const V = V0.default ?? V0;
 let fehler = 0;
 const pruefe = async (name, fn) => { try { await fn(); console.log(`  ok   ${name}`); } catch (e) { fehler++; console.log(`  FEHL ${name}\n       ${e.stack?.split("\n").slice(0, 3).join("\n       ")}`); } };
 
@@ -156,7 +160,7 @@ await pruefe("Konto gesperrt schlägt alles", () => assert.deepEqual(A.sollBesti
 await pruefe("Wunsch gestoppt behält Grund admin", () => assert.deepEqual(A.sollBestimmen({ gewuenscht: "gestoppt", grund: "admin" }, { kontoSperre: null, abrechnung: "active" }), { soll: "gestoppt", grund: "admin" }));
 
 console.log("Cloud: nächste Aktion (Z2)");
-const R = { ruheTage: 7, loeschTage: 30, autoLoeschen: false, maxVersuche: 5 };
+const R = { ruheTage: 7, loeschTage: 30, autoLoeschen: false, maxVersuche: 5, fristTage: 7 };
 const T = Date.parse("2026-12-01T12:00:00Z");
 const inst = (teil) => ({ id: "x", flyApp: "ava-u-x", zustand: "laeuft", soll: "laufen", gewuenscht: "laufen", grund: null, schritte: {}, gestopptAt: null, maschineId: "m1", ...teil });
 const tage = (n) => new Date(T - n * 86_400_000).toISOString();
@@ -269,6 +273,104 @@ await pruefe("Instanz mit laufendem Vorgang wird übersprungen", async () => {
   const b = await A.abgleichen(w.deps);
   await p;
   assert.equal(b.geprueft, 0);
+});
+
+console.log("Cloud: Abrechnung und Fristen (Z3)");
+const tag = 86_400_000;
+await pruefe("offene Zahlung: 6 Tage läuft, ab 7 Tagen gestoppt/zahlung", () => {
+  assert.equal(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: "past_due", offenSeit: new Date(T - 6 * tag).toISOString() }, T, 7).soll, "laufen");
+  assert.deepEqual(A.sollBestimmen(basis, { kontoSperre: null, abrechnung: "past_due", offenSeit: new Date(T - 7 * tag).toISOString() }, T, 7), { soll: "gestoppt", grund: "zahlung" });
+});
+await pruefe("abbestellt: bis Zyklusende laufen, danach gestoppt/abbestellt", () => {
+  assert.equal(A.sollBestimmen({ ...basis, abbestelltZum: new Date(T + tag).toISOString() }, { kontoSperre: null, abrechnung: "active" }, T).soll, "laufen");
+  assert.deepEqual(A.sollBestimmen({ ...basis, abbestelltZum: new Date(T - 1).toISOString() }, { kontoSperre: null, abrechnung: "active" }, T), { soll: "gestoppt", grund: "abbestellt" });
+});
+await pruefe("Erinnerungsstufen 0/3/6", () => {
+  assert.equal(A.zahlungsStufe(null, T), null);
+  assert.equal(A.zahlungsStufe(new Date(T - 2 * tag).toISOString(), T), 0);
+  assert.equal(A.zahlungsStufe(new Date(T - 3 * tag).toISOString(), T), 3);
+  assert.equal(A.zahlungsStufe(new Date(T - 6.5 * tag).toISOString(), T), 6);
+});
+await pruefe("zahlung_offen: Abgleicher tut nichts", () => assert.equal(A.naechsteAktion(inst({ zustand: "zahlung_offen", maschineId: null }), "laufen", null, T, R).art, "nichts"));
+await pruefe("Stripe-Posten: anlegen, hoch, runter, entfernen, nichts", () => {
+  assert.deepEqual(AB.postenAktion([{ id: "si_pro", priceId: "p_pro", quantity: 2 }], "p_cloud", 1), { art: "anlegen", menge: 1 });
+  assert.deepEqual(AB.postenAktion([{ id: "si_c", priceId: "p_cloud", quantity: 1 }], "p_cloud", 2), { art: "menge", itemId: "si_c", menge: 2, hoch: true });
+  assert.deepEqual(AB.postenAktion([{ id: "si_c", priceId: "p_cloud", quantity: 2 }], "p_cloud", 1), { art: "menge", itemId: "si_c", menge: 1, hoch: false });
+  assert.deepEqual(AB.postenAktion([{ id: "si_c", priceId: "p_cloud", quantity: 1 }], "p_cloud", 0), { art: "entfernen", itemId: "si_c" });
+  assert.deepEqual(AB.postenAktion([], "p_cloud", 0), { art: "nichts" });
+});
+await pruefe("freigeben: zahlung_offen → wird_angelegt, sonst nichts", async () => {
+  const repo = speicherRepo(); const b = new I.CloudBetrieb(repo, flyAttrappe(), { zufall: () => "kkkkkkkkkk" });
+  const a = await b.anlegen({ tenantId: "t1", actorId: "a1", quelle: "admin", zahlungOffen: true });
+  assert.equal(a.zustand, "zahlung_offen");
+  assert.equal((await b.freigeben(a.id, "webhook")).zustand, "wird_angelegt");
+  assert.equal(await b.freigeben(a.id, "webhook"), null);
+});
+async function mitMails(zufall) {
+  const w = await aufbau(zufall); const mails = [];
+  w.deps.benachrichtigen = async (art, i, extra) => { mails.push({ art, ...extra }); };
+  return { ...w, mails };
+}
+await pruefe("Zahlungsverlauf: Tag 0/3/6 Erinnerung, Tag 7 Pause + Mail, bezahlt → läuft wieder + Mail", async () => {
+  const w = await mitMails("m000000001");
+  const seit = new Date(T).toISOString();
+  w.lage.abrechnung = "past_due"; w.lage.offenSeit = seit;
+  await A.abgleichen(w.deps); await A.abgleichen(w.deps);
+  assert.deepEqual(w.mails.map((m) => `${m.art}:${m.stufe}`), ["zahlung_offen:0"], "Tag 0 genau einmal");
+  w.setzeUhr(T + 3 * tag); await A.abgleichen(w.deps);
+  w.setzeUhr(T + 6 * tag); await A.abgleichen(w.deps);
+  assert.deepEqual(w.mails.map((m) => `${m.art}:${m.stufe}`), ["zahlung_offen:0", "zahlung_offen:3", "zahlung_offen:6"]);
+  w.setzeUhr(T + 7 * tag); await A.abgleichen(w.deps);
+  let z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "gestoppt"); assert.equal(z.grund, "zahlung");
+  assert.equal(w.mails.at(-1).art, "pausiert"); assert.equal(w.mails.at(-1).grund, "zahlung");
+  w.setzeUhr(T + 8 * tag); await A.abgleichen(w.deps);
+  assert.equal(w.mails.filter((m) => m.art === "pausiert").length, 1, "Pause nur einmal gemeldet");
+  w.lage.abrechnung = "active"; w.lage.offenSeit = null;
+  await A.abgleichen(w.deps);
+  z = await w.repo.holen(w.id);
+  assert.equal(z.soll, "laufen"); assert.equal(w.mails.at(-1).art, "laeuft_wieder");
+});
+await pruefe("Betreiber-Stopp und gesperrtes Konto: keine Nutzer-Mail", async () => {
+  const w = await mitMails("m000000002");
+  await w.betrieb.stoppen(w.id, "betreiber", "betreiber", { absicht: true });
+  await A.abgleichen(w.deps);
+  const w2 = await mitMails("m000000003");
+  w2.lage.kontoSperre = "gesperrt";
+  await A.abgleichen(w2.deps);
+  assert.equal(w.mails.length + w2.mails.length, 0);
+});
+await pruefe("abbestellt: nach Zyklusende pausiert + Mail mit Grund abbestellt", async () => {
+  const w = await mitMails("m000000004");
+  await w.repo.aendern(w.id, { abbestelltZum: new Date(T - 1000).toISOString() });
+  await A.abgleichen(w.deps);
+  const z = await w.repo.holen(w.id);
+  assert.equal(z.zustand, "gestoppt"); assert.equal(w.mails[0].art, "pausiert"); assert.equal(w.mails[0].grund, "abbestellt");
+});
+
+console.log("Cloud: Mails (Z3)");
+const verboten = /Instanz|Maschine|Fly|Volume|Container|PLAN_|Z3|Webhook/;
+const basisMail = { vorname: "Eva", appUrl: "https://app.ava.bi" };
+const mails = [
+  V.serverBezahltMail(basisMail),
+  V.serverZahlungOffenMail({ ...basisMail, stufe: 0, pauseAm: "2026-12-08T10:00:00Z", zahlungUrl: "https://admin.ava.bi/abrechnung" }),
+  V.serverZahlungOffenMail({ ...basisMail, stufe: 6, pauseAm: "2026-12-08T10:00:00Z", zahlungUrl: "https://admin.ava.bi/abrechnung" }),
+  V.serverPausiertMail({ ...basisMail, grund: "zahlung", loeschenAb: "2027-01-07T10:00:00Z", zahlungUrl: "https://admin.ava.bi/abrechnung" }),
+  V.serverPausiertMail({ ...basisMail, grund: "abbestellt", loeschenAb: "2027-01-07T10:00:00Z", zahlungUrl: "x" }),
+  V.serverLaeuftWiederMail(basisMail),
+];
+await pruefe("keine Fachbegriffe, mit Umlauten, Anrede und genau einem Knopf", () => {
+  for (const m of mails) {
+    assert.ok(!verboten.test(m.betreff + m.text), `${m.betreff}: ${(m.betreff + m.text).match(verboten)}`);
+    assert.match(m.html, /Hallo Eva,/);
+    assert.equal((m.html.match(/border-radius:8px;">\s*<a /g) ?? []).length, 1, m.betreff);
+  }
+  assert.ok(mails.some((m) => /ä|ö|ü/.test(m.text)));
+});
+await pruefe("Datum deutsch, Stufe 6 kündigt die Pause für morgen an", () => {
+  assert.match(mails[2].betreff, /Morgen pausiere ich/);
+  assert.match(mails[1].text, /8\. Dezember 2026/);
+  assert.match(mails[3].text, /7\. Januar 2027/);
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

@@ -12,9 +12,9 @@ import type pg from "pg";
 import type { FlyKunden } from "./fly-maschinen";
 import { GROESSEN, type Groesse, maschinenKonfig } from "./konfig";
 
-export type Zustand = "wird_angelegt" | "wartet_auf_verbindung" | "laeuft" | "gestoppt" | "ruht" | "geloescht";
+export type Zustand = "zahlung_offen" | "wird_angelegt" | "wartet_auf_verbindung" | "laeuft" | "gestoppt" | "ruht" | "geloescht";
 export type Soll = "laufen" | "gestoppt";
-export type Grund = "zahlung" | "admin" | "kuendigung" | "betreiber" | "konto";
+export type Grund = "zahlung" | "admin" | "kuendigung" | "abbestellt" | "betreiber" | "konto";
 export type Quelle = "abgleicher" | "webhook" | "admin" | "betreiber" | "system";
 
 export interface CloudInstanz {
@@ -37,6 +37,8 @@ export interface CloudInstanz {
   letzterFehler: string | null;
   verbundenAt: string | null;
   gesundAt: string | null;
+  /** Abbestellt: läuft bis hierhin (Zyklusende), danach Soll gestoppt. */
+  abbestelltZum: string | null;
   gestopptAt: string | null;
   geloeschtAt: string | null;
   createdAt: string;
@@ -53,14 +55,14 @@ export interface CloudRepo {
   liste(): Promise<CloudInstanz[]>;
 }
 
-const SPALTEN = ["tenantId", "actorId", "flyApp", "region", "groesse", "zustand", "gewuenscht", "soll", "grund", "imageVersion", "maschineId", "volumeId", "schritte", "letzterFehler", "verbundenAt", "gesundAt", "gestopptAt", "geloeschtAt"] as const;
+const SPALTEN = ["tenantId", "actorId", "flyApp", "region", "groesse", "zustand", "gewuenscht", "soll", "grund", "imageVersion", "maschineId", "volumeId", "schritte", "letzterFehler", "verbundenAt", "gesundAt", "abbestelltZum", "gestopptAt", "geloeschtAt"] as const;
 
 function zeile(r: Record<string, unknown>): CloudInstanz {
   const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null) ?? null);
   return {
     ...(r as unknown as CloudInstanz),
     schritte: (r.schritte as CloudInstanz["schritte"]) ?? {},
-    verbundenAt: iso(r.verbundenAt), gesundAt: iso(r.gesundAt), gestopptAt: iso(r.gestopptAt), geloeschtAt: iso(r.geloeschtAt),
+    verbundenAt: iso(r.verbundenAt), gesundAt: iso(r.gesundAt), abbestelltZum: iso(r.abbestelltZum), gestopptAt: iso(r.gestopptAt), geloeschtAt: iso(r.geloeschtAt),
     createdAt: iso(r.createdAt) ?? "", updatedAt: iso(r.updatedAt) ?? "",
   };
 }
@@ -125,19 +127,28 @@ export class CloudBetrieb {
   }
 
   /** Legt den Datensatz an (oder liefert den bestehenden); die Fly-Schritte laufen über `fortsetzen`. */
-  async anlegen(e: { tenantId: string; actorId: string; groesse?: Groesse; quelle: Quelle }): Promise<CloudInstanz> {
+  async anlegen(e: { tenantId: string; actorId: string; groesse?: Groesse; quelle: Quelle; zahlungOffen?: boolean }): Promise<CloudInstanz> {
     const da = await this.repo.fuerMitglied(e.tenantId, e.actorId);
     if (da) return da;
     const jetzt = new Date().toISOString();
     const z: CloudInstanz = {
       id: randomUUID(), tenantId: e.tenantId, actorId: e.actorId,
       flyApp: appName(this.opt.zufall ?? zufallKurz), region: "fra", groesse: e.groesse ?? "standard",
-      zustand: "wird_angelegt", gewuenscht: "laufen", soll: "laufen", grund: null, imageVersion: null, maschineId: null, volumeId: null,
-      schritte: {}, letzterFehler: null, verbundenAt: null, gesundAt: null, gestopptAt: null, geloeschtAt: null, createdAt: jetzt, updatedAt: jetzt,
+      zustand: e.zahlungOffen ? "zahlung_offen" : "wird_angelegt", gewuenscht: "laufen", soll: "laufen", grund: null, imageVersion: null, maschineId: null, volumeId: null,
+      schritte: {}, letzterFehler: null, verbundenAt: null, gesundAt: null, abbestelltZum: null, gestopptAt: null, geloeschtAt: null, createdAt: jetzt, updatedAt: jetzt,
     };
     await this.repo.einfuegen(z);
-    await this.repo.ereignis(z.id, "angefordert", e.quelle, { groesse: z.groesse });
+    await this.repo.ereignis(z.id, "angefordert", e.quelle, { groesse: z.groesse, zahlungOffen: !!e.zahlungOffen });
     return z;
+  }
+
+  /** Zahlung eingegangen: aus „zahlung_offen“ wird „wird_angelegt“ (Anlegen übernimmt der Abgleicher). */
+  async freigeben(id: string, quelle: Quelle): Promise<CloudInstanz | null> {
+    const z = await this.muss(id);
+    if (z.zustand !== "zahlung_offen") return null;
+    await this.repo.aendern(id, { zustand: "wird_angelegt" });
+    await this.repo.ereignis(id, "bezahlt", quelle, {});
+    return { ...z, zustand: "wird_angelegt" };
   }
 
   /** Führt die noch fehlenden Anlege-Schritte aus. Wiederholbar. */
@@ -215,7 +226,7 @@ export class CloudBetrieb {
     return this.exklusiv(id, async () => {
       const z = await this.muss(id);
       if (z.zustand === "geloescht") throw new Error("Instanz ist gelöscht.");
-      if (z.zustand === "wird_angelegt") throw new Error("Instanz wird noch angelegt; erst fortsetzen.");
+      if (z.zustand === "wird_angelegt" || z.zustand === "zahlung_offen") throw new Error("Instanz ist noch nicht angelegt.");
       await this.repo.aendern(id, { soll: "laufen", grund: null, ...(opt.absicht ? { gewuenscht: "laufen" as const } : {}) });
       let maschineId = z.maschineId;
       const vorhanden = maschineId ? await this.fly.maschineHolen(z.flyApp, maschineId) : null;

@@ -239,3 +239,77 @@ export function beitrittsanfrageMail(d: BeitrittDaten): Mail {
   ].join("\n");
   return { betreff: `Beitrittsanfrage für ${d.organisation}: ${d.wer}`, html: rahmen({ vorschau: `${d.wer} möchte ${d.organisation} beitreten`, inhalt, fusszeile: "Du bekommst diese Mail als Owner oder Admin der Organisation." }), text };
 }
+
+// ---- 6. AVA-Server (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md §10.4, Z3) -------------------
+// Dienstmails zum gebuchten Server: kein Abmelden (Vertragskommunikation), keine Fachbegriffe
+// wie Instanz/Maschine. Ein Knopf je Mail.
+
+function serverFuss(): string {
+  return "Du bekommst diese Mail, weil für dich ein AVA-Server gebucht ist.";
+}
+
+const datum = (iso: string) => new Date(iso).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Berlin" });
+
+export interface ServerMailBasis { vorname: string | null; appUrl: string }
+
+/** M1: Zahlung erhalten, AVA wird eingerichtet. */
+export function serverBezahltMail(d: ServerMailBasis): Mail {
+  const hallo = d.vorname ? `Hallo ${d.vorname},` : "Hallo,";
+  const link = `${d.appUrl.replace(/\/+$/, "")}/mehr`;
+  const inhalt =
+    ueberschrift("Danke! Deine AVA wird jetzt eingerichtet") +
+    absatz(esc(hallo)) +
+    absatz("deine Zahlung ist eingegangen. Ich richte gerade deinen AVA-Server ein, das dauert meist nur ein bis drei Minuten. Danach arbeite ich rund um die Uhr für dich, auch wenn dein Rechner aus ist.") +
+    absatz("Sobald ich bereit bin, bekommst du eine zweite Mail. Den Stand siehst du jederzeit in der AVA-App.") +
+    knopf("Stand ansehen", link);
+  const text = [hallo, "", "deine Zahlung ist eingegangen. Ich richte gerade deinen AVA-Server ein (meist 1–3 Minuten).", "Sobald ich bereit bin, bekommst du eine zweite Mail.", "", `Stand ansehen: ${link}`].join("\n");
+  return { betreff: "Zahlung erhalten – deine AVA wird eingerichtet", html: rahmen({ vorschau: "Meist in 1–3 Minuten bereit", inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M8: Zahlung offen (Stufe 0 = gerade fehlgeschlagen, 3 = Erinnerung, 6 = morgen wird pausiert). */
+export function serverZahlungOffenMail(d: ServerMailBasis & { stufe: 0 | 3 | 6; pauseAm: string; zahlungUrl: string }): Mail {
+  const hallo = d.vorname ? `Hallo ${d.vorname},` : "Hallo,";
+  const am = datum(d.pauseAm);
+  const titel = d.stufe === 6 ? "Morgen pausiere ich deinen AVA-Server" : d.stufe === 3 ? "Erinnerung: Die Zahlung für AVA ist noch offen" : "Die Zahlung für AVA hat nicht geklappt";
+  const kern = d.stufe === 6
+    ? `die Zahlung für AVA ist weiterhin offen. Wenn sie bis morgen nicht eingeht, pausiere ich deinen AVA-Server am ${esc(am)}. Deine Daten bleiben dabei erhalten.`
+    : `die letzte Zahlung für AVA ist nicht eingegangen. Deine AVA läuft vorerst normal weiter. Bitte prüfe dein Zahlungsmittel bis zum ${esc(am)}; sonst pausiere ich deinen AVA-Server an diesem Tag. Deine Daten bleiben dabei erhalten.`;
+  const inhalt = ueberschrift(titel) + absatz(esc(hallo)) + absatz(kern) + absatz("Meist reicht es, die Karte zu aktualisieren. Sobald die Zahlung eingeht, läuft alles ohne Unterbrechung weiter.") + knopf("Zahlungsmittel prüfen", d.zahlungUrl);
+  const text = [hallo, "", kern.replace(/&[a-z]+;/g, ""), "", `Zahlungsmittel prüfen: ${d.zahlungUrl}`].join("\n");
+  return { betreff: titel, html: rahmen({ vorschau: `Bitte bis ${am} prüfen`, inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M9: AVA pausiert (Grund in Nutzersprache, Daten bis … erhalten). */
+export function serverPausiertMail(d: ServerMailBasis & { grund: "zahlung" | "kuendigung" | "abbestellt" | "admin"; loeschenAb: string; zahlungUrl: string }): Mail {
+  const hallo = d.vorname ? `Hallo ${d.vorname},` : "Hallo,";
+  const bis = datum(d.loeschenAb);
+  const warum = {
+    zahlung: "die Zahlung für AVA ist nicht eingegangen. Deshalb habe ich deinen AVA-Server pausiert.",
+    kuendigung: "das Abo deiner Organisation ist beendet. Deshalb habe ich deinen AVA-Server pausiert.",
+    abbestellt: "der AVA-Server wurde zum Ende des Abrechnungszeitraums abbestellt. Deshalb habe ich ihn jetzt pausiert.",
+    admin: "deine Organisation hat deinen AVA-Server pausiert.",
+  }[d.grund];
+  const knopfText = d.grund === "zahlung" ? "Zahlung aktualisieren" : "AVA öffnen";
+  const knopfUrl = d.grund === "zahlung" ? d.zahlungUrl : `${d.appUrl.replace(/\/+$/, "")}/mehr`;
+  const inhalt =
+    ueberschrift("Deine AVA ist pausiert") +
+    absatz(esc(hallo)) +
+    absatz(esc(warum)) +
+    absatz(`Deine Daten bleiben bis zum ${esc(bis)} erhalten. Bis dahin kannst du jederzeit weitermachen – dann läuft alles genau dort weiter, wo es aufgehört hat. Die Desktop-App kannst du unabhängig davon weiter nutzen.`) +
+    knopf(knopfText, knopfUrl);
+  const text = [hallo, "", warum, `Deine Daten bleiben bis zum ${bis} erhalten.`, "", `${knopfText}: ${knopfUrl}`].join("\n");
+  return { betreff: "Deine AVA ist pausiert", html: rahmen({ vorschau: `Deine Daten bleiben bis ${bis} erhalten`, inhalt, fusszeile: serverFuss() }), text };
+}
+
+/** M10: AVA läuft wieder (nach Pause). */
+export function serverLaeuftWiederMail(d: ServerMailBasis): Mail {
+  const hallo = d.vorname ? `Hallo ${d.vorname},` : "Hallo,";
+  const link = `${d.appUrl.replace(/\/+$/, "")}/mehr`;
+  const inhalt =
+    ueberschrift("Deine AVA läuft wieder") +
+    absatz(esc(hallo)) +
+    absatz("dein AVA-Server läuft wieder. Alles ist da, wo du es gelassen hast, und ich arbeite wieder rund um die Uhr für dich.") +
+    knopf("AVA öffnen", link);
+  const text = [hallo, "", "dein AVA-Server läuft wieder. Alles ist da, wo du es gelassen hast.", "", `AVA öffnen: ${link}`].join("\n");
+  return { betreff: "Deine AVA läuft wieder", html: rahmen({ vorschau: "Alles ist da, wo du es gelassen hast", inhalt, fusszeile: serverFuss() }), text };
+}

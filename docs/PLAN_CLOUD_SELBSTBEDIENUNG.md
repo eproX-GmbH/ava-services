@@ -296,7 +296,38 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
 - **Notschalter:** `CLOUD_ABGLEICH=0`.
 - Test: `npm run test:cloud` (40 Prüfungen).
 
-## 9. Offene Entscheidungen
+## 8d. Stand Z3 (2026-11-22, gebaut, nicht deployt)
+
+- **Buchen:** `PUT /v1/tenants/me/mitglieder/{actorId}/cloud {an}` (Owner/Admin; Einzelkämpfer
+  sind Owner). An = Buchung `zahlung_offen` + Server-Posten am Org-Abo mit Sofortrechnung
+  (`always_invoice`); Voraussetzung bezahlter Sitz (E2) und Abo. Aus = läuft bis Zyklusende
+  (`abbestelltZum`), Menge sofort runter ohne Erstattung; nie bezahlte Buchung verschwindet sofort.
+  Wieder an vor Zyklusende = Abbestellung widerrufen, keine neue Rechnung.
+- **Einzelkämpfer ohne Abo:** `POST /v1/cloud/kaufen` → Stripe-Checkout Pro-Sitz + Server;
+  Webhook `checkout.session.completed` legt die Buchung an, freier Sitz wird zugewiesen.
+- **Freigabe:** Webhook `invoice.paid` → `zahlung_offen` → `wird_angelegt` (Abgleicher legt an)
+  + Mail M1; pausierte Server laufen wieder an + Mail M10.
+- **Zahlung offen:** Abgleicher schickt M8 an Tag 0/3/6 (Nutzer + Owner/Admins, je Admin höchstens
+  1 je 20 h), pausiert an Tag 7 (`CLOUD_FRIST_TAGE`) + Mail M9 mit Löschdatum.
+- **Kündigung/Abbestellen/Admin-Stopp:** M9 mit Grund in Nutzersprache; Betreiber-Stopp und
+  gesperrtes Konto ohne Nutzer-Mail.
+- **Mails** (`lib/mail/vorlagen.ts`, Arten `server_*`): Vertragsmails, gehen auch nach „Keine
+  Mails mehr von AVA“ raus.
+- **Status für App/Konsole:** `GET /v1/cloud/mein`, `GET /v1/tenants/me/cloud` (nur
+  nutzerrelevante Felder, keine Fly-Kennungen).
+- **Sperre bis zum Start:** Buchen nur mit `CLOUD_SELBSTBEDIENUNG=1` (Betreiber darf vorher testen).
+- **Offen vor dem Start:** Stripe-Preis „AVA-Server“ 50 € netto/Monat → `STRIPE_PRICE_CLOUD`;
+  in Stripe Kundenbelege einschalten (M13); Proxy-Freigaben `cloud/*` in Konsole und App (Z5).
+- Test: `npm run test:cloud` (51 Prüfungen).
+
+## 9. Entscheidungen
+
+**Abgenommen 2026-11-22 (Joyce: „Ja, so umsetzen“): alle Vorschläge aus §9 und §10.8.**
+Auflösung E1/E13: Server-Posten **50 € netto** je Monat, damit Pro (49 €) + Server = **99 €** für
+Einzelkämpfer (E13) ohne eigenes Paket-Produkt; die Kalkulation (59 €) wird angepasst. Der Betrag
+steht nur im Stripe-Preis `STRIPE_PRICE_CLOUD`, nicht im Code.
+
+### Ursprüngliche Vorschläge
 
 | # | Frage | Vorschlag |
 |---|---|---|

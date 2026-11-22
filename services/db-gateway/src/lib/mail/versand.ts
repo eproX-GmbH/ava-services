@@ -16,7 +16,9 @@ function logoLaden(): Buffer {
   return logo;
 }
 
-const DIENSTMAILS = new Set(["willkommen", "beitritt", "bestaetigung"]);
+const DIENSTMAILS = new Set(["willkommen", "beitritt", "bestaetigung", "server_bezahlt", "server_zahlung_offen", "server_pausiert", "server_laeuft_wieder"]);
+/** Vertragsmails zum gebuchten Server: gehen auch nach „Keine Mails mehr von AVA“ raus. */
+const VERTRAGSMAILS = new Set(["server_bezahlt", "server_zahlung_offen", "server_pausiert", "server_laeuft_wieder"]);
 
 export function versandBereit(): boolean {
   return Boolean(loadEnv().MAILGUN_API_KEY);
@@ -55,7 +57,7 @@ export async function mailSenden(pool: Pool, konto: MailKonto, art: string, mail
   const env = loadEnv();
   const protokoll = (status: string, mailgunId: string | null, fehler: string | null) =>
     pool.query(`INSERT INTO "MailVersand" ("actorId", "art", "status", "mailgunId", "fehler") VALUES ($1, $2, $3, $4, $5)`, [konto.actorId, art, status, mailgunId, fehler]).catch(() => undefined);
-  if (konto.abgemeldet && art !== "bestaetigung") { await protokoll("uebersprungen", null, "abgemeldet"); return { ok: false, grund: "abgemeldet" }; }
+  if (konto.abgemeldet && art !== "bestaetigung" && !VERTRAGSMAILS.has(art)) { await protokoll("uebersprungen", null, "abgemeldet"); return { ok: false, grund: "abgemeldet" }; }
   // Dienstmails (Willkommen, Beitrittsanfrage an Admins) brauchen keine Zustimmung, Neuigkeiten schon.
   if (!DIENSTMAILS.has(art) && !konto.neuigkeiten) { await protokoll("uebersprungen", null, "keine Zustimmung"); return { ok: false, grund: "keine Zustimmung" }; }
   if (!env.MAILGUN_API_KEY) { await protokoll("uebersprungen", null, "MAILGUN_API_KEY fehlt"); return { ok: false, grund: "Versand nicht eingerichtet" }; }
