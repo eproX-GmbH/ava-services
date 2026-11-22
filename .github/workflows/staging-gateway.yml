@@ -43,8 +43,10 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_STAGING_GATEWAY_TOKEN fehlt."; exit 1; fi
-          flyctl deploy services/db-gateway \
-            -c services/db-gateway/fly.staging.toml \
+          # flyctl sucht -c relativ zum Build-Ordner: daher im Ordner des Gateways starten.
+          cd services/db-gateway
+          flyctl deploy . \
+            -c fly.staging.toml \
             -a ava-db-gateway-staging \
             --remote-only --ha=false \
             --release-command-timeout 10m \
