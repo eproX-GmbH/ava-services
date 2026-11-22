@@ -9,6 +9,7 @@
 // STRIPE_PRICE_STARTER=price_…`). Adding a new paid tier is a code
 // change here PLUS a webhook handler update.
 
+import { stripePreis } from "./stripe-client";
 import type { BillingTier } from "./billing";
 
 /** -1 = keine Begrenzung (identisch mit billing.ts; hier lokal, damit billing-plans
@@ -130,11 +131,9 @@ export function guthabenCents(tier: BillingTier): number {
  *  503). We don't read env at module load — the gateway boots with
  *  Stripe disabled in dev. */
 export function priceIdForTier(tier: PaidTier): string | null {
-  if (tier === "starter") return process.env.STRIPE_PRICE_STARTER ?? null;
-  if (tier === "pro") return process.env.STRIPE_PRICE_PRO ?? null;
-  if (tier === "max") return process.env.STRIPE_PRICE_MAX ?? null;
-  if (tier === "ultra") return process.env.STRIPE_PRICE_ULTRA ?? null;
-  return null;
+  // Staging (docs/PLAN_STAGING.md): Preis des aktuellen Stripe-Modus (live/test).
+  const name = tier === "starter" ? "STARTER" : tier === "pro" ? "PRO" : tier === "max" ? "MAX" : tier === "ultra" ? "ULTRA" : null;
+  return name ? stripePreis(name) ?? null : null;
 }
 
 /** Inverse — used by the subscription.{created,updated} webhook to
@@ -142,10 +141,13 @@ export function priceIdForTier(tier: PaidTier): string | null {
  *  unknown price ids (defensive: an admin could create a new product
  *  in Stripe before adding it here). */
 export function tierFromPriceId(priceId: string): PaidTier | null {
-  if (priceId === process.env.STRIPE_PRICE_STARTER) return "starter";
-  if (priceId === process.env.STRIPE_PRICE_PRO) return "pro";
-  if (priceId === process.env.STRIPE_PRICE_MAX) return "max";
-  if (priceId === process.env.STRIPE_PRICE_ULTRA) return "ultra";
+  // Beide Modi: ein Webhook im Testmodus liefert Test-Preis-IDs.
+  for (const modus of ["live", "test"] as const) {
+    if (priceId === stripePreis("STARTER", modus)) return "starter";
+    if (priceId === stripePreis("PRO", modus)) return "pro";
+    if (priceId === stripePreis("MAX", modus)) return "max";
+    if (priceId === stripePreis("ULTRA", modus)) return "ultra";
+  }
   return null;
 }
 

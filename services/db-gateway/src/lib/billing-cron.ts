@@ -10,6 +10,7 @@
 // BILLING_CRON_DISABLED=1 schaltet alles ab (Tests, souveraener Betrieb
 // ohne Stripe laesst nur den Abgleich aus).
 
+import { stripeModusVon } from "./stripe-client";
 import type { ZugangStand } from "./billing";
 import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
@@ -139,6 +140,7 @@ async function zugangUeberschreitungEinzelabo(now: Date): Promise<void> {
   const { getStripe } = await import("./stripe-client");
   const stripe = getStripe();
   for (const row of r.rows) {
+    if ((await stripeModusVon(pool, row.tenantId)) === "test") continue; // Staging: Testmodus-Organisationen nicht im Live-Cron
     const tier = row.tier as "starter" | "pro";
     const z = await zugangStand(pool, row.tenantId, periodKey, guthabenCents(tier));
     const aufnahmen = z.stufen.klein + z.stufen.mittel + z.stufen.gross;
@@ -249,6 +251,7 @@ async function reconcileWithStripe(): Promise<void> {
   );
   let geheilt = 0;
   for (const row of r.rows) {
+    if ((await stripeModusVon(pool, row.tenantId)) === "test") continue; // Staging: Testmodus-Organisationen nicht im Live-Cron
     let subs;
     try {
       subs = await stripe.subscriptions.list({ customer: row.stripeCustomerId, status: "all", limit: 10 });

@@ -339,6 +339,9 @@ export async function createOrganisation(
     );
     // B1 — Historie (Seat-Zaehlung, docs/PLAN_ABRECHNUNG_SEATS.md).
     await openMembership(client, { tenantId: id, actorId: auth.actorId, role: "owner", email: auth.email ?? null, name: auth.name ?? null });
+    // Staging (docs/PLAN_STAGING.md ST4): Organisationen von Testkonten buchen gegen Stripe im Testmodus.
+    const { testZahlungFuer, zahlungsmodusTest } = await import("./kanal");
+    if (testZahlungFuer(auth.actorId)) await zahlungsmodusTest(client, id);
     await client.query("COMMIT");
     invalidateMembership(auth.actorId);
     void syncKeycloak(auth.actorId, id, name);

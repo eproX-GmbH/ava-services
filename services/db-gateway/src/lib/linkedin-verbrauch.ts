@@ -6,6 +6,7 @@
 // Leads). Der Mitarbeiter-Abruf der Firmenverarbeitung (kontext
 // "firmenverarbeitung") steckt im Stufenpreis und zaehlt hier nicht.
 
+import { stripeModusVon } from "./stripe-client";
 import type pg from "pg";
 import { readBillingAccount, periodKeyFor } from "./billing";
 import { pricingAktiv } from "./kontingent";
@@ -115,6 +116,7 @@ export async function linkedinAbrechnen(pool: pg.Pool, now: Date = new Date()): 
   const stripe = getStripe();
   let posten = 0;
   for (const row of r.rows) {
+    if ((await stripeModusVon(pool, row.tenantId)) === "test") continue; // Staging: Testmodus-Organisationen nicht im Live-Cron
     const summe = Number(row.summe);
     if (summe <= 0) continue;
     const schon = await pool.query(

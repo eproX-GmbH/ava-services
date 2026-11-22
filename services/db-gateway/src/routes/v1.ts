@@ -1,3 +1,4 @@
+import { mitStripeModus, stripeModusVon } from "../lib/stripe-client";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { authMiddleware } from "../middleware/auth";
 import { ensureTenantForAuth, DEFAULT_POLICY } from "../lib/tenants";
@@ -70,6 +71,13 @@ import { kontoRouter } from "./v1/konto";
 export const v1 = new OpenAPIHono();
 
 v1.use("*", authMiddleware);
+// Staging (docs/PLAN_STAGING.md ST4): Stripe-Aufrufe im Zahlungsmodus der Organisation (live/test).
+v1.use("*", async (c, next) => {
+  const tenantId = (c.get("auth") as { tenantId?: string } | undefined)?.tenantId;
+  if (!tenantId) return next();
+  const modus = await stripeModusVon(getGatewayPool(), tenantId).catch(() => "live" as const);
+  return mitStripeModus(modus, () => next());
+});
 v1.use("*", rateLimitMiddleware);
 v1.use("*", auditMiddleware);
 

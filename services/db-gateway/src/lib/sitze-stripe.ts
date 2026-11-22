@@ -13,6 +13,8 @@
 // Erster Kauf ohne Abo laeuft ueber Checkout (Zahlungsmittel + erste Sitze);
 // der Webhook legt dann die Sitze an.
 
+import { mitModusVon } from "./stripe-client";
+import { stripeSchluesselDa } from "./stripe-client";
 import type Stripe from "stripe";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
@@ -26,7 +28,7 @@ import { sitzeLesen } from "./sitze";
 type Q = { query: pg.Pool["query"] };
 
 export function stripeKonfiguriert(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY);
+  return stripeSchluesselDa();
 }
 
 /** Gewuenschte Mengen je Plan aus der Sitz-Tabelle (laufend, nicht zur Reduktion vorgemerkt). */
@@ -44,7 +46,7 @@ function planVonPreis(priceId: string | null): SitzPlan | null {
 }
 
 /** Abo-Positionen mit Stripe abgleichen. Ohne Abo (noch kein Checkout) passiert nichts. */
-export async function sitzeStripeSyncAusfuehren(
+async function sitzeStripeSyncAusfuehrenImpl(
   q: Q,
   tenantId: string,
   opts: { proration: "create_prorations" | "none" } = { proration: "create_prorations" },
@@ -92,7 +94,7 @@ export async function sitzeStripeSyncAusfuehren(
 }
 
 /** Checkout fuer die ersten Sitze (Zahlungsmittel der Organisation + Abo). */
-export async function sitzeCheckout(
+async function sitzeCheckoutImpl(
   q: Q,
   args: { tenantId: string; actorId: string; plan: SitzPlan; anzahl: number; rueckkehr: "app" | "konsole"; email?: string | null },
 ): Promise<{ url: string; sessionId: string }> {
@@ -120,7 +122,7 @@ export async function sitzeCheckout(
 }
 
 /** Vorschau: Was kostet es heute, `anzahl` Sitze eines Plans dazuzunehmen? (anteilig bis Zyklusende) */
-export async function sitzeVorschau(
+async function sitzeVorschauImpl(
   q: Q,
   args: { tenantId: string; plan: SitzPlan; anzahl: number },
 ): Promise<{ heuteCents: number; jeMonatCents: number; periodEnd: string | null; anteilig: boolean }> {
@@ -196,4 +198,15 @@ export async function sitzeAusStripeAbgleichen(
 export function istSitzAbo(sub: Stripe.Subscription): boolean {
   if (sub.metadata?.sitze === "1") return true;
   return sub.items.data.some((it) => planVonPreis(it.price?.id ?? null) === "max" || planVonPreis(it.price?.id ?? null) === "ultra");
+}
+
+// Staging (docs/PLAN_STAGING.md ST4): Stripe-Aufrufe im Zahlungsmodus der Organisation.
+export function sitzeStripeSyncAusfuehren(...a: Parameters<typeof sitzeStripeSyncAusfuehrenImpl>): ReturnType<typeof sitzeStripeSyncAusfuehrenImpl> {
+  return mitModusVon(a[0], a[1], () => sitzeStripeSyncAusfuehrenImpl(...a));
+}
+export function sitzeCheckout(...a: Parameters<typeof sitzeCheckoutImpl>): ReturnType<typeof sitzeCheckoutImpl> {
+  return mitModusVon(a[0], a[1].tenantId, () => sitzeCheckoutImpl(...a));
+}
+export function sitzeVorschau(...a: Parameters<typeof sitzeVorschauImpl>): ReturnType<typeof sitzeVorschauImpl> {
+  return mitModusVon(a[0], a[1].tenantId, () => sitzeVorschauImpl(...a));
 }

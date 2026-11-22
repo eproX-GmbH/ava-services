@@ -16,6 +16,7 @@
 // Die reine Zaehlung (computeSeats) ist DB-frei und wird von
 // scripts/test-seat-billing.mjs mit den Beispielen aus §3.2/§7 geprueft.
 
+import { stripeModusVon } from "./stripe-client";
 import type pg from "pg";
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthContext } from "../middleware/auth";
@@ -622,6 +623,7 @@ export async function stripeRechnungErstellen(
   zugang: import("./billing").ZugangStand | null,
 ): Promise<string | null> {
   if (!process.env.STRIPE_SECRET_KEY) return null;
+  if ((await stripeModusVon(pool, tenantId)) === "test") return null; // Staging: keine Live-Rechnung fuer Testmodus
   if (comp.seatCount === 0 && (!zugang || zugang.ueberschreitungCents <= 0)) return null;
   const { getStripe } = await import("./stripe-client");
   const { stufenPostenAnlegen } = await import("./billing-cron");
@@ -702,6 +704,7 @@ export async function stripeRechnungenNachholen(pool: pg.Pool): Promise<number> 
   );
   let n = 0;
   for (const row of r.rows) {
+    if ((await stripeModusVon(pool, row.tenantId)) === "test") continue; // Staging: Testmodus-Organisationen nicht im Live-Cron
     const lines = await pool.query<{ tier: string; seats: number; unitPriceCents: number; amountCents: number }>(
       `SELECT "tier", "seats", "unitPriceCents", "amountCents" FROM "SeatInvoiceLine" WHERE "invoiceId" = $1`,
       [row.id],

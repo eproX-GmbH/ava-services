@@ -18,7 +18,8 @@ import { HTTPException } from "hono/http-exception";
 // v0.1.158 — non-type-only because the stale-customer probe needs
 // Stripe.errors.StripeInvalidRequestError at runtime.
 import Stripe from "stripe";
-import { getStripe, getStripeWebhookSecret } from "../../lib/stripe-client";
+import { getStripe, getStripeWebhookSecret, mitStripeModus, type StripeModus } from "../../lib/stripe-client";
+import type { Context } from "hono";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import {
@@ -291,7 +292,12 @@ billingRouter.openapi(portalRoute, async (c) => {
 
 export const billingWebhookRouter = new OpenAPIHono();
 
-billingWebhookRouter.post("/v1/billing/webhook", async (c) => {
+// Staging (docs/PLAN_STAGING.md ST4): je Stripe-Modus ein Endpunkt mit eigenem Geheimnis; der
+// ganze Ablauf läuft im Modus des Endpunkts (Preise, Abos, Server-Buchung).
+billingWebhookRouter.post("/v1/billing/webhook", (c) => mitStripeModus("live", () => webhookVerarbeiten(c, "live")));
+billingWebhookRouter.post("/v1/billing/webhook/test", (c) => mitStripeModus("test", () => webhookVerarbeiten(c, "test")));
+
+async function webhookVerarbeiten(c: Context, modus: StripeModus) {
   const sigHeader = c.req.header("stripe-signature");
   if (!sigHeader) return c.text("missing stripe-signature", 400);
 
@@ -299,14 +305,18 @@ billingWebhookRouter.post("/v1/billing/webhook", async (c) => {
 
   let event: Stripe.Event;
   try {
-    const stripe = getStripe();
-    event = stripe.webhooks.constructEvent(raw, sigHeader, getStripeWebhookSecret());
+    const stripe = getStripe(modus);
+    event = stripe.webhooks.constructEvent(raw, sigHeader, getStripeWebhookSecret(modus));
   } catch (err) {
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err: err instanceof Error ? err.message : String(err), modus },
       "stripe webhook signature verification failed",
     );
     return c.text("invalid signature", 400);
+  }
+  if (event.livemode !== (modus === "live")) {
+    logger.warn({ eventId: event.id, modus }, "stripe webhook: Modus passt nicht zum Endpunkt — ignoriert");
+    return c.json({ received: true, ignoriert: "modus" }, 200);
   }
 
   // B1 H2 — Dedupe: Stripe wiederholt Events bis 2xx; ein bereits
@@ -339,7 +349,7 @@ billingWebhookRouter.post("/v1/billing/webhook", async (c) => {
     return c.text("handler error", 500);
   }
   return c.text("ok", 200);
-});
+}
 
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {

@@ -9,6 +9,7 @@
 // Voraussetzung (E2): das Mitglied hat einen bezahlten Sitz. Einzelkämpfer ohne Abo gehen über
 // den Checkout (Pro-Sitz + Server in einem Kauf).
 
+import { mitModusVon, stripePreis, stripeSchluesselDa } from "../stripe-client";
 import type pg from "pg";
 import type Stripe from "stripe";
 import { getStripe } from "../stripe-client";
@@ -23,7 +24,7 @@ export { postenAktion, type PostenAktion };
 
 type Q = { query: pg.Pool["query"] };
 
-export const cloudPreisId = () => process.env.STRIPE_PRICE_CLOUD?.trim() || "";
+export const cloudPreisId = () => stripePreis("CLOUD") ?? "";
 
 export class CloudAbrechnungFehler extends Error {
   constructor(readonly code: "nicht_eingerichtet" | "kein_mitglied" | "braucht_sitz" | "braucht_checkout" | "hat_abo" | "nicht_gebucht", text: string) {
@@ -42,9 +43,9 @@ export async function cloudMenge(q: Q, tenantId: string): Promise<number> {
 
 
 /** Server-Posten mit der Zahl gebuchter Server abgleichen. `sofortRechnung` nur beim Einschalten. */
-export async function cloudStripeSync(q: Q, tenantId: string, opt: { sofortRechnung: boolean }): Promise<"kein_abo" | PostenAktion["art"]> {
+async function cloudStripeSyncImpl(q: Q, tenantId: string, opt: { sofortRechnung: boolean }): Promise<"kein_abo" | PostenAktion["art"]> {
   const priceId = cloudPreisId();
-  if (!priceId || !process.env.STRIPE_SECRET_KEY) throw new CloudAbrechnungFehler("nicht_eingerichtet", "Server-Buchung ist noch nicht eingerichtet.");
+  if (!priceId || !stripeSchluesselDa()) throw new CloudAbrechnungFehler("nicht_eingerichtet", "Server-Buchung ist noch nicht eingerichtet.");
   const acc = await readBillingAccount(q, tenantId);
   if (!acc?.stripeSubscriptionId) return "kein_abo";
   const stripe = getStripe();
@@ -160,7 +161,7 @@ export async function cloudZahlungEingegangen(pool: pg.Pool, betrieb: CloudBetri
 }
 
 /** Einzelkämpfer ohne Abo: ein Kauf mit Pro-Sitz (falls nötig) und Server. */
-export async function cloudCheckout(
+async function cloudCheckoutImpl(
   pool: pg.Pool,
   a: { tenantId: string; actorId: string; email: string | null; appUrl: string },
 ): Promise<{ url: string; sessionId: string }> {
@@ -192,4 +193,12 @@ export async function cloudCheckoutAbgeschlossen(pool: pg.Pool, betrieb: CloudBe
   if (!fuer) return [];
   await betrieb.anlegen({ tenantId, actorId: fuer, quelle: "webhook", zahlungOffen: true });
   return session.payment_status === "paid" ? cloudZahlungEingegangen(pool, betrieb, tenantId) : [];
+}
+
+// Staging (docs/PLAN_STAGING.md ST4): Stripe-Aufrufe im Zahlungsmodus der Organisation.
+export function cloudStripeSync(...a: Parameters<typeof cloudStripeSyncImpl>): ReturnType<typeof cloudStripeSyncImpl> {
+  return mitModusVon(a[0], a[1], () => cloudStripeSyncImpl(...a));
+}
+export function cloudCheckout(...a: Parameters<typeof cloudCheckoutImpl>): ReturnType<typeof cloudCheckoutImpl> {
+  return mitModusVon(a[0], a[1].tenantId, () => cloudCheckoutImpl(...a));
 }
