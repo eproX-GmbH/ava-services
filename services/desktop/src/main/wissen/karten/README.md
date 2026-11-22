@@ -69,7 +69,7 @@ anpassen oder löschen. Dazu gehören:
 3. **Suche prüfen**, beide Wege:
    - `../../node_modules/.bin/tsx scripts/test-wissen.mts` (Volltext/BM25, muss 0 kaputte Karten melden)
    - `../../node_modules/.bin/tsx scripts/test-wissen.mts --vektoren` (mit Vektoren über das lokale Ollama, embeddinggemma)
-   Die Trefferquote darf nicht sinken (Stand 2026-11-09: 295 Karten, Volltext 252/257, mit Vektoren 248/257).
+   Die Trefferquote darf nicht sinken (Stand 2026-11-22: 301 Karten, Volltext 300/305, mit Vektoren 295/305).
    Beide Läufe melden veraltete Kartenvektoren als FEHLER.
 4. **Vektoren vorberechnen** (Pflicht nach jeder Kartenänderung, vor Schritt 3):
    `../../node_modules/.bin/tsx scripts/wissen-vektoren.mts --ollama http://127.0.0.1:11555`

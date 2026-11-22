@@ -11,7 +11,8 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { loadEnv } from "../../lib/env";
-import { istAdmin } from "../../lib/tenants";
+import { createOrganisation, istAdmin } from "../../lib/tenants";
+import { domainAusEmail, istFreemail } from "../../lib/start-analyse/freemail";
 import { istBetreiber, type AuthContext } from "../../middleware/auth";
 import { cloudBestaetigung, cloudBetrieb } from "../../lib/cloud/betrieb";
 import { loeschDatum, regelnAusEnv } from "../../lib/cloud/abgleich";
@@ -139,16 +140,32 @@ cloudRouter.openapi(
     method: "post",
     path: "/cloud/kaufen",
     tags: ["cloud"],
-    summary: "Einzelkämpfer ohne Abo: Kauf von Pro-Sitz und AVA-Server (Stripe-Checkout)",
+    summary: "Einzelkämpfer ohne Abo: Kauf von Pro-Sitz und AVA-Server (Stripe-Checkout); legt bei Bedarf die eigene Organisation an",
+    request: { body: { required: false, content: { "application/json": { schema: z.object({ organisation: z.string().trim().min(2).max(120).optional() }) } } } },
     responses: { 200: { content: { "application/json": { schema: z.object({ url: z.string() }) } }, description: "Checkout" }, ...Fehler },
   }),
   async (c) => {
     const auth = c.get("auth");
     if (!offen(auth)) throw new HTTPException(403, { message: "Der AVA-Server ist noch nicht buchbar." });
     const pool = getGatewayPool();
-    if (!(await istAdmin(pool, auth.tenantId, auth.actorId))) throw new HTTPException(403, { message: "Bitte frag den Owner deiner Organisation." });
+    let tenantId = auth.tenantId;
+    // Frisch registriert (Website, Z6): nur der persönliche Bereich. Sitze und Abo gibt es nur für
+    // Organisationen; Einzelkämpfer bekommen ihre eigene (Name änderbar in der Konsole). Läuft
+    // schon eine Beitrittsanfrage zur Firma, bucht später deren Organisation.
+    const art = await pool.query<{ kind: string }>(`SELECT kind FROM "Tenant" WHERE id = $1`, [tenantId]);
+    if (art.rows[0]?.kind !== "organisation") {
+      const offeneAnfrage = await pool.query(`SELECT 1 FROM "TenantJoinRequest" WHERE "actorId" = $1 AND status = 'open' LIMIT 1`, [auth.actorId]);
+      if (offeneAnfrage.rowCount) throw new HTTPException(409, { message: "Deine Anfrage zum Beitritt in die Organisation deiner Firma läuft noch. Sobald du aufgenommen bist, kann sie den Server für dich buchen." });
+      const body = (await c.req.json().catch(() => ({}))) as { organisation?: unknown };
+      const domain = auth.email ? domainAusEmail(auth.email) : null;
+      const name = (typeof body.organisation === "string" && body.organisation.trim().length >= 2 ? body.organisation.trim().slice(0, 120) : null)
+        ?? (domain && !istFreemail(domain) ? domain : null) ?? auth.name?.trim() ?? auth.email ?? "Meine Organisation";
+      tenantId = (await createOrganisation(pool, auth, name)).tenantId;
+      logger.info({ actorId: auth.actorId, tenantId }, "[cloud] Organisation für den Server-Kauf angelegt");
+    }
+    if (!(await istAdmin(pool, tenantId, auth.actorId))) throw new HTTPException(403, { message: "Bitte frag den Owner deiner Organisation." });
     try {
-      const { url } = await cloudCheckout(pool, { tenantId: auth.tenantId, actorId: auth.actorId, email: auth.email ?? null, appUrl: loadEnv().AVA_APP_URL });
+      const { url } = await cloudCheckout(pool, { tenantId, actorId: auth.actorId, email: auth.email ?? null, appUrl: loadEnv().AVA_APP_URL });
       return c.json({ url }, 200);
     } catch (err) {
       fehler(err);

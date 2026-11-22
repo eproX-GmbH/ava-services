@@ -376,6 +376,28 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
   (Buchen bleibt Knopf in der App, weil es Geld kostet), sonst erzählt AVA von etwas, das noch
   niemand buchen kann.
 
+## 8g. Stand Z6 (2026-11-22, gebaut, nicht deployt/gepusht)
+
+- **Gateway:** öffentlich `GET /v1/cloud/angebot` (buchbar = `CLOUD_SELBSTBEDIENUNG`, Preise;
+  60 s Cache). `POST /v1/cloud/kaufen` legt für Konten ohne Organisation (frisch registriert)
+  die eigene Organisation an (Name: optional `organisation`, sonst Firmen-Domain, bei Freemail
+  der Name); läuft schon eine Beitrittsanfrage zur Firma → 409 mit Hinweis.
+- **Website** (ava-website `6dc0e19`): `/willkommen` fragt ab dem Start „Wo soll AVA für dich
+  arbeiten?“ – Server (empfohlen, 99 € Paket; Kauf direkt mit den frischen Anmelde-Token über
+  `/api/server-kaufen`, sonst Anmeldung in der AVA-App) oder Desktop-App (Download erst nach
+  Wahl, E15). Preisseite, Vergleichstabelle und Kasten „AVA in die Cloud“ zeigen dann Preis
+  und Selbstbuchung. Vorher bleibt alles wie bisher (Angebot auf Anfrage).
+- **Rechtstexte** (ava-website `71b8106`, ENTWURF): AGB § 3 Abs. 9–13 und § 13 Abs. 3,
+  Datenschutz Abschnitte 5, 6, 9b. Vor dem Start: Freigabe der Texte und eine
+  **veröffentlichte AVV** (§ 13 Abs. 3 verweist darauf); bestehende Kunden nach § 18 über die
+  AGB-Änderung informieren.
+- **AVA:** Chat-Werkzeug `server_stand` (nur lesend, wirbt nicht, solange nicht buchbar;
+  Gruppe „instanzen“, Verwaltung), Lösungskarte `ava-server-buchen` neu, `ava-server-instanz`
+  angepasst, Prüfsatz +4; Volltext 300/305, Vektoren 295/305 (wie vorher, eine
+  Nebenwirkung bei `person-loeschen` mit einer Frage-Variante ausgeglichen).
+- Offen am Rande: Der Fähigkeiten-Test meldet vier ältere Werkzeuge ohne Gruppe
+  (`ansprache_vorbereiten`, `ansprache_pruefen`, `firmen_ereignisse`, `linkedin_post_nachladen`).
+
 ## 9. Entscheidungen
 
 **Abgenommen 2026-11-22 (Joyce: „Ja, so umsetzen“): alle Vorschläge aus §9 und §10.8.**

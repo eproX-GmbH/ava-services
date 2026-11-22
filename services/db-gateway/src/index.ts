@@ -24,6 +24,7 @@ import { publicAuthRouter } from "./routes/v1/auth";
 import { mailLinksRouter } from "./routes/mail-links";
 import { cloudLinksRouter } from "./routes/cloud-links";
 import { plaeneRouter } from "./routes/v1/plaene";
+import { cloudAngebotRouter } from "./routes/v1/cloud-angebot";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { internalRegisterJobsRouter } from "./routes/internal-register-jobs";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
@@ -112,6 +113,8 @@ app.route("/", mailLinksRouter);
 app.route("/", cloudLinksRouter);
 // docs/PLAN_PRICING_TIERS.md P1 — Plan-Katalog ohne Auth (Listenpreise fuer App, Konsole, Website).
 app.route("/v1", plaeneRouter);
+// docs/PLAN_CLOUD_SELBSTBEDIENUNG.md Z6 — Angebot des AVA-Servers ohne Auth (Website).
+app.route("/v1", cloudAngebotRouter);
 
 // Q-track v0.1.137 — Internal HMAC-authed surface for the gateway ↔
 // master-data quota / park-state channel. Mounted OUTSIDE /v1 so it

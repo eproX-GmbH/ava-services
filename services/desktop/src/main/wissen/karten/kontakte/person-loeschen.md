@@ -6,6 +6,7 @@ fragen:
   - der kontakt will gelöscht werden
   - löschwunsch nach dsgvo umsetzen
   - widerspruch gegen die speicherung
+  - jemand will nicht mehr bei uns gespeichert sein
   - entferne herrn meier aus ava
   - delete contact
   - kontakt löschen wegen dsgvo
@@ -15,7 +16,7 @@ schlagworte: [löschen, löschwunsch, art 17, widerspruch, dsgvo, person entfern
 aktionen:
   - { art: chat_vorschlag, ziel: "Lösche diese Person auf ihren Wunsch.", label: "Person löschen" }
 gilt_fuer: [alle]
-stand: 2026-11-07
+stand: 2026-11-22
 ---
 Bittet dich jemand, seine Daten zu löschen, sag mir Name und Firma. Ich frage noch einmal nach und lösche die Person dann im gesamten Bestand, für alle Organisationen, nicht nur bei dir. Danach ist sie gegen erneute Erfassung gesperrt, damit sie beim nächsten Durchlauf nicht wieder auftaucht. Das lässt sich nicht rückgängig machen. Auch ihre Einträge in Buying Centern verschwinden. Löschen kann nur eine Organisation, die die Person selbst erfasst hat; sonst gebe ich den Wunsch auf Bitte ans AVA-Team weiter.
 

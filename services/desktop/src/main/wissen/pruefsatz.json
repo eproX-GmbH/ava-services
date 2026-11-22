@@ -1349,5 +1349,24 @@
   {
     "frage": "kaltakquise per linkedin an den einkaufsleiter",
     "erwartet": "erstansprache"
+  },
+  {
+    "frage": "was kostet so ein ava server im monat",
+    "erwartet": "ava-server-buchen"
+  },
+  {
+    "frage": "mein server ist pausiert was jetzt",
+    "erwartet": "ava-server-buchen"
+  },
+  {
+    "frage": "wie kann ich den server wieder kündigen",
+    "erwartet": "ava-server-buchen"
+  },
+  {
+    "frage": "ava soll auch laufen wenn mein laptop aus ist",
+    "erwartet": [
+      "ava-server-instanz",
+      "ava-server-buchen"
+    ]
   }
 ]
