@@ -23,7 +23,8 @@
     "test:persist-reconnect": "node scripts/test-persist-reconnect.mjs",
     "test:burggraben": "node scripts/test-burggraben.mjs",
     "test:mcp-plugin": "node scripts/test-mcp-plugin.mjs",
-    "plugin:zip": "node scripts/plugin-zip.mjs"
+    "plugin:zip": "node scripts/plugin-zip.mjs",
+    "test:cloud": "node scripts/test-cloud.mjs"
   },
   "dependencies": {
     "@ava/event": "^1.1.40",

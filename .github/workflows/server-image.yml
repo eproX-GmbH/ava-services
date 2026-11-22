@@ -144,3 +144,30 @@ jobs:
             --build-secret "npm_token=$NPM_TOKEN"
           echo "Fertig: registry.fly.io/ava-server-image:v$VERSION"
           echo "Ausrollen: node scripts/instanzen-aktualisieren.mjs --version $VERSION (oder Admin-Konsole → Instanzen)"
+
+      # AVA Cloud in Selbstbedienung (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md, Z0-Befund 2026-11-22):
+      # Fly laedt Images nicht ueber Org-Grenzen. Die Kunden-Instanzen liegen in der Org ava-447
+      # und brauchen das Image in deren Registry (App ava-kunden-image). Kopie per skopeo, ohne
+      # neuen Build. Fehlt das Secret, nur Warnung (bestehende Instanzen sind nicht betroffen).
+      #   FLY_KUNDEN_IMAGE_TOKEN  Deploy-Token NUR fuer ava-kunden-image
+      #                           (`fly tokens create deploy -a ava-kunden-image`).
+      - name: Image in die Registry der Kunden-Instanzen kopieren
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_KUNDEN_IMAGE_TOKEN: ${{ secrets.FLY_KUNDEN_IMAGE_TOKEN }}
+        run: |
+          if [ -z "$FLY_KUNDEN_IMAGE_TOKEN" ]; then
+            echo "::warning::FLY_KUNDEN_IMAGE_TOKEN fehlt — Image nicht nach ava-kunden-image kopiert."
+            exit 0
+          fi
+          for i in 1 2 3; do
+            skopeo copy --all \
+              --src-creds "x:$FLY_API_TOKEN" \
+              --dest-creds "x:$FLY_KUNDEN_IMAGE_TOKEN" \
+              "docker://registry.fly.io/ava-server-image:v$VERSION" \
+              "docker://registry.fly.io/ava-kunden-image:v$VERSION" && break
+            echo "Versuch $i gescheitert, neuer Versuch in 30 s"; sleep 30
+            [ "$i" = 3 ] && { echo "::error::Kopie nach ava-kunden-image gescheitert"; exit 1; }
+          done
+          echo "Fertig: registry.fly.io/ava-kunden-image:v$VERSION"

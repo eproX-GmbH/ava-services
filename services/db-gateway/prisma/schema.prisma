@@ -1583,3 +1583,49 @@ model RegisterSnapshot {
 
   @@index([companyId, ersetztAm(sort: Desc)], map: "RegisterSnapshot_company_idx")
 }
+
+/// AVA Cloud in Selbstbedienung (docs/PLAN_CLOUD_SELBSTBEDIENUNG.md §5): eine Instanz je Mitglied
+/// in der Fly-Org der Kunden-Instanzen. Zugriff per SQL (lib/cloud/instanzen.ts). Zusätzlich gibt es
+/// den Teilindex "CloudInstanz_mitglied_aktiv" (tenantId, actorId) WHERE geloeschtAt IS NULL (Migration).
+model CloudInstanz {
+  id            String    @id
+  tenantId      String
+  actorId       String
+  flyApp        String    @unique
+  region        String    @default("fra")
+  groesse       String    @default("standard")
+  /// wird_angelegt | wartet_auf_verbindung | laeuft | gestoppt | ruht | geloescht
+  zustand       String
+  /// laufen | gestoppt
+  soll          String
+  /// zahlung | admin | kuendigung | betreiber | konto
+  grund         String?
+  imageVersion  String?
+  maschineId    String?
+  volumeId      String?
+  schritte      Json      @default("{}")
+  letzterFehler String?
+  bootstrapHash String?
+  verbundenAt   DateTime? @db.Timestamptz(6)
+  bezahltBis    DateTime? @db.Timestamptz(6)
+  gestopptAt    DateTime? @db.Timestamptz(6)
+  loeschenAb    DateTime? @db.Timestamptz(6)
+  geloeschtAt   DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([tenantId], map: "CloudInstanz_tenant_idx")
+}
+
+model CloudEreignis {
+  id        String   @id
+  instanzId String
+  /// angelegt, gestartet, gestoppt, geruht, neu_angelegt, geloescht, fehler …
+  art       String
+  /// abgleicher | webhook | admin | betreiber | system
+  quelle    String
+  details   Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([instanzId, createdAt(sort: Desc)], map: "CloudEreignis_instanz_idx")
+}

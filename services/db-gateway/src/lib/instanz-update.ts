@@ -71,7 +71,7 @@ export async function neuesteVersion(): Promise<string | null> {
 interface Maschine {
   id: string;
   state: string;
-  config: { image?: string; env?: Record<string, string> } & Record<string, unknown>;
+  config: { image?: string; env?: Record<string, string>; metadata?: Record<string, string> } & Record<string, unknown>;
 }
 
 async function api<T>(pfad: string, init: RequestInit = {}): Promise<T> {
@@ -109,9 +109,15 @@ export async function aktualisieren(app: string, von: string, ziel: string, kont
   const maschinen = (await api<Maschine[]>(`/apps/${app}/machines`)).filter((m) => m.state !== "destroyed");
   if (!maschinen.length) throw new Error("Die Instanz hat keine Maschine.");
   const erlaubt = new Set(konten.filter((k): k is string => !!k).map((k) => k.toLowerCase()));
+  // Kontobindung (2026-11-22): AVA_KONTO ist ein Fly-Secret und steht NICHT in config.env;
+  // die frühere Prüfung griff deshalb nie. Lesbar ist sie in den Maschinen-Metadaten
+  // (`ava_konto`, setzt die Cloud-Bereitstellung bzw. der Betreiber). Ohne lesbare Bindung
+  // nur Apps, die der Betreiber in ROUTER_ZUORDNUNG eingetragen hat.
   for (const m of maschinen) {
-    const gebunden = m.config.env?.AVA_KONTO?.trim().toLowerCase();
-    if (gebunden && !erlaubt.has(gebunden)) throw new Error("Die Instanz ist an ein anderes Konto gebunden.");
+    const gebunden = (m.config.metadata?.ava_konto ?? m.config.env?.AVA_KONTO)?.trim().toLowerCase();
+    if (gebunden ? !erlaubt.has(gebunden) : !VORGESEHEN.has(app)) {
+      throw new Error(gebunden ? "Die Instanz ist an ein anderes Konto gebunden." : "Die Instanz hat keine lesbare Kontobindung; bitte an den AVA-Betrieb wenden.");
+    }
   }
   const image = `registry.fly.io/${IMAGE_APP}:v${ziel}`;
   const stand: UpdateStand = { app, von, ziel, status: "laeuft", meldung: null, seit: new Date().toISOString() };
