@@ -16,7 +16,7 @@ import { instanzToken } from "./anmeldung";
 export type Zustand = "zahlung_offen" | "wird_angelegt" | "wartet_auf_verbindung" | "laeuft" | "gestoppt" | "ruht" | "geloescht";
 export type Soll = "laufen" | "gestoppt";
 export type Grund = "zahlung" | "admin" | "kuendigung" | "abbestellt" | "betreiber" | "konto";
-export type Quelle = "abgleicher" | "webhook" | "admin" | "betreiber" | "system";
+export type Quelle = "abgleicher" | "webhook" | "admin" | "betreiber" | "system" | "nutzer";
 
 export interface CloudInstanz {
   id: string;
@@ -139,7 +139,16 @@ export class CloudBetrieb {
   constructor(
     private readonly repo: CloudRepo,
     private readonly fly: FlyKunden,
-    private readonly opt: { zufall?: () => string; warteSek?: number; token?: (instanzId: string) => string | null } = {},
+    private readonly opt: {
+      zufall?: () => string;
+      warteSek?: number;
+      token?: (instanzId: string) => string | null;
+      /** Z7: so lange nach einem Update auf „gesund“ warten, dann zurück (Standard 600 s). */
+      updateWarteSek?: number;
+      /** Abstand der Gesundheitsprüfungen nach einem Update (Standard 15 s). */
+      pruefMs?: number;
+      pause?: (ms: number) => Promise<void>;
+    } = {},
   ) {}
 
   beschaeftigt(id: string) { return this.belegt.has(id); }
@@ -310,6 +319,58 @@ export class CloudBetrieb {
       await this.repo.ereignis(id, "geloescht", quelle, {});
       return { ...z, zustand: "geloescht", maschineId: null, volumeId: null, geloeschtAt };
     });
+  }
+
+  /**
+   * Z7: Server-Version tauschen. Danach bis zu `updateWarteSek` auf „gesund“ warten (Prozess
+   * antwortet, und war sie verbunden, ist sie wieder angemeldet); sonst automatisch zurück auf
+   * die alte Version. Läuft exklusiv: Der Abgleicher lässt die Instanz solange in Ruhe (keine
+   * Ausfallmail während des Updates).
+   */
+  aktualisieren(id: string, nach: string, quelle: Quelle): Promise<{ ergebnis: "ok" | "aktuell" | "zurueck"; von: string | null; nach: string; zurueckOk?: boolean }> {
+    return this.exklusiv(id, async () => {
+      const z = await this.muss(id);
+      if (z.zustand !== "laeuft" && z.zustand !== "wartet_auf_verbindung") throw new Error("Nur eine laufende Instanz wird aktualisiert.");
+      if (!z.maschineId) throw new Error("Instanz hat keine Maschine.");
+      const von = z.imageVersion;
+      if (von === nach) return { ergebnis: "aktuell" as const, von, nach };
+      const konfig = (version: string) => maschinenKonfig({ instanzId: z.id, tenantId: z.tenantId, actorId: z.actorId, flyApp: z.flyApp, version, volumeId: z.volumeId!, groesse: z.groesse, gatewayToken: !!z.schritte.gatewayToken });
+      await this.repo.ereignis(id, "update_start", quelle, { von, nach });
+      await this.fly.maschineAktualisieren(z.flyApp, z.maschineId, konfig(nach));
+      await this.repo.aendern(id, { imageVersion: nach });
+      if (await this.bereitNachUpdate(z)) {
+        await this.repo.ereignis(id, "aktualisiert", quelle, { von, nach });
+        return { ergebnis: "ok" as const, von, nach };
+      }
+      // Nicht gesund geworden: zurück auf die vorige Version (falls bekannt).
+      let zurueckOk = false;
+      if (von) {
+        await this.fly.maschineAktualisieren(z.flyApp, z.maschineId, konfig(von));
+        await this.repo.aendern(id, { imageVersion: von });
+        zurueckOk = await this.bereitNachUpdate(z);
+      }
+      await this.repo.ereignis(id, "update_zurueck", quelle, { von, nach, zurueckOk });
+      return { ergebnis: "zurueck" as const, von, nach, zurueckOk };
+    });
+  }
+
+  /** Nach einem Update: gestartet, antwortet, und eine verbundene Instanz ist wieder angemeldet. */
+  private async bereitNachUpdate(z: CloudInstanz): Promise<boolean> {
+    const sek = this.opt.updateWarteSek ?? 600;
+    const pruefMs = this.opt.pruefMs ?? 15_000;
+    const pause = this.opt.pause ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const ende = Date.now() + sek * 1000;
+    if (!(await this.fly.warte(z.flyApp, z.maschineId!, "started", Math.min(180, sek)))) return false;
+    const token = z.schritte.gatewayToken ? this.gatewayToken(z.id) : null;
+    const versuche = Math.max(1, Math.ceil((sek * 1000) / Math.max(pruefMs, 1)));
+    for (let n = 0; n < versuche && (pruefMs === 0 || Date.now() < ende); n++) {
+      if (token) {
+        const an = await this.fly.anmeldung(z.flyApp, token);
+        if (an && (an.angemeldet || !z.verbundenAt)) return true;
+      } else if (await this.fly.gesund(z.flyApp)) return true;
+      await pause(pruefMs);
+    }
+    return false;
   }
 
   /** Verbunden gemeldet (Relais, GET /anmeldung): siehe CloudRepo.verbindungMelden. */

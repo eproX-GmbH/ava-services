@@ -10,6 +10,7 @@ import { istBetreiber } from "../../middleware/auth";
 import { flyKundenEingerichtet } from "../../lib/cloud/fly-maschinen";
 import { pgRepo } from "../../lib/cloud/instanzen";
 import { cloudAbgleich, cloudBetrieb, letzterAbgleich } from "../../lib/cloud/betrieb";
+import { pgRollouts, updatesLaufend } from "../../lib/cloud/rollout";
 import { ErrorShape } from "./schemas";
 
 export const betreiberCloudRouter = new OpenAPIHono();
@@ -157,5 +158,56 @@ betreiberCloudRouter.openapi(
     } catch (err) {
       throw new HTTPException(409, { message: meldung(err) });
     }
+  },
+);
+
+// ---- Z7: Updates in Wellen ------------------------------------------------------------
+
+betreiberCloudRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/betreiber/cloud/rollout",
+    tags: ["betreiber"],
+    summary: "Betreiber: Update-Wellen je Server-Version (Phase, Erfolge, Fehler, Hinweis)",
+    responses: { 200: { content: { "application/json": { schema: Antwort } }, description: "Liste" }, ...fehler404 },
+  }),
+  async (c) => {
+    nurBetreiber(c);
+    return c.json({ rollouts: await pgRollouts(getGatewayPool()).liste(), laufend: updatesLaufend() }, 200);
+  },
+);
+
+betreiberCloudRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/betreiber/cloud/rollout",
+    tags: ["betreiber"],
+    summary: "Betreiber: Hinweis für Mail M6 setzen, Welle anhalten, fortsetzen oder Phase setzen",
+    request: {
+      body: { content: { "application/json": { schema: z.object({
+        version: z.string().regex(/^\d+\.\d+\.\d+$/),
+        aktion: z.enum(["hinweis", "anhalten", "fortsetzen", "phase"]),
+        hinweis: z.string().max(600).nullable().optional(),
+        phase: z.enum(["betreiber", "welle", "alle", "fertig"]).optional(),
+      }) } } },
+    },
+    responses: { 200: { content: { "application/json": { schema: Antwort } }, description: "Stand" }, ...fehler404 },
+  }),
+  async (c) => {
+    nurBetreiber(c);
+    const { version, aktion, hinweis, phase } = c.req.valid("json");
+    const repo = pgRollouts(getGatewayPool());
+    await repo.anlegen(version);
+    if (aktion === "hinweis") await repo.hinweis(version, hinweis?.trim() || null);
+    else if (aktion === "anhalten") await repo.phase(version, "angehalten", "vom Betreiber angehalten");
+    else if (aktion === "fortsetzen") {
+      // Zähler zurück, sonst hält die Fehlerquote die Welle sofort wieder an. Gescheiterte
+      // Instanzen bleiben markiert (updateFehler) und werden nicht erneut versucht.
+      await getGatewayPool().query(`UPDATE "CloudRollout" SET erfolge = 0, fehler = 0 WHERE version = $1`, [version]);
+      await repo.phase(version, phase ?? "welle", null);
+    }
+    else await repo.phase(version, phase ?? "alle", null);
+    logger.info({ version, aktion, phase }, "[cloud-update] Betreiber-Aktion");
+    return c.json({ rollout: await repo.holen(version) }, 200);
   },
 );

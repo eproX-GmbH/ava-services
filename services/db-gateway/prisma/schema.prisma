@@ -1635,3 +1635,19 @@ model CloudEreignis {
 
   @@index([instanzId, createdAt(sort: Desc)], map: "CloudEreignis_instanz_idx")
 }
+
+/// Z7: Ausrollen einer Server-Version in Wellen (lib/cloud/rollout.ts). Zugriff per SQL.
+model CloudRollout {
+  version   String   @id
+  /// betreiber | welle | alle | fertig | angehalten
+  phase     String
+  phaseAt   DateTime @default(now()) @db.Timestamptz(6)
+  erfolge   Int      @default(0)
+  fehler    Int      @default(0)
+  /// Text für Mail M6 („wird heute Nacht aktualisiert“), nur bei spürbaren Änderungen
+  hinweis   String?
+  /// warum angehalten
+  grund     String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+}

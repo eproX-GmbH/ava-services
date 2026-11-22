@@ -8,14 +8,15 @@ import { betreiberBenachrichtigen } from "../problem-meldungen";
 import { flyKunden, flyKundenEingerichtet } from "./fly-maschinen";
 import { CloudBetrieb, pgRepo } from "./instanzen";
 import { abgleichen, faktenAusDb, type AbgleichBericht, type CloudNachricht } from "./abgleich";
+import { pgRollouts, type RolloutDeps } from "./rollout";
 import type { CloudInstanz } from "./instanzen";
 import { bestaetigenToken, bestaetigungsLink } from "./anmeldung";
 import { kopfRelais } from "../kopf-relais";
 import { loadEnv } from "../env";
-import { mailKonto, mailSenden } from "../mail/versand";
+import { linkAdressen, mailKonto, mailSenden } from "../mail/versand";
 import {
   serverBestaetigenMail, serverBezahltMail, serverGeloeschtMail, serverLaeuftMail, serverLaeuftWiederMail, serverLoeschungMail,
-  serverNichtErreichbarMail, serverPausiertMail, serverWiederErreichbarMail, serverZahlungOffenMail, type Mail,
+  serverAktualisiertMail, serverNichtErreichbarMail, serverPausiertMail, serverUpdateHinweisMail, serverWiederErreichbarMail, serverZahlungOffenMail, type Mail,
 } from "../mail/vorlagen";
 
 let betrieb: CloudBetrieb | null = null;
@@ -31,7 +32,18 @@ export const letzterAbgleich = () => letzter;
 
 function deps() {
   const pool = getGatewayPool();
-  return { repo: pgRepo(pool), fly: flyKunden, betrieb: cloudBetrieb(), fakten: faktenAusDb(pool, kontoSperre), melden: betreiberMelden, benachrichtigen: cloudMailen, warnen: (d: Record<string, unknown>, t: string) => logger.warn(d, t) };
+  return {
+    repo: pgRepo(pool), fly: flyKunden, betrieb: cloudBetrieb(), fakten: faktenAusDb(pool, kontoSperre), melden: betreiberMelden, benachrichtigen: cloudMailen,
+    warnen: (d: Record<string, unknown>, t: string) => logger.warn(d, t),
+    // Z7: Updates in Wellen; Betreiber-Instanzen = Organisation des Betreibers.
+    rollout: { rollouts: pgRollouts(pool), betreiberTenant: process.env.OPERATOR_TENANT_ID?.trim() || null },
+  };
+}
+
+/** Für „Jetzt aktualisieren“ und die Betreiber-Routen (Z7). */
+export function rolloutDeps(): RolloutDeps {
+  const d = deps();
+  return { repo: d.repo, fly: d.fly, betrieb: d.betrieb, melden: d.melden, benachrichtigen: d.benachrichtigen, warnen: d.warnen, ...d.rollout };
 }
 
 /**
@@ -130,8 +142,19 @@ export async function cloudMailen(art: MailArt, i: CloudInstanz, extra: Record<s
     else if (art === "wieder_erreichbar") mail = serverWiederErreichbarMail({ ...basis, dauerMin: Number(extra.dauerMin ?? 0) });
     else if (art === "loeschung_angekuendigt") {
       mail = serverLoeschungMail({ ...basis, grund: (extra.grund as "zahlung" | "kuendigung" | "abbestellt" | "admin") ?? "admin", loeschenAm: String(extra.loeschenAm ?? new Date().toISOString()), zahlungUrl, fuerAdmin: !istNutzer || e.role === "owner" || e.role === "admin" });
+    } else if (art === "update_hinweis") {
+      mail = serverUpdateHinweisMail({ ...basis, hinweis: String(extra.hinweis ?? ""), abmeldenUrl: "" });
+    } else if (art === "aktualisiert") {
+      mail = serverAktualisiertMail({ ...basis, hinweis: typeof extra.hinweis === "string" ? extra.hinweis : null, abmeldenUrl: "" });
     } else mail = serverGeloeschtMail(basis);
     const konto = await mailKonto(pool, { actorId: e.actorId, email: e.email!, vorname });
+    // Update-Mails sind abbestellbar: Abmeldelink des Kontos einsetzen (Vorlage kennt das Konto nicht).
+    if (art === "update_hinweis" || art === "aktualisiert") {
+      const ab = linkAdressen(konto.token).abmelden;
+      mail = art === "update_hinweis"
+        ? serverUpdateHinweisMail({ ...basis, hinweis: String(extra.hinweis ?? ""), abmeldenUrl: ab })
+        : serverAktualisiertMail({ ...basis, hinweis: typeof extra.hinweis === "string" ? extra.hinweis : null, abmeldenUrl: ab });
+    }
     await mailSenden(pool, konto, mailArt, mail);
   }
 }

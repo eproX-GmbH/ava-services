@@ -398,6 +398,31 @@ Maschinen-Metadaten; `ava-i-strategic-it` braucht dafür einmal `ava_konto` in d
 - Offen am Rande: Der Fähigkeiten-Test meldet vier ältere Werkzeuge ohne Gruppe
   (`ansprache_vorbereiten`, `ansprache_pruefen`, `firmen_ereignisse`, `linkedin_post_nachladen`).
 
+## 8h. Stand Z7 (2026-11-22)
+
+- **Wellen je Server-Version** (Tabelle `CloudRollout`, `lib/cloud/rollout.ts`, im Abgleicher):
+  betreiber (Instanzen der `OPERATOR_TENANT_ID`) → nach 24 h welle (10 % der Kunden, fest je
+  Version per Hash, mindestens eine) → nach 24 h alle → fertig. Angehalten bei einem Fehlschlag in
+  der Betreiber-Phase bzw. > 5 % Fehlschlägen; Meldung an den Betreiber. Neue Rollouts entstehen
+  automatisch, sobald ein neuerer Tag in `ava-kunden-image` liegt und eine Instanz älter ist.
+- **Fenster** 02–05 Uhr Berlin, höchstens `CLOUD_UPDATE_PARALLEL` (2) gleichzeitig; Schalter
+  `CLOUD_UPDATES=0`, `CLOUD_UPDATE_STUNDEN`, `CLOUD_UPDATE_PROZENT`.
+- **Je Instanz** (`CloudBetrieb.aktualisieren`, exklusiv, daher keine Ausfallmail): Maschine mit
+  neuer Konfiguration, bis 10 Min. auf gesund warten (Prozess antwortet; war sie verbunden, wieder
+  angemeldet), sonst automatisch zurück auf die alte Version; gescheiterte Instanzen sind je
+  Version markiert (`updateFehler`) und werden nicht erneut versucht.
+- **Mails:** M6 am Vorabend 17–20 Uhr nur mit Hinweistext des Betreibers, M7 nach dem Update
+  höchstens 1 je Woche; beide abbestellbar (Dienstmail, keine Vertragsmail).
+- **Nutzer:** `POST /v1/cloud/mein/aktualisieren` und Knopf „Jetzt aktualisieren“ in app.ava.bi
+  (nur bei neuerer Version, nicht bei angehaltener Welle); `/v1/cloud/mein` mit `version`,
+  `updateVerfuegbar`.
+- **Betreiber:** `GET/POST /v1/betreiber/cloud/rollout` (Hinweis setzen, anhalten, fortsetzen mit
+  Zählerreset, Phase setzen).
+- **Offen:** Umzug der bisherigen, von Hand angelegten Instanzen (ava-i-*, persönliche Fly-Org) in
+  die Kunden-Org: eigenes Vorhaben, weil Volumes nicht zwischen Orgs wandern (Umzug über die
+  App-Funktion je Kunde mit Termin).
+- Test: `npm run test:cloud` (81 Prüfungen).
+
 ## 9. Entscheidungen
 
 **Abgenommen 2026-11-22 (Joyce: „Ja, so umsetzen“): alle Vorschläge aus §9 und §10.8.**

@@ -7,12 +7,14 @@ import A0 from "../src/lib/cloud/abgleich.ts";
 import AB0 from "../src/lib/cloud/posten.ts";
 import V0 from "../src/lib/mail/vorlagen.ts";
 import AN0 from "../src/lib/cloud/anmeldung.ts";
+import RO0 from "../src/lib/cloud/rollout.ts";
 const K = K0.default ?? K0;
 const I = I0.default ?? I0;
 const A = A0.default ?? A0;
 const AB = AB0.default ?? AB0;
 const V = V0.default ?? V0;
 const AN = AN0.default ?? AN0;
+const RO = RO0.default ?? RO0;
 let fehler = 0;
 const pruefe = async (name, fn) => { try { await fn(); console.log(`  ok   ${name}`); } catch (e) { fehler++; console.log(`  FEHL ${name}\n       ${e.stack?.split("\n").slice(0, 3).join("\n       ")}`); } };
 
@@ -71,6 +73,7 @@ function flyAttrappe({ scheitertBei } = {}) {
     async ipsZuweisen(app) { merk("ipsZuweisen", app); },
     async maschineAnlegen(app, config) { merk("maschineAnlegen", app, config.mounts[0].volume); const id = `m${++n}`; maschinen.set(id, { id, state: "started", config }); return maschinen.get(id); },
     async maschineHolen(app, id) { merk("maschineHolen", app, id); return maschinen.get(id) ?? null; },
+    async maschineAktualisieren(app, id, config) { merk("maschineAktualisieren", id, config.image); const m = maschinen.get(id); m.config = config; m.state = "started"; },
     async cordon(app, id) { merk("cordon", id); },
     async uncordon(app, id) { merk("uncordon", id); },
     async stoppen(app, id) { merk("stoppen", id); maschinen.get(id).state = "stopped"; },
@@ -79,7 +82,8 @@ function flyAttrappe({ scheitertBei } = {}) {
     async maschineLoeschen(app, id) { merk("maschineLoeschen", id); maschinen.delete(id); },
     async volumeLoeschen(app, v) { merk("volumeLoeschen", v); },
     async appLoeschen(app) { merk("appLoeschen", app); apps.delete(app); },
-    async neuesteVersion() { merk("neuesteVersion"); return "0.1.975"; },
+    versionWert: "0.1.975",
+    async neuesteVersion() { merk("neuesteVersion"); return this.versionWert; },
     async appsListe() { return [...apps, "ava-kunden-image"]; },
     gesundWert: true,
     async gesund() { return this.gesundWert; },
@@ -592,6 +596,167 @@ await pruefe("M3 mit Link, M4 mit Uhrzeit, M5 mit Dauer, M11 mit Datum und passe
   assert.match(mailsZ4[5].text, /7\. Januar 2027/); assert.match(mailsZ4[5].text, /Zahlung aktualisieren/);
   assert.match(mailsZ4[6].text, /sprich bitte vorher mit ihr/);
   assert.equal(V.dauerText(150), "etwa 3 Stunden"); assert.equal(V.dauerText(3000), "etwa 2 Tage"); assert.equal(V.dauerText(1), "etwa eine Minute");
+});
+
+console.log("Cloud: Updates mit Rücknahme (Z7)");
+const schnell = { updateWarteSek: 0.01, pruefMs: 1, pause: async () => {} };
+await pruefe("Update gesund → neue Version, Ereignis aktualisiert", async () => {
+  const w = await aufbau("u000000001", schnell);
+  const erg = await w.betrieb.aktualisieren(w.id, "0.1.980", "abgleicher");
+  assert.equal(erg.ergebnis, "ok");
+  const z = await w.repo.holen(w.id);
+  assert.equal(z.imageVersion, "0.1.980");
+  assert.equal(w.fly.maschinen.get(z.maschineId).config.image, "registry.fly.io/ava-kunden-image:v0.1.980");
+  assert.ok(w.repo.ereignisseAlle.some((e) => e.art === "aktualisiert"));
+});
+await pruefe("Update nicht gesund → automatisch zurück auf die alte Version", async () => {
+  const w = await aufbau("u000000002", schnell);
+  w.fly.gesundWert = false;
+  const erg = await w.betrieb.aktualisieren(w.id, "0.1.980", "abgleicher");
+  assert.equal(erg.ergebnis, "zurueck");
+  const z = await w.repo.holen(w.id);
+  assert.equal(z.imageVersion, "0.1.975");
+  assert.equal(w.fly.maschinen.get(z.maschineId).config.image, "registry.fly.io/ava-kunden-image:v0.1.975");
+  assert.deepEqual(w.fly.aufrufe.filter((a) => a[0] === "maschineAktualisieren").map((a) => a[2]), ["registry.fly.io/ava-kunden-image:v0.1.980", "registry.fly.io/ava-kunden-image:v0.1.975"]);
+});
+await pruefe("verbundene Instanz gilt erst als gesund, wenn sie wieder angemeldet ist", async () => {
+  const w = await aufbau("u000000003", { ...schnell, token: (id) => `tok-${id}` });
+  await w.repo.aendern(w.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() });
+  w.fly.anmeldungWert = { angemeldet: false, link: null };
+  assert.equal((await w.betrieb.aktualisieren(w.id, "0.1.980", "abgleicher")).ergebnis, "zurueck");
+  w.fly.anmeldungWert = { angemeldet: true };
+  assert.equal((await w.betrieb.aktualisieren(w.id, "0.1.980", "abgleicher")).ergebnis, "ok");
+});
+
+console.log("Cloud: Wellen (Z7)");
+const RR = { stunden: 24, prozent: 10, parallel: 2, fensterVon: 2, fensterBis: 5, maxFehlerQuote: 0.05 };
+const NACHT = Date.parse("2026-12-02T02:30:00Z"); // 03:30 Berlin
+const MITTAG = Date.parse("2026-12-02T11:00:00Z");
+await pruefe("Versionen, Fenster 02–05 Uhr Berlin", () => {
+  assert.equal(RO.versionAelter("0.1.975", "0.1.980"), true);
+  assert.equal(RO.versionAelter("0.1.980", "0.1.975"), false);
+  assert.equal(RO.versionAelter("0.2.0", "0.1.999"), false);
+  assert.equal(RO.imFenster(NACHT, RR), true);
+  assert.equal(RO.imFenster(MITTAG, RR), false);
+  assert.equal(RO.imFenster(Date.parse("2026-07-02T00:30:00Z"), RR), true, "Sommerzeit: 02:30 Berlin");
+});
+const instanzWelle = (id, teil = {}) => ({ id, tenantId: "kunde", flyApp: `ava-u-${id}`, zustand: "laeuft", soll: "laufen", maschineId: "m", imageVersion: "0.1.975", schritte: {}, ...teil });
+await pruefe("Welle: 10 %, aber mindestens eine Kunden-Instanz; Betreiber immer dabei", () => {
+  const liste = Array.from({ length: 30 }, (_, n) => instanzWelle(`k${n}`)).concat([instanzWelle("op1", { tenantId: "op" })]);
+  const welle = RO.zielePhase("welle", liste, "op", "0.1.980", 10);
+  assert.ok(welle.some((i) => i.id === "op1"));
+  assert.ok(welle.length >= 2 && welle.length <= 10, String(welle.length));
+  assert.equal(RO.zielePhase("welle", [instanzWelle("einzig")], "op", "0.1.980", 10).length, 1);
+  assert.equal(RO.zielePhase("betreiber", liste, "op", "0.1.980", 10).length, 1);
+  assert.equal(RO.zielePhase("alle", liste, "op", "0.1.980", 10).length, 31);
+  assert.equal(RO.zielePhase("alle", [instanzWelle("x", { schritte: { updateFehler: "0.1.980" } })], "op", "0.1.980", 10).length, 0, "gescheiterte nicht erneut");
+  assert.equal(RO.zielePhase("alle", [instanzWelle("x", { zustand: "gestoppt" })], "op", "0.1.980", 10).length, 0, "pausierte nicht");
+});
+await pruefe("Phasen: 24 h je Stufe, Abbruch bei Fehlern", () => {
+  const r = (teil) => ({ version: "0.1.980", phase: "betreiber", phaseAt: new Date(NACHT - 25 * 3_600_000).toISOString(), erfolge: 0, fehler: 0, hinweis: null, grund: null, ...teil });
+  assert.deepEqual(RO.naechstePhase(r({}), 0, NACHT, RR), { phase: "welle" });
+  assert.equal(RO.naechstePhase(r({ phaseAt: new Date(NACHT - 3_600_000).toISOString() }), 0, NACHT, RR), null, "noch keine 24 h");
+  assert.equal(RO.naechstePhase(r({}), 1, NACHT, RR), null, "noch offen");
+  assert.equal(RO.naechstePhase(r({ fehler: 1 }), 0, NACHT, RR).phase, "angehalten");
+  assert.deepEqual(RO.naechstePhase(r({ phase: "welle" }), 0, NACHT, RR), { phase: "alle" });
+  assert.equal(RO.naechstePhase(r({ phase: "alle", erfolge: 40, fehler: 1 }), 0, NACHT, RR).phase, "fertig");
+  assert.equal(RO.naechstePhase(r({ phase: "alle", erfolge: 10, fehler: 1 }), 3, NACHT, RR).phase, "angehalten");
+});
+function rolloutRepo() {
+  const m = new Map();
+  return {
+    m,
+    async holen(v) { return m.get(v) ?? null; },
+    async anlegen(v) { if (!m.has(v)) m.set(v, { version: v, phase: "betreiber", phaseAt: new Date(uhrRO).toISOString(), erfolge: 0, fehler: 0, hinweis: null, grund: null }); return m.get(v); },
+    async phase(v, phase, grund = null) { Object.assign(m.get(v), { phase, grund, phaseAt: new Date(uhrRO).toISOString() }); },
+    async zaehlen(v, art) { m.get(v)[art]++; },
+    async hinweis(v, t) { m.get(v).hinweis = t; },
+    async liste() { return [...m.values()]; },
+  };
+}
+let uhrRO = NACHT;
+await pruefe("Ablauf: Betreiber-Phase 24 h, Welle, Rest, fertig; M7 einmal je Woche", async () => {
+  const repo = speicherRepo(); const fly = flyAttrappe(); let k = 0;
+  const betrieb = new I.CloudBetrieb(repo, fly, { zufall: () => `r${++k}`.padEnd(10, "0"), ...schnell });
+  const ids = [];
+  for (let n = 0; n < 12; n++) { const a = await betrieb.anlegen({ tenantId: "kunde", actorId: `a${n}`, quelle: "betreiber" }); await betrieb.fortsetzen(a.id, "betreiber"); await repo.aendern(a.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() }); ids.push(a.id); }
+  fly.versionWert = "0.1.980";
+  const rollouts = rolloutRepo(); const laeufe = []; const mails = []; const meldungen = [];
+  const d = { repo, fly, betrieb, rollouts, betreiberTenant: "op", melden: async (t) => meldungen.push(t), benachrichtigen: async (art, i, x) => mails.push({ art, id: i.id, ...x }), regeln: RR, jetzt: () => uhrRO, starte: (p) => laeufe.push(p) };
+  const lauf = async () => { const b = await RO.rolloutSchritt(d, await repo.liste()); await Promise.all(laeufe.splice(0)); return b; };
+  uhrRO = NACHT;
+  let b = await lauf();
+  assert.equal(b.phase, "betreiber"); assert.equal(b.gestartet, 0);
+  uhrRO = NACHT + 24 * 3_600_000; b = await lauf();
+  assert.equal(b.phase, "welle"); assert.ok(b.gestartet >= 1 && b.gestartet <= 2, String(b.gestartet));
+  const nachWelle = (await repo.liste()).filter((i) => i.imageVersion === "0.1.980").length;
+  assert.ok(nachWelle >= 1 && nachWelle <= 2);
+  uhrRO = NACHT + 48 * 3_600_000;
+  for (let n = 0; n < 10; n++) await lauf();
+  assert.equal((await repo.liste()).filter((i) => i.imageVersion === "0.1.980").length, 12);
+  b = await lauf();
+  assert.equal(rollouts.m.get("0.1.980").phase, "fertig");
+  assert.equal(rollouts.m.get("0.1.980").erfolge, 12);
+  assert.equal(mails.filter((m) => m.art === "aktualisiert").length, 12, "M7 je Instanz");
+  // nächstes Update binnen einer Woche: kein zweites M7
+  fly.versionWert = "0.1.981"; uhrRO = NACHT + 3 * 24 * 3_600_000;
+  await rollouts.anlegen("0.1.981"); await rollouts.phase("0.1.981", "alle");
+  for (let n = 0; n < 8; n++) await lauf();
+  assert.equal(mails.filter((m) => m.art === "aktualisiert").length, 12);
+  assert.equal(meldungen.length, 0);
+});
+await pruefe("Fehlschlag: zurück, markiert, gemeldet, Welle angehalten", async () => {
+  const repo = speicherRepo(); const fly = flyAttrappe(); let k = 0;
+  const betrieb = new I.CloudBetrieb(repo, fly, { zufall: () => `s${++k}`.padEnd(10, "0"), ...schnell });
+  for (let n = 0; n < 3; n++) { const a = await betrieb.anlegen({ tenantId: "kunde", actorId: `a${n}`, quelle: "betreiber" }); await betrieb.fortsetzen(a.id, "betreiber"); }
+  fly.versionWert = "0.1.980"; fly.gesundWert = false;
+  const rollouts = rolloutRepo(); await rollouts.anlegen("0.1.980"); await rollouts.phase("0.1.980", "alle");
+  const laeufe = []; const meldungen = [];
+  const d = { repo, fly, betrieb, rollouts, betreiberTenant: "op", melden: async (t) => meldungen.push(t), regeln: RR, jetzt: () => NACHT, starte: (p) => laeufe.push(p) };
+  await RO.rolloutSchritt(d, await repo.liste()); await Promise.all(laeufe.splice(0));
+  assert.equal(rollouts.m.get("0.1.980").fehler, 2);
+  assert.ok(meldungen.some((t) => t.includes("nicht gesund")));
+  await RO.rolloutSchritt(d, await repo.liste());
+  assert.equal(rollouts.m.get("0.1.980").phase, "angehalten");
+  assert.ok(meldungen.some((t) => t.includes("angehalten")));
+  assert.equal((await repo.liste()).filter((i) => i.imageVersion === "0.1.975").length, 3, "alle auf alter Version");
+});
+await pruefe("außerhalb des Fensters kein Update; M6 am Vorabend nur mit Hinweis", async () => {
+  const w = await aufbau("v000000009", schnell);
+  await w.repo.aendern(w.id, { zustand: "laeuft", verbundenAt: new Date(T).toISOString() });
+  w.fly.versionWert = "0.1.980";
+  const rollouts = rolloutRepo(); await rollouts.anlegen("0.1.980"); await rollouts.phase("0.1.980", "alle");
+  const mails = []; const laeufe = [];
+  const abend = Date.parse("2026-12-02T17:30:00Z"); // 18:30 Berlin
+  const d = { repo: w.repo, fly: w.fly, betrieb: w.betrieb, rollouts, betreiberTenant: "op", melden: async () => {}, benachrichtigen: async (art) => mails.push(art), regeln: RR, jetzt: () => abend, starte: (p) => laeufe.push(p) };
+  let b = await RO.rolloutSchritt(d, await w.repo.liste());
+  assert.equal(b.gestartet, 0); assert.equal(mails.length, 0, "ohne Hinweis keine M6");
+  await rollouts.hinweis("0.1.980", "Neue Statuskarte in der App");
+  await RO.rolloutSchritt(d, await w.repo.liste()); await RO.rolloutSchritt(d, await w.repo.liste());
+  assert.deepEqual(mails, ["update_hinweis"]);
+});
+await pruefe("Jetzt aktualisieren: sofort, auch außerhalb des Fensters; nicht wenn angehalten", async () => {
+  const w = await aufbau("v000000010", schnell);
+  w.fly.versionWert = "0.1.980";
+  const rollouts = rolloutRepo(); const laeufe = [];
+  const d = { repo: w.repo, fly: w.fly, betrieb: w.betrieb, rollouts, betreiberTenant: null, melden: async () => {}, regeln: RR, jetzt: () => MITTAG, starte: (p) => laeufe.push(p) };
+  const i = await w.repo.holen(w.id);
+  assert.equal((await RO.jetztAktualisieren(d, i)).gestartet, true);
+  await Promise.all(laeufe.splice(0));
+  assert.equal((await w.repo.holen(w.id)).imageVersion, "0.1.980");
+  assert.equal((await RO.jetztAktualisieren(d, await w.repo.holen(w.id))).gestartet, false, "schon aktuell");
+  w.fly.versionWert = "0.1.981"; await rollouts.anlegen("0.1.981"); await rollouts.phase("0.1.981", "angehalten");
+  assert.equal((await RO.jetztAktualisieren(d, await w.repo.holen(w.id))).gestartet, false);
+});
+await pruefe("Update-Mails: abbestellbar (Abmeldelink), ohne Fachbegriffe", () => {
+  const m6 = V.serverUpdateHinweisMail({ ...basisMail, hinweis: "Neue Statuskarte", abmeldenUrl: "https://x/mail/abmelden?t=1" });
+  const m7 = V.serverAktualisiertMail({ ...basisMail, hinweis: null, abmeldenUrl: "https://x/mail/abmelden?t=1" });
+  for (const m of [m6, m7]) {
+    assert.ok(!verboten.test(m.betreff + m.text), m.betreff);
+    assert.ok(m.html.includes("mail/abmelden?t=1"));
+    assert.match(m.html, /Hallo Eva,/);
+  }
+  assert.match(m6.text, /zwischen 2 und 5 Uhr/);
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

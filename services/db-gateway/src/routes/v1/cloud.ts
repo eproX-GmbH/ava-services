@@ -5,6 +5,7 @@
 //   PUT  /tenants/me/mitglieder/{actorId}/cloud   Admin bzw. Einzelkämpfer: an/aus
 //   POST /cloud/kaufen                            Einzelkämpfer ohne Abo: Checkout Pro + Server
 //   POST /cloud/anfragen                          Mitglied ohne Admin-Rechte: Mail an Owner/Admins (Z5)
+//   POST /cloud/mein/aktualisieren                eigener Server: Update jetzt statt nachts (Z7)
 // Buchen ist erst offen mit CLOUD_SELBSTBEDIENUNG=1 (Betreiber darf vorher testen).
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
@@ -14,7 +15,9 @@ import { loadEnv } from "../../lib/env";
 import { createOrganisation, istAdmin } from "../../lib/tenants";
 import { domainAusEmail, istFreemail } from "../../lib/start-analyse/freemail";
 import { istBetreiber, type AuthContext } from "../../middleware/auth";
-import { cloudBestaetigung, cloudBetrieb } from "../../lib/cloud/betrieb";
+import { cloudBestaetigung, cloudBetrieb, rolloutDeps } from "../../lib/cloud/betrieb";
+import { jetztAktualisieren, versionAelter } from "../../lib/cloud/rollout";
+import { flyKunden } from "../../lib/cloud/fly-maschinen";
 import { loeschDatum, regelnAusEnv } from "../../lib/cloud/abgleich";
 import { CloudAbrechnungFehler, cloudAbbestellen, cloudCheckout, cloudEinschalten, cloudPreise, cloudWeg } from "../../lib/cloud/abrechnung";
 import type { CloudInstanz } from "../../lib/cloud/instanzen";
@@ -84,9 +87,12 @@ cloudRouter.openapi(
     const pool = getGatewayPool();
     const admin = await istAdmin(pool, auth.tenantId, auth.actorId);
     const buchbar = offen(auth);
+    // Z7: neuere Server-Version verfügbar? („Jetzt aktualisieren“ in der App)
+    const neueste = i ? await flyKunden.neuesteVersion().catch(() => null) : null;
+    const updateVerfuegbar = !!(i && neueste && i.imageVersion && versionAelter(i.imageVersion, neueste) && (i.zustand === "laeuft" || i.zustand === "wartet_auf_verbindung"));
     return c.json({
       // kopfId: Relais-Kennung der Server-AVA (für App-Anfragen an genau diese, z. B. „Modell wählen“).
-      server: i ? { ...nutzerSicht(i), bestaetigen, modellGewaehlt: kopf ? modell !== null && modell !== "ollama" : null, kopfId: kopf?.id ?? null } : null,
+      server: i ? { ...nutzerSicht(i), bestaetigen, modellGewaehlt: kopf ? modell !== null && modell !== "ollama" : null, kopfId: kopf?.id ?? null, version: i.imageVersion, updateVerfuegbar, wirdAktualisiert: nutzerSicht(i).wirdAktualisiert || cloudBetrieb().beschaeftigt(i.id) } : null,
       buchbar,
       admin,
       weg: buchbar ? await cloudWeg(pool, auth.tenantId, admin) : null,
@@ -206,5 +212,23 @@ cloudRouter.openapi(
     }
     await recordBillingEvent(pool, { billingAccountId: auth.tenantId, kind: "cloud_angefragt", source: "admin", actorId: auth.actorId, payload: { gesendet } });
     return c.json({ gesendet, schonAngefragt: false }, 200);
+  },
+);
+
+cloudRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/cloud/mein/aktualisieren",
+    tags: ["cloud"],
+    summary: "Eigenen AVA-Server jetzt auf die neueste Version bringen (sonst nachts in Wellen)",
+    responses: { 202: { content: { "application/json": { schema: z.object({ gestartet: z.boolean(), grund: z.string().optional(), version: z.string().optional() }) } }, description: "Stand" }, ...Fehler },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    const r = await getGatewayPool().query<{ id: string }>(`SELECT id FROM "CloudInstanz" WHERE "tenantId" = $1 AND "actorId" = $2 AND "geloeschtAt" IS NULL`, [auth.tenantId, auth.actorId]);
+    const i = r.rows[0] ? await cloudBetrieb().stand(r.rows[0].id) : null;
+    if (!i) throw new HTTPException(409, { message: "Für dich ist kein AVA-Server gebucht." });
+    const erg = await jetztAktualisieren(rolloutDeps(), i);
+    return c.json(erg, 202);
   },
 );

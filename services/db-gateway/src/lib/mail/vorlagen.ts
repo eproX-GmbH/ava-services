@@ -404,3 +404,26 @@ export function serverAnfrageMail(d: { vorname: string | null; wer: string; emai
   const text = [hallo(d.vorname), "", kern, tun, "", `Mitglieder öffnen: ${d.konsoleUrl}`].join("\n");
   return { betreff: `${d.wer} möchte einen AVA-Server`, html: rahmen({ vorschau: `Anfrage aus ${d.organisation}`, inhalt, fusszeile: "Du bekommst diese Mail als Owner oder Admin der Organisation." }), text };
 }
+
+// ---- 6c. AVA-Server: Updates (§10.4 M6/M7, Z7) — abbestellbar ---------------------------
+
+function updateFuss(abmeldenUrl: string): string {
+  return `Du bekommst diese Mail, weil für dich ein AVA-Server gebucht ist. <a href="${esc(abmeldenUrl)}" style="color:${FARBE.leise};">Keine Update-Mails und Neuigkeiten mehr</a>`;
+}
+
+/** M6: Am Vorabend eines Updates mit spürbarer Änderung (nur mit Hinweistext des Betreibers). */
+export function serverUpdateHinweisMail(d: ServerMailBasis & { hinweis: string; abmeldenUrl: string }): Mail {
+  const kern = "heute Nacht zwischen 2 und 5 Uhr bekommt dein AVA-Server ein Update. Er ist dabei ein paar Minuten nicht erreichbar; du musst nichts tun.";
+  const inhalt = ueberschrift("Heute Nacht bekommt deine AVA ein Update") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + zwischentitel("Was ist neu") + kasten(absatz(esc(d.hinweis))) + knopf("AVA öffnen", d.appUrl.replace(/\/+$/, ""));
+  const text = [hallo(d.vorname), "", kern, "", "Was ist neu:", d.hinweis, "", `AVA öffnen: ${d.appUrl}`, "", `Keine Update-Mails mehr: ${d.abmeldenUrl}`].join("\n");
+  return { betreff: "Heute Nacht bekommt deine AVA ein Update", html: rahmen({ vorschau: d.hinweis.slice(0, 90), inhalt, fusszeile: updateFuss(d.abmeldenUrl) }), text };
+}
+
+/** M7: Update erfolgreich (gesammelt, höchstens 1 je Woche). */
+export function serverAktualisiertMail(d: ServerMailBasis & { hinweis: string | null; abmeldenUrl: string }): Mail {
+  const kern = "dein AVA-Server ist auf dem neuesten Stand. Alles läuft wie gewohnt weiter, deine Daten sind vollständig da.";
+  const inhalt = ueberschrift("Deine AVA ist auf dem neuesten Stand") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern))
+    + (d.hinweis ? zwischentitel("Was ist neu") + kasten(absatz(esc(d.hinweis))) : "") + knopf("AVA öffnen", d.appUrl.replace(/\/+$/, ""));
+  const text = [hallo(d.vorname), "", kern, ...(d.hinweis ? ["", "Was ist neu:", d.hinweis] : []), "", `AVA öffnen: ${d.appUrl}`, "", `Keine Update-Mails mehr: ${d.abmeldenUrl}`].join("\n");
+  return { betreff: "Deine AVA ist auf dem neuesten Stand", html: rahmen({ vorschau: d.hinweis?.slice(0, 90) ?? "Alles läuft wie gewohnt weiter", inhalt, fusszeile: updateFuss(d.abmeldenUrl) }), text };
+}

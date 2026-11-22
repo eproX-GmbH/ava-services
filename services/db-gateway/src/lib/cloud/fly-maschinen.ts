@@ -41,6 +41,8 @@ export interface FlyKunden {
   volumeAnlegen(app: string, groesseGb: number): Promise<string>;
   ipsZuweisen(app: string): Promise<void>;
   maschineAnlegen(app: string, config: Record<string, unknown>): Promise<FlyMaschine>;
+  /** Konfiguration (z. B. Image) tauschen; Fly startet die Maschine damit neu (Z7). */
+  maschineAktualisieren(app: string, id: string, config: Record<string, unknown>): Promise<void>;
   maschineHolen(app: string, id: string): Promise<FlyMaschine | null>;
   cordon(app: string, id: string): Promise<void>;
   uncordon(app: string, id: string): Promise<void>;
@@ -113,6 +115,9 @@ export const flyKunden: FlyKunden = {
     const { json } = await anfrage<FlyMaschine>("POST", `/apps/${app}/machines`, { name: "kopf", region: "fra", config });
     if (!json?.id) throw new Error("Fly lieferte keine Maschinen-ID.");
     return json;
+  },
+  async maschineAktualisieren(app, id, config) {
+    await anfrage("POST", `/apps/${app}/machines/${id}`, { config });
   },
   async maschineHolen(app, id) {
     const { status, json } = await anfrage<FlyMaschine>("GET", `/apps/${app}/machines/${id}`, undefined, [404]);

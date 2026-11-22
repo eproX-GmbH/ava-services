@@ -22,6 +22,7 @@
 import type pg from "pg";
 import type { FlyKunden } from "./fly-maschinen";
 import type { CloudBetrieb, CloudInstanz, CloudRepo, Grund, Soll } from "./instanzen";
+import { rolloutSchritt, type RolloutBericht, type RolloutDeps } from "./rollout";
 
 const TAG = 86_400_000;
 
@@ -134,7 +135,8 @@ export function alarmFaellig(i: Pick<CloudInstanz, "schritte">, art: string, jet
 /** Nachrichten des Abgleichers an Nutzer (Mail-Katalog §10.4). */
 export type CloudNachricht =
   | "zahlung_offen" | "pausiert" | "laeuft_wieder"
-  | "laeuft" | "bestaetigen" | "nicht_erreichbar" | "wieder_erreichbar" | "loeschung_angekuendigt" | "geloescht";
+  | "laeuft" | "bestaetigen" | "nicht_erreichbar" | "wieder_erreichbar" | "loeschung_angekuendigt" | "geloescht"
+  | "update_hinweis" | "aktualisiert";
 
 /** Erinnerungsstufe bei offener Zahlung: 0, 3, 6 Tage (§10.5); null = keine. */
 export function zahlungsStufe(offenSeit: string | null | undefined, jetzt: number): 0 | 3 | 6 | null {
@@ -157,6 +159,8 @@ export interface AbgleichDeps {
   benachrichtigen?: (art: CloudNachricht, i: CloudInstanz, extra: Record<string, unknown>) => Promise<unknown>;
   /** Protokoll (im Gateway der Logger); ohne Angabe still. */
   warnen?: (daten: Record<string, unknown>, text: string) => void;
+  /** Z7: Updates in Wellen (nur im Volllauf); ohne Angabe keine. */
+  rollout?: Pick<RolloutDeps, "rollouts" | "betreiberTenant" | "starte" | "regeln">;
 }
 
 export function regelnAusEnv(): Regeln {
@@ -164,7 +168,7 @@ export function regelnAusEnv(): Regeln {
   return { ruheTage: zahl("CLOUD_RUHE_TAGE", 7), loeschTage: zahl("CLOUD_LOESCH_TAGE", 30), autoLoeschen: process.env.CLOUD_AUTO_LOESCHEN !== "0", maxVersuche: 5, fristTage: zahl("CLOUD_FRIST_TAGE", 7) };
 }
 
-export interface AbgleichBericht { geprueft: number; aktionen: Record<string, number>; fehler: number; waisen: string[] }
+export interface AbgleichBericht { geprueft: number; aktionen: Record<string, number>; fehler: number; waisen: string[]; rollout?: RolloutBericht | null }
 
 /** Ein Durchlauf über alle (oder eine) Instanz. Fehler je Instanz brechen den Lauf nicht ab. */
 export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<AbgleichBericht> {
@@ -287,6 +291,14 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
       }
     } catch (err) {
       warnen({ err: err instanceof Error ? err.message : String(err) }, "[cloud-abgleich] Waisensuche fehlgeschlagen");
+    }
+    if (d.rollout) {
+      try {
+        const aktuell = (await d.repo.liste()).filter((i) => i.zustand !== "geloescht");
+        bericht.rollout = await rolloutSchritt({ repo: d.repo, fly: d.fly, betrieb: d.betrieb, melden: d.melden, benachrichtigen: d.benachrichtigen, warnen, jetzt, ...d.rollout }, aktuell);
+      } catch (err) {
+        warnen({ err: err instanceof Error ? err.message : String(err) }, "[cloud-update] Schritt fehlgeschlagen");
+      }
     }
   }
   return bericht;
