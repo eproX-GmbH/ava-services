@@ -740,6 +740,7 @@ function TopBar() {
           Trenner vor dem Konto. Vorher standen Toggle, Chips, Glocke und
           Konto mit unterschiedlichen Hoehen/Abstaenden dicht aneinander. */}
       <div className="topbar__cluster">
+        <KanalHinweis />
         <UsageChip />
         <WatchChip />
         <AlertBell />
@@ -1211,5 +1212,29 @@ function UserBadge() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Staging (docs/PLAN_STAGING.md ST5): Hinweis oben rechts, solange das Konto im Kanal staging
+ * ist (Angabe des Gateways, nicht des Builds: dieselbe Version wird später Produktion).
+ */
+function KanalHinweis() {
+  const [k, setK] = useState<{ kanal: "prod" | "staging"; testZahlung: boolean } | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    void window.api.kanal.get().then(setK).catch(() => undefined);
+    void window.api.updater.getStatus().then((s) => setVersion(s.currentVersion)).catch(() => undefined);
+    return window.api.kanal.onChanged(setK);
+  }, []);
+  if (k?.kanal !== "staging") return null;
+  return (
+    <span
+      className="topbar__staging"
+      role="status"
+      title={k.testZahlung ? "Staging: neue Versionen zuerst, Zahlungen im Stripe-Testmodus." : "Staging: neue Versionen zuerst; deine Daten sind die echten."}
+    >
+      Staging{version ? ` · v${version}` : ""}
+    </span>
   );
 }

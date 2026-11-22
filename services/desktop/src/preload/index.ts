@@ -742,6 +742,16 @@ const api = {
   // Auto-updater (Phase 8.u4). Renderer drives `check`/`download`/
   // `install` from the Settings panel; status pushes via the
   // `updater-status:changed` channel.
+  /** Staging (docs/PLAN_STAGING.md ST5): Kanal des Kontos für den Hinweis in der Kopfzeile. */
+  kanal: {
+    get: (): Promise<{ kanal: "prod" | "staging"; testZahlung: boolean; version: { prod: string | null; staging: string | null } } | null> =>
+      ipcRenderer.invoke("kanal:get"),
+    onChanged: (cb: (k: { kanal: "prod" | "staging"; testZahlung: boolean; version: { prod: string | null; staging: string | null } }) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, k: Parameters<typeof cb>[0]) => cb(k);
+      ipcRenderer.on("kanal:changed", handler);
+      return () => ipcRenderer.removeListener("kanal:changed", handler);
+    },
+  },
   updater: {
     getStatus: (): Promise<UpdateStatus> =>
       ipcRenderer.invoke("updater:getStatus"),

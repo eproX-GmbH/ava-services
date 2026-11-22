@@ -8439,6 +8439,9 @@ html.dark .account-relaunch { background: #111827; color: #e5e7eb; }
 .topbar__cluster { display: flex; align-items: center; gap: 8px; height: 36px; }
 .topbar__cluster > * { display: flex; align-items: center; }
 .topbar__divider { width: 1px; height: 22px; background: var(--ctrl-border, #d0d4d9); margin: 0 4px; }
+/* Staging (docs/PLAN_STAGING.md ST5): unübersehbar, aber ruhig; gleiche Höhe wie die Chips. */
+.topbar__staging { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: #7a4a00; background: #ffe7b3; border: 1px solid #f0c060; white-space: nowrap; }
+html.dark .topbar__staging { color: #ffd88a; background: rgba(240, 160, 0, 0.16); border-color: rgba(240, 192, 96, 0.5); }
 .topbar__user { gap: 0; }
 
 

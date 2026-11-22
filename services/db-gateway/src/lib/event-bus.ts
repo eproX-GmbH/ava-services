@@ -166,8 +166,14 @@ class TransactionProgressBus {
       // Staging-Gateway (docs/PLAN_STAGING.md): eigene Warteschlange (EVENT_BUS_QUEUE im fly.toml),
       // die nach 1 h ohne Verbraucher verschwindet und Meldungen nach 10 Min. verwirft; sonst
       // liefe sie voll, während Staging aus ist.
-      const staging = process.env.GATEWAY_ROLLE === "staging";
-      await client.assertQueue(undefined, staging ? { "x-expires": 3_600_000, "x-message-ttl": 600_000 } : undefined);
+      // Direkt am Kanal, weil die veröffentlichte @ava/event-Version (1.1.x) keine Queue-Argumente
+      // durchreicht; ohne Kanal bleibt es beim bisherigen Verhalten.
+      const kanal = (client as unknown as { _channel?: { assertQueue(q: string, o?: { arguments?: Record<string, unknown> }): Promise<unknown> } })._channel;
+      if (process.env.GATEWAY_ROLLE === "staging" && kanal) {
+        await kanal.assertQueue(env.EVENT_BUS_QUEUE, { arguments: { "x-expires": 3_600_000, "x-message-ttl": 600_000 } });
+      } else {
+        await client.assertQueue();
+      }
       await client.bindQueue(env.EVENT_BUS_EXCHANGE, "transaction.progress");
 
       const listener = client.getListener<TransactionProgressPayload>({

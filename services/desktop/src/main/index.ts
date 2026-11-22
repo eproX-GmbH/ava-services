@@ -6,6 +6,7 @@
 // ist für den headless Server dieselbe.
 
 // Plattform-Schicht zuerst: Stores lesen ihre Pfade schon beim Laden.
+import { startKanalWaechter } from "./kanal-waechter";
 import { registerProblemIpc } from "./ipc/problem";
 import { startKontingentWaechter } from "./billing/kontingent-waechter";
 import "./platform-electron";
@@ -463,6 +464,8 @@ app.whenReady().then(async () => {
   // intentionally fire-and-forget: the await would block the rest of
   // app.whenReady, and the marker read is best-effort.
   void c.updater.start();
+  // Staging (docs/PLAN_STAGING.md ST5): Kanal des Kontos → Kopfzeile + Update-Feed.
+  startKanalWaechter({ gateway: gatewayClient, isSignedIn: () => auth.getStatus().signedIn, beiWechsel: (k) => c.updater.kanalSetzen(k.kanal, APP_CONFIG.gatewayUrl) });
 
   app.on("activate", () => {
     // v0.1.387 — Dock-Klick / App-Aktivierung: das echte AVA-Hauptfenster

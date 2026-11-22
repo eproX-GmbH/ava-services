@@ -1,0 +1,104 @@
+# Staging-Gateway (docs/PLAN_STAGING.md ST2). Gleiches Image und gleiche Secrets wie Prod,
+# GATEWAY_ROLLE=staging. Deploy: fly deploy -c fly.staging.toml (CI bei jedem Tag).
+# db-gateway fly config (Phase 8.u — pilot deploy).
+#
+# One app per customer per D3 (tenant isolation at the infra level,
+# not just in JWT claims). For the pilot we run a single app
+# (`ava-db-gateway`) shared across our test tenants — split per
+# customer when we sign the second.
+
+app = "ava-db-gateway-staging"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Apply migrations to the gateway's own audit DB before each deploy
+# goes live (§8.v3 cosmetic). fly runs this in a temporary release
+# machine, blocks the rollout until it exits 0, and leaves the running
+# instances on the previous version if it fails — so the new code
+# never sees a DB it can't talk to.
+#
+# Only the gateway's own schema is migrated here. The
+# prisma-company-contact/ generated client points at MPG's
+# `ava_company_contact` database, whose migrations are owned by the
+# company-contact submodule's CI (we vendored the schema for typing,
+# not for migration ownership).
+[deploy]
+  # 2026-11-09: drei Deploys scheiterten mit P1001 am pgbouncer des Clusters, der
+  # kurz haengen blieb (danach wieder in 170 ms erreichbar). Darum bis zu 6 Versuche.
+  release_command = "sh -c 'for i in 1 2 3 4 5 6; do npx prisma migrate deploy && exit 0; echo Migration fehlgeschlagen, neuer Versuch in 15 s; sleep 15; done; exit 1'"
+
+# Non-secret env. Anything sensitive goes through `fly secrets set`
+# below — fly bakes those into the runtime env at boot, never into
+# the image.
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  # Keycloak realm we run on fly. Tokens issued by the realm carry
+  # `iss = https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava`,
+  # so we verify against that exact string.
+  JWT_ISSUER = "https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava"
+  # `aud` claim that desktop-issued tokens must carry. Keycloak
+  # client must be configured with this audience mapper.
+  JWT_AUDIENCE = "ava-gateway"
+  RATE_LIMIT_PER_MIN = "600"
+  LOG_LEVEL = "info"
+  # CORS allow-list. `electron` enables the `null` origin produced by
+  # the packaged Electron renderer's file:// load. Add explicit https
+  # origins here when the gateway is also accessed from a web UI.
+  GATEWAY_ALLOWED_ORIGINS = "electron"
+  # Kunden-Instanzen <slug>.ava.bi per fly-replay (src/lib/instanz-router.ts,
+  # ersetzt die App ava-router). Ausnahmen von der Regel Subdomain → ava-i-<slug>:
+  ROUTER_DOMAIN = "ava.bi"
+  ROUTER_ZUORDNUNG = "headless-ava=headless-ava"
+  # Upstream service base URLs. Other services beyond master-data are
+  # currently suspended; the gateway will return 502 for routes
+  # fanning out to them until they're resumed. That's intentional for
+  # the pilot scope.
+  UPSTREAM_MASTER_DATA_URL = "https://ava-master-data.fly.dev"
+  UPSTREAM_COMPANY_PROFILE_URL = "https://ava-company-profile.fly.dev"
+  UPSTREAM_COMPANY_CONTACT_URL = "https://ava-company-contact.fly.dev"
+  UPSTREAM_COMPANY_PUBLICATION_URL = "https://ava-company-publication.fly.dev"
+  UPSTREAM_WEBSITE_URL = "https://ava-website.fly.dev"
+  UPSTREAM_STRUCTURED_CONTENT_URL = "https://ava-structured-content.fly.dev"
+  EVENT_BUS_EXCHANGE = "exchange"
+  EVENT_BUS_QUEUE = "db-gateway-staging-progress"
+  # Staging (docs/PLAN_STAGING.md): Kandidaten-Code auf Prod-Daten, nur Anfragen von Staging-Konten.
+  GATEWAY_ROLLE = "staging"
+
+# Secrets managed via `fly secrets set` (D3):
+#   DATABASE_URL    Gateway's own audit-log Postgres (we will provision
+#                   a small fly Postgres named `ava-db-gateway-db`).
+#   DIRECT_URL      Same DB, no pooler — required by `prisma migrate
+#                   deploy`. Fly Postgres provides this automatically.
+#   JWKS_URI        Keycloak realm certs endpoint. Set to:
+#                   https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava/protocol/openid-connect/certs
+#                   This replaces the legacy JWT_PUBLIC_KEYS PEM map.
+#   EVENT_BUS_URL   AMQP URL for the same broker the producer services
+#                   already publish to (re-use what master-data uses).
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Bleibt an: das Prod-Gateway erreicht es über das private Netz (.internal weckt nicht).
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

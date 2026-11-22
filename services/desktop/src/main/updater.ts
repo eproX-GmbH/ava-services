@@ -280,6 +280,24 @@ export class Updater extends EventEmitter {
     }
   }
 
+  /**
+   * Staging (docs/PLAN_STAGING.md ST5): Update-Feed je Kanal. staging = Kandidaten über den
+   * Feed des Gateways (zeigt auf die GitHub-Vorabversion), prod = GitHub „latest“. Kein
+   * Zurückstufen: wer Staging verlässt, bleibt auf seiner Version, bis Prod gleichzieht.
+   */
+  private feedKanal: "prod" | "staging" = "prod";
+  kanalSetzen(kanal: "prod" | "staging", gatewayUrl: string): void {
+    if (kanal === this.feedKanal || !paths().isPackaged) return;
+    this.feedKanal = kanal;
+    if (kanal === "staging") {
+      autoUpdater.setFeedURL({ provider: "generic", url: `${gatewayUrl.replace(/\/+$/, "")}/v1/updates/staging` });
+    } else {
+      autoUpdater.setFeedURL({ provider: "github", owner: "eproX-GmbH", repo: "ava-releases", releaseType: "release", vPrefixedTagName: true });
+    }
+    console.log(`[updater] Kanal ${kanal}: Update-Feed umgestellt`);
+    if (this.started) void this.check();
+  }
+
   async check(): Promise<void> {
     // Manueller Check (oder Neustart) setzt die Takt-Sperre zurueck.
     this.signaturFehlerVersion = null;

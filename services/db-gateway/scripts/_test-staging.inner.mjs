@@ -67,6 +67,17 @@ await pruefe("Kanal: nur mit Eintrag UND Weiche; Zuständigkeit je Rolle; Notsch
   assert.ok(K.testAdresse("joyce+x@quikk.de") && !K.testAdresse("kunde@firma.de") && !K.testAdresse(null));
 });
 
+await pruefe("Update-Feed: relative Dateien werden absolute GitHub-Adressen, absolute bleiben", async () => {
+  const U = (await import("../src/routes/v1/updates-feed.ts")).default ?? (await import("../src/routes/v1/updates-feed.ts"));
+  const yml = "version: 0.1.977\nfiles:\n  - url: AVA-0.1.977-arm64-mac.zip\n    sha512: abc\n    size: 1\n  - url: 'AVA 0.1.977.dmg'\npath: AVA-0.1.977-arm64-mac.zip\nsha512: abc\nreleaseDate: '2026-11-23T10:00:00.000Z'";
+  const aus = U.ymlAbsolut(yml, "0.1.977", "o/r");
+  assert.match(aus, /  - url: https:\/\/github.com\/o\/r\/releases\/download\/v0.1.977\/AVA-0.1.977-arm64-mac.zip/);
+  assert.match(aus, /AVA%200.1.977.dmg/);
+  assert.match(aus, /^path: https:\/\/github.com\/o\/r\/releases\/download\/v0.1.977\/AVA-0.1.977-arm64-mac.zip$/m);
+  assert.match(aus, /releaseDate: '2026-11-23T10:00:00.000Z'/);
+  assert.equal(U.ymlAbsolut("  - url: https://x/y.zip", "1.0.0", "o/r"), "  - url: https://x/y.zip");
+});
+
 // ---- Weiche gegen einen nachgebauten Staging-Server ---------------------------------------
 const gesehen = [];
 const staging = http.createServer((q, s) => {

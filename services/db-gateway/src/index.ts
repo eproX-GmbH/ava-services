@@ -4,6 +4,7 @@
 // the producers each have their own per-service Postgres on :5434 and would
 // otherwise inherit the gateway's URL via dev.sh's `set -a; source` and
 // silently connect to the wrong DB (dotenv won't override exported vars).
+import { updatesFeedRouter } from "./routes/v1/updates-feed";
 import { aktualisieren, flyAppVon, neuesteVersion, updateEingerichtet, updateStand, versionNeuer } from "./lib/instanz-update";
 import "dotenv/config";
 import { serve } from "@hono/node-server";
@@ -120,6 +121,8 @@ app.route("/", cloudLinksRouter);
 app.route("/v1", plaeneRouter);
 // docs/PLAN_CLOUD_SELBSTBEDIENUNG.md Z6 — Angebot des AVA-Servers ohne Auth (Website).
 app.route("/v1", cloudAngebotRouter);
+// Staging (docs/PLAN_STAGING.md ST5): Desktop-Update-Feed je Kanal (öffentlich).
+app.route("/v1", updatesFeedRouter);
 
 // Q-track v0.1.137 — Internal HMAC-authed surface for the gateway ↔
 // master-data quota / park-state channel. Mounted OUTSIDE /v1 so it
