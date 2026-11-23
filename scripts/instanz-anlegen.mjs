@@ -24,8 +24,9 @@ try {
   const slug = slugPruefen(String(a.name || ""));
   const konto = String(a.konto || "").trim().toLowerCase();
   if (!konto) throw new Error("--konto fehlt (E-Mail des AVA-Kontos, dem die Instanz gehört).");
-  const ollama = a.ollama === "geteilt" ? "geteilt" : "eigen";
-  if (a.ollama && !["eigen", "geteilt"].includes(a.ollama)) throw new Error("--ollama ist eigen oder geteilt.");
+  // Der geteilte Embeddings-Server ava-ollama ist seit 2026-11-23 geloescht.
+  if (a.ollama && a.ollama !== "eigen") throw new Error("--ollama geteilt gibt es nicht mehr (ava-ollama geloescht); jede Instanz bekommt ihr eigenes.");
+  const ollama = "eigen";
   const groesse = String(a.groesse || "4gb");
   if (!["4gb", "8gb"].includes(groesse)) throw new Error("--groesse ist 4gb oder 8gb.");
   const region = String(a.region || "fra");

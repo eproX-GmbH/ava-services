@@ -71,7 +71,6 @@ export const FIXKOSTEN: Fixkosten[] = [
   {"posten": "ava-db-gateway", "groesse": "shared-1cpu, 512 MB", "usdMonat": 3.19, "eurMonat": 2.93, "hinweis": "Fly-Listenpreis"},
   {"posten": "ava-master-data", "groesse": "shared-1cpu, 1 GB", "usdMonat": 5.7, "eurMonat": 5.24, "hinweis": "Fly-Listenpreis"},
   {"posten": "ava-register-worker", "groesse": "shared-1cpu, 2 GB laufend + 2 gestoppte", "usdMonat": 11.0, "eurMonat": 10.12, "hinweis": "Fly-Listenpreis, gestoppte nur Rootfs"},
-  {"posten": "headless-ava (Operator-Instanz)", "groesse": "shared-2cpu, 4 GB + Volume", "usdMonat": 23.0, "eurMonat": 21.16, "hinweis": "Fly-Listenpreis"},
   {"posten": "ava-router (2x) + ava-pgbouncer", "groesse": "3 x 256 MB", "usdMonat": 6.0, "eurMonat": 5.52, "hinweis": "Fly-Listenpreis"},
   {"posten": "Keycloak", "groesse": "shared-2cpu, 1 GB", "usdMonat": 7.5, "eurMonat": 6.9, "hinweis": "Fly-Listenpreis"},
   {"posten": "Managed Postgres ava-db", "groesse": "Basic, 1 Replikat, 20 GB", "usdMonat": 44.0, "eurMonat": 40.48, "hinweis": "38 $ Plan + 20 GB x 0,30 $"},

@@ -10,7 +10,7 @@
 //   node scripts/server-testlauf.mjs --alles
 //
 // Umgebung:
-//   AVA_SERVER_URL   Standard https://headless-ava.fly.dev
+//   AVA_SERVER_URL   Pflicht, z. B. https://ava-u-<id>.fly.dev (headless-ava ist seit 2026-11-23 geloescht)
 //   AVA_SETUP_TOKEN  Setup-Token des Servers (für /status); ohne wird der Teil übersprungen
 //   AVA_MCP_URL      Standard https://mcp.ava.bi/
 //   AVA_TEST_FIRMA   companyId für den Verarbeitungstest (Standard: Strategic IT GmbH, Herford)
@@ -29,7 +29,8 @@ const ISSUER = process.env.AUTH_ISSUER ?? "https://fly-keycloak-broken-bird-3701
 const CLIENT = process.env.AUTH_CLIENT_ID ?? "ava-desktop";
 const GATEWAY = (process.env.GATEWAY_URL ?? "https://ava-db-gateway.fly.dev").replace(/\/$/, "");
 const MCP = process.env.AVA_MCP_URL ?? "https://mcp.ava.bi/";
-const SERVER = (process.env.AVA_SERVER_URL ?? "https://headless-ava.fly.dev").replace(/\/$/, "");
+const SERVER = (process.env.AVA_SERVER_URL ?? "").replace(/\/$/, "");
+if (!SERVER) { console.error("AVA_SERVER_URL fehlt (z. B. https://ava-u-<id>.fly.dev)."); process.exit(2); }
 const SETUP_TOKEN = process.env.AVA_SETUP_TOKEN ?? "";
 const TEST_FIRMA = process.env.AVA_TEST_FIRMA ?? "BADOEYNHAUSEN_HRB_14952";
 const TOKEN_DATEI = join(homedir(), ".ava-testlauf.json");
