@@ -63,19 +63,25 @@ declare module "hono" {
  * Staging-Weiche (docs/PLAN_STAGING.md): nur prüfen, wem ein Token gehört (Signatur + Aussteller
  * wie oben), Ergebnis bis zum Ablauf des Tokens gemerkt. null = ungültig.
  */
-const tokenKonten = new Map<string, { sub: string; bis: number }>();
+const tokenKonten = new Map<string, { sub: string; email: string | null; bis: number }>();
 export async function kontoAusToken(token: string): Promise<string | null> {
+  return (await tokenKonto(token))?.sub ?? null;
+}
+
+/** Wie kontoAusToken, dazu die Adresse aus dem Token (Test-Adressen beim ersten Kontakt). */
+export async function tokenKonto(token: string): Promise<{ sub: string; email: string | null } | null> {
   const jetzt = Date.now();
   const g = tokenKonten.get(token);
-  if (g && g.bis > jetzt) return g.sub;
+  if (g && g.bis > jetzt) return { sub: g.sub, email: g.email };
   try {
     const { JWT_ISSUER, JWKS_URI } = loadEnv();
     if (!JWKS_URI) return null;
     const { payload } = await jwtVerify(token, getRemoteJwks() as never, { issuer: JWT_ISSUER });
     if (typeof payload.sub !== "string") return null;
+    const email = typeof payload["email"] === "string" ? (payload["email"] as string) : null;
     if (tokenKonten.size > 5000) tokenKonten.clear();
-    tokenKonten.set(token, { sub: payload.sub, bis: Math.min((payload.exp ?? 0) * 1000, jetzt + 10 * 60_000) });
-    return payload.sub;
+    tokenKonten.set(token, { sub: payload.sub, email, bis: Math.min((payload.exp ?? 0) * 1000, jetzt + 10 * 60_000) });
+    return { sub: payload.sub, email };
   } catch {
     return null;
   }

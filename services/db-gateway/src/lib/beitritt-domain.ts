@@ -11,6 +11,7 @@
 import { randomBytes } from "node:crypto";
 import type pg from "pg";
 import { loadEnv } from "./env";
+import { testAdresse } from "./kanal";
 import { logger } from "./logger";
 import { domainAusEmail, istFreemail } from "./start-analyse/freemail";
 import { mailKonto, mailSenden, versandBereit } from "./mail/versand";
@@ -55,6 +56,9 @@ async function anfrageAnlegen(pool: pg.Pool, e: { tenantId: string; actorId: str
 /** Automatisch beim Registrieren/ersten Anmelden: genau eine passende Organisation → offene Anfrage. */
 export async function domainZuordnen(pool: pg.Pool, e: { actorId: string; email: string | null | undefined; name?: string | null }): Promise<OrgVorschlag | null> {
   if (!e.email) return null;
+  // Staging-Testkonten (joyce+t1@quikk.de) spielen Neukunden: keine automatische Anfrage an die
+  // eigene Firma. Beitreten per Auswahl in der App bleibt möglich.
+  if (testAdresse(e.email)) return null;
   if (await istInOrganisation(pool, e.actorId)) return null;
   if (await offeneAnfrage(pool, e.actorId)) return null;
   const orgs = await passendeOrganisationen(pool, e.email);

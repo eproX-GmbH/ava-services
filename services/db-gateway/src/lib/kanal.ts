@@ -95,6 +95,59 @@ export async function testkontoBeiErstkontakt(q: Pick<pg.Pool, "query">, a: { ac
   return true;
 }
 
+/**
+ * Test-Adresse beim allerersten Kontakt erkennen, egal welcher Weg zuerst kommt: Die Website
+ * startet den Serverkauf direkt nach der Registrierung, noch bevor App oder Desktop /v1/whoami
+ * rufen. Nur solange das Konto noch kein Mitglied ist (so bleibt ein Konto, das der Betreiber aus
+ * Staging genommen hat, draußen). Trägt das Konto sofort ein (Datenbank + Stand im Speicher); den
+ * Testmodus der persönlichen Organisation holt das Anlegen des Mitglieds nach.
+ */
+const keinTestkonto = new Map<string, number>();
+export async function testkontoSicherstellen(q: Pick<pg.Pool, "query">, a: { actorId: string; email: string | null }): Promise<boolean> {
+  if (stand.zugang.get(a.actorId)?.kanal === "staging") return true;
+  if (!testAdresse(a.email)) return false;
+  if ((keinTestkonto.get(a.actorId) ?? 0) > Date.now()) return false;
+  const r = await q.query<{ drin: boolean }>(
+    `WITH neu AS (
+       INSERT INTO "KanalZugang" ("actorId", kanal, "testZahlung", email, notiz, von)
+       SELECT $1, 'staging', true, $2, 'Test-Adresse', 'muster'
+        WHERE NOT EXISTS (SELECT 1 FROM "TenantMember" WHERE "actorId" = $1)
+       ON CONFLICT ("actorId") DO NOTHING
+       RETURNING 1
+     )
+     SELECT EXISTS (SELECT 1 FROM neu) OR EXISTS (SELECT 1 FROM "KanalZugang" WHERE "actorId" = $1 AND kanal = 'staging') AS drin`,
+    [a.actorId, a.email],
+  );
+  if (!r.rows[0]?.drin) {
+    if (keinTestkonto.size > 2000) keinTestkonto.clear();
+    keinTestkonto.set(a.actorId, Date.now() + 10 * 60_000);
+    return false;
+  }
+  stand.zugang.set(a.actorId, { kanal: "staging", testZahlung: true });
+  logger.info({ actorId: a.actorId }, "[kanal] Test-Adresse beim ersten Kontakt: Konto in Staging mit Testzahlung");
+  return true;
+}
+
+/**
+ * Staging-Gateway: Konto fehlt im Stand (bis zu 30 s alt), Prod leitet es aber schon weiter, weil
+ * es gerade eingetragen wurde (Konsole, erster Kontakt). Einmal direkt nachsehen; Absagen
+ * 30 s merken, damit fremde Konten nicht je Anfrage die Datenbank fragen.
+ */
+const nichtImStaging = new Map<string, number>();
+export async function zugangNachladen(q: Pick<pg.Pool, "query">, actorId: string): Promise<boolean> {
+  if (stand.zugang.get(actorId)?.kanal === "staging") return true;
+  if ((nichtImStaging.get(actorId) ?? 0) > Date.now()) return false;
+  const r = await q.query<{ kanal: string; testZahlung: boolean }>(`SELECT kanal, "testZahlung" FROM "KanalZugang" WHERE "actorId" = $1`, [actorId]);
+  const z = r.rows[0];
+  if (z?.kanal !== "staging") {
+    if (nichtImStaging.size > 2000) nichtImStaging.clear();
+    nichtImStaging.set(actorId, Date.now() + 30_000);
+    return false;
+  }
+  stand.zugang.set(actorId, { kanal: "staging", testZahlung: z.testZahlung });
+  return true;
+}
+
 /** Organisation auf Stripe-Testmodus — nie, wenn schon ein Stripe-Kunde/-Abo besteht. */
 export async function zahlungsmodusTest(q: Pick<pg.Pool, "query">, tenantId: string): Promise<boolean> {
   const r = await q.query(

@@ -11,9 +11,11 @@ import http from "node:http";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { MiddlewareHandler } from "hono";
-import { gatewayRolle, kanalVon, routingAktiv } from "./kanal";
-import { kontoAusToken } from "../middleware/auth";
+import type pg from "pg";
+import { gatewayRolle, kanalVon, routingAktiv, testkontoSicherstellen, zugangNachladen, zugangVon } from "./kanal";
+import { tokenKonto } from "../middleware/auth";
 import { logger } from "./logger";
+import { getGatewayPool } from "./producer-pools";
 
 const ziel = () => process.env.STAGING_GATEWAY_URL?.trim().replace(/\/+$/, "") || null;
 export const WEITERGELEITET = "x-ava-weitergeleitet";
@@ -56,6 +58,26 @@ export async function weiterleiten(req: Request, basis: string): Promise<Respons
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: aus });
 }
 
+/** Datenbank für das Eintragen von Test-Adressen (Tests ersetzen sie). */
+let db: () => Pick<pg.Pool, "query"> = () => getGatewayPool();
+export function weicheDbSetzen(f: () => Pick<pg.Pool, "query">): void { db = f; }
+
+/**
+ * Staging-Konto? Test-Adressen zählen schon bei der ersten Anfrage (vor /v1/whoami). Der Wächter
+ * im Staging-Gateway prüft unabhängig von der Weiche (die schaltet Prod) und sieht bei Lücken
+ * im Stand direkt nach; Prod nicht, sonst fragte jede Anfrage jedes Kunden die Datenbank.
+ */
+async function imStaging(k: { sub: string; email: string | null }, waechter = false): Promise<boolean> {
+  if (waechter ? zugangVon(k.sub)?.kanal === "staging" : kanalVon(k.sub) === "staging") return true;
+  try {
+    if (await testkontoSicherstellen(db(), { actorId: k.sub, email: k.email })) return true;
+    return waechter ? await zugangNachladen(db(), k.sub) : false;
+  } catch (err) {
+    logger.warn({ actorId: k.sub, err: err instanceof Error ? err.message : String(err) }, "[staging-weiche] Test-Adresse nicht eingetragen");
+    return false;
+  }
+}
+
 /** Prod: Middleware ganz vorn. */
 export const stagingWeiche: MiddlewareHandler = async (c, next) => {
   const basis = ziel();
@@ -65,8 +87,8 @@ export const stagingWeiche: MiddlewareHandler = async (c, next) => {
   if (NIE.some((r) => r.test(pfad))) return next();
   const token = tokenAus(c.req.raw);
   if (!token) return next();
-  const actorId = await kontoAusToken(token);
-  if (!actorId || kanalVon(actorId) !== "staging") return next();
+  const konto = await tokenKonto(token);
+  if (!konto || !(await imStaging(konto))) return next();
   return weiterleiten(c.req.raw, basis);
 };
 
@@ -77,9 +99,9 @@ export const stagingWaechter: MiddlewareHandler = async (c, next) => {
   if (NIE.some((r) => r.test(pfad))) return next();
   const token = tokenAus(c.req.raw);
   if (!token) return next();
-  const actorId = await kontoAusToken(token);
-  if (!actorId) return next(); // ungültig: die Anmeldung antwortet mit 401
-  if (kanalVon(actorId) === "staging") return next();
+  const konto = await tokenKonto(token);
+  if (!konto) return next(); // ungültig: die Anmeldung antwortet mit 401
+  if (await imStaging(konto, true)) return next();
   return c.json({ error: "kein_staging_zugang", message: "Dieses Konto hat keinen Zugang zur Staging-Umgebung." }, 403);
 };
 

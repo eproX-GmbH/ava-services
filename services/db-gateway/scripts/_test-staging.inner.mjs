@@ -17,7 +17,7 @@ Object.assign(process.env, {
   UPSTREAM_COMPANY_PUBLICATION_URL: "http://127.0.0.1:1", UPSTREAM_WEBSITE_URL: "http://127.0.0.1:1", UPSTREAM_STRUCTURED_CONTENT_URL: "http://127.0.0.1:1",
   JWT_ISSUER: ISS, JWKS_URI: `http://127.0.0.1:${jwks.address().port}/jwks`,
 });
-const token = (sub) => new SignJWT({ scope: "openid" }).setProtectedHeader({ alg: "RS256", kid: "k1" }).setSubject(sub).setIssuer(ISS).setIssuedAt().setExpirationTime("5m").sign(privateKey);
+const token = (sub, email) => new SignJWT({ scope: "openid", ...(email ? { email } : {}) }).setProtectedHeader({ alg: "RS256", kid: "k1" }).setSubject(sub).setIssuer(ISS).setIssuedAt().setExpirationTime("5m").sign(privateKey);
 
 const K = (await import("../src/lib/kanal.ts")).default ?? (await import("../src/lib/kanal.ts"));
 const W = (await import("../src/lib/staging-weiche.ts")).default ?? (await import("../src/lib/staging-weiche.ts"));
@@ -152,6 +152,41 @@ await pruefe("Weiche: Weiche aus → alles Prod; Staging weg → 503 mit Hinweis
   assert.equal(r.status, 503);
   assert.equal((await r.json()).error, "staging_nicht_erreichbar");
   process.env.STAGING_GATEWAY_URL = alt;
+});
+
+await pruefe("Test-Adresse: erste Anfrage (vor whoami) geht schon nach Staging; Mitglieder und fremde Adressen nicht", async () => {
+  K.kanalStandSetzen({ zugang: [["a-staging", { kanal: "staging", testZahlung: false }]], muster: ["durchlauf*@ava-staging.test"], routing: true });
+  const mitglieder = new Set(["a-mitglied"]), zugaenge = new Set(), abfragen = [];
+  W.weicheDbSetzen(() => ({ query: async (_sql, [id]) => { abfragen.push(id); if (!mitglieder.has(id)) zugaenge.add(id); return { rows: [{ drin: zugaenge.has(id) }] }; } }));
+  const neu = await fetch(`${P}/v1/cloud/kaufen`, { method: "POST", headers: { authorization: `Bearer ${await token("a-neu", "Durchlauf-1@ava-staging.test")}` } });
+  assert.equal(neu.headers.get("x-ava-gateway"), "staging");
+  assert.ok(zugaenge.has("a-neu") && K.kanalVon("a-neu") === "staging" && K.testZahlungFuer("a-neu"));
+  const alt = await fetch(`${P}/v1/x`, { headers: { authorization: `Bearer ${await token("a-mitglied", "durchlauf-2@ava-staging.test")}` } });
+  assert.equal((await alt.json()).von, "prod", "schon Mitglied (z. B. vom Betreiber aus Staging genommen) bleibt draußen");
+  await fetch(`${P}/v1/x`, { headers: { authorization: `Bearer ${await token("a-mitglied", "durchlauf-2@ava-staging.test")}` } });
+  assert.equal(abfragen.filter((x) => x === "a-mitglied").length, 1, "Absage wird gemerkt, keine Abfrage je Anfrage");
+  const fremd = await fetch(`${P}/v1/x`, { headers: { authorization: `Bearer ${await token("a-fremd", "joyce@quikk.de")}` } });
+  assert.equal((await fremd.json()).von, "prod");
+  assert.ok(!abfragen.includes("a-fremd"), "fremde Adresse ohne Datenbank");
+  process.env.GATEWAY_ROLLE = "staging";
+  const w = await fetch(`${P}/v1/x`, { headers: { authorization: `Bearer ${await token("a-neu2", "durchlauf-3@ava-staging.test")}` } });
+  assert.notEqual(w.status, 403, "Wächter lässt neue Test-Adresse durch");
+  delete process.env.GATEWAY_ROLLE;
+  K.kanalStandSetzen({ zugang: [["a-staging", { kanal: "staging", testZahlung: false }]], routing: true });
+});
+
+await pruefe("Wächter: gerade eingetragenes Konto (Stand noch alt) wird nachgeladen, fremdes bleibt 403 ohne Dauerabfrage", async () => {
+  K.kanalStandSetzen({ zugang: [], routing: false });
+  const zeilen = new Map([["a-frisch", { kanal: "staging", testZahlung: true }]]), abfragen = [];
+  W.weicheDbSetzen(() => ({ query: async (sql, [id]) => { abfragen.push(id); if (/INSERT/.test(sql)) return { rows: [{ drin: false }] }; return { rows: zeilen.has(id) ? [zeilen.get(id)] : [] }; } }));
+  process.env.GATEWAY_ROLLE = "staging";
+  const r = await fetch(`${P}/v1/x`, { headers: { authorization: `Bearer ${await token("a-frisch")}` } });
+  assert.notEqual(r.status, 403, "Prod hat schon weitergeleitet, Staging-Stand ist noch alt");
+  assert.equal(K.zugangVon("a-frisch")?.kanal, "staging");
+  for (let i = 0; i < 2; i++) assert.equal((await fetch(`${P}/v1/x`, { headers: { authorization: `Bearer ${await token("a-weg")}` } })).status, 403);
+  assert.equal(abfragen.filter((x) => x === "a-weg").length, 1);
+  delete process.env.GATEWAY_ROLLE;
+  K.kanalStandSetzen({ zugang: [["a-staging", { kanal: "staging", testZahlung: false }]], routing: true });
 });
 
 await pruefe("Wächter (Rolle staging): fremdes Konto 403, Staging-Konto und ohne Token durch", async () => {
