@@ -66,6 +66,8 @@ primary_region = "fra"
   EVENT_BUS_QUEUE = "db-gateway-staging-progress"
   # Staging (docs/PLAN_STAGING.md): Kandidaten-Code auf Prod-Daten, nur Anfragen von Staging-Konten.
   GATEWAY_ROLLE = "staging"
+  # Rücksprung nach dem Stripe-Checkout und Links in Mails: AVA-App im Staging.
+  AVA_APP_URL = "https://ava-app-staging.vercel.app"
 
 # Secrets managed via `fly secrets set` (D3):
 #   DATABASE_URL    Gateway's own audit-log Postgres (we will provision
