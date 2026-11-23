@@ -37,7 +37,7 @@ export async function zielVersionFuer(kanal: Kanal): Promise<string | null> {
   const pool = getGatewayPool();
   const tags = await kundenImageVersionen();
   let zeilen = await releasesLesen(pool);
-  const neu = neueKandidaten(tags, zeilen);
+  const neu = neueKandidaten(tags, zeilen, "server");
   if (neu.length) {
     await kandidatenVermerken(pool, neu, "server");
     zeilen = await releasesLesen(pool);

@@ -20,8 +20,12 @@ import { getGatewayPool } from "./producer-pools";
 const ziel = () => process.env.STAGING_GATEWAY_URL?.trim().replace(/\/+$/, "") || null;
 export const WEITERGELEITET = "x-ava-weitergeleitet";
 
-/** Wege, die nie weitergeleitet werden (Webhooks, interne Kanäle, Gesundheit, Relais-Prüfung). */
-const NIE = [/^\/health/, /^\/internal\//, /^\/v1\/billing\/webhook/, /^\/v1\/kopf-relais\/wer$/, /^\/webhooks?\//];
+/**
+ * Wege, die nie weitergeleitet werden (Webhooks, interne Kanäle, Gesundheit, Relais-Prüfung).
+ * Die Steuerung von Staging selbst (Schalter, Konten, Freigabe) bleibt immer beim Prod-Gateway,
+ * auch wenn der Betreiber selbst im Staging ist: Der Notschalter muss gehen, wenn Staging klemmt.
+ */
+const NIE = [/^\/health/, /^\/internal\//, /^\/v1\/billing\/webhook/, /^\/v1\/kopf-relais\/wer$/, /^\/webhooks?\//, /^\/v1\/betreiber\/(staging|releases)(\/|$)/];
 
 function tokenAus(req: Request): string | null {
   const h = req.headers.get("authorization");

@@ -54,7 +54,7 @@ betreiberStagingRouter.get("/betreiber/staging", async (c) => {
   ]);
   const rel = releases.rows.sort((x: { version: string }, y: { version: string }) => versionVergleich(y.version, x.version)).slice(0, 15);
   return c.json({
-    schalter: { routing: schalter.rows[0]?.routing ?? false, wirksam: routingAktiv(), von: schalter.rows[0]?.von ?? null, seit: schalter.rows[0]?.updatedAt ?? null, stagingGateway: !!process.env.STAGING_GATEWAY_URL },
+    schalter: { routing: schalter.rows[0]?.routing ?? false, wirksam: routingAktiv(), von: schalter.rows[0]?.von ?? null, seit: schalter.rows[0]?.updatedAt ?? null, stagingGateway: gatewayRolle() === "staging" || !!process.env.STAGING_GATEWAY_URL },
     konten: konten.rows,
     muster: muster.rows,
     releases: rel,

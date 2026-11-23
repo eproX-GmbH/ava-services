@@ -126,6 +126,9 @@ export function naechsteAktion(i: CloudInstanz, soll: Soll, fly: string | null, 
   return { art: "gesundheit" };
 }
 
+/** Abgleich-Fehler einer Instanz melden, wenn sie so lange am Stück anhalten. */
+export const FEHLER_ALARM_NACH_MS = 10 * 60_000;
+
 /** Höchstens eine Meldung je Art und Instanz in 6 Stunden. */
 export function alarmFaellig(i: Pick<CloudInstanz, "schritte">, art: string, jetzt: number): boolean {
   const zuletzt = i.schritte[`alarm_${art}`];
@@ -277,11 +280,24 @@ export async function abgleichen(d: AbgleichDeps, nur?: string): Promise<Abgleic
           await gesundheit(d, i, fly, jetzt(), melde, merkeAlarm);
           break;
       }
+      // Wieder fehlerfrei: Fehlerserie vergessen.
+      if (typeof i.schritte.abgleichFehlerSeit === "string") {
+        const s = { ...(await d.repo.holen(i.id))?.schritte };
+        delete s.abgleichFehlerSeit;
+        await d.repo.aendern(i.id, { schritte: s });
+      }
     } catch (err) {
       bericht.fehler++;
       const text = err instanceof Error ? err.message : String(err);
       warnen({ id: i.id, app: i.flyApp, err: text }, "[cloud-abgleich] Instanz fehlgeschlagen");
-      await merkeAlarm("abgleich_fehler", `Abgleich fehlgeschlagen: ${text.slice(0, 200)}`).catch(() => undefined);
+      // Einzelne Fehler sind oft vorübergehend (Fly kennt eine frische Maschine Sekunden lang
+      // noch nicht: 404 beim Warten auf „started“). Alarm erst, wenn es seit 10 Minuten scheitert.
+      const seit = typeof i.schritte.abgleichFehlerSeit === "string" ? Date.parse(i.schritte.abgleichFehlerSeit) : null;
+      if (seit === null || Number.isNaN(seit)) {
+        await d.repo.aendern(i.id, { schritte: { ...(await d.repo.holen(i.id))?.schritte, abgleichFehlerSeit: new Date(jetzt()).toISOString() } }).catch(() => undefined);
+      } else if (jetzt() - seit >= FEHLER_ALARM_NACH_MS) {
+        await merkeAlarm("abgleich_fehler", `Abgleich schlägt seit ${Math.round((jetzt() - seit) / 60_000)} Minuten fehl: ${text.slice(0, 200)}`).catch(() => undefined);
+      }
     }
     await pause(1_200); // Fly erlaubt ~1 Anfrage/s je Maschine
   }

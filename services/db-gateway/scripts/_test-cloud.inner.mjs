@@ -291,6 +291,22 @@ await pruefe("Fly-App ohne Datensatz wird gemeldet, Image-App nicht", async () =
   const b = await A.abgleichen(w.deps);
   assert.deepEqual(b.waisen, ["ava-u-verwaist01"]);
 });
+await pruefe("Abgleich-Fehler: einzelner Fehler ohne Alarm, erst nach 10 Minuten am Stück; Erfolg setzt zurück", async () => {
+  const w = await aufbau("h00000000f");
+  let kaputt = true;
+  w.deps.fakten = async () => { if (kaputt) throw new Error("Fly 404 machine not found"); return w.lage; };
+  await A.abgleichen(w.deps);
+  assert.equal(w.meldungen.length, 0, "erster Fehler: keine Mail");
+  assert.ok((await w.repo.holen(w.id)).schritte.abgleichFehlerSeit);
+  w.setzeUhr(T + 5 * 60_000); await A.abgleichen(w.deps);
+  assert.equal(w.meldungen.length, 0, "nach 5 Minuten noch keine Mail");
+  w.setzeUhr(T + 10 * 60_000); await A.abgleichen(w.deps);
+  assert.equal(w.meldungen.filter((m) => /seit 10 Minuten/.test(m)).length, 1, "nach 10 Minuten am Stück: Mail");
+  kaputt = false; w.setzeUhr(T + 15 * 60_000); await A.abgleichen(w.deps);
+  assert.equal((await w.repo.holen(w.id)).schritte.abgleichFehlerSeit, undefined, "Erfolg vergisst die Serie");
+  kaputt = true; w.setzeUhr(T + 20 * 60_000); await A.abgleichen(w.deps);
+  assert.equal(w.meldungen.filter((m) => /fehl/.test(m)).length, 1, "neue Serie beginnt ohne Mail");
+});
 await pruefe("Instanz mit laufendem Vorgang wird übersprungen", async () => {
   const w = await aufbau("h000000009");
   const p = w.betrieb.stoppen(w.id, "admin", "admin", { absicht: true });

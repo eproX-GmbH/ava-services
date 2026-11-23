@@ -49,6 +49,12 @@ await pruefe("Neue Kandidaten: nur jenseits der höchsten Freigabe und noch ohne
   assert.deepEqual(K.neueKandidaten(["v0.1.970", "v0.1.977", "0.1.978", "0.1.976"], [{ version: "0.1.976", status: "freigegeben" }, { version: "0.1.978", status: "kandidat" }]), ["0.1.977"]);
 });
 
+await pruefe("Kandidat mit Server-Image bekommt die Desktop-Version als Teil dazu, Verworfenes nicht", () => {
+  const zeilen = [{ version: "0.1.976", status: "freigegeben", komponenten: {} }, { version: "0.1.977", status: "kandidat", komponenten: { server: true } }, { version: "0.1.978", status: "verworfen", komponenten: { server: true } }];
+  assert.deepEqual(K.neueKandidaten(["0.1.976", "0.1.977", "0.1.978"], zeilen, "desktop"), ["0.1.977"]);
+  assert.deepEqual(K.neueKandidaten(["0.1.976", "0.1.977", "0.1.978"], zeilen, "server"), []);
+});
+
 await pruefe("Kanal: nur mit Eintrag UND Weiche; Zuständigkeit je Rolle; Notschalter", () => {
   K.kanalStandSetzen({ zugang: [["a-staging", { kanal: "staging", testZahlung: true }]], routing: false });
   assert.equal(K.kanalVon("a-staging"), "prod", "Weiche aus");
@@ -133,6 +139,13 @@ await pruefe("Weiche: SSE kommt Stück für Stück durch", async () => {
   assert.equal(r.headers.get("content-type"), "text/event-stream");
   const text = await r.text();
   assert.equal(text, "data: 1\n\ndata: 2\n\ndata: 3\n\n");
+});
+
+await pruefe("Weiche: Steuerung von Staging bleibt in Prod, auch für Staging-Konten (Notschalter)", async () => {
+  for (const pfad of ["/v1/betreiber/staging", "/v1/betreiber/staging/schalter", "/v1/betreiber/releases/0.1.977/freigeben"]) {
+    assert.equal((await (await fetch(`${P}${pfad}`, { headers: { authorization: `Bearer ${tS}` } })).json()).von, "prod", pfad);
+  }
+  assert.equal((await fetch(`${P}/v1/betreiber/kunden`, { headers: { authorization: `Bearer ${tS}` } })).headers.get("x-ava-gateway"), "staging", "übrige Betreiber-Seiten gehen mit");
 });
 
 await pruefe("Weiche: ohne Token, ungültiges Token, Webhook und Health bleiben in Prod", async () => {

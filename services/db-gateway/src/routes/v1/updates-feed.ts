@@ -52,7 +52,7 @@ updatesFeedRouter.get("/updates/:kanal{staging|prod}/:datei", async (c) => {
     const releases = (await ghReleases()).filter((r) => !r.draft && r.assets.some((a) => a.name === datei));
     const versionen = releases.map((r) => r.tag_name.replace(/^v/, ""));
     let zeilen = await releasesLesen(pool);
-    const neu = neueKandidaten(versionen, zeilen);
+    const neu = neueKandidaten(versionen, zeilen, "desktop");
     if (neu.length) {
       await kandidatenVermerken(pool, neu, "desktop");
       zeilen = await releasesLesen(pool);

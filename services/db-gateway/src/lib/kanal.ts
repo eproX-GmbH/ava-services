@@ -171,7 +171,7 @@ export function versionVergleich(a: string, b: string): number {
   return 0;
 }
 
-export interface ReleaseZeile { version: string; status: ReleaseStatus }
+export interface ReleaseZeile { version: string; status: ReleaseStatus; komponenten?: Record<string, unknown> | null }
 
 /**
  * Version, die ein Kanal bekommen soll, aus den vorhandenen Versionen (Registry/GitHub) und den
@@ -192,15 +192,24 @@ export function zielVersion(vorhanden: string[], zeilen: ReleaseZeile[], kanal: 
 }
 
 export async function releasesLesen(pool: Pick<pg.Pool, "query">): Promise<ReleaseZeile[]> {
-  const r = await pool.query<ReleaseZeile>(`SELECT version, status FROM "AvaRelease"`);
+  const r = await pool.query<ReleaseZeile>(`SELECT version, status, komponenten FROM "AvaRelease"`);
   return r.rows;
 }
 
-/** Versionen jenseits der höchsten freigegebenen, die noch keine Zeile haben (neue Kandidaten). */
-export function neueKandidaten(vorhanden: string[], zeilen: ReleaseZeile[]): string[] {
-  const bekannt = new Set(zeilen.map((z) => z.version.replace(/^v/, "")));
+/**
+ * Versionen jenseits der höchsten freigegebenen, die noch keine Zeile haben (neue Kandidaten).
+ * Mit `quelle` auch Kandidaten, denen dieser Teil noch fehlt (Server-Image kam vor der Desktop-
+ * Version: Spalte „Teile“ in der Konsole).
+ */
+export function neueKandidaten(vorhanden: string[], zeilen: ReleaseZeile[], quelle?: string): string[] {
+  const zeile = new Map(zeilen.map((z) => [z.version.replace(/^v/, ""), z]));
   const frei = zeilen.filter((z) => z.status === "freigegeben").map((z) => z.version.replace(/^v/, "")).sort(versionVergleich).at(-1) ?? "0.0.0";
-  return [...new Set(vorhanden.map((v) => v.replace(/^v/, "")))].filter((v) => !bekannt.has(v) && versionVergleich(v, frei) > 0).sort(versionVergleich);
+  const fehlt = (v: string) => {
+    const z = zeile.get(v);
+    if (!z) return true;
+    return !!quelle && z.status === "kandidat" && !z.komponenten?.[quelle];
+  };
+  return [...new Set(vorhanden.map((v) => v.replace(/^v/, "")))].filter((v) => versionVergleich(v, frei) > 0 && fehlt(v)).sort(versionVergleich);
 }
 
 /** Neue Versionen (aus Registry oder GitHub) als Kandidaten vermerken. */
