@@ -73,6 +73,45 @@ await pruefe("Kanal: nur mit Eintrag UND Weiche; Zuständigkeit je Rolle; Notsch
   assert.ok(K.testAdresse("joyce+x@quikk.de") && !K.testAdresse("kunde@firma.de") && !K.testAdresse(null));
 });
 
+await pruefe("Freigabe-Schutz: neuerer Gateway-Code auf Prod blockt, Fremdes und Gleichstand nicht, ohne GitHub keine Freigabe", async () => {
+  const F = await import("../src/lib/freigabe.ts");
+  const gesehen = [];
+  const github = (antworten) => async (url) => {
+    gesehen.push(String(url));
+    const basis = decodeURIComponent(String(url).split("...")[1]);
+    const a = antworten[basis] ?? { status: 404 };
+    return new Response(JSON.stringify(a.daten ?? {}), { status: a.status ?? 200 });
+  };
+  const datei = (n) => ({ filename: n });
+  // Vorfall 2026-11-23: Prod (v416) hat drei Gateway-Korrekturen, die v0.1.977 nicht enthält.
+  let r = await F.freigabePruefen("0.1.977", { commit: "7dbae256", token: null, holen: github({ "7dbae256": { daten: { ahead_by: 4, files: [datei("services/db-gateway/src/lib/kanal.ts"), datei("docs/PLAN_STAGING.md")] } } }) });
+  assert.equal(r.ok, false);
+  assert.match(r.grund, /läuft schon mit neuerem Server-Code als Version 0\.1\.977 \(1 geänderte Datei\)/);
+  assert.match(gesehen.at(-1), /compare\/v0\.1\.977\.\.\.7dbae256$/);
+  // Prod ist voraus, aber nur außerhalb des Gateways (Doku, Desktop): unkritisch.
+  r = await F.freigabePruefen("0.1.977", { commit: "abc1234", token: null, holen: github({ abc1234: { daten: { ahead_by: 2, files: [datei("docs/x.md"), datei("services/desktop/package.json")] } } }) });
+  assert.deepEqual(r, { ok: true, basis: "abc1234" });
+  // Normalfall: Prod liegt hinter dem Tag.
+  r = await F.freigabePruefen("v0.1.978", { commit: "abc1234", token: null, holen: github({ abc1234: { daten: { ahead_by: 0, files: [] } } }) });
+  assert.equal(r.ok, true);
+  // Prod-Stand unbekannt (kein GATEWAY_COMMIT, oder GitHub kennt ihn nicht): strenger Vergleich mit main.
+  r = await F.freigabePruefen("0.1.977", { commit: null, token: null, holen: github({ main: { daten: { ahead_by: 5, files: [datei("services/db-gateway/fly.toml")] } } }) });
+  assert.equal(r.ok, false);
+  assert.match(r.grund, /Stand der Produktion ist nicht bekannt/);
+  r = await F.freigabePruefen("0.1.978", { commit: "lokal99", token: null, holen: github({ main: { daten: { ahead_by: 0, files: [] } } }) });
+  assert.deepEqual(r, { ok: true, basis: "main" }, "404 für den eigenen Commit → main");
+  // Unvollständige Dateiliste (GitHub kappt bei 300): im Zweifel blocken.
+  r = await F.freigabePruefen("0.1.977", { commit: "abc1234", token: null, holen: github({ abc1234: { daten: { ahead_by: 40, files: Array.from({ length: 300 }, (_, i) => datei(`docs/${i}.md`)) } } }) });
+  assert.equal(r.ok, false);
+  // GitHub antwortet nicht brauchbar oder gar nicht: keine Freigabe.
+  r = await F.freigabePruefen("0.1.977", { commit: null, token: null, holen: github({ main: { status: 502 } }) });
+  assert.equal(r.ok, false); assert.match(r.grund, /nicht möglich \(GitHub antwortet mit 502\)/);
+  r = await F.freigabePruefen("0.1.977", { commit: null, token: null, holen: async () => { throw new Error("offline"); } });
+  assert.equal(r.ok, false); assert.match(r.grund, /nicht erreichbar/);
+  r = await F.freigabePruefen("0.1.977", { commit: null, token: null, holen: github({ main: { daten: { unerwartet: true } } }) });
+  assert.equal(r.ok, false, "unerwartete Antwortform");
+});
+
 await pruefe("Update-Feed: relative Dateien werden absolute GitHub-Adressen, absolute bleiben", async () => {
   const U = (await import("../src/routes/v1/updates-feed.ts")).default ?? (await import("../src/routes/v1/updates-feed.ts"));
   const yml = "version: 0.1.977\nfiles:\n  - url: AVA-0.1.977-arm64-mac.zip\n    sha512: abc\n    size: 1\n  - url: 'AVA 0.1.977.dmg'\npath: AVA-0.1.977-arm64-mac.zip\nsha512: abc\nreleaseDate: '2026-11-23T10:00:00.000Z'";

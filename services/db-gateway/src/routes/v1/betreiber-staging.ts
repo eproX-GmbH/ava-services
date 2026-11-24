@@ -158,6 +158,13 @@ betreiberStagingRouter.post("/betreiber/releases/:version/:aktion{freigeben|verw
   const r = await pool.query<{ status: string }>(`SELECT status FROM "AvaRelease" WHERE version = $1`, [version]);
   if (!r.rows[0]) throw new HTTPException(404, { message: "Unbekannte Version" });
   if (r.rows[0].status !== "kandidat") throw new HTTPException(409, { message: `Version ist bereits ${r.rows[0].status}.` });
+  // Vor dem Freigeben: Nähme der Prod-Deploy aus dem Tag neueren Gateway-Code zurück? Dann gar
+  // nicht erst freigeben (sonst zögen Kunden-Server und Desktop nach, das Gateway aber zurück).
+  if (aktion === "freigeben") {
+    const { freigabePruefen } = await import("../../lib/freigabe");
+    const p = await freigabePruefen(version);
+    if (!p.ok) throw new HTTPException(409, { message: p.grund });
+  }
   await pool.query(
     `UPDATE "AvaRelease" SET status = $2, von = $3, notiz = COALESCE($4, notiz), "freigegebenAt" = CASE WHEN $2 = 'freigegeben' THEN now() ELSE NULL END, "updatedAt" = now() WHERE version = $1`,
     [version, aktion === "freigeben" ? "freigegeben" : "verworfen", a.actorId, b.notiz ?? null],

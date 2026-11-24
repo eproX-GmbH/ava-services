@@ -255,3 +255,34 @@ Prod-Gateway: `STAGING_GATEWAY_URL=http://ava-db-gateway-staging.internal:8080`.
 Server sofort, Gateway per CI, Web-Apps über den Zweig `staging`) → Konsole „Für Produktion
 freigeben“. Web-Änderungen gehen zuerst auf `staging` (Vercel baut die Staging-Projekte), die
 Freigabe spult `main` vor. Notschalter: Staging in der Konsole ausschalten.
+
+### 10.1 Erster Durchlauf und Freigabe (2026-11-23)
+
+- Durchlauf mit Testkonto, Testkauf und Server bestanden; dabei behoben: Test-Adressen gelten ab
+  der ersten Anfrage (die Website kauft vor `/v1/whoami`, sonst Live-Checkout), der Wächter lädt
+  frisch eingetragene Konten nach, Test-Adressen ohne Beitrittsanfrage an die eigene Firma,
+  Rücksprung nach dem Checkout in die Staging-App. Die Steuerung von Staging (`/v1/betreiber/
+  staging*`, `/v1/betreiber/releases*`) leitet die Weiche nie weiter (Notschalter und Freigabe
+  brauchen Prod).
+- 0.1.977 freigegeben. **Vorfall:** Drei Gateway-Korrekturen waren zuvor direkt auf Prod
+  deployt worden; die Freigabe baute das Prod-Gateway aus dem älteren Tag und nahm sie still
+  zurück (behoben durch erneuten Deploy von main).
+
+**Regel seither:** Gateway-Code kommt nur als Kandidat nach Prod (Tag → Staging → Freigabe), nie
+per Direkt-Deploy. Ein Not-Hotfix von Hand trägt `--env GATEWAY_COMMIT=$(git rev-parse HEAD)` und
+bekommt sofort einen neuen Tag.
+
+**Schutz (doppelt):**
+1. Das Gateway kennt seinen Stand (`GATEWAY_COMMIT`, setzen `staging-gateway.yml` und
+   `freigabe.yml`; sichtbar unter `/health` → `commit`). Vor dem Freigeben vergleicht das
+   Prod-Gateway den Tag mit seinem eigenen Stand (GitHub-Vergleich); hat Prod Änderungen unter
+   `services/db-gateway`, die der Tag nicht enthält, lehnt der Knopf ab (409 mit Erklärung), und
+   die Version bleibt Kandidat. Ist der eigene Stand unbekannt, gilt der strengere Vergleich mit
+   `main`.
+2. `freigabe.yml` prüft dasselbe als ersten Schritt (`scripts/freigabe-pruefen.mjs`), alle
+   weiteren Schritte hängen daran: Bei einem Treffer wird nichts ausgeliefert. Von Hand mit
+   `erzwingen=ja` überspringbar (bewusstes Zurückgehen). Probelauf ohne Auslieferung:
+   `gh workflow run freigabe.yml -f version=vX -f nur_pruefen=ja`.
+
+Web-Repos: Eiliges für Prod (Rechtstexte) geht auf `main`; danach `main` in `staging` mergen,
+sonst scheitert das Vorspulen der nächsten Freigabe.

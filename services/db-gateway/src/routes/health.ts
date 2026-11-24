@@ -10,7 +10,9 @@ import { Hono } from "hono";
 // die einzige Maschine aus dem Routing. Selbstheilung macht der Waechter im
 // Persist-Bus (neu abonnieren, nach 5 Min. Prozessende → Fly-Neustart).
 export const healthRouter = new Hono()
-  .get("/", (c) => c.json({ status: "ok", service: "db-gateway", version: "0.1.0" }))
+  // commit: aus welchem Stand dieses Gateway gebaut ist (GATEWAY_COMMIT setzen die Deploy-Workflows).
+  // Die Freigabe prüft damit, ob sie neueren Code zurücknähme (scripts/freigabe-pruefen.mjs).
+  .get("/", (c) => c.json({ status: "ok", service: "db-gateway", version: "0.1.0", commit: process.env.GATEWAY_COMMIT?.trim() || null }))
   .get("/persist", async (c) => {
     const { persistBus } = await import("../lib/persist-bus");
     const { transactionProgressBus } = await import("../lib/event-bus");

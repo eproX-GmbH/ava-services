@@ -3,6 +3,10 @@
 # die Version vorher in der Datenbank freigibt; die Kunden-Server ziehen dann von selbst nach.
 # Von Hand nur, wenn die Version in der Konsole schon freigegeben ist.
 #
+#   0. Pruefen: Naehme der Gateway-Deploy aus dem Tag neueren Code von Prod zurueck
+#      (Direkt-Deploy von main, aeltere Version nach neuerer)? Dann Abbruch, nichts wird
+#      ausgeliefert (scripts/freigabe-pruefen.mjs; Vorfall 2026-11-23). Von Hand mit
+#      erzwingen=ja ueberspringbar (bewusstes Zurueckgehen); nur_pruefen=ja liefert nichts aus.
 #   1. Desktop: Vorabversion in ava-releases → „Latest“ (kein Neubau; Prod-Apps updaten)
 #   2. Gateway: derselbe Commit nach ava-db-gateway (Migrationen liefen schon im Staging)
 #   3. Web-Apps: main von ava-app/ava-admin/ava-website auf ihren staging-Zweig vorspulen
@@ -20,6 +24,12 @@ on:
       von:
         description: "Wer freigegeben hat (Protokoll)"
         required: false
+      erzwingen:
+        description: "Nur von Hand: ja = trotzdem ausliefern, auch wenn Prod neueren Gateway-Code hat"
+        required: false
+      nur_pruefen:
+        description: "ja = nur pruefen, nichts ausliefern (Probelauf)"
+        required: false
 
 concurrency:
   group: freigabe
@@ -29,7 +39,29 @@ env:
   RELEASE_REPO: eproX-GmbH/ava-releases
 
 jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Skript von main, volle Historie mit allen Tags
+      - name: Naehme die Freigabe neueren Gateway-Code zurueck?
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          ERZWINGEN: ${{ github.event.inputs.erzwingen }}
+        run: |
+          # Prod meldet den Commit, aus dem es gebaut ist; ohne Angabe prueft das Skript gegen main.
+          PROD="$(curl -fsS --max-time 20 https://ava-db-gateway.fly.dev/health | jq -r '.commit // empty' || true)"
+          echo "Prod meldet Commit: ${PROD:-unbekannt}"
+          ARGS=(--tag "$VERSION")
+          if [ -n "$PROD" ]; then ARGS+=(--prod "$PROD"); fi
+          if [ "$ERZWINGEN" = "ja" ]; then ARGS+=(--erzwingen); fi
+          node scripts/freigabe-pruefen.mjs "${ARGS[@]}"
+
   desktop:
+    needs: pruefen
+    if: ${{ github.event.inputs.nur_pruefen != 'ja' }}
     runs-on: ubuntu-latest
     steps:
       - name: Desktop-Release auf Latest
@@ -41,6 +73,8 @@ jobs:
           echo "Desktop $V ist jetzt Latest."
 
   gateway:
+    needs: pruefen
+    if: ${{ github.event.inputs.nur_pruefen != 'ja' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -61,9 +95,12 @@ jobs:
             -a ava-db-gateway \
             --remote-only \
             --release-command-timeout 10m \
+            --env "GATEWAY_COMMIT=$(git rev-parse HEAD)" \
             --build-secret "npm_token=$NPM_TOKEN"
 
   web:
+    needs: pruefen
+    if: ${{ github.event.inputs.nur_pruefen != 'ja' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -50,4 +50,5 @@ jobs:
             -a ava-db-gateway-staging \
             --remote-only --ha=false \
             --release-command-timeout 10m \
+            --env "GATEWAY_COMMIT=$(git rev-parse HEAD)" \
             --build-secret "npm_token=$NPM_TOKEN"
