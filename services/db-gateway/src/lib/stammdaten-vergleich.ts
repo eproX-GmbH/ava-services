@@ -66,15 +66,28 @@ export function zahlWert(v: unknown): number | null {
 
 // ---- Rechtsform ----------------------------------------------------------------
 
-/** XJustiz-Codes, die im Altbestand roh stehen (Zuordnung aus Code + Registerart + Firmenname). */
-const RECHTSFORM_CODES: Record<string, string> = {
-  "112100": "kg",
-  "113100": "ohg",
-  "211000": "ev",
-  "221110": "gmbh",
-  "222110": "ag",
-  "222200": "se",
-  "411000": "ek",
+/**
+ * XJustiz-Rechtsform-Codes (Codeliste GDS.Rechtsform). Der lesbare Name steht im Auszug nur
+ * als Kommentar; fehlt er, landete bisher der Code im Bestand (769 Firmen am 2026-11-24).
+ * Zuordnung aus Code, Registerart und Namenszusatz der betroffenen Firmen.
+ */
+export const RECHTSFORM_LABEL: Readonly<Record<string, string>> = {
+  "111100": "Offene Handelsgesellschaft (OHG)",
+  "112100": "Kommanditgesellschaft (KG)",
+  "113000": "Europäische wirtschaftliche Interessenvereinigung (EWIV)",
+  "113100": "Offene Handelsgesellschaft (OHG)",
+  "123000": "eingetragene Gesellschaft bürgerlichen Rechts (eGbR)",
+  "211000": "eingetragener Verein (e.V.)",
+  "213100": "Versicherungsverein auf Gegenseitigkeit (VVaG)",
+  "221110": "Gesellschaft mit beschränkter Haftung (GmbH)",
+  "222110": "Aktiengesellschaft (AG)",
+  "222200": "Europäische Aktiengesellschaft (SE)",
+  "223100": "Kommanditgesellschaft auf Aktien (KGaA)",
+  "251000": "eingetragene Genossenschaft (eG)",
+  "260000": "juristische Person des öffentlichen Rechts",
+  "411000": "eingetragener Kaufmann (e.K.)",
+  "692310": "Rechtsform ausländischen Rechts",
+  "692320": "Rechtsform ausländischen Rechts",
 };
 
 const RECHTSFORMEN: ReadonlyArray<[string, RegExp]> = [
@@ -107,7 +120,7 @@ const KEINE_RECHTSFORM = /mit sitz|amtsgericht|verschmelz|beschlossen|gewinnverw
 export function rechtsformKern(v: unknown): string | null {
   const roh = v == null ? "" : String(v).trim();
   if (!roh) return null;
-  if (/^\d+$/.test(roh)) return RECHTSFORM_CODES[roh] ?? null;
+  if (/^\d+$/.test(roh)) return RECHTSFORM_LABEL[roh] ? rechtsformKern(RECHTSFORM_LABEL[roh]) : null;
   const f = falten(roh).replace(/\s+/g, " ");
   if (f.length > 90 || KEINE_RECHTSFORM.test(f)) return null;
   for (const [kern, re] of RECHTSFORMEN) if (re.test(f)) return kern;
@@ -253,4 +266,132 @@ export function gfDiffBereinigen<T extends PersonName>(added: T[], removed: T[])
   const ak = new Set(a.map(personSchluessel));
   const rk = new Set(r.map(personSchluessel));
   return { added: a.filter((p) => !rk.has(personSchluessel(p))), removed: r.filter((p) => !ak.has(personSchluessel(p))) };
+}
+
+// ---- Eingang des Persists bereinigen (2026-11-24) -------------------------------------
+//
+// Die Producer laufen auf den Rechnern der Nutzer, oft in aelteren Versionen; der
+// Register-Delta-Worker liest dieselben Auszuege. Was dort schiefgeht, wird hier vor dem
+// Schreiben abgefangen, fuer alle Quellen gleich:
+//   * Mojibake („beschrÃ¤nkter“) in Rechtsform, Name, Anschrift und Personen
+//   * Rechtsform als Code („221110“) → lesbarer Name
+//   * Satzrest als Rechtsform („… mit Sitz in“, „[object Object]“) oder als Namensanhang
+//     → der bisherige Wert bleibt
+//   * leere Strasse bei gleichem Ort → bisherige Strasse bleibt
+//   * Registergericht als Geschaeftsfuehrer („Amtsgericht Hamburg“), doppelte Personen,
+//     unmoegliche Geburtstage und Gruendungsjahre
+
+export interface StammdatenEingang {
+  name: string;
+  legalForm: string;
+  street: string;
+  houseNumber: string;
+  zipCode: string;
+  city: string;
+  foundingYear?: number | null;
+  managingDirectors: Array<{ firstName: string; lastName: string; birthDay?: string | null; city?: string | null; bestelltAm?: string | null }>;
+}
+
+export interface StammdatenBestand {
+  name?: string | null;
+  legalForm?: string | null;
+  street?: string | null;
+  houseNumber?: string | null;
+  zipCode?: string | null;
+  city?: string | null;
+  foundingYear?: number | null;
+}
+
+const lesbar = (v: unknown): string => (v == null ? "" : mojibakeReparieren(String(v)));
+
+/** Liefert den bereinigten Eingang und was korrigiert wurde (fuers Protokoll). */
+export function stammdatenEingangBereinigen<T extends StammdatenEingang>(
+  eingang: T,
+  alt: StammdatenBestand | null = null,
+  jetzt: Date = new Date(),
+): { wert: T; korrekturen: string[] } {
+  const k: string[] = [];
+  const r: T = { ...eingang };
+  for (const f of ["name", "legalForm", "street", "houseNumber", "city"] as const) {
+    const v = lesbar(r[f]);
+    if (v !== (r[f] ?? "")) k.push(`${f}: Kodierung`);
+    r[f] = v as T[typeof f];
+  }
+
+  // Rechtsform: Code → Name, Satzrest → bisheriger Wert.
+  const roh = (r.legalForm ?? "").trim();
+  const altForm = lesbar(alt?.legalForm).trim();
+  const altPlausibel = altForm && !/^\d+$/.test(altForm) && rechtsformKern(altForm) !== null ? altForm : "";
+  if (/^\d+$/.test(roh)) {
+    if (RECHTSFORM_LABEL[roh]) {
+      r.legalForm = RECHTSFORM_LABEL[roh]!;
+      k.push("legalForm: Code");
+    } else if (altPlausibel) {
+      r.legalForm = altPlausibel;
+      k.push("legalForm: unbekannter Code, bisheriger Wert");
+    }
+  } else if (roh && rechtsformKern(roh) === null) {
+    r.legalForm = altPlausibel;
+    k.push("legalForm: Satzrest verworfen");
+  } else if (!roh && altPlausibel) {
+    r.legalForm = altPlausibel;
+  }
+
+  // Name: leerer Name oder alter Name plus Satzrest → bisheriger Name.
+  const altName = lesbar(alt?.name).trim();
+  if (altName) {
+    const neu = (r.name ?? "").trim();
+    if (!neu) r.name = altName;
+    else if (schreibweiseSchluessel(neu).startsWith(schreibweiseSchluessel(altName)) && SATZREST_NACH_RECHTSFORM.test(neu) && !SATZREST_NACH_RECHTSFORM.test(altName)) {
+      r.name = altName;
+      k.push("name: Satzrest verworfen");
+    }
+  }
+
+  // Anschrift: Strasse verloren, Ort gleich → bisherige Strasse.
+  if (alt && !(r.street ?? "").trim() && (alt.street ?? "").trim()) {
+    const a = adressSchluessel(alt);
+    const n = adressSchluessel(r);
+    if (a.plz === n.plz && a.ort === n.ort) {
+      r.street = lesbar(alt.street);
+      r.houseNumber = lesbar(alt.houseNumber);
+      k.push("street: bisherige Strasse");
+    }
+  }
+
+  // Gruendungsjahr: nur 1700 bis heute.
+  const jahrJetzt = jetzt.getUTCFullYear();
+  const jahrOk = (j: unknown): j is number => typeof j === "number" && Number.isInteger(j) && j >= 1700 && j <= jahrJetzt;
+  if (r.foundingYear != null && !jahrOk(r.foundingYear)) {
+    k.push(`foundingYear: ${r.foundingYear} verworfen`);
+    r.foundingYear = jahrOk(alt?.foundingYear) ? alt!.foundingYear! : null;
+  }
+
+  // Geschaeftsfuehrung: keine Gerichte, keine Doppelten, plausible Geburtstage.
+  const gesehen = new Map<string, T["managingDirectors"][number]>();
+  for (const roh of r.managingDirectors ?? []) {
+    const p = { ...roh, firstName: lesbar(roh.firstName).trim(), lastName: lesbar(roh.lastName).trim(), city: roh.city == null ? roh.city : lesbar(roh.city) };
+    if (istKeinePerson(p)) {
+      k.push("managingDirectors: Gericht verworfen");
+      continue;
+    }
+    if (p.birthDay) {
+      const t = Date.parse(p.birthDay);
+      if (!Number.isFinite(t) || t > jetzt.getTime() || t < Date.UTC(1900, 0, 1)) {
+        k.push("managingDirectors: Geburtstag verworfen");
+        p.birthDay = null;
+      }
+    }
+    const schluessel = personSchluessel(p);
+    const da = gesehen.get(schluessel);
+    if (da) {
+      k.push("managingDirectors: doppelt");
+      // Fehlende Angaben aus der Dublette uebernehmen, sonst bleibt der erste Eintrag.
+      gesehen.set(schluessel, { ...da, birthDay: da.birthDay ?? p.birthDay ?? null, city: da.city ?? p.city ?? null, bestelltAm: da.bestelltAm ?? p.bestelltAm ?? null });
+      continue;
+    }
+    gesehen.set(schluessel, p);
+  }
+  r.managingDirectors = [...gesehen.values()] as T["managingDirectors"];
+  return { wert: r, korrekturen: [...new Set(k)] };
 }

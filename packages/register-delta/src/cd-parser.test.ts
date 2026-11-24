@@ -93,7 +93,7 @@ test("Stand: juengste Werte je Feld, Personen mit Zu- und Abgang, Rechtsform tro
   assert.equal(s.foundingYear, 2020);
   assert.equal(s.corporatePurpose, "Entwicklung von Software");
   assert.equal(s.lastRegisterEntry, "2024-01-04");
-  assert.deepEqual(s.managingDirectors, [{ firstName: "Erika", lastName: "Beispiel", birthDay: "1985-04-03", city: "Bielefeld" }]);
+  assert.deepEqual(s.managingDirectors, [{ bestelltAm: "2024-01-04", firstName: "Erika", lastName: "Beispiel", birthDay: "1985-04-03", city: "Bielefeld" }]);
 });
 
 test("erwarteter Name schuetzt gegen verwechselte Blaetter; fremde Seite ist kein Abdruck", () => {
@@ -185,6 +185,6 @@ test("Berliner Schreibweise: Marken als eigene Textstuecke, Ort in der Folgezeil
   assert.equal(s.city, "Berlin");
   assert.equal(s.shareCapital, 25000);
   assert.equal(s.lastRegisterEntry, "2025-10-02");
-  assert.deepEqual(s.managingDirectors, [{ firstName: "Sviatlana", lastName: "Wainstejn", birthDay: "1975-07-10", city: "Berlin" }]);
+  assert.deepEqual(s.managingDirectors, [{ bestelltAm: "2025-10-02", firstName: "Sviatlana", lastName: "Wainstejn", birthDay: "1975-07-10", city: "Berlin" }]);
 });
 

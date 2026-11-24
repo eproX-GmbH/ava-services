@@ -97,4 +97,36 @@ assert.deepEqual(R.registerStandFelder(stand(), stand({ legalForm: "Aktiengesell
 // Leerer neuer Wert bleibt eine Aenderung (alter Stand wird gesichert).
 assert.deepEqual(R.registerStandFelder(stand(), stand({ legalForm: "" })), ["legalForm"]);
 
+// ---- Eingang des Persists bereinigen ------------------------------------------------
+const B = (e, alt = null) => V.stammdatenEingangBereinigen({ name: "Muster GmbH", legalForm: "Gesellschaft mit beschränkter Haftung (GmbH)", street: "Hauptstraße", houseNumber: "1", zipCode: "33602", city: "Bielefeld", foundingYear: 2001, managingDirectors: [], ...e }, alt, new Date("2026-11-24T12:00:00Z"));
+assert.equal(B({ legalForm: "Gesellschaft mit beschrÃ¤nkter Haftung (GmbH)" }).wert.legalForm, "Gesellschaft mit beschränkter Haftung (GmbH)");
+assert.equal(B({ legalForm: "221110" }).wert.legalForm, "Gesellschaft mit beschränkter Haftung (GmbH)");
+assert.equal(B({ legalForm: "411000" }).wert.legalForm, "eingetragener Kaufmann (e.K.)");
+assert.equal(B({ legalForm: "223100" }).wert.legalForm, "Kommanditgesellschaft auf Aktien (KGaA)");
+assert.equal(B({ legalForm: "999999" }, { legalForm: "Kommanditgesellschaft (KG)" }).wert.legalForm, "Kommanditgesellschaft (KG)");
+assert.equal(B({ legalForm: "999999" }).wert.legalForm, "999999", "unbekannter Code ohne Bestand bleibt sichtbar");
+assert.equal(B({ legalForm: "ProApp Capital GmbH mit Sitz in" }, { legalForm: "Gesellschaft mit beschrankter Haftung" }).wert.legalForm, "Gesellschaft mit beschrankter Haftung");
+assert.equal(B({ legalForm: "[object Object]" }).wert.legalForm, "", "Satzrest ohne Bestand: lieber leer");
+assert.equal(B({ legalForm: "" }, { legalForm: "Aktiengesellschaft (AG)" }).wert.legalForm, "Aktiengesellschaft (AG)");
+assert.equal(B({ legalForm: "Aktiengesellschaft (AG)" }, { legalForm: "Gesellschaft mit beschränkter Haftung" }).wert.legalForm, "Aktiengesellschaft (AG)", "echter Formwechsel kommt durch");
+assert.equal(B({ name: "m21 Bildungsmedien GmbH die Konzeptionierung von Produkten" }, { name: "m21 Bildungsmedien GmbH" }).wert.name, "m21 Bildungsmedien GmbH");
+assert.equal(B({ name: "Neue Firma GmbH" }, { name: "Muster GmbH" }).wert.name, "Neue Firma GmbH");
+const strasse = B({ street: "", houseNumber: "" }, { street: "Mühlenstraße", houseNumber: "8 A", zipCode: "33602", city: "Bielefeld" }).wert;
+assert.deepEqual([strasse.street, strasse.houseNumber], ["Mühlenstraße", "8 A"]);
+assert.equal(B({ street: "", houseNumber: "", zipCode: "20095", city: "Hamburg" }, { street: "Mühlenstraße", houseNumber: "8", zipCode: "33602", city: "Bielefeld" }).wert.street, "", "anderer Ort: nichts erfinden");
+assert.equal(B({ foundingYear: 2105 }).wert.foundingYear, null);
+assert.equal(B({ foundingYear: 219 }, { foundingYear: 2019 }).wert.foundingYear, 2019);
+assert.equal(B({ foundingYear: 2026 }).wert.foundingYear, 2026);
+const gfB = B({ managingDirectors: [
+  { firstName: "", lastName: "Amtsgericht Hamburg", birthDay: null, city: "Hamburg" },
+  { firstName: "Kai", lastName: "Muster", birthDay: "2970-04-15", city: "Bonn" },
+  { firstName: "Kai", lastName: "Muster", birthDay: null, city: null, bestelltAm: "2020-01-01" },
+  { firstName: "Günter", lastName: "BeiÃpiel", birthDay: "1965-02-03", city: null },
+] }).wert.managingDirectors;
+assert.deepEqual(gfB.map((p) => `${p.firstName} ${p.lastName}`), ["Kai Muster", "Günter Beißpiel"]);
+assert.equal(gfB[0].birthDay, null, "Geburtstag 2970 verworfen");
+assert.equal(gfB[0].bestelltAm, "2020-01-01", "Angabe aus der Dublette uebernommen");
+assert.equal(gfB[1].birthDay, "1965-02-03");
+assert.deepEqual(B({}).korrekturen, [], "sauberer Eingang bleibt unberuehrt");
+
 console.log("stammdaten-vergleich: alle Faelle ok");

@@ -120,10 +120,14 @@ export function parseStrukturierterInhalt(xml: string, erwarteterName?: string):
     if (!istObjekt(person)) continue;
     const lastName = text(suche(person, "tns:nachname"));
     if (!lastName) continue;
+    const firstName = text(suche(person, "tns:vorname"));
+    // Hamburger Auszuege fuehren das Registergericht als Beteiligten; das ist keine
+    // Person der Geschaeftsfuehrung (493 Firmen mit „Amtsgericht Hamburg“, 2026-11-24).
+    if (GERICHT_RE.test(`${firstName} ${lastName}`.trim())) continue;
     managingDirectors.push({
-      firstName: kappe(text(suche(person, "tns:vorname")), 200),
+      firstName: kappe(firstName, 200),
       lastName: kappe(lastName, 200),
-      birthDay: isoDatum(text(suche(person, "tns:geburtsdatum"))),
+      birthDay: geburtstag(text(suche(person, "tns:geburtsdatum"))),
       city: kappe(text(suche(person, "tns:ort")), 120) || null,
     });
   }
@@ -141,16 +145,23 @@ export function parseStrukturierterInhalt(xml: string, erwarteterName?: string):
   // Ausreisser darf die Meldung des ganzen Jobs nicht ungueltig machen:
   // Registerauszuege enthalten vereinzelt unsinnige Jahreszahlen (im Bestand
   // fanden sich 219 und 2209) und sehr lange Texte.
-  const jahrGueltig = Number.isFinite(jahr) && jahr >= 1000 && jahr <= 2100 ? jahr : null;
+  const jahrGueltig = Number.isFinite(jahr) && jahr >= 1700 && jahr <= new Date().getUTCFullYear() ? jahr : null;
+  // Anschrift aus EINEM Block: Strasse, PLZ und Ort der Geschaeftsanschrift gehoeren
+  // zusammen. Vorher je Feld der erste Treffer im Dokument; der Ort kam dann aus
+  // <tns:sitz> (Sitz laut Satzung), Strasse und PLZ aus <tns:anschrift>, etwa
+  // „Hafenpromenade 3, 24376 Bielefeld“ (2026-11-24). Der Sitz ist nur noch Rueckfall.
+  const anschrift = ersterBlock(suche(firma, "tns:anschrift")) ?? ersterBlock(suche(baum, "tns:anschrift"));
+  const adresse = (key: string): string => (anschrift ? text(suche(anschrift, key)) : text(suche(firma, key)) || text(suche(baum, key)));
+  const sitzOrt = text(objektFeld(ersterBlock(suche(firma, "tns:sitz")), "tns:ort")) || text(objektFeld(ersterBlock(suche(baum, "tns:sitz")), "tns:ort"));
   return {
     name: kappe(name, 500),
     legalForm: kappe(rechtsform(istObjekt(firma) ? firma : baum, xml), 200),
     // Anschrift und Rechtsform stehen je nach Bauart neben dem Namen oder
     // weiter oben; deshalb erst im gefundenen Zweig, dann im ganzen Dokument.
-    street: kappe(text(suche(firma, "tns:strasse")) || text(suche(baum, "tns:strasse")), 200),
-    houseNumber: kappe(text(suche(firma, "tns:hausnummer")) || text(suche(baum, "tns:hausnummer")), 40),
-    zipCode: kappe(text(suche(firma, "tns:postleitzahl")) || text(suche(baum, "tns:postleitzahl")), 20),
-    city: kappe(text(suche(firma, "tns:ort")) || text(suche(baum, "tns:ort")), 120),
+    street: kappe(adresse("tns:strasse"), 200),
+    houseNumber: kappe(adresse("tns:hausnummer"), 40),
+    zipCode: kappe(adresse("tns:postleitzahl"), 20),
+    city: kappe((anschrift ? text(suche(anschrift, "tns:ort")) : "") || sitzOrt || text(suche(firma, "tns:ort")) || text(suche(baum, "tns:ort")), 120),
     foundingYear: jahrGueltig,
     corporatePurpose: gegenstand ? kappe(gegenstand, 20_000) : null,
     shareCapital: Number.isFinite(kapital) && kapital >= 0 ? kapital : null,
@@ -168,15 +179,60 @@ function rechtsform(baum: Baum, xml: string): string {
   const re = /<tns:rechtsform\b[^>]*>\s*<!--([^]*?)-->\s*<code>([^<]+)<\/code>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(xml)) !== null) {
-    if (m[2].trim() === code) return m[1].trim();
+    // Manche Auszuege tragen den Kommentar doppelt kodiert („beschrÃ¤nkter“, 2026-11-24).
+    if (m[2].trim() === code) return mojibakeReparieren(m[1].trim());
   }
-  const bekannt: Record<string, string> = {
-    "112100": "Kommanditgesellschaft (KG)",
-    "113100": "Offene Handelsgesellschaft (OHG)",
-    "221110": "Gesellschaft mit beschränkter Haftung (GmbH)",
-    "222110": "Aktiengesellschaft (AG)",
-  };
-  return bekannt[code] ?? code;
+  return RECHTSFORM_CODES[code] ?? code;
+}
+
+/**
+ * XJustiz-Codes (Codeliste GDS.Rechtsform), falls der Kommentar fehlt. Zuordnung aus Code,
+ * Registerart und Namenszusatz der Firmen im Bestand (2026-11-24); gleiche Tabelle im
+ * Gateway (lib/stammdaten-vergleich.ts) und im structured-content-Producer.
+ */
+export const RECHTSFORM_CODES: Readonly<Record<string, string>> = {
+  "111100": "Offene Handelsgesellschaft (OHG)",
+  "112100": "Kommanditgesellschaft (KG)",
+  "113000": "Europäische wirtschaftliche Interessenvereinigung (EWIV)",
+  "113100": "Offene Handelsgesellschaft (OHG)",
+  "123000": "eingetragene Gesellschaft bürgerlichen Rechts (eGbR)",
+  "211000": "eingetragener Verein (e.V.)",
+  "213100": "Versicherungsverein auf Gegenseitigkeit (VVaG)",
+  "221110": "Gesellschaft mit beschränkter Haftung (GmbH)",
+  "222110": "Aktiengesellschaft (AG)",
+  "222200": "Europäische Aktiengesellschaft (SE)",
+  "223100": "Kommanditgesellschaft auf Aktien (KGaA)",
+  "251000": "eingetragene Genossenschaft (eG)",
+  "260000": "juristische Person des öffentlichen Rechts",
+  "411000": "eingetragener Kaufmann (e.K.)",
+  "692310": "Rechtsform ausländischen Rechts",
+  "692320": "Rechtsform ausländischen Rechts",
+};
+
+const GERICHT_RE = /^(Amtsgericht|Registergericht|Landgericht)\b/i;
+
+/** UTF-8, das als Latin-1 gelesen wurde, zurueckdrehen: „beschrÃ¤nkter“ → „beschränkter“. */
+export function mojibakeReparieren(s: string): string {
+  if (!/[ÃÂ][\u0080-\u00bf]/.test(s) || /[^\u0000-\u00ff]/.test(s)) return s;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(s, (c) => c.charCodeAt(0)));
+  } catch {
+    return s;
+  }
+}
+
+/** Geburtsdatum nur, wenn es moeglich ist (im Bestand standen 2970, 2963, 1071). */
+function geburtstag(s: string): string | null {
+  const iso = isoDatum(s);
+  if (!iso) return null;
+  const jahr = Number(iso.slice(0, 4));
+  return jahr >= 1900 && Date.parse(iso) <= Date.now() ? iso : null;
+}
+
+/** Erster Objekt-Block (ein Element kann einzeln oder mehrfach vorkommen). */
+function ersterBlock(v: unknown): Baum | undefined {
+  if (Array.isArray(v)) return v.find(istObjekt);
+  return istObjekt(v) ? v : undefined;
 }
 
 /**

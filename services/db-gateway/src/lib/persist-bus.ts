@@ -64,7 +64,7 @@ import {
   type ManagingDirectorDiff,
 } from "./profile-changes";
 import { registerStandFelder, schreibeRegisterSnapshot, type RegisterStand } from "./register-verlauf";
-import { personSchluessel } from "./stammdaten-vergleich";
+import { personSchluessel, stammdatenEingangBereinigen } from "./stammdaten-vergleich";
 import { transactionProgressBus } from "./event-bus";
 import { schreibeKonzernAngaben, type KonzernAngabenEingang } from "./konzern-angaben";
 import { featureEnabledForEventTenant } from "./policy-guard";
@@ -858,12 +858,20 @@ export async function schreibeStructuredContent(
       );
       if (bestand.rows[0]) {
         altZeile = bestand.rows[0];
-        stammdatenDiff = diffStammdaten(bestand.rows[0], result);
         bestandVon = bestand.rows[0].updatedAt ? new Date(bestand.rows[0].updatedAt) : null;
       }
     } catch (err) {
       log.warn({ err, companyId: result.companyId }, "stammdaten diff skipped");
     }
+    // 2026-11-24: Eingang bereinigen, bevor er verglichen und geschrieben wird
+    // (Mojibake, Rechtsform-Codes und Satzreste, Gericht als GF, Dubletten,
+    // unmoegliche Daten). Gilt fuer alle Producer-Versionen und das Register-Delta.
+    const bereinigt = stammdatenEingangBereinigen(result, altZeile);
+    if (bereinigt.korrekturen.length > 0) {
+      log.info({ companyId: result.companyId, korrekturen: bereinigt.korrekturen }, "structured-content eingang bereinigt");
+    }
+    result = bereinigt.wert;
+    if (altZeile) stammdatenDiff = diffStammdaten(altZeile, result);
 
     const upsertRes = await client.query(
       `INSERT INTO "StructuredContent" (
@@ -1051,6 +1059,8 @@ export async function spiegleStructuredContentNachMasterData(
   gesehenAt: string,
   quelle: string,
 ): Promise<void> {
+  // Gleiche Bereinigung wie beim Schreiben (kein „Amtsgericht Hamburg“ im Rollen-Netz).
+  result = stammdatenEingangBereinigen(result).wert;
   const personen = (result.managingDirectors ?? [])
     .filter((m) => m.lastName?.trim())
     .map((m) => ({

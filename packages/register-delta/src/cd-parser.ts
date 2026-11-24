@@ -217,6 +217,21 @@ const RECHTSFORM_NAME_RE = /Gesellschaft mit beschränkter Haftung|Unternehmerge
 const ROLLE_RE = /^(gesch[äa]ftsf[üu]hr|vorstand|persönlich haftend|inhaber|liquidator|direktor|prokurist|kommanditist|partner|vertretungsberechtigt|mitglied)[^:]*:\s*$/i;
 const LEGAL_FORM_RE = /gesellschaft mit beschr|gmbh|aktiengesellschaft|kommanditgesellschaft|offene handelsgesellschaft|unternehmergesellschaft|einzelkauf|eingetragene? (kauf|genossenschaft)|partnerschaft|societas europaea|\bSE\b|\bAG\b|\bKG\b|\bOHG\b|\be\.K\.|\bUG\b|stiftung|verein|limited|ltd\.?|s\.?à\.?r\.?l|b\.?v\.?|n\.?v\.?|anstalt|k[öo]rperschaft/i;
 
+/**
+ * Kann diese Zeile eine Rechtsform sein? Ausgeschlossen sind Saetze aus Bekanntmachungen und
+ * Firmennamen, die nur ein Kuerzel enthalten. Im Bestand standen sonst „ProApp Capital GmbH
+ * mit Sitz in“, „Durchführung der Verschmelzung mit der … GmbH und der“ oder
+ * „Mietmesseservice GmbH in Braunschweig (HRB 3347)“ als Rechtsform (2026-11-24).
+ */
+function istRechtsformZeile(zeile: string): boolean {
+  const x = zeile.replace(/\s+/g, " ").trim();
+  if (x.length > 80) return false;
+  if (/mit Sitz|Amtsgericht|Verschmelz|beschlossen|Gewinnverwend|Rechtsträger|Jahresabschluss|Übernahme|Schiedsvereinbarung|\bder Firma\b|\bvom \d|\d{2}\.\d{2}\.\d{4}|HR[AB]\s*\d|["„“]/i.test(x)) return false;
+  const langform = /gesellschaft|kaufmann|kauffrau|kaufmännisch|genossenschaft|verein|stiftung|partnerschaft|anstalt|körperschaft|einzelunternehm|rechtsform/i.test(x);
+  // Nur ein Kuerzel (GmbH, KG …) neben weiteren Woertern: das ist ein Firmenname.
+  return langform || x.split(" ").length <= 3;
+}
+
 function isoDatum(d: string | undefined): string | null {
   const m = d ? /(\d{2})\.(\d{2})\.(\d{4})/.exec(d) : null;
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
@@ -333,7 +348,7 @@ export function zustandAus(eintraege: CdEintrag[], erwarteterName?: string): Str
     const m = RECHTSFORM_NAME_RE.exec(text);
     if (m) legalForm = m[0].replace(/\s+/g, " ").trim();
     else {
-      const z = zeilen.find((x) => LEGAL_FORM_RE.test(x) && !/^(Beginn|Gesellschaftsvertrag|Satzung|Musterprotokoll|Gr[üu]ndung|Errichtet|Die Gesellschafterversammlung)/i.test(x));
+      const z = zeilen.find((x) => LEGAL_FORM_RE.test(x) && istRechtsformZeile(x) && !/^(Beginn|Gesellschaftsvertrag|Satzung|Musterprotokoll|Gr[üu]ndung|Errichtet|Die Gesellschafterversammlung)/i.test(x));
       if (z) legalForm = z.replace(/\s+/g, " ").trim();
     }
   }
