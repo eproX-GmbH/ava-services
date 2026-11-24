@@ -7,10 +7,11 @@
 //
 //   - Anmeldung ohne Fenster über den OAuth 2.0 Device Flow: Adresse und Code
 //     stehen im Log und auf GET /setup, bis die Person im Browser bestätigt.
-//   - Setup-Seite (R4): Modellzugang ohne Oberfläche. API-Schlüssel je Anbieter
-//     eintragen, ChatGPT-Abo verbinden (Anmeldelink öffnen, Weiterleitungs-
-//     adresse einfügen). Geschützt durch ein Setup-Token aus `AVA_SETUP_TOKEN`
-//     oder, wenn es fehlt, ein beim Start erzeugtes, das im Log steht.
+//   - Setup-Seite (R4): Anmeldung, KI-Modell (ChatGPT-Abo oder API-Schlüssel),
+//     Telegram, E-Mail und Umzug ohne Oberfläche. Darstellung in ./setup-seite.ts,
+//     hier nur Sicht-Aufbau und POST-Schritte. Geschützt durch ein Setup-Token aus
+//     `AVA_SETUP_TOKEN` (oder ein beim Start erzeugtes, das im Log steht) oder
+//     einen Kurzlink aus der AVA-App.
 //   - GET /healthz (Prozess lebt), GET /readyz (angemeldet und gestartet),
 //     GET /status (Kurzlage als JSON, nur mit Setup-Token),
 //     GET /anmeldung (Bestätigungslink für das Gateway, nur mit AVA_GATEWAY_TOKEN).
@@ -39,6 +40,19 @@ import { siwcErgebnisUebernehmen, vorherigePlanHuelle } from "../main/auth/siwc-
 import type { DeviceFlowCode } from "../main/auth";
 import type { HostedProviderKind, MailAccount } from "../shared/types";
 import { featureEnabled } from "../main/org-policy";
+import {
+  linkAbgelaufenHtml,
+  setupSeiteHtml,
+  type AnmeldungSicht,
+  type Bereich,
+  type MailEntwurf,
+  type MailSicht,
+  type ModellAktiv,
+  type ModellSicht,
+  type SetupMeldung,
+  type SetupSicht,
+  type TelegramSicht,
+} from "./setup-seite";
 
 type Phase = "start" | "komposition" | "anmeldung" | "laeuft" | "beenden" | "fehler";
 
@@ -64,8 +78,8 @@ let beendenLaeuft = false;
 const setupToken = process.env.AVA_SETUP_TOKEN?.trim() || randomBytes(18).toString("base64url");
 const siwc = new SiwcHeadlessFlow();
 let siwcLink: string | null = null;
-/** Letzte Rückmeldung der Setup-Seite (einmal angezeigt). */
-let setupMeldung: { art: "ok" | "fehler"; text: string } | null = null;
+/** Letzte Rückmeldung der Setup-Seite (einmal angezeigt, in der Karte ihres Bereichs). */
+let setupMeldung: SetupMeldung | null = null;
 
 /**
  * Ohne Fenster gibt es keine Modell-Auswahl: Steht der aktive Anbieter auf Ollama
@@ -91,25 +105,7 @@ function anbieterBeimStartPruefen(c: Core): void {
   if (mitSchluessel) anbieterAktivieren(c, mitSchluessel.kind);
 }
 
-// ---- HTML ---------------------------------------------------------------------
-
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
-}
-
-function html(body: string): string {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AVA Server</title>
-<style>
-body{font-family:system-ui,sans-serif;max-width:44rem;margin:2.5rem auto;padding:0 1rem;color:#0A1F2A;background:#F2F7F6;line-height:1.45}
-h1{font-size:1.6rem}h2{font-size:1.15rem;margin-top:2rem;border-top:1px solid #d7e3e0;padding-top:1rem}
-code,.code{font-size:1.3rem;letter-spacing:.08em;background:#fff;padding:.3rem .6rem;border-radius:.4rem}
-a{color:#00836f}form{margin:.6rem 0}input,select,textarea{font:inherit;padding:.45rem .6rem;border:1px solid #b9cbc7;border-radius:.4rem;background:#fff;width:100%;box-sizing:border-box}
-textarea{min-height:5rem}button{font:inherit;padding:.5rem .9rem;border:0;border-radius:.4rem;background:#00C0A7;color:#0A1F2A;font-weight:600;cursor:pointer;margin-top:.5rem}
-.ok{background:#dff5ef;padding:.6rem .8rem;border-radius:.4rem}.fehler{background:#fde3df;padding:.6rem .8rem;border-radius:.4rem}
-table{border-collapse:collapse}td,th{text-align:left;padding:.25rem .8rem .25rem 0}small{color:#4b6a66}
-.zwei{display:grid;grid-template-columns:1fr 1fr;gap:0 1rem}@media(max-width:40rem){.zwei{grid-template-columns:1fr !important}}
-</style></head><body>${body}</body></html>`;
-}
+// ---- Setup-Seite: Sicht aus dem Kern (Darstellung in ./setup-seite.ts) -------------
 
 // Rohmeldungen aus dem Device Flow in Saetze fuer den Nutzer (2026-11-12): ein abgelaufener
 // Code ist der Normalfall, wenn niemand rechtzeitig bestaetigt, und kein Fehler.
@@ -119,142 +115,156 @@ function anmeldeHinweis(roh: string): { text: string; fehler: boolean } {
   return { text: `Die Anmeldung hat nicht geklappt: ${roh}`, fehler: true };
 }
 
-function anmeldungAbschnitt(): string {
+/** Werte des letzten fehlgeschlagenen Mail-Formulars (ohne Passwörter); einmal vorausgefüllt. */
+let mailEntwurf: MailEntwurf | null = null;
+
+function anmeldungSicht(): AnmeldungSicht {
   const st = core?.auth.getStatus();
-  if (st?.signedIn) return `<p class="ok">Angemeldet als ${esc(st.email ?? st.name ?? st.actorId ?? "unbekannt")}.</p>`;
-  const bindung = GEBUNDENES_KONTO ? `<p><small>Diese AVA ist für <strong>${esc(GEBUNDENES_KONTO)}</strong> eingerichtet; nur dieses Konto kann sich anmelden.</small></p>` : "";
+  if (st?.signedIn) return { zustand: "angemeldet", konto: st.email ?? st.name ?? st.actorId ?? "unbekannt" };
   if (lage.code) {
     const c = lage.code;
-    const link = c.verificationUriComplete ?? c.verificationUri;
-    const hinweis = lage.fehler && GEBUNDENES_KONTO ? anmeldeHinweis(lage.fehler) : null;
-    return `${bindung}${hinweis ? `<p class="${hinweis.fehler ? "fehler" : "ok"}">${esc(hinweis.text)}</p>` : ""}<p>Öffne <a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.verificationUri)}</a> und gib diesen Code ein:</p><p><span class="code">${esc(c.userCode)}</span></p><p><small>Gültig bis ${new Date(c.expiresAt).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr; danach erscheint hier ein neuer Code.</small></p>`;
+    return {
+      zustand: "code",
+      link: c.verificationUriComplete ?? c.verificationUri,
+      adresse: c.verificationUri.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+      code: c.userCode,
+      bis: c.expiresAt,
+      hinweis: lage.fehler && GEBUNDENES_KONTO ? anmeldeHinweis(lage.fehler) : null,
+      gebunden: GEBUNDENES_KONTO,
+    };
   }
-  return `<p>Phase: ${esc(lage.phase)}${lage.fehler ? `<br><small>${esc(lage.fehler)}</small>` : ""}</p><p><small>Seite neu laden, sobald der Anmelde-Code bereitsteht.</small></p>`;
+  return { zustand: "wartet", phase: lage.phase, fehler: lage.fehler, gebunden: GEBUNDENES_KONTO };
 }
 
-function modellAbschnitt(t: string): string {
-  const c = core;
-  if (!c) return "<p>Noch nicht bereit.</p>";
-  const zeilen = ANBIETER.map(
-    (a) => `<tr><td>${esc(a.name)}</td><td>${c.providers.hasKey(a.kind) ? "Schlüssel hinterlegt" : "<small>kein Schlüssel</small>"}</td></tr>`,
-  ).join("");
-  const optionen = ANBIETER.map((a) => `<option value="${a.kind}">${esc(a.name)}</option>`).join("");
-  const verschluesselt = platform().credentials.isEncryptionAvailable();
-  const aktiv = c.providers.getConfig().kind;
-  return `<p><small>Aktiver Anbieter: ${esc(aktiv)}${aktiv === "ollama" ? " (ohne lokales Chat-Modell; wechselt beim Speichern eines Schlüssels)" : ""}</small></p><table>${zeilen}</table>
-${verschluesselt ? "" : '<p class="fehler">AVA_SECRETS_KEY fehlt: Schlüssel würden unverschlüsselt liegen; Speichern ist deshalb gesperrt.</p>'}
-<form method="post" action="/setup/key?t=${esc(t)}">
-  <label>Anbieter <select name="anbieter">${optionen}</select></label>
-  <label>API-Schlüssel <input name="schluessel" type="password" autocomplete="off" required></label>
-  <button type="submit" ${verschluesselt ? "" : "disabled"}>Schlüssel speichern</button>
-</form>
-<p><small>Alternativ im Chat über Telegram (Werkzeug settings_set_api_key). Ein Organisationsschlüssel im Gateway wirkt ohne Eintrag.</small></p>`;
+const ANBIETER_NAME = (kind: string): string => ANBIETER.find((a) => a.kind === kind)?.name ?? (kind === "anthropic" ? "Anthropic" : kind);
+
+async function modellSicht(c: Core): Promise<ModellSicht> {
+  const p = c.providers;
+  const cfg = p.getConfig();
+  const stand = await p.chatgptPlanStand();
+  // Wie die Laufzeit: Das Abo zaehlt nur, wenn es erlaubt, verbunden und mit Plan-Scope ist.
+  const aboAktiv = cfg.kind === "openai" && stand.erlaubt && stand.verbunden && stand.planScope;
+  let aktiv: ModellAktiv;
+  if (aboAktiv) {
+    aktiv = { art: "abo", email: stand.email, modell: stand.modelle.find((m) => m.id === stand.modell)?.label ?? null };
+  } else if (cfg.kind !== "ollama" && p.hasKey(cfg.kind)) {
+    aktiv = { art: "schluessel", anbieter: ANBIETER_NAME(cfg.kind), organisation: p.keySource(cfg.kind) === "organisation" };
+  } else {
+    aktiv = { art: "keins" };
+  }
+  return {
+    aktiv,
+    verschluesselt: platform().credentials.isEncryptionAvailable(),
+    vorgabe: p.isProviderLocked() ? ANBIETER_NAME(cfg.kind) : null,
+    anbieter: ANBIETER.map((a) => ({
+      kind: a.kind,
+      name: a.name,
+      quelle: !p.hasKey(a.kind) ? null : p.keySource(a.kind) === "organisation" ? "organisation" : "eigen",
+    })),
+    abo: stand.erlaubt
+      ? {
+          verbunden: stand.verbunden,
+          email: stand.email,
+          planScope: stand.planScope,
+          link: siwcLink && siwc.laeuft() ? siwcLink : null,
+          linkBis: siwc.gueltigBis(),
+        }
+      : null,
+  };
 }
 
-async function chatgptAbschnitt(t: string): Promise<string> {
-  const c = core;
-  if (!c) return "";
-  const stand = await c.providers.chatgptPlanStand();
-  const kopf = stand.verbunden
-    ? `<p class="ok">Verbunden${stand.email ? ` als ${esc(stand.email)}` : ""}${stand.planScope ? "" : " (ohne Plan-Nutzung)"}.</p>`
-    : "<p>Nicht verbunden.</p>";
-  const schritt2 = siwcLink && siwc.laeuft()
-    ? `<ol><li>Anmelden: <a href="${esc(siwcLink)}" target="_blank" rel="noopener">Mit ChatGPT fortfahren</a></li>
-<li>Der Browser leitet danach auf <code style="font-size:.9rem">127.0.0.1:1456/auth/callback?…</code> weiter und zeigt eine Fehlerseite. Das ist erwartet. Die vollständige Adresse aus der Adresszeile hier einfügen:</li></ol>
-<form method="post" action="/setup/chatgpt/callback?t=${esc(t)}"><textarea name="adresse" placeholder="http://127.0.0.1:1456/auth/callback?code=…&state=…" required></textarea><button type="submit">Verbindung abschließen</button></form>`
-    : `<form method="post" action="/setup/chatgpt/start?t=${esc(t)}"><button type="submit">${stand.verbunden ? "Neu verbinden" : "Anmeldelink erzeugen"}</button></form>`;
-  return kopf + schritt2 + "<p><small>Plan-Nutzung gibt es mit ChatGPT Plus oder Pro; Chat, Hintergrund-KI und Producer laufen dann über das Abo.</small></p>";
-}
-
-async function telegramAbschnitt(t: string): Promise<string> {
-  const c = core;
-  if (!c) return "";
+async function telegramSicht(c: Core): Promise<TelegramSicht | null> {
+  if (!featureEnabled("telegram")) return null;
   const cfg = c.telegramStore.getConfig();
   const token = await c.telegramStore.getToken().catch(() => null);
-  const eigeneBotId = token ? token.split(":")[0] : null;
+  if (!token) return { zustand: "ohne_bot", verschluesselt: platform().credentials.isEncryptionAvailable() };
   // Derselbe Bot an einer anderen Instanz? (Instanzenliste vom Gateway, §13.2)
+  const eigeneBotId = token.split(":")[0];
   const andere = c.mcpRelais
     .instanzen()
-    .filter((i) => i.id !== c.instanz.get().id && (i.zustand?.telegram as { botId?: string } | undefined)?.botId === eigeneBotId && eigeneBotId);
-  const warnung = andere.length
-    ? `<p class="fehler">Dieser Bot hängt auch an ${andere.map((i) => esc(i.name)).join(", ")}. Telegram lässt je Bot nur einen Abholer zu; für diesen Server einen eigenen Bot bei @BotFather anlegen.</p>`
-    : "";
-  if (!token) {
-    return `<p>Für den Server einen <strong>eigenen</strong> Bot anlegen (nicht den der Desktop-App): in Telegram <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> öffnen, <code style="font-size:.9rem">/newbot</code>, Namen vergeben, den Token hier einfügen.</p>
-<form method="post" action="/setup/telegram/token?t=${esc(t)}"><label>Bot-Token <input name="token" type="password" autocomplete="off" required placeholder="123456789:AA…"></label><button type="submit">Bot speichern</button></form>`;
-  }
-  const bot = cfg.botUsername ? `@${esc(cfg.botUsername)}` : "Bot";
-  if (!cfg.chatId) {
-    return `${warnung}<p>${bot} ist gespeichert. Schreib dem Bot in Telegram <code style="font-size:.9rem">/start</code> und verknüpfe dann den Chat:</p>
-<form method="post" action="/setup/telegram/chat?t=${esc(t)}"><button type="submit">Chat verknüpfen</button></form>
-<form method="post" action="/setup/telegram/trennen?t=${esc(t)}"><button type="submit">Bot entfernen</button></form>`;
-  }
-  return `${warnung}<p class="ok">${bot} verbunden, Chat verknüpft. Meldungen ${cfg.enabled ? "an" : "aus"}, Nachrichten an AVA ${cfg.inboundEnabled ? "an" : "aus"} (Schwelle ${esc(cfg.severityThreshold)}${cfg.respectQuietHours ? ", Ruhezeiten wie eingestellt" : ""}).</p>
-<form method="post" action="/setup/telegram/schalten?t=${esc(t)}">
-  <label><input type="checkbox" name="enabled" ${cfg.enabled ? "checked" : ""} style="width:auto"> Meldungen aufs Handy</label><br>
-  <label><input type="checkbox" name="inbound" ${cfg.inboundEnabled ? "checked" : ""} style="width:auto"> Nachrichten an AVA (Chat über Telegram)</label><br>
-  <button type="submit">Übernehmen</button>
-</form>
-<form method="post" action="/setup/telegram/test?t=${esc(t)}"><button type="submit">Testnachricht senden</button></form>
-<form method="post" action="/setup/telegram/trennen?t=${esc(t)}"><button type="submit">Bot entfernen</button></form>`;
+    .filter((i) => i.id !== c.instanz.get().id && (i.zustand?.telegram as { botId?: string } | undefined)?.botId === eigeneBotId)
+    .map((i) => i.name);
+  const bot = cfg.botUsername ?? null;
+  if (!cfg.chatId) return { zustand: "ohne_chat", bot, andere };
+  return {
+    zustand: "verbunden",
+    bot,
+    andere,
+    meldungen: cfg.enabled,
+    eingang: cfg.inboundEnabled,
+    schwelle: cfg.severityThreshold,
+    ruhezeiten: cfg.respectQuietHours,
+  };
 }
 
-// ---- E-Mail (Setup-Seite) ------------------------------------------------------
-// 2026-10-21: Das Mail-Konto liess sich bisher nur im Fenster der Desktop-App
-// einrichten; auf dem Server blieb nur der Umzug. Jetzt dieselben Felder hier,
-// Speichern prueft IMAP und SMTP vorher (wie der Testknopf der App).
-
-function mailFeld(name: string, label: string, wert: string | number, typ = "text", extra = ""): string {
-  return `<label style="display:block;margin:.35rem 0">${esc(label)}<input name="${name}" type="${typ}" value="${esc(String(wert))}" ${extra}></label>`;
-}
-
-function mailFormular(t: string, a: MailAccount | null): string {
-  const addr = a?.address ?? "";
-  return `<form method="post" action="/setup/mail/speichern?t=${esc(t)}" autocomplete="off">
-<div class="zwei">
-<div>${mailFeld("address", "AVAs E-Mail-Adresse", addr, "email", "required placeholder='ava@firma.de'")}</div>
-<div>${mailFeld("displayName", "Anzeigename", a?.displayName ?? "AVA")}</div>
-<div><strong>Posteingang (IMAP)</strong>${mailFeld("imapHost", "Server", a?.imap.host ?? "", "text", "required placeholder='imap.firma.de'")}${mailFeld("imapPort", "Port", a?.imap.port ?? 993, "number", "min='1' max='65535'")}${mailFeld("imapUser", "Benutzer (leer = Adresse)", a?.imap.user ?? "")}${mailFeld("imapPassword", a ? "Passwort (leer = unverändert)" : "Passwort", "", "password", a ? "" : "required")}<label><input type="checkbox" name="imapSecure" ${a ? (a.imap.secure ? "checked" : "") : "checked"} style="width:auto"> TLS direkt (sonst STARTTLS)</label></div>
-<div><strong>Versand (SMTP)</strong>${mailFeld("smtpHost", "Server", a?.smtp.host ?? "", "text", "required placeholder='smtp.firma.de'")}${mailFeld("smtpPort", "Port", a?.smtp.port ?? 465, "number", "min='1' max='65535'")}${mailFeld("smtpUser", "Benutzer (leer = Adresse)", a?.smtp.user ?? "")}${mailFeld("smtpPassword", "Passwort (leer = wie IMAP)", "", "password")}<label><input type="checkbox" name="smtpSecure" ${a ? (a.smtp.secure ? "checked" : "") : "checked"} style="width:auto"> TLS direkt (sonst STARTTLS)</label></div>
-</div>
-${mailFeld("pollIntervalMinutes", "Abrufintervall in Minuten (nur ohne IMAP IDLE)", a?.pollIntervalMinutes ?? 15, "number", "min='1' max='240'")}
-<label><input type="checkbox" name="outboundEnabled" ${a ? (a.outboundEnabled ? "checked" : "") : "checked"} style="width:auto"> AVA darf Mails senden</label><br>
-<label><input type="checkbox" name="autoTriageEnabled" ${a?.autoTriageEnabled ? "checked" : ""} style="width:auto"> Eingehende Mails von Absendern der Allowlist selbstständig bearbeiten</label><br>
-<button type="submit">${a ? "Prüfen und übernehmen" : "Prüfen und verbinden"}</button>
-<p><small>Beim Speichern prüft AVA zuerst IMAP und SMTP; schlägt eine Verbindung fehl, wird nichts gespeichert. Passwörter liegen verschlüsselt auf dem Server.</small></p>
-</form>`;
-}
-
-async function mailAbschnitt(t: string): Promise<string> {
-  const c = core;
-  if (!c) return "";
+async function mailSicht(c: Core): Promise<MailSicht | null> {
+  // Von der Organisation abgeschaltet: Bereich ganz ausblenden.
+  if (!featureEnabled("mail")) return null;
   const sup = c.mailSupervisor.current;
-  if (!sup) return "<p>Der Mail-Dienst ist noch nicht bereit.</p>";
-  if (!featureEnabled("mail")) return "<p>Für diese Organisation ist E-Mail in der Verwaltungskonsole abgeschaltet.</p>";
-  if (!platform().credentials.isEncryptionAvailable()) return `<p class="fehler">AVA_SECRETS_KEY fehlt; Passwörter werden nicht unverschlüsselt gespeichert.</p>`;
+  if (!sup) return { zustand: "nicht_bereit" };
+  if (!platform().credentials.isEncryptionAvailable()) return { zustand: "ohne_schluessel" };
   const snap = await sup.snapshot().catch(() => null);
+  const entwurf = mailEntwurf;
+  mailEntwurf = null;
   const a = snap?.account ?? null;
-  if (!a) {
-    return `<p>AVA bekommt ein <strong>eigenes</strong> Postfach (nicht dein persönliches): Sie liest dort eingehende Mails, antwortet Absendern aus der Allowlist und verschickt Mails aus Workflows.</p>${mailFormular(t, null)}`;
-  }
-  const zustand: Record<string, string> = { connecting: "verbindet", connected: "verbunden", idling: "verbunden, wartet auf neue Mails", polling: "verbunden, ruft ab", disconnected: "getrennt", error: "Fehler" };
-  const fehler = a.lastErrorMessage ? `<p class="fehler">Zuletzt: ${esc(a.lastErrorMessage)}${a.lastErrorAt ? ` (${new Date(a.lastErrorAt).toLocaleString("de-DE")})` : ""}</p>` : "";
-  const sync = a.lastSyncAt ? `, letzter Abruf ${new Date(a.lastSyncAt).toLocaleString("de-DE")}` : "";
-  const allow = snap?.allowlist ?? [];
-  const zeilen = allow.length
-    ? allow.map((e) => `<tr><td>${esc(e.pattern)}</td><td>${esc(e.label)}</td><td><form method="post" action="/setup/mail/allowlist-entfernen?t=${esc(t)}" style="margin:0"><input type="hidden" name="id" value="${esc(e.id)}"><button type="submit" style="margin:0;padding:.2rem .5rem;background:#e3ecea">Entfernen</button></form></td></tr>`).join("")
-    : `<tr><td colspan="3"><small>Noch keine Einträge. Ohne Allowlist zeigt AVA Mails nur an und fragt vor jedem Versand nach.</small></td></tr>`;
-  return `<p class="${snap?.connectionState === "error" || snap?.connectionState === "disconnected" ? "fehler" : "ok"}">${esc(a.address)} (${esc(a.displayName)}): ${esc(zustand[snap?.connectionState ?? ""] ?? snap?.connectionState ?? "?")}${sync}. IMAP ${esc(a.imap.host)}:${a.imap.port}, SMTP ${esc(a.smtp.host)}:${a.smtp.port}. Senden ${a.outboundEnabled ? "an" : "aus"}, selbstständige Bearbeitung ${a.autoTriageEnabled ? "an" : "aus"}.</p>${fehler}
-<form method="post" action="/setup/mail/schalten?t=${esc(t)}">
-  <label><input type="checkbox" name="outboundEnabled" ${a.outboundEnabled ? "checked" : ""} style="width:auto"> AVA darf Mails senden</label><br>
-  <label><input type="checkbox" name="autoTriageEnabled" ${a.autoTriageEnabled ? "checked" : ""} style="width:auto"> Eingehende Mails von Absendern der Allowlist selbstständig bearbeiten</label><br>
-  <button type="submit">Übernehmen</button>
-</form>
-<p><strong>Allowlist</strong> <small>Absender, denen AVA ohne Rückfrage antworten darf (Adresse oder Muster wie *@firma.de).</small></p>
-<table>${zeilen}</table>
-<form method="post" action="/setup/mail/allowlist?t=${esc(t)}"><div class="zwei" style="grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:end"><label>Adresse oder Muster<input name="pattern" required placeholder="*@firma.de"></label><label>Bezeichnung<input name="label" placeholder="Kunde XY"></label><button type="submit">Hinzufügen</button></div></form>
-<details style="margin-top:.8rem"><summary>Zugang ändern</summary>${mailFormular(t, a)}</details>
-<form method="post" action="/setup/mail/trennen?t=${esc(t)}" onsubmit="return confirm('Mail-Konto von diesem Server entfernen? Gespeicherte Mails bleiben erhalten.')"><button type="submit" style="background:#e3ecea">Konto entfernen</button></form>`;
+  if (!a) return { zustand: "neu", entwurf };
+  return {
+    zustand: "eingerichtet",
+    konto: a,
+    verbindung: snap?.connectionState ?? null,
+    allowlist: (snap?.allowlist ?? []).map((e) => ({ id: e.id, pattern: e.pattern, label: e.label })),
+    entwurf,
+  };
+}
+
+function instanzenSicht(c: Core): NonNullable<SetupSicht["instanzen"]> {
+  const eigen = c.instanz.get().id;
+  const st = c.umzug.getStand();
+  const umzugLaeuft = ["wartet", "sendet", "empfaengt"].includes(st.phase);
+  const liste = c.mcpRelais.instanzen().map((i) => {
+    const tg = i.zustand?.telegram as { bot?: string | null; eingerichtet?: boolean } | undefined;
+    const rd = i.zustand?.radar as { an?: boolean } | undefined;
+    return {
+      id: i.id,
+      name: i.name,
+      art: i.art,
+      version: i.version,
+      verbunden: i.verbunden,
+      eigen: i.id === eigen,
+      telegram: tg?.eingerichtet ? (tg.bot ? `@${tg.bot}` : "eingerichtet") : null,
+      radar: rd ? !!rd.an : null,
+      mcp: i.mcpZiel ? ("beantwortet" as const) : i.zustand?.mcp === false ? ("aus" as const) : ("bereit" as const),
+      umziehbar: i.id !== eigen && i.verbunden && !umzugLaeuft,
+    };
+  });
+  const umzug =
+    st.phase !== "bereit"
+      ? {
+          fehler: st.phase === "fehler",
+          text: `Umzug ${st.rolle === "ziel" ? "von" : "an"} ${st.gegenueber ?? "?"}: ${st.meldung ?? ""}${st.bytes ? ` (${Math.round(st.bytes / 1048576)} MB)` : ""}`,
+        }
+      : null;
+  return { liste, umzug };
+}
+
+async function setupSeite(t: string): Promise<string> {
+  const meldung = setupMeldung;
+  setupMeldung = null;
+  const c = core;
+  return setupSeiteHtml({
+    version: paths().version(),
+    instanzName: c ? c.instanz.get().name : null,
+    t,
+    jetzt: Date.now(),
+    meldung,
+    bereit: !!c,
+    phase: lage.phase,
+    anmeldung: anmeldungSicht(),
+    modell: c ? await modellSicht(c) : null,
+    telegram: c ? await telegramSicht(c) : null,
+    mail: c ? await mailSicht(c) : null,
+    instanzen: c ? instanzenSicht(c) : null,
+  });
 }
 
 /** Mail-Schritte der Setup-Seite; gleiche Pruefung und Ablage wie die Einstellungen der App. */
@@ -325,41 +335,6 @@ async function mailAktion(c: Core, aktion: string, form: URLSearchParams): Promi
   return { art: "fehler", text: "Unbekannte Aktion." };
 }
 
-function instanzenAbschnitt(t = ""): string {
-  const c = core;
-  if (!c) return "";
-  const l = c.mcpRelais.instanzen();
-  if (l.length === 0) return "<p><small>Nicht mit dem Gateway verbunden; die Liste erscheint nach der Anmeldung.</small></p>";
-  const eigen = c.instanz.get().id;
-  const umzugLaeuft = ["wartet", "sendet", "empfaengt"].includes(c.umzug.getStand().phase);
-  const zeilen = l
-    .map((i) => {
-      const tg = i.zustand?.telegram as { bot?: string | null; eingerichtet?: boolean } | undefined;
-      const rd = i.zustand?.radar as { an?: boolean } | undefined;
-      const umzugKnopf =
-        i.id !== eigen && i.verbunden && !umzugLaeuft
-          ? `<form method="post" action="/setup/umzug/holen?t=${esc(t)}&id=${encodeURIComponent(i.id)}" onsubmit="return confirm('Kompletten Stand von ${esc(i.name)} auf diesen Server holen? Der Server wird überschrieben und startet neu; der bisherige Stand bleibt als Sicherung. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben.')"><button type="submit">Hierher holen</button></form>
-<form method="post" action="/setup/umzug/senden?t=${esc(t)}&id=${encodeURIComponent(i.id)}" onsubmit="return confirm('Kompletten Stand dieses Servers an ${esc(i.name)} senden? ${esc(i.name)} wird überschrieben und startet neu.')"><button type="submit">Dorthin senden</button></form>`
-          : "";
-      return `<tr><td>${esc(i.name)}${i.id === eigen ? " <small>(dieser)</small>" : ""}<br><small>${i.art} · v${esc(i.version)} · ${i.verbunden ? "verbunden" : "offline"}</small></td><td>${tg?.eingerichtet ? (tg.bot ? "@" + esc(tg.bot) : "Bot") : "–"}</td><td>${rd ? (rd.an ? "an" : "aus") : "–"}</td><td>${i.mcpZiel ? "beantwortet" : "–"}</td><td>${umzugKnopf}</td></tr>`;
-    })
-    .join("");
-  const st = c.umzug.getStand();
-  const umzugZeile = st.phase !== "bereit" ? `<p class="${st.phase === "fehler" ? "fehler" : "ok"}">Umzug ${st.rolle === "ziel" ? "von" : "an"} ${esc(st.gegenueber ?? "?")}: ${esc(st.meldung ?? "")}${st.bytes ? ` (${Math.round(st.bytes / 1048576)} MB)` : ""}</p>` : "";
-  return `${umzugZeile}<table><tr><th>Instanz</th><th>Telegram</th><th>Radar</th><th>MCP</th><th>Umzug</th></tr>${zeilen}</table><p><small>Umzug überträgt alles, was AVA lokal hält, und überschreibt das Ziel. Anmeldung, Telegram-Bot und Abo-Anmeldungen bleiben je Instanz.</small></p>`;
-}
-
-async function setupSeite(t: string): Promise<string> {
-  const meldung = setupMeldung ? `<p class="${setupMeldung.art}">${esc(setupMeldung.text)}</p>` : "";
-  setupMeldung = null;
-  return html(`<h1>AVA Server ${esc(paths().version())}</h1>${meldung}
-<h2>1. Anmeldung</h2>${anmeldungAbschnitt()}
-<h2>2. Modellzugang: API-Schlüssel</h2>${modellAbschnitt(t)}
-<h2>3. Modellzugang: ChatGPT-Abo</h2>${await chatgptAbschnitt(t)}
-<h2>4. Telegram</h2>${await telegramAbschnitt(t)}
-<h2>5. E-Mail</h2>${await mailAbschnitt(t)}
-<h2>6. Deine AVAs</h2>${instanzenAbschnitt(t)}`);
-}
 
 // ---- HTTP ---------------------------------------------------------------------
 
@@ -372,6 +347,8 @@ async function statusJson(): Promise<Record<string, unknown>> {
     fehler: lage.fehler,
     seit: lage.seit,
     angemeldet: st?.signedIn ?? false,
+    /** Device-Flow-Code liegt bereit (die Setup-Seite lädt dann neu und zeigt ihn). */
+    anmeldecode: Boolean(lage.code),
     konto: st?.email ?? st?.actorId ?? null,
     gebundenAn: GEBUNDENES_KONTO,
     producer: c ? c.producers.map((p) => ({ name: p.getStatus().name, state: p.getStatus().state, meldung: p.getStatus().errorMessage ?? null })) : [],
@@ -386,9 +363,16 @@ async function statusJson(): Promise<Record<string, unknown>> {
   };
 }
 
-/** Kurzlebige Setup-Tokens (15 Minuten), erzeugt auf Anfrage der AVA-App („Deine AVA“ → Server-Einstellungen). */
-const kurzTokens = new Map<string, number>();
+/**
+ * Kurzlebige Setup-Tokens, erzeugt auf Anfrage der AVA-App („Deine AVA“ → Server-Einstellungen).
+ * Der Link muss binnen 15 Minuten geöffnet werden; danach verlängert jede Nutzung (auch die
+ * Statusabfrage der offenen Seite) um 30 Minuten, höchstens bis 4 Stunden nach der Erzeugung.
+ * Vorher brach die Seite nach 15 Minuten mitten im Einrichten mit 401 ab (2026-11-24).
+ */
+const kurzTokens = new Map<string, { bis: number; ende: number }>();
 const KURZ_TOKEN_MS = 15 * 60_000;
+const KURZ_TOKEN_NUTZUNG_MS = 30 * 60_000;
+const KURZ_TOKEN_MAX_MS = 4 * 60 * 60_000;
 
 function oeffentlicheAdresse(): string | null {
   const a = process.env.AVA_PUBLIC_URL?.trim().replace(/\/$/, "");
@@ -398,21 +382,25 @@ function oeffentlicheAdresse(): string | null {
 }
 
 function setupLinkErzeugen(): { url: string | null; bereiche: string[] } {
-  const bereiche = ["Anmeldung", "Modellzugang (API-Schlüssel, ChatGPT-Abo)", "Telegram", "E-Mail", "Deine AVAs (Umzug)"];
+  const bereiche = ["Anmeldung", "KI-Modell (ChatGPT-Abo oder API-Schlüssel)", "Telegram", "E-Mail", "Umzug zwischen deinen AVAs"];
   const basis = oeffentlicheAdresse();
   if (!basis) return { url: null, bereiche };
   const jetzt = Date.now();
-  for (const [t, bis] of kurzTokens) if (bis < jetzt) kurzTokens.delete(t);
+  for (const [t, e] of kurzTokens) if (e.bis < jetzt) kurzTokens.delete(t);
   const token = randomBytes(18).toString("base64url");
-  kurzTokens.set(token, jetzt + KURZ_TOKEN_MS);
+  kurzTokens.set(token, { bis: jetzt + KURZ_TOKEN_MS, ende: jetzt + KURZ_TOKEN_MAX_MS });
   return { url: `${basis}/setup?t=${token}`, bereiche };
 }
 
 function tokenOk(url: URL): boolean {
   const t = url.searchParams.get("t") ?? "";
-  const bis = kurzTokens.get(t);
-  if (bis !== undefined) {
-    if (bis >= Date.now()) return true;
+  const kurz = kurzTokens.get(t);
+  if (kurz !== undefined) {
+    const jetzt = Date.now();
+    if (kurz.bis >= jetzt) {
+      kurz.bis = Math.min(Math.max(kurz.bis, jetzt + KURZ_TOKEN_NUTZUNG_MS), kurz.ende);
+      return true;
+    }
     kurzTokens.delete(t);
     return false;
   }
@@ -459,31 +447,57 @@ async function formular(req: IncomingMessage): Promise<URLSearchParams> {
   return new URLSearchParams(Buffer.concat(teile).toString("utf8"));
 }
 
-function weiter(res: ServerResponse, t: string): void {
-  res.writeHead(303, { location: `/setup?t=${encodeURIComponent(t)}` });
+function weiter(res: ServerResponse, t: string, bereich?: Bereich): void {
+  res.writeHead(303, { location: `/setup?t=${encodeURIComponent(t)}${bereich ? `#${bereich}` : ""}` });
   res.end();
+}
+
+function bereichVonPfad(pfad: string): Bereich | undefined {
+  if (pfad === "/setup/key" || pfad.startsWith("/setup/chatgpt/")) return "modell";
+  if (pfad.startsWith("/setup/telegram/")) return "telegram";
+  if (pfad.startsWith("/setup/mail/")) return "mail";
+  if (pfad.startsWith("/setup/umzug/")) return "instanzen";
+  return undefined;
+}
+
+/** Fehler für die Setup-Seite: Netzfehler in einen Satz, sonst die (deutsche) Meldung der Schicht darunter. */
+function fehlerText(err: unknown): string {
+  const roh = err instanceof Error ? err.message : String(err);
+  if (/fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(roh)) {
+    return "Keine Verbindung zum Dienst. Versuch es gleich noch einmal.";
+  }
+  return roh.replace(/^Error:\s*/, "");
+}
+
+/** Felder eines Mail-Formulars ohne Passwörter, damit nach einem Fehlschlag nichts neu getippt werden muss. */
+function mailEntwurfAus(form: URLSearchParams): MailEntwurf {
+  const e: MailEntwurf = {};
+  for (const [k, v] of form) if (k !== "imapPassword" && k !== "smtpPassword") e[k] = v;
+  return e;
 }
 
 async function setupPost(url: URL, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const t = url.searchParams.get("t") ?? "";
+  const bereich = bereichVonPfad(url.pathname);
   const c = core;
   if (!c) {
-    setupMeldung = { art: "fehler", text: "AVA ist noch nicht fertig gestartet." };
+    setupMeldung = { art: "fehler", text: "AVA ist noch nicht fertig gestartet. Versuch es in einer Minute noch einmal." };
     weiter(res, t);
     return;
   }
+  let form: URLSearchParams | null = null;
   try {
-    const form = await formular(req);
+    form = await formular(req);
     if (url.pathname === "/setup/key") {
       const kind = form.get("anbieter") ?? "";
       const schluessel = (form.get("schluessel") ?? "").trim();
       const anbieter = ANBIETER.find((a) => a.kind === kind);
       if (!anbieter) throw new Error("Unbekannter Anbieter.");
       if (!schluessel) throw new Error("Kein Schlüssel eingegeben.");
-      if (!platform().credentials.isEncryptionAvailable()) throw new Error("AVA_SECRETS_KEY fehlt; Schlüssel werden nicht unverschlüsselt gespeichert.");
+      if (!platform().credentials.isEncryptionAvailable()) throw new Error("Auf diesem Server fehlt der Schlüssel zum Verschlüsseln (AVA_SECRETS_KEY); Zugangsdaten werden nicht unverschlüsselt gespeichert.");
       await c.providers.setApiKey(anbieter.kind, schluessel);
       const gewechselt = anbieterAktivieren(c, anbieter.kind);
-      setupMeldung = { art: "ok", text: `Schlüssel für ${anbieter.name} gespeichert${gewechselt ? ` und ${anbieter.name} als aktiven Anbieter gesetzt` : ""}.` };
+      setupMeldung = { art: "ok", text: `Schlüssel für ${anbieter.name} gespeichert.${gewechselt ? ` AVA nutzt jetzt ${anbieter.name}.` : ""}`, bereich };
       writeLineSync("INFO ", `[setup] API-Schlüssel für ${anbieter.kind} über die Setup-Seite gesetzt${gewechselt ? ", Anbieter gewechselt" : ""}`);
     } else if (url.pathname === "/setup/chatgpt/start") {
       const vorherige = await vorherigePlanHuelle(c.providerConfigStore);
@@ -494,35 +508,50 @@ async function setupPost(url: URL, req: IncomingMessage, res: ServerResponse): P
         idTokenHint: vorherige?.idToken ?? null,
         loginHint: vorherige?.email ?? null,
       });
-      setupMeldung = { art: "ok", text: "Anmeldelink erzeugt (15 Minuten gültig)." };
+      // „Bei ChatGPT anmelden“ öffnet einen neuen Tab und geht dort direkt zur Anmeldung;
+      // die Setup-Seite im alten Tab lädt neu und zeigt das Feld zum Einfügen.
+      if (url.searchParams.get("direkt") === "1") {
+        res.writeHead(303, { location: siwcLink, "cache-control": "no-store" });
+        res.end();
+        return;
+      }
+      setupMeldung = { art: "ok", text: "Neuer Anmeldelink erzeugt (15 Minuten gültig).", bereich };
     } else if (url.pathname === "/setup/chatgpt/callback") {
       const vorherige = await vorherigePlanHuelle(c.providerConfigStore);
       const ergebnis = await siwc.abschliessen(form.get("adresse") ?? "");
       const r = await siwcErgebnisUebernehmen(c.providers, ergebnis, vorherige);
       siwcLink = null;
-      setupMeldung = {
-        art: "ok",
-        text: `ChatGPT verbunden${r.email ? ` als ${r.email}` : ""}${r.planScope ? "" : " (ohne Plan-Nutzung: nur Plus/Pro teilen den Plan)"}.`,
-      };
+      setupMeldung = r.planScope
+        ? { art: "ok", text: `ChatGPT verbunden${r.email ? ` als ${r.email}` : ""}. AVA nutzt jetzt dein Abo.`, bereich }
+        : {
+            art: "fehler",
+            text: `Angemeldet${r.email ? ` als ${r.email}` : ""}, aber ChatGPT gibt das Abo nicht für AVA frei. Das klappt nur mit ChatGPT Plus oder Pro; nimm sonst einen API-Schlüssel.`,
+            bereich,
+          };
       writeLineSync("INFO ", `[setup] ChatGPT-Abo über die Setup-Seite verbunden (planScope=${r.planScope})`);
     } else if (url.pathname === "/setup/umzug/holen" || url.pathname === "/setup/umzug/senden") {
       const id = url.searchParams.get("id") ?? "";
       const r = url.pathname.endsWith("holen") ? c.umzug.holen(id) : c.umzug.senden(id);
-      setupMeldung = r.ok ? { art: "ok", text: "Umzug gestartet. Diese Seite zeigt den Fortschritt; das Ziel startet am Ende neu." } : { art: "fehler", text: r.grund ?? "Umzug nicht gestartet." };
+      setupMeldung = r.ok
+        ? { art: "ok", text: "Umzug gestartet. Diese Seite zeigt den Fortschritt; das Ziel startet am Ende neu.", bereich }
+        : { art: "fehler", text: r.grund ?? "Umzug nicht gestartet.", bereich };
       writeLineSync("INFO ", `[setup] Umzug ${url.pathname.endsWith("holen") ? "holen von" : "senden an"} ${id}: ${r.ok ? "gestartet" : r.grund}`);
     } else if (url.pathname.startsWith("/setup/telegram/")) {
-      setupMeldung = await telegramAktion(c, url.pathname.slice("/setup/telegram/".length), form);
+      setupMeldung = { ...(await telegramAktion(c, url.pathname.slice("/setup/telegram/".length), form)), bereich };
     } else if (url.pathname.startsWith("/setup/mail/")) {
-      setupMeldung = await mailAktion(c, url.pathname.slice("/setup/mail/".length), form);
+      const aktion = url.pathname.slice("/setup/mail/".length);
+      setupMeldung = { ...(await mailAktion(c, aktion, form)), bereich };
+      if (aktion === "speichern" && setupMeldung.art === "fehler") mailEntwurf = mailEntwurfAus(form);
     } else {
       res.writeHead(404);
       res.end();
       return;
     }
   } catch (err) {
-    setupMeldung = { art: "fehler", text: err instanceof Error ? err.message : String(err) };
+    setupMeldung = { art: "fehler", text: fehlerText(err), bereich };
+    if (url.pathname === "/setup/mail/speichern" && form) mailEntwurf = mailEntwurfAus(form);
   }
-  weiter(res, t);
+  weiter(res, t, bereich);
 }
 
 /** Telegram-Schritte der Setup-Seite; nutzt dieselben Werkzeuge wie der Chat (Self-Service-Regel). */
@@ -608,18 +637,24 @@ function starteHttp(): void {
     }
     if (pfad === "/" || pfad.startsWith("/setup")) {
       if (!tokenOk(url)) {
-        res.writeHead(401, { "content-type": "text/html; charset=utf-8" });
-        res.end(html('<h1>AVA Server</h1><p>Die Setup-Seite braucht das Setup-Token: <code style="font-size:1rem">/setup?t=…</code>. Es steht im Startprotokoll des Servers oder in <code style="font-size:1rem">AVA_SETUP_TOKEN</code>.</p>'));
+        res.writeHead(401, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+        res.end(linkAbgelaufenHtml());
         return;
       }
       if (req.method === "POST") {
         void setupPost(url, req, res);
         return;
       }
-      void setupSeite(url.searchParams.get("t") ?? "").then((seite) => {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-        res.end(seite);
-      });
+      void setupSeite(url.searchParams.get("t") ?? "")
+        .then((seite) => {
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          res.end(seite);
+        })
+        .catch((err: unknown) => {
+          console.error("[setup] Seite nicht gebaut:", err);
+          res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+          res.end("Die Seite konnte nicht geladen werden. Bitte neu laden.");
+        });
       return;
     }
     res.writeHead(404);

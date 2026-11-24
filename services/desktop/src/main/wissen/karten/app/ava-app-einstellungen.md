@@ -11,12 +11,12 @@ schlagworte: [app, einstellungen, settings, server, einrichtungsseite, setup, li
 aktionen:
   - { art: app_oeffnen, ziel: deine_avas, label: "Deine AVAs öffnen" }
 gilt_fuer: [app]
-stand: 2026-11-07
+stand: 2026-11-24
 ---
 Die AVA-App hat bewusst keine eigenen Einstellungen. Unter Mehr → Deine AVA → „Wo stelle ich was ein?“ steht, wo es für deine AVA geht:
 
 - Läuft deine AVA in der Desktop-App, stellst du alles dort unter Einstellungen ein.
-- Läuft sie auf einem Server, öffnet „Server-Einstellungen öffnen“ die Einrichtungsseite des Servers mit Anmeldung, Modellzugang (Schlüssel oder ChatGPT-Abo), Telegram, E-Mail und Deine AVAs. Der Link gilt 15 Minuten; danach holst du einfach einen neuen.
+- Läuft sie auf einem Server, öffnet „Server-Einstellungen öffnen“ die Einstellungsseite des Servers mit Anmeldung, KI-Modell (ChatGPT-Abo oder API-Schlüssel), Telegram, E-Mail und Umzug zwischen deinen AVAs. Öffne den Link innerhalb von 15 Minuten; ist er abgelaufen, holst du einfach einen neuen.
 - Mitglieder, Schlüssel der Organisation, Vorgaben, Abrechnung und Verbrauch der Organisation pflegen Admins in der AVA Konsole unter admin.ava.bi.
 
 Vieles kann ich dir auch direkt im Chat umstellen, frag einfach. Zugangsdaten gibst du aber nie im Chat ein, sondern nur auf diesen Seiten. Unter Mehr findest du außerdem deine Organisation, die Mitteilungen und „Abmelden“.

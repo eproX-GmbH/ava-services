@@ -27,9 +27,16 @@ export interface SiwcHeadlessErgebnis extends SiwcTokenResult {
 
 /** Fehlertexte wie im Fenster-Flow, damit beide Wege gleich sprechen. */
 export function siwcTauschFehlerText(err: unknown): string {
-  const status = (err as { status?: number } | null)?.status;
+  const e = err as { status?: number; detail?: string; message?: string } | null;
+  const status = e?.status;
+  // 2026-11-24 (Befund Joyce): Ein abgelaufener oder schon eingeloester Code kam als rohe
+  // OAuth-Antwort ("HTTP 400: {"error":"invalid_grant"…}") auf der Setup-Seite an.
+  if (/invalid_grant/.test(`${e?.detail ?? ""} ${e?.message ?? ""}`)) {
+    return "Der Anmeldecode ist abgelaufen oder wurde schon verwendet. Erzeuge einen neuen Link und füge die Adresse direkt nach der Anmeldung ein.";
+  }
   if (status === 401 || status === 403) return "ChatGPT hat die Anmeldung abgelehnt. Plan-Nutzung gibt es nur mit ChatGPT Plus oder Pro.";
   if (typeof status === "number" && status >= 500) return "OpenAI ist gerade nicht erreichbar. Versuch's gleich nochmal.";
+  if (typeof status === "number") return `ChatGPT hat die Anmeldung nicht angenommen (Fehler ${status}). Erzeuge einen neuen Link und versuch es noch einmal.`;
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -57,6 +64,11 @@ export class SiwcHeadlessFlow {
 
   laeuft(): boolean {
     return this.pkce !== null && Date.now() - this.begonnen < SiwcHeadlessFlow.GUELTIG_MS;
+  }
+
+  /** Ende der Gültigkeit des laufenden Vorgangs (ms seit Epoche), sonst null. */
+  gueltigBis(): number | null {
+    return this.laeuft() ? this.begonnen + SiwcHeadlessFlow.GUELTIG_MS : null;
   }
 
   /** Nimmt die eingefügte Weiterleitungsadresse (oder nur ihren Query-Teil) und tauscht den Code. */

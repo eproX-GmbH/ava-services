@@ -84,6 +84,7 @@
     "test:wissen": "../../node_modules/.bin/tsx scripts/test-wissen.mts",
     "test:erlaubnisse": "../../node_modules/.bin/tsx scripts/test-erlaubnisse.mts",
     "test:update-sperre": "../../node_modules/.bin/tsx scripts/test-update-sperre.mts",
+    "test:setup-seite": "../../node_modules/.bin/tsx scripts/test-setup-seite.mts",
     "test:browser-sweep": "node scripts/test-browser-sweep.mjs",
     "test:kontakt-quellen": "node scripts/test-kontakt-quellen.mjs",
     "test:kontakt-rang": "node scripts/test-kontakt-rang.mjs",

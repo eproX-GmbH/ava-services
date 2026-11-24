@@ -1368,5 +1368,13 @@
       "ava-server-instanz",
       "ava-server-buchen"
     ]
+  },
+  {
+    "frage": "nach der chatgpt anmeldung auf dem server kommt seite nicht erreichbar 127.0.0.1",
+    "erwartet": "ava-server-chatgpt-abo"
+  },
+  {
+    "frage": "kann ich auf dem server mein kostenloses chatgpt konto nutzen",
+    "erwartet": "ava-server-chatgpt-abo"
   }
 ]
