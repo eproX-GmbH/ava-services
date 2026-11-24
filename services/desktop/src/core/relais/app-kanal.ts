@@ -120,6 +120,19 @@ interface Wartend {
   bis: number;
 }
 
+/**
+ * Satz für „Chat noch nicht bereit“ in Nutzersprache. Vorher ging die technische Meldung des
+ * Anbieters durch („Ollama is starting.“): Ein neuer AVA-Server hat noch kein Chat-Modell, Ollama
+ * dient dort nur den Embeddings (Befund Joyce 2026-11-24).
+ */
+export function nichtBereitText(technisch: string | null | undefined, ort: "server" | "desktop" | null): { code: string; text: string } {
+  if (ort === "server") {
+    return { code: "kein_modell", text: "Bevor ich loslege, brauche ich ein KI-Modell. Wähle in der AVA-App unter Mehr → Deine AVA → „Modell wählen“, ob ich mit deinem ChatGPT-Konto oder einem eigenen Schlüssel arbeite." };
+  }
+  if (/^Ollama is starting/i.test(technisch ?? "")) return { code: "startet", text: "Das lokale KI-Modell startet noch. Versuch es gleich noch einmal." };
+  return { code: "kein_modell", text: "Ich bin noch nicht bereit: Wähle in der Desktop-App unter Einstellungen → KI & Kosten, mit welchem KI-Modell ich arbeite." };
+}
+
 export class AppFehler extends Error {
   constructor(readonly code: string, message: string) {
     super(message);
@@ -394,7 +407,10 @@ export class AppKanal {
     const conversationId = typeof daten.conversationId === "string" && /^[A-Za-z0-9_-]{6,80}$/.test(daten.conversationId) ? daten.conversationId : randomUUID();
     const input: AgentSendInput = { conversationId, message: nachricht, ...(bilder.length ? { images: bilder } : {}), quelle: "app" };
     const s = this.deps.agent.getStatus();
-    if (!s.ready) throw new AppFehler("nicht_bereit", s.errorMessage ?? "AVA ist noch nicht bereit (kein KI-Modell eingerichtet).");
+    if (!s.ready) {
+      const n = nichtBereitText(s.errorMessage, this.deps.extras?.einstellungen?.().ort ?? null);
+      throw new AppFehler(n.code, n.text);
+    }
     if (s.inFlightRequestId === null && this.warteschlange.length === 0) {
       const { requestId } = this.starten(input);
       return { status: "gestartet", requestId, conversationId };

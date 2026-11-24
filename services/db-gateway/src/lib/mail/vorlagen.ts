@@ -331,11 +331,12 @@ export function dauerText(minuten: number): string {
 
 /** M2: Die AVA ist eingerichtet und mit dem Konto verbunden. */
 export function serverLaeuftMail(d: ServerMailBasis): Mail {
-  const link = d.appUrl.replace(/\/+$/, "");
+  // Erster Schritt danach ist die Modellwahl (Karte „Deine AVA“ unter Mehr), nicht der Chat.
+  const link = appMehr(d.appUrl);
   const kern = "dein AVA-Server ist eingerichtet und mit deinem Konto verbunden. Ab jetzt arbeite ich rund um die Uhr für dich, auch wenn dein Rechner aus ist.";
   const weiter = "Als Nächstes wählst du in der App, mit welchem KI-Modell ich arbeite. Wenn du magst, verbindest du auch Telegram, dann erreichst du mich unterwegs. Die Desktop-App brauchst du dafür nicht.";
-  const inhalt = ueberschrift("Deine AVA läuft") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(weiter)) + knopf("AVA öffnen", link);
-  const text = [hallo(d.vorname), "", kern, "", weiter, "", `AVA öffnen: ${link}`].join("\n");
+  const inhalt = ueberschrift("Deine AVA läuft") + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + absatz(esc(weiter)) + knopf("KI-Modell wählen", link);
+  const text = [hallo(d.vorname), "", kern, "", weiter, "", `KI-Modell wählen: ${link}`].join("\n");
   return { betreff: "Deine AVA läuft", html: rahmen({ vorschau: "Ab jetzt rund um die Uhr für dich da", inhalt, fusszeile: serverFuss() }), text };
 }
 

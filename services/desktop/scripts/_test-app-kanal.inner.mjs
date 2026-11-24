@@ -8,7 +8,7 @@ const load = async (p) => {
   const m = await import(p);
   return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m;
 };
-const { AppKanal } = await load("../src/core/relais/app-kanal.ts");
+const { AppKanal, nichtBereitText } = await load("../src/core/relais/app-kanal.ts");
 const { AttachmentStore } = await load("../src/main/agent/attachment-store.ts");
 const { anhangAufbereiten } = await load("../src/main/app/anhang.ts");
 const { bildVerkleinern } = await load("../src/main/app/bild.ts");
@@ -139,6 +139,16 @@ ok(frames.length === 1 && frames[0].frame.requestId === r0.requestId, "ohne Abo:
 frames.length = 0;
 agent.fertig();
 ok(frames.some((f) => f.kanal === "app" && f.ereignis.art === "durchlauf" && !f.ereignis.aktiv), "ohne Abo: Ende des App-Laufs gemeldet");
+
+// Nicht bereit: nie die technische Meldung des Anbieters (Befund 2026-11-24, „Ollama is starting.“).
+{
+  const server = nichtBereitText("Ollama is starting.", "server");
+  ok(server.code === "kein_modell" && /Modell wählen/.test(server.text) && !/Ollama/.test(server.text), "Server ohne Modell: Hinweis auf „Modell wählen“, kein Ollama-Text");
+  const desktop = nichtBereitText("Ollama is starting.", "desktop");
+  ok(desktop.code === "startet" && /startet noch/.test(desktop.text), "Desktop: lokales Modell startet noch");
+  const ohne = nichtBereitText("OpenAI API key not set.", "desktop");
+  ok(ohne.code === "kein_modell" && /KI & Kosten/.test(ohne.text) && !/API key/.test(ohne.text), "Desktop ohne Zugang: Hinweis auf die Einstellungen, kein englischer Text");
+}
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nAlle Prüfungen grün.");
 process.exit(fehler ? 1 : 0);
