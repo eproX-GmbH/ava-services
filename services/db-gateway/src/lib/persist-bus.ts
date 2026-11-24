@@ -64,6 +64,7 @@ import {
   type ManagingDirectorDiff,
 } from "./profile-changes";
 import { registerStandFelder, schreibeRegisterSnapshot, type RegisterStand } from "./register-verlauf";
+import { personSchluessel } from "./stammdaten-vergleich";
 import { transactionProgressBus } from "./event-bus";
 import { schreibeKonzernAngaben, type KonzernAngabenEingang } from "./konzern-angaben";
 import { featureEnabledForEventTenant } from "./policy-guard";
@@ -949,7 +950,8 @@ export async function schreibeStructuredContent(
       // "Seit wann kennt AVA die Person als Geschaeftsfuehrer?" ueberlebt den
       // Replace-all: createdAt und ein frueher gelesenes Bestelldatum je Name bewahren.
       const bisher = new Map<string, { createdAt: Date; bestelltAm: Date | null }>();
-      for (const r of existing.rows) bisher.set(`${r.firstName}|${r.lastName}`.toLowerCase(), { createdAt: r.createdAt, bestelltAm: r.bestelltAm });
+      // Schluessel wie im Diff: „Gunter“ (Altbestand) und „Günter“ behalten ihr Datum.
+      for (const r of existing.rows) bisher.set(personSchluessel(r), { createdAt: r.createdAt, bestelltAm: r.bestelltAm });
       if (existing.rows.length > 0) {
         const diff = diffManagingDirectors(
           existing.rows,
@@ -964,7 +966,7 @@ export async function schreibeStructuredContent(
         [result.companyId],
       );
       for (const md of result.managingDirectors) {
-        const alt = bisher.get(`${md.firstName}|${md.lastName}`.toLowerCase());
+        const alt = bisher.get(personSchluessel(md));
         await client.query(
           `INSERT INTO "ManagingDirector"
              ("firstName", "lastName", "birthDay", city, "companyId",

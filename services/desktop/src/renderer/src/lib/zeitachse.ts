@@ -19,7 +19,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import * as yup from "yup";
 import { gatewayFetch, GatewayError } from "../api/gateway";
-import { fmtShareCapital } from "./format";
+import { fmtShareCapital, numVal } from "./format";
 
 // ---- Arten -----------------------------------------------------------------
 
@@ -450,6 +450,81 @@ export const datumKurz = (v: unknown): string => {
 };
 const kuerzen = (t: string, max = 160) => (t.length > max ? `${t.slice(0, max).replace(/\s+\S*$/, "")} …` : t);
 
+// ---- Gleiche Angabe, andere Schreibweise? ----------------------------------
+// Befund 2026-11-24: Die Zeitachse zeigte „Kapital 25000.00 → 25000“, „Gesellschaft mit
+// beschrankter Haftung → … (GmbH)“ und „Wohlertstrae → Wöhlertstraße“ als Änderung.
+// Der Altbestand kam ohne Umlaute und ß, das Register liefert sie mit. Das Gateway filtert
+// solche Ereignisse (db-gateway lib/stammdaten-vergleich.ts); hier dieselben Regeln in
+// klein, damit auch ältere Gegenstellen und Register-Snapshots nur Echtes zeigen.
+
+const RECHTSFORM_CODE: Record<string, string> = {
+  "112100": "Kommanditgesellschaft",
+  "113100": "Offene Handelsgesellschaft",
+  "211000": "eingetragener Verein",
+  "221110": "Gesellschaft mit beschränkter Haftung",
+  "222110": "Aktiengesellschaft",
+  "222200": "Europäische Aktiengesellschaft",
+  "411000": "Einzelkaufmann",
+};
+
+/** UTF-8, das als Latin-1 gelesen wurde („beschrÃ¤nkter“), zurückdrehen. */
+function mojibake(t: string): string {
+  if (!/[ÃÂ][\u0080-\u00bf]/.test(t) || /[^\u0000-\u00ff]/.test(t)) return t;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(t, (c) => c.charCodeAt(0)));
+  } catch {
+    return t;
+  }
+}
+
+/** Vergleichsschlüssel: ohne Akzente, ß/ss, „Straße/Str./Strae“, Satzzeichen und Leerraum. */
+export function schreibweise(v: unknown): string {
+  return mojibake(s(v))
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .replace(/stra(ss|s)?e\b/g, "str")
+    .replace(/str\./g, "str")
+    .replace(/ss/g, "")
+    .replace(/ae/g, "a")
+    .replace(/oe/g, "o")
+    .replace(/ue/g, "u")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function vergleichswert(feld: string, v: unknown): string {
+  if (feld === "shareCapital" || feld === "share-capital") {
+    const n = numVal(v);
+    if (n != null) return String(n);
+  }
+  if (feld === "legalForm" || feld === "legal-form") {
+    const t = s(v);
+    // „Gesellschaft mit beschränkter Haftung (GmbH)“ = „… Haftung“ = „221110“.
+    return schreibweise((RECHTSFORM_CODE[t] ?? t).replace(/\([^)]{0,60}\)/g, ""));
+  }
+  return schreibweise(v);
+}
+
+/** Zeigen nur, wenn beide Seiten etwas sagen und es wirklich abweicht. */
+export function echteAenderung(feld: string, vorher: unknown, nachher: unknown): boolean {
+  if (!s(vorher) || !s(nachher)) return false;
+  const a = vergleichswert(feld, vorher);
+  const n = vergleichswert(feld, nachher);
+  // Nur die Straße ging verloren, PLZ und Ort sind gleich: kein Umzug.
+  if (feld === "address" && n && a.endsWith(n)) return false;
+  return a !== n;
+}
+
+const personSchluessel = (name: string): string =>
+  name
+    .split(/\s+/)
+    .map((w) => schreibweise(w))
+    .filter((w) => w && !["dr", "prof", "med", "dipl", "ing"].includes(w))
+    .sort()
+    .join(" ");
+const keinePerson = (name: string) => /^(amtsgericht|registergericht|landgericht)\b/i.test(name.trim());
+
 function feldWert(feld: string, st: Record<string, unknown>): string {
   switch (feld) {
     case "address":
@@ -468,12 +543,17 @@ function feldWert(feld: string, st: Record<string, unknown>): string {
   }
 }
 
+/** Wer kam dazu, wer ging? „Gunter“ und „Günter“ sind dieselbe Person, ein Amtsgericht ist keine. */
+function personenAbgleich(alt: string[], neu: string[]): { dazu: string[]; weg: string[] } {
+  const a = alt.filter((n) => !keinePerson(n));
+  const n = neu.filter((x) => !keinePerson(x));
+  const altK = new Set(a.map(personSchluessel));
+  const neuK = new Set(n.map(personSchluessel));
+  return { dazu: n.filter((x) => !altK.has(personSchluessel(x))), weg: a.filter((x) => !neuK.has(personSchluessel(x))) };
+}
+
 function personenDiff(alt: string[], neu: string[]): string {
-  const k = (n: string) => n.toLowerCase();
-  const altK = new Set(alt.map(k));
-  const neuK = new Set(neu.map(k));
-  const dazu = neu.filter((n) => !altK.has(k(n)));
-  const weg = alt.filter((n) => !neuK.has(k(n)));
+  const { dazu, weg } = personenAbgleich(alt, neu);
   return [...dazu.map((n) => `+ ${n}`), ...weg.map((n) => `− ${n}`)].join(" · ");
 }
 
@@ -484,71 +564,90 @@ function standAusAntwort(a: RegisterStandAntwort | null | undefined): Record<str
 
 export function eintraegeRegister(items: RegisterSnapshot[], aktuell: RegisterStandAntwort | null | undefined, country: string | null | undefined, firmaLink: string): Eintrag[] {
   const q = landQuellen(country).register;
-  return items.map((sn, i) => {
+  const datumsfelder = new Set(["lastRegisterEntry", "lastRegisterModification"]);
+  return items.flatMap((sn, i) => {
     // Der Snapshot ist der ALTE Stand; der neue ist der nächstjüngere Snapshot, beim
     // jüngsten der aktuelle Registerstand.
     const nachher = i === 0 ? standAusAntwort(aktuell) : ((items[i - 1]!.stand as Record<string, unknown>) ?? null);
     const alt = (sn.stand as Record<string, unknown>) ?? {};
-    const felder = sn.felder.filter((f) => f !== "lastRegisterEntry" && f !== "lastRegisterModification");
-    const sichtbar = felder.length > 0 ? felder : sn.felder;
-    const aenderungen: Aenderung[] = sichtbar.map((f) => {
-      if (f === "geschaeftsfuehrung" && nachher) {
-        return { name: FELD_TEXT[f] ?? f, vorher: null, nachher: personenDiff(personenNamen(alt.geschaeftsfuehrung ?? alt.managingDirectors), personenNamen(nachher.geschaeftsfuehrung ?? nachher.managingDirectors)) || null };
+    const aenderung = (f: string): Aenderung | null => {
+      if (f === "geschaeftsfuehrung") {
+        if (!nachher) return null;
+        const vorherNamen = personenNamen(alt.geschaeftsfuehrung ?? alt.managingDirectors);
+        // Erstbefüllung (vorher niemand bekannt) ist kein Wechsel.
+        if (vorherNamen.length === 0) return null;
+        const diff = personenDiff(vorherNamen, personenNamen(nachher.geschaeftsfuehrung ?? nachher.managingDirectors));
+        return diff ? { name: FELD_TEXT[f] ?? f, vorher: null, nachher: diff } : null;
       }
-      return { name: FELD_TEXT[f] ?? f, vorher: feldWert(f, alt) || null, nachher: nachher ? feldWert(f, nachher) || null : null };
-    });
-    const namen = sichtbar.map((f) => FELD_TEXT[f] ?? f);
-    return {
-      id: `register:${sn.id}`,
-      art: "register",
-      datum: sn.ersetztAm,
-      von: sn.bestandVon,
-      titel: namen.length > 0 ? `Registerstand geändert: ${namen.join(", ")}` : "Registerstand geändert",
-      aenderungen,
-      quelle: q,
-      frage: `Was bedeutet die Registeränderung vom ${datumKurz(sn.ersetztAm)} (${namen.join(", ")}) bei ${firmaLink} für den Vertrieb?`,
+      // Das Gründungsjahr ändert sich nicht: Abweichungen sind Korrekturen der Quelle.
+      if (f === "foundingYear") return null;
+      const v = feldWert(f, alt);
+      const n = nachher ? feldWert(f, nachher) : "";
+      if (datumsfelder.has(f)) return v || n ? { name: FELD_TEXT[f] ?? f, vorher: v || null, nachher: n || null } : null;
+      const rohAlt = f === "address" ? adresse(alt) : alt[f];
+      const rohNeu = !nachher ? null : f === "address" ? adresse(nachher) : nachher[f];
+      return echteAenderung(f, rohAlt, rohNeu) ? { name: FELD_TEXT[f] ?? f, vorher: v || null, nachher: n || null } : null;
     };
+    const inhalt = sn.felder.filter((f) => !datumsfelder.has(f)).map((f) => [f, aenderung(f)] as const).filter((x): x is readonly [string, Aenderung] => x[1] !== null);
+    // Nur noch eine neue Eintragung ohne geänderte Angabe: dann die Registerdaten zeigen.
+    const sichtbar = inhalt.length > 0 ? inhalt : sn.felder.filter((f) => datumsfelder.has(f)).map((f) => [f, aenderung(f)] as const).filter((x): x is readonly [string, Aenderung] => x[1] !== null);
+    if (sichtbar.length === 0) return [];
+    const aenderungen = sichtbar.map(([, a]) => a);
+    const namen = sichtbar.map(([f]) => FELD_TEXT[f] ?? f);
+    return [
+      {
+        id: `register:${sn.id}`,
+        art: "register" as const,
+        datum: sn.ersetztAm,
+        von: sn.bestandVon,
+        titel: `Registerstand geändert: ${namen.join(", ")}`,
+        aenderungen,
+        quelle: q,
+        frage: `Was bedeutet die Registeränderung vom ${datumKurz(sn.ersetztAm)} (${namen.join(", ")}) bei ${firmaLink} für den Vertrieb?`,
+      },
+    ];
   });
 }
 
-function profilAenderung(p: Profilaenderung): Aenderung {
+/** Eine Profiländerung als Zeile; null, wenn es nur eine andere Schreibweise desselben Werts ist. */
+function profilAenderung(p: Profilaenderung): Aenderung | null {
   const was = KIND_TEXT[p.kind] ?? p.kind;
-  if (p.kind === "managing-directors") {
-    const dazu = personenNamen(p.added);
-    const weg = personenNamen(p.removed);
-    return { name: "Geschäftsführung", vorher: null, nachher: [...dazu.map((n) => `+ ${n}`), ...weg.map((n) => `− ${n}`)].join(" · ") || null };
+  if (p.kind.startsWith("managing-directors")) {
+    const { dazu, weg } = personenAbgleich(personenNamen(p.removed), personenNamen(p.added));
+    if (dazu.length === 0 && weg.length === 0) return null;
+    return { name: "Geschäftsführung", vorher: null, nachher: [...dazu.map((n) => `+ ${n}`), ...weg.map((n) => `− ${n}`)].join(" · ") };
   }
-  const roh = (l: Array<Record<string, unknown>>) => kuerzen(s(l[0]?.value));
-  const schoen = (l: Array<Record<string, unknown>>) => (p.kind === "share-capital" ? fmtShareCapital(l[0]?.value) : roh(l));
-  // „25000.00“ → „25000“ sieht formatiert gleich aus; dann die Rohwerte zeigen.
-  const gleich = schoen(p.removed) === schoen(p.added);
-  return { name: was, vorher: (gleich ? roh(p.removed) : schoen(p.removed)) || null, nachher: (gleich ? roh(p.added) : schoen(p.added)) || null };
+  const roh = (l: Array<Record<string, unknown>>) => l[0]?.value;
+  if (!echteAenderung(p.kind, roh(p.removed), roh(p.added))) return null;
+  const schoen = (l: Array<Record<string, unknown>>) => (p.kind === "share-capital" ? fmtShareCapital(roh(l)) : kuerzen(s(roh(l))));
+  return { name: was, vorher: schoen(p.removed) || null, nachher: schoen(p.added) || null };
 }
 
 /** Profiländerungen eines Persists (gleicher Zeitpunkt) werden zu einem Eintrag. */
 export function eintraegeProfil(items: Profilaenderung[], country: string | null | undefined, firmaLink: string): Eintrag[] {
   const q = landQuellen(country).register;
   const gruppen: Profilaenderung[][] = [];
-  for (const p of items) {
+  // Schein-Änderungen (andere Schreibweise desselben Werts) gar nicht erst gruppieren.
+  const echte = items.filter((p) => profilAenderung(p) !== null);
+  for (const p of echte) {
     const letzte = gruppen[gruppen.length - 1];
     const t = Date.parse(p.createdAt);
     if (letzte && Math.abs(Date.parse(letzte[0]!.createdAt) - t) < 120_000 && (letzte[0]!.bestandVon ?? null) === (p.bestandVon ?? null)) letzte.push(p);
     else gruppen.push([p]);
   }
   return gruppen.map((g) => {
-    const gf = g.find((p) => p.kind === "managing-directors");
-    const namen = g.map((p) => KIND_TEXT[p.kind] ?? p.kind);
+    const gf = g.find((p) => p.kind.startsWith("managing-directors"));
+    const namen = g.map((p) => KIND_TEXT[p.kind] ?? (p.kind.startsWith("managing-directors") ? "Geschäftsführung" : p.kind));
     let titel: string;
     if (g.length === 1 && gf) {
-      const dazu = personenNamen(gf.added);
-      const weg = personenNamen(gf.removed);
+      const { dazu, weg } = personenAbgleich(personenNamen(gf.removed), personenNamen(gf.added));
       titel = dazu.length > 0 && weg.length > 0 ? "Wechsel in der Geschäftsführung" : dazu.length > 0 ? "Neu in der Geschäftsführung" : "Ausgeschieden aus der Geschäftsführung";
     } else if (g.length === 1) {
       titel = `${namen[0]} geändert`;
     } else {
       titel = `Registerdaten geändert: ${namen.join(", ")}`;
     }
-    const sortiert = [...g].sort((a, b) => (a.kind === "managing-directors" ? -1 : 0) - (b.kind === "managing-directors" ? -1 : 0));
+    const sortiert = [...g].sort((a, b) => (a.kind.startsWith("managing-directors") ? -1 : 0) - (b.kind.startsWith("managing-directors") ? -1 : 0));
     const p0 = g[0]!;
     return {
       id: `profil:${g.map((p) => p.id).join("+")}`,
@@ -556,7 +655,7 @@ export function eintraegeProfil(items: Profilaenderung[], country: string | null
       datum: p0.createdAt,
       von: p0.bestandVon,
       titel,
-      aenderungen: sortiert.map(profilAenderung),
+      aenderungen: sortiert.map(profilAenderung).filter((a): a is Aenderung => a !== null),
       quelle: q,
       frage: `${titel} bei ${firmaLink} (${datumKurz(p0.createdAt)}): Was heißt das für unsere Ansprache?`,
     };

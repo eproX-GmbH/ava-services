@@ -18,6 +18,7 @@
 
 import type { Logger } from "pino";
 import { getGatewayPool } from "./producer-pools";
+import { adressSchluessel, istKeinePerson, personSchluessel, rechtsformKern, schreibweiseSchluessel, zahlWert } from "./stammdaten-vergleich";
 
 export interface RegisterPerson {
   firstName: string;
@@ -62,30 +63,43 @@ const datum = (v: unknown): string => {
 };
 const zahl = (v: unknown): string => {
   if (v == null || v === "") return "";
-  const n = Number(v);
-  return Number.isFinite(n) ? String(n) : norm(v);
+  const n = zahlWert(v);
+  return n != null ? String(n) : norm(v);
 };
 const personen = (p: RegisterPerson[]): string =>
-  p
-    .map((x) => `${norm(x.firstName)} ${norm(x.lastName)}`.trim())
+  (p ?? [])
+    .filter((x) => !istKeinePerson(x))
+    .map(personSchluessel)
     .filter(Boolean)
     .sort()
     .join("|");
+const text = (v: unknown): string => schreibweiseSchluessel(v);
+/** Rechtsform: gleicher Kern („beschrankter“ = „beschränkter Haftung (GmbH)“ = „221110“) oder gleiche Schreibweise. */
+const gleicheRechtsform = (a: unknown, b: unknown): boolean => {
+  const ka = rechtsformKern(a);
+  const kb = rechtsformKern(b);
+  return (ka !== null && ka === kb) || text(a) === text(b);
+};
+const adresse = (x: RegisterStand): string => {
+  const k = adressSchluessel(x);
+  return `${k.strasse}|${k.plz}|${k.ort}`;
+};
 
 /**
  * Welche Felder weichen zwischen altem und neuem Stand ab? Leer = kein Snapshot.
- * Verglichen wird normalisiert (Leerraum, Gross/Klein, Zahlen, Datum); die
+ * Verglichen wird normalisiert (stammdaten-vergleich.ts: Umlaute/ß des Altbestands,
+ * Gross/Klein, Satzzeichen, Zahlen, Datum, Rechtsform-Schreibweisen); die
  * Geschaeftsfuehrung als Namensmenge (wie diffManagingDirectors), nicht nach
- * Geburtsdatum oder Wohnort.
+ * Geburtsdatum oder Wohnort. Ein leerer neuer Wert zaehlt weiter als Aenderung:
+ * dann bleibt der alte Stand als Snapshot erhalten.
  */
 export function registerStandFelder(alt: RegisterStand, neu: RegisterStand): RegisterFeld[] {
   const out: RegisterFeld[] = [];
-  const adresse = (x: RegisterStand): string => norm(`${norm(x.street)} ${norm(x.houseNumber)}, ${norm(x.zipCode)} ${norm(x.city)}`);
-  if (norm(alt.name) !== norm(neu.name)) out.push("name");
-  if (norm(alt.legalForm) !== norm(neu.legalForm)) out.push("legalForm");
+  if (text(alt.name) !== text(neu.name)) out.push("name");
+  if (!gleicheRechtsform(alt.legalForm, neu.legalForm)) out.push("legalForm");
   if (adresse(alt) !== adresse(neu)) out.push("address");
   if (zahl(alt.foundingYear) !== zahl(neu.foundingYear)) out.push("foundingYear");
-  if (norm(alt.corporatePurpose) !== norm(neu.corporatePurpose)) out.push("corporatePurpose");
+  if (text(alt.corporatePurpose) !== text(neu.corporatePurpose)) out.push("corporatePurpose");
   if (zahl(alt.shareCapital) !== zahl(neu.shareCapital)) out.push("shareCapital");
   if (datum(alt.lastRegisterEntry) !== datum(neu.lastRegisterEntry)) out.push("lastRegisterEntry");
   if (datum(alt.lastRegisterModification) !== datum(neu.lastRegisterModification)) out.push("lastRegisterModification");

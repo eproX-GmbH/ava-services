@@ -33,6 +33,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
 import { getProducerPool } from "../../lib/producer-pools";
 import { listeProfilAenderungen } from "../../lib/profile-changes";
+import { gfDiffBereinigen } from "../../lib/stammdaten-vergleich";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import { ErrorShape } from "./schemas";
@@ -407,13 +408,14 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   }
   const neuBestellt = new Map<string, Array<{ name: string; am: Date }>>();
   try {
-    const ev = await getGatewayPool().query<{ companyId: string; added: Array<{ firstName?: string; lastName?: string }>; createdAt: Date }>(
-      `SELECT "companyId", added, "createdAt" FROM "ProfileChangeEvent"
+    const ev = await getGatewayPool().query<{ companyId: string; added: Array<{ firstName?: string; lastName?: string }>; removed: Array<{ firstName?: string; lastName?: string }>; createdAt: Date }>(
+      `SELECT "companyId", added, removed, "createdAt" FROM "ProfileChangeEvent"
         WHERE "companyId" = ANY($1::text[]) AND kind = 'managing-directors' AND "createdAt" > $2`,
       [ids, new Date(jetzt - ZEITBEZUG_MS)],
     );
     for (const r of ev.rows) {
-      for (const a of r.added ?? []) {
+      // „Gunter“ → „Günter“ ist keine Neubestellung (stammdaten-vergleich.ts).
+      for (const a of gfDiffBereinigen(r.added ?? [], r.removed ?? []).added) {
         const name = `${a.firstName ?? ""} ${a.lastName ?? ""}`.replace(/\s+/g, " ").trim();
         if (name) neuBestellt.set(r.companyId, [...(neuBestellt.get(r.companyId) ?? []), { name, am: r.createdAt }]);
       }

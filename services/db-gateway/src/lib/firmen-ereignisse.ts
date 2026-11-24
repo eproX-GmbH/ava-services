@@ -15,6 +15,7 @@
 //     ist nie ein Ereignis).
 
 import { getGatewayPool, getProducerPool } from "./producer-pools";
+import { gfDiffBereinigen } from "./stammdaten-vergleich";
 import { echterRollenwechsel, pendelEntfernen, rolleEinordnen, type Ebene, type Rollengruppe } from "./rollengruppe";
 
 export { pendelEntfernen };
@@ -201,8 +202,10 @@ export async function firmenEreignisse(q: EreignisAbfrage): Promise<FirmenEreign
       .catch(() => ({ rows: [] }));
     const name = (d: { firstName?: string; lastName?: string }) => [d.firstName, d.lastName].filter(Boolean).join(" ").trim();
     for (const e of r.rows) {
-      const neuB = (Array.isArray(e.added) ? e.added : []).map(name).filter(Boolean);
-      const weg = (Array.isArray(e.removed) ? e.removed : []).map(name).filter(Boolean);
+      // Schein-Wechsel (gleiche Person anders geschrieben, Registergericht als Person) raus.
+      const d = gfDiffBereinigen(Array.isArray(e.added) ? e.added : [], Array.isArray(e.removed) ? e.removed : []);
+      const neuB = d.added.map(name).filter(Boolean);
+      const weg = d.removed.map(name).filter(Boolean);
       if (neuB.length === 0 && weg.length === 0) continue;
       out.push({
         id: `gf:${e.id}`, art: "geschaeftsfuehrung", companyId: e.companyId, firma: namen.get(e.companyId) ?? null, personId: null, person: null,
