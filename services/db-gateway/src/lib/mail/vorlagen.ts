@@ -260,9 +260,9 @@ export function serverBezahltMail(d: ServerMailBasis): Mail {
     ueberschrift("Danke! Deine AVA wird jetzt eingerichtet") +
     absatz(esc(hallo)) +
     absatz("deine Zahlung ist eingegangen. Ich richte gerade deinen AVA-Server ein, das dauert meist nur ein bis drei Minuten. Danach arbeite ich rund um die Uhr für dich, auch wenn dein Rechner aus ist.") +
-    absatz("Sobald ich bereit bin, bekommst du eine zweite Mail. Den Stand siehst du jederzeit in der AVA-App.") +
+    absatz("Sobald ich bereit bin, bekommst du eine zweite Mail. Mit einem Klick darin bestätigst du, dass ich für dich arbeiten darf. Den Stand siehst du jederzeit in der AVA-App.") +
     knopf("Stand ansehen", link);
-  const text = [hallo, "", "deine Zahlung ist eingegangen. Ich richte gerade deinen AVA-Server ein (meist 1–3 Minuten).", "Sobald ich bereit bin, bekommst du eine zweite Mail.", "", `Stand ansehen: ${link}`].join("\n");
+  const text = [hallo, "", "deine Zahlung ist eingegangen. Ich richte gerade deinen AVA-Server ein (meist 1–3 Minuten).", "Sobald ich bereit bin, bekommst du eine zweite Mail; mit einem Klick darin bestätigst du, dass ich für dich arbeiten darf.", "", `Stand ansehen: ${link}`].join("\n");
   return { betreff: "Zahlung erhalten – deine AVA wird eingerichtet", html: rahmen({ vorschau: "Meist in 1–3 Minuten bereit", inhalt, fusszeile: serverFuss() }), text };
 }
 
@@ -339,10 +339,12 @@ export function serverLaeuftMail(d: ServerMailBasis): Mail {
   return { betreff: "Deine AVA läuft", html: rahmen({ vorschau: "Ab jetzt rund um die Uhr für dich da", inhalt, fusszeile: serverFuss() }), text };
 }
 
-/** M3: Bestätigung fehlt noch (nach 30 Minuten bzw. als Erinnerung nach 24 Stunden). */
-export function serverBestaetigenMail(d: ServerMailBasis & { stufe: "30m" | "24h"; bestaetigenUrl: string }): Mail {
-  const titel = d.stufe === "24h" ? "Erinnerung: Deine AVA wartet auf deine Bestätigung" : "Ein Schritt fehlt noch: Bestätige deine AVA";
-  const kern = "dein AVA-Server läuft, wartet aber noch auf deine Bestätigung, dass er für dich arbeiten darf. Das ist ein Klick: Du landest auf der Anmeldeseite von AVA und bestätigst dort.";
+/** M3: Server ist eingerichtet und wartet auf die Bestätigung (sofort; Erinnerung nach 24 Stunden). */
+export function serverBestaetigenMail(d: ServerMailBasis & { stufe: "bereit" | "24h"; bestaetigenUrl: string }): Mail {
+  const titel = d.stufe === "24h" ? "Erinnerung: Deine AVA wartet auf deine Bestätigung" : "Fast fertig: Bestätige deine AVA";
+  const kern = d.stufe === "24h"
+    ? "dein AVA-Server läuft, wartet aber noch auf deine Bestätigung, dass er für dich arbeiten darf. Das ist ein Klick: Du landest auf der Anmeldeseite von AVA und bestätigst dort."
+    : "dein AVA-Server ist eingerichtet. Ein Schritt fehlt noch: Bestätige, dass er für dich arbeiten darf. Das ist ein Klick: Du landest auf der Anmeldeseite von AVA und bestätigst dort.";
   const sicher = "Nur dein eigenes Konto kann diese AVA bestätigen. Der Link gilt sieben Tage.";
   const inhalt = ueberschrift(titel) + absatz(esc(hallo(d.vorname))) + absatz(esc(kern)) + knopf("Jetzt bestätigen", d.bestaetigenUrl) + absatz(`<span style="font-size:13px;color:${FARBE.leise};">${esc(sicher)}</span>`);
   const text = [hallo(d.vorname), "", kern, "", `Jetzt bestätigen: ${d.bestaetigenUrl}`, "", sicher].join("\n");

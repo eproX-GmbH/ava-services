@@ -163,7 +163,7 @@ export async function cloudMailen(art: MailArt, i: CloudInstanz, extra: Record<s
     else if (art === "laeuft") mail = serverLaeuftMail(basis);
     else if (art === "bestaetigen") {
       const t = bestaetigenToken(i.id, Date.now() + BESTAETIGEN_GUELTIG_MS);
-      mail = serverBestaetigenMail({ ...basis, stufe: extra.stufe === "24h" ? "24h" : "30m", bestaetigenUrl: t ? `${gateway}/cloud/bestaetigen?t=${t}` : `${env.AVA_APP_URL.replace(/\/+$/, "")}/mehr` });
+      mail = serverBestaetigenMail({ ...basis, stufe: extra.stufe === "24h" ? "24h" : "bereit", bestaetigenUrl: t ? `${gateway}/cloud/bestaetigen?t=${t}` : `${env.AVA_APP_URL.replace(/\/+$/, "")}/mehr` });
     } else if (art === "nicht_erreichbar") mail = serverNichtErreichbarMail({ ...basis, seit: String(extra.seit ?? new Date().toISOString()) });
     else if (art === "wieder_erreichbar") mail = serverWiederErreichbarMail({ ...basis, dauerMin: Number(extra.dauerMin ?? 0) });
     else if (art === "loeschung_angekuendigt") {

@@ -371,14 +371,22 @@ async function gesundheit(
         nachricht = ["wieder_erreichbar", { dauerMin }];
       }
     }
-    // M3: Bestätigung fehlt seit 30 Minuten bzw. 24 Stunden (nur mit Ein-Klick-Endpunkt).
+    // M3: Sobald der Server auf die Bestätigung wartet, sofort eine Mail mit dem Ein-Klick-Link
+    // (vorher erst nach 30 Minuten: Wer nicht in die App schaute, sah den Schritt nicht, Joyce
+    // 2026-11-24); Erinnerung nach 24 Stunden. Nur mit Ein-Klick-Endpunkt. `m3_30m` ist der
+    // Merker der ersten Mail (Name aus der Zeit vor der Umstellung, so bleiben laufende
+    // Instanzen ohne doppelte Mail).
     if (i.zustand === "wartet_auf_verbindung" && an && !an.angemeldet && !nachricht) {
       const basis = Date.parse(typeof s.wartetSeit === "string" ? s.wartetSeit : i.createdAt);
-      const stufe = t - basis >= 24 * STUNDE ? "24h" : t - basis >= 30 * MIN ? "30m" : null;
-      if (stufe && !s[`m3_${stufe}`]) {
+      const stufe = t - basis >= 24 * STUNDE ? "24h" : "bereit";
+      const merker = stufe === "24h" ? "m3_24h" : "m3_30m";
+      // Sofort nur beim ersten Einrichten. War die AVA schon verbunden und hat die Anmeldung
+      // verloren, erst nach 30 Minuten: ein Neustart oder kurzer Aussetzer soll keine Mail auslösen.
+      const zuFrueh = stufe === "bereit" && !!i.verbundenAt && t - basis < 30 * MIN;
+      if (!s[merker] && !zuFrueh) {
         s.m3_30m ??= iso;
         if (stufe === "24h") s.m3_24h = iso;
-        nachricht = ["bestaetigen", { stufe }];
+        nachricht = ["bestaetigen", { stufe: stufe === "24h" || s.m3_30m !== iso ? stufe : "bereit" }];
       }
     }
   } else {

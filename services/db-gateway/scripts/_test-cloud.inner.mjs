@@ -496,11 +496,17 @@ await pruefe("angemeldet → läuft, M2 genau einmal", async () => {
   assert.deepEqual(w.mails.map((m) => m.art), ["laeuft"]);
   assert.ok(w.repo.ereignisseAlle.some((e) => e.art === "verbunden"));
 });
-await pruefe("M3: nach 30 Minuten und nach 24 Stunden je einmal", async () => {
+await pruefe("M3: sofort, sobald der Server auf die Bestätigung wartet, Erinnerung nach 24 Stunden, je einmal", async () => {
   const w = await mitToken("v000000002");
   await w.repo.aendern(w.id, { schritte: { ...(await w.repo.holen(w.id)).schritte, wartetSeit: new Date(T).toISOString() } });
-  for (const min of [10, 31, 120, 25 * 60, 30 * 60]) { w.setzeUhr(T + min * 60_000); await A.abgleichen(w.deps); }
-  assert.deepEqual(w.mails.map((m) => `${m.art}:${m.stufe}`), ["bestaetigen:30m", "bestaetigen:24h"]);
+  for (const min of [1, 10, 31, 120, 25 * 60, 30 * 60]) { w.setzeUhr(T + min * 60_000); await A.abgleichen(w.deps); }
+  assert.deepEqual(w.mails.map((m) => `${m.art}:${m.stufe}`), ["bestaetigen:bereit", "bestaetigen:24h"]);
+});
+await pruefe("M3: Instanz mit alter erster Mail (vor der Umstellung) bekommt keine zweite, nur die Erinnerung", async () => {
+  const w = await mitToken("v000000012");
+  await w.repo.aendern(w.id, { schritte: { ...(await w.repo.holen(w.id)).schritte, wartetSeit: new Date(T).toISOString(), m3_30m: new Date(T + 30 * 60_000).toISOString() } });
+  for (const min of [40, 120, 25 * 60]) { w.setzeUhr(T + min * 60_000); await A.abgleichen(w.deps); }
+  assert.deepEqual(w.mails.map((m) => `${m.art}:${m.stufe}`), ["bestaetigen:24h"]);
 });
 await pruefe("M3 nicht ohne Ein-Klick-Endpunkt (älteres Image)", async () => {
   const w = await mitToken("v000000003");
@@ -519,6 +525,16 @@ await pruefe("Anmeldung verloren → wartet; wieder angemeldet → läuft ohne z
   assert.equal((await w.repo.holen(w.id)).zustand, "laeuft");
   assert.deepEqual(w.mails.map((m) => m.art), ["laeuft"]);
   assert.ok(w.repo.ereignisseAlle.some((e) => e.art === "abgemeldet") && w.repo.ereignisseAlle.some((e) => e.art === "wieder_verbunden"));
+});
+await pruefe("Anmeldung verloren: Bestätigungs-Mail erst nach 30 Minuten, nicht sofort", async () => {
+  const w = await mitToken("v000000014");
+  w.fly.anmeldungWert = { angemeldet: true }; await A.abgleichen(w.deps);
+  w.fly.anmeldungWert = { angemeldet: false, link: LINK };
+  w.setzeUhr(T + 60_000); await A.abgleichen(w.deps);
+  w.setzeUhr(T + 10 * 60_000); await A.abgleichen(w.deps);
+  assert.deepEqual(w.mails.map((m) => m.art), ["laeuft"], "kurz nach dem Verlust keine Mail");
+  w.setzeUhr(T + 32 * 60_000); await A.abgleichen(w.deps);
+  assert.deepEqual(w.mails.map((m) => `${m.art}${m.stufe ? ":" + m.stufe : ""}`), ["laeuft", "bestaetigen:bereit"]);
 });
 await pruefe("Neustart ohne Link (Token wird geladen): bleibt läuft", async () => {
   const w = await mitToken("v000000005");
@@ -601,7 +617,7 @@ await pruefe("Löschdatum für die Anzeige", () => {
 console.log("Cloud: Mails (Z4)");
 const mailsZ4 = [
   V.serverLaeuftMail(basisMail),
-  V.serverBestaetigenMail({ ...basisMail, stufe: "30m", bestaetigenUrl: "https://ava-db-gateway.fly.dev/cloud/bestaetigen?t=abc" }),
+  V.serverBestaetigenMail({ ...basisMail, stufe: "bereit", bestaetigenUrl: "https://ava-db-gateway.fly.dev/cloud/bestaetigen?t=abc" }),
   V.serverBestaetigenMail({ ...basisMail, stufe: "24h", bestaetigenUrl: "https://ava-db-gateway.fly.dev/cloud/bestaetigen?t=abc" }),
   V.serverNichtErreichbarMail({ ...basisMail, seit: "2026-12-01T11:00:00Z" }),
   V.serverWiederErreichbarMail({ ...basisMail, dauerMin: 30 }),
