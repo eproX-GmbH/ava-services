@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-20
-Anzahl Tools: 321
+Stand: 2026-11-24
+Anzahl Tools: 322
 
 ## Firmen (32)
 
@@ -2714,6 +2714,16 @@ _Parameter:_
 - `workaround: string` (required)
 - `suggestedCodeFix: string`
 - `rawErrorPreview: string`
+
+## server (1)
+
+### `server_stand`
+
+_Datei:_ `services/desktop/src/main/agent/tools/server.ts`
+
+Liest, ob für den Nutzer ein AVA-Server gebucht ist (AVA läuft dort rund um die Uhr, auch wenn der eigene Rechner aus ist) und in welchem Zustand er ist: Zahlung offen, wird eingerichtet, wartet auf Bestätigung, läuft, Störung, Update, pausiert (mit Grund und Löschdatum). Liefert einen Satz in Nutzersprache und den nächsten Schritt mit Link. Nur lesend: Buchen und Abbestellen laufen über die AVA-App (Mehr → Deine AVA), bei Organisationen über die AVA Konsole. Nicht von dir aus anbieten, nur wenn der Nutzer nach dem Server, nach AVA ohne laufenden Rechner oder nach einem Ausfall fragt.
+
+_Parameter:_ keine.
 
 ## skills (5)
 

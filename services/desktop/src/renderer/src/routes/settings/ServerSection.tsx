@@ -20,7 +20,7 @@ interface CloudMein {
     modellGewaehlt: boolean | null;
   } | null;
   buchbar: boolean;
-  weg: "buchen" | "kaufen" | "anfragen" | null;
+  weg: "buchen" | "kaufen" | "anfragen" | "vertrag" | null;
   preis: { serverCents: number; paketCents: number };
 }
 
@@ -73,10 +73,12 @@ export function ServerSection() {
               ? `${euro(d.preis.paketCents)} im Monat für Pro und Server zusammen, zzgl. MwSt., monatlich kündbar.`
               : d.weg === "anfragen"
                 ? "Den Server bucht deine Organisation für dich."
-                : `${euro(d.preis.serverCents)} im Monat zzgl. MwSt., monatlich kündbar.`}
+                : d.weg === "vertrag"
+                  ? "Für eure Organisation läuft der Server über den Vertrag. Schreib uns, wir richten ihn ein."
+                  : `${euro(d.preis.serverCents)} im Monat zzgl. MwSt., monatlich kündbar.`}
           </p>
           <ExternalLink href={mehr} className="btn">
-            {d.weg === "anfragen" ? "In der AVA-App anfragen" : "In der AVA-App buchen"}
+            {d.weg === "anfragen" || d.weg === "vertrag" ? "In der AVA-App anfragen" : "In der AVA-App buchen"}
           </ExternalLink>
         </>
       )}

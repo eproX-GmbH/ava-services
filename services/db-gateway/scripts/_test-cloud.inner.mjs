@@ -801,5 +801,46 @@ await pruefe("Update-Mails: abbestellbar (Abmeldelink), ohne Fachbegriffe", () =
   assert.match(m6.text, /zwischen 2 und 5 Uhr/);
 });
 
+console.log("Cloud: Enterprise mit Vertrag");
+await pruefe("Weg: Enterprise ohne Stripe-Abo → vertrag, nie kaufen; mit Abo buchen; Mitglied fragt an; Kauf und Buchung abgelehnt", async () => {
+  // Die Abrechnung lädt die Gateway-Konfiguration; für den Test genügen Platzhalter (nichts wird aufgerufen).
+  for (const k of ["DATABASE_URL", "EVENT_BUS_URL", "UPSTREAM_MASTER_DATA_URL", "UPSTREAM_COMPANY_PROFILE_URL", "UPSTREAM_COMPANY_CONTACT_URL", "UPSTREAM_COMPANY_PUBLICATION_URL", "UPSTREAM_WEBSITE_URL", "UPSTREAM_STRUCTURED_CONTENT_URL"]) {
+    process.env[k] ??= k === "DATABASE_URL" ? "postgres://x:y@127.0.0.1:1/x" : k === "EVENT_BUS_URL" ? "amqp://127.0.0.1:1" : "http://127.0.0.1:1";
+  }
+  process.env.JWT_ISSUER ??= "https://issuer.test/realms/ava"; process.env.JWKS_URI ??= "http://127.0.0.1:1/jwks";
+  const Ab0 = await import("../src/lib/cloud/abrechnung.ts");
+  const Ab = Ab0.default ?? Ab0;
+  const konten = {
+    ent: { tenantId: "ent", kind: "organisation", mode: "enterprise", tier: "enterprise", status: "active", stripeSubscriptionId: null },
+    entTier: { tenantId: "entTier", kind: "organisation", mode: "none", tier: "enterprise", status: "active", stripeSubscriptionId: null },
+    entAbo: { tenantId: "entAbo", kind: "organisation", mode: "enterprise", tier: "enterprise", status: "active", stripeSubscriptionId: "sub_1" },
+    neu: { tenantId: "neu", kind: "organisation", mode: "none", tier: "free", status: "active", stripeSubscriptionId: null },
+    pro: { tenantId: "pro", kind: "organisation", mode: "sitze", tier: "pro", status: "active", stripeSubscriptionId: "sub_2" },
+  };
+  const gesehen = [];
+  const q = { query: async (sql, p = []) => {
+    gesehen.push(String(sql));
+    if (/FROM "TenantBilling"/.test(sql)) return { rows: konten[p[0]] ? [konten[p[0]]] : [], rowCount: konten[p[0]] ? 1 : 0 };
+    if (/FROM "TenantMember"/.test(sql)) return { rows: [{}], rowCount: 1 };
+    return { rows: [], rowCount: 0 };
+  } };
+  assert.equal(await Ab.cloudWeg(q, "ent", true), "vertrag");
+  assert.equal(await Ab.cloudWeg(q, "entTier", true), "vertrag", "auch wenn nur die Stufe enterprise ist");
+  assert.equal(await Ab.cloudWeg(q, "entAbo", true), "buchen", "Enterprise mit Stripe-Abo bucht wie alle");
+  assert.equal(await Ab.cloudWeg(q, "neu", true), "kaufen");
+  assert.equal(await Ab.cloudWeg(q, "pro", true), "buchen");
+  assert.equal(await Ab.cloudWeg(q, "unbekannt", true), "kaufen", "ohne Abrechnungskonto: Neukunde");
+  assert.equal(await Ab.cloudWeg(q, "ent", false), "anfragen", "Mitglieder fragen ihre Admins");
+  assert.equal(await Ab.cloudUeberVertrag(q, "ent"), true);
+  assert.equal(await Ab.cloudUeberVertrag(q, "pro"), false);
+  // Buchen für ein Mitglied und der Neukunden-Kauf brechen ab, bevor Stripe oder Fly berührt werden.
+  process.env.STRIPE_PRICE_CLOUD = "price_test_cloud"; process.env.STRIPE_PRICE_PRO = "price_test_pro";
+  const betrieb = { anlegen: async () => { throw new Error("darf nicht anlegen"); }, stand: async () => null };
+  await assert.rejects(() => Ab.cloudEinschalten(q, betrieb, { tenantId: "ent", actorId: "a1", von: "a1" }), (e) => e.code === "vertrag" && /über den Vertrag/.test(e.message));
+  gesehen.length = 0;
+  await assert.rejects(() => Ab.cloudCheckout(q, { tenantId: "ent", actorId: "a1", email: "a@firma.test", appUrl: "https://app.test" }), (e) => e.code === "vertrag");
+  assert.ok(!gesehen.some((x) => /INSERT|UPDATE/.test(x)), "kein Schreibzugriff beim abgelehnten Kauf");
+});
+
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");
 process.exit(fehler ? 1 : 0);

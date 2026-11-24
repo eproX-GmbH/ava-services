@@ -26,6 +26,7 @@ const AUSNAHMEN = new Map([
   ["file-logger.ts", "Beenden-Spuren über app-/Fenster-Ereignisse (R2)"],
   ["billing.ts", "ava://-Protokoll, open-url, second-instance (R2)"],
   ["updater.ts", "electron-updater, Neustart-Dialog; im Server ersetzt docker pull den Updater"],
+  ["kanal-waechter.ts", "IPC und Fenster-Broadcast für den Kanal-Hinweis in der Kopfzeile, Feed-Umschaltung des Updaters; der Server hat keine Oberfläche und bekommt Versionen je Kanal über sein Image"],
   ["download-guard.ts", "will-download-Sperre für Electron-Sessions"],
   ["externe-links.ts", "Link-Umleitung aus Fenstern heraus"],
   ["producer-screenshots.ts", "protocol.handle für ava-screenshot (R2)"],

@@ -19,7 +19,7 @@ import { cloudBestaetigung, cloudBetrieb, rolloutDeps } from "../../lib/cloud/be
 import { jetztAktualisieren, versionAelter } from "../../lib/cloud/rollout";
 import { flyKunden } from "../../lib/cloud/fly-maschinen";
 import { loeschDatum, regelnAusEnv } from "../../lib/cloud/abgleich";
-import { CloudAbrechnungFehler, cloudAbbestellen, cloudCheckout, cloudEinschalten, cloudPreise, cloudWeg } from "../../lib/cloud/abrechnung";
+import { CloudAbrechnungFehler, cloudAbbestellen, cloudCheckout, cloudEinschalten, cloudPreise, cloudUeberVertrag, cloudWeg, VERTRAG_TEXT } from "../../lib/cloud/abrechnung";
 import type { CloudInstanz } from "../../lib/cloud/instanzen";
 import { kopfRelais } from "../../lib/kopf-relais";
 import { planEintrag } from "../../lib/billing-plans";
@@ -108,7 +108,8 @@ cloudRouter.openapi(
     if (!(await istAdmin(getGatewayPool(), auth.tenantId, auth.actorId))) throw new HTTPException(403, { message: "nur Owner/Admin" });
     const r = await getGatewayPool().query<{ id: string; actorId: string }>(`SELECT id, "actorId" FROM "CloudInstanz" WHERE "tenantId" = $1 AND "geloeschtAt" IS NULL`, [auth.tenantId]);
     const server = await Promise.all(r.rows.map(async (x) => ({ actorId: x.actorId, ...nutzerSicht((await cloudBetrieb().stand(x.id)) as CloudInstanz) })));
-    return c.json({ server, buchbar: offen(auth), preis: cloudPreise(planEintrag("pro").preisCents ?? 4900) }, 200);
+    // ueberVertrag: Enterprise ohne Stripe-Abo; die Konsole zeigt dann den Stand, bucht aber nicht.
+    return c.json({ server, buchbar: offen(auth), ueberVertrag: await cloudUeberVertrag(getGatewayPool(), auth.tenantId), preis: cloudPreise(planEintrag("pro").preisCents ?? 4900) }, 200);
   },
 );
 
@@ -129,6 +130,8 @@ cloudRouter.openapi(
     if (!(await istAdmin(pool, auth.tenantId, auth.actorId))) throw new HTTPException(403, { message: "Nur Owner oder Admin können den Server buchen." });
     if (an && !offen(auth)) throw new HTTPException(403, { message: "Der AVA-Server ist noch nicht buchbar." });
     try {
+      // Enterprise mit Vertrag: Buchen und Abbestellen laufen über den Betreiber, nie über Stripe.
+      if (await cloudUeberVertrag(pool, auth.tenantId)) throw new CloudAbrechnungFehler("vertrag", VERTRAG_TEXT);
       if (an) {
         const i = await cloudEinschalten(pool, cloudBetrieb(), { tenantId: auth.tenantId, actorId, von: auth.actorId });
         return c.json({ server: nutzerSicht(i) }, 200);

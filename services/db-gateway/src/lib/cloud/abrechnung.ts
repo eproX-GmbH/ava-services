@@ -27,7 +27,7 @@ type Q = { query: pg.Pool["query"] };
 export const cloudPreisId = () => stripePreis("CLOUD") ?? "";
 
 export class CloudAbrechnungFehler extends Error {
-  constructor(readonly code: "nicht_eingerichtet" | "kein_mitglied" | "braucht_sitz" | "braucht_checkout" | "hat_abo" | "nicht_gebucht", text: string) {
+  constructor(readonly code: "nicht_eingerichtet" | "kein_mitglied" | "braucht_sitz" | "braucht_checkout" | "hat_abo" | "nicht_gebucht" | "vertrag", text: string) {
     super(text);
   }
 }
@@ -59,6 +59,19 @@ async function cloudStripeSyncImpl(q: Q, tenantId: string, opt: { sofortRechnung
   return a.art;
 }
 
+/**
+ * Enterprise-Organisation mit Vertrag und ohne Stripe-Abo: Server laufen dort über den Vertrag
+ * und werden vom Betreiber eingerichtet. Ohne diese Prüfung landeten ihre Admins im Kauf für
+ * Neukunden (Pro-Sitz + Server über Stripe), Befund 2026-11-24.
+ */
+export async function cloudUeberVertrag(q: Q, tenantId: string): Promise<boolean> {
+  const acc = await readBillingAccount(q, tenantId);
+  if (!acc || acc.stripeSubscriptionId) return false;
+  return (acc.mode as string) === "enterprise" || (acc.tier as string) === "enterprise";
+}
+export const VERTRAG_TEXT = "Für eure Organisation läuft der AVA-Server über den Vertrag. Schreib uns an info@eprox-gmbh.de, wir richten ihn ein.";
+const vertragFehler = () => new CloudAbrechnungFehler("vertrag", VERTRAG_TEXT);
+
 /** Hat das Mitglied einen bezahlten Sitz (E2)? */
 async function hatSitz(q: Q, tenantId: string, actorId: string) {
   return (await sitzeLesen(q, tenantId)).some((s) => s.actorId === actorId);
@@ -81,6 +94,7 @@ export async function cloudEinschalten(pool: pg.Pool, betrieb: CloudBetrieb, a: 
     }
     return (await betrieb.stand(da.rows[0].id)) as CloudInstanz;
   }
+  if (await cloudUeberVertrag(pool, a.tenantId)) throw vertragFehler();
   if (!(await hatSitz(pool, a.tenantId, a.actorId))) throw new CloudAbrechnungFehler("braucht_sitz", "Für den Server braucht die Person einen bezahlten Sitz.");
   const acc = await readBillingAccount(pool, a.tenantId);
   if (!acc?.stripeSubscriptionId) throw new CloudAbrechnungFehler("braucht_checkout", "Die Organisation hat noch kein Abo; bitte über den Kauf buchen.");
@@ -92,12 +106,14 @@ export async function cloudEinschalten(pool: pg.Pool, betrieb: CloudBetrieb, a: 
 
 /**
  * Welcher Weg zum Server offen ist (App-Karte): Owner/Admin mit Abo bucht dazu, ohne Abo über
- * den Kauf (Pro-Sitz + Server); Mitglieder fragen ihre Admins.
+ * den Kauf (Pro-Sitz + Server); Mitglieder fragen ihre Admins. Enterprise mit Vertrag: weder
+ * buchen noch kaufen, der Server läuft über den Vertrag („vertrag“).
  */
-export async function cloudWeg(pool: pg.Pool, tenantId: string, admin: boolean): Promise<"buchen" | "kaufen" | "anfragen"> {
+export async function cloudWeg(pool: Q, tenantId: string, admin: boolean): Promise<"buchen" | "kaufen" | "anfragen" | "vertrag"> {
   if (!admin) return "anfragen";
   const acc = await readBillingAccount(pool, tenantId);
-  return acc?.stripeSubscriptionId ? "buchen" : "kaufen";
+  if (acc?.stripeSubscriptionId) return "buchen";
+  return (await cloudUeberVertrag(pool, tenantId)) ? "vertrag" : "kaufen";
 }
 
 /** Preise für die Anzeige (netto): Server allein und das Paket Pro + Server für den Kauf. */
@@ -168,6 +184,7 @@ async function cloudCheckoutImpl(
   const cloud = cloudPreisId();
   const pro = priceIdForTier("pro");
   if (!cloud || !pro) throw new CloudAbrechnungFehler("nicht_eingerichtet", "Server-Buchung ist noch nicht eingerichtet.");
+  if (await cloudUeberVertrag(pool, a.tenantId)) throw vertragFehler();
   const acc = await readBillingAccount(pool, a.tenantId);
   if (acc?.stripeSubscriptionId) throw new CloudAbrechnungFehler("hat_abo", "Es gibt schon ein Abo; der Server wird dort dazugebucht.");
   const mitSitz = await hatSitz(pool, a.tenantId, a.actorId);
