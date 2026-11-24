@@ -4,7 +4,7 @@ Sammelstelle für alles, was den Code begleitet aber nicht ins Hauptrepo-README 
 
 | Datei | Was drin steht |
 |---|---|
-| [`DECISIONS.md`](./DECISIONS.md) | Ratifizierte D1–D11-Architekturentscheidungen — was wir warum gewählt haben (Compute-Lokalität, Cloud-Substrat-Umfang, …) |
+| [`DECISIONS.md`](./DECISIONS.md) | Ratifizierte Architekturentscheidungen D1 bis D14 — was wir warum gewählt haben (Compute-Lokalität, Cloud-Substrat-Umfang, …) |
 | [`DESKTOP_DATA_FLOW.md`](./DESKTOP_DATA_FLOW.md) | Workflows W1–W25 quer durch die Pipeline, SSE-Bridge zwischen Producer und Desktop, IPC-Verträge |
 | [`INVENTORY.md`](./INVENTORY.md) | Vollständige Bestandsaufnahme aller Services, ihrer Verantwortlichkeiten und Schnittstellen |
 | [`PLAN_ENTERPRISE_FREIGABE.md`](./PLAN_ENTERPRISE_FREIGABE.md) | Konzern-/Enterprise-Freigabe: Status-quo-Ampel am Code, Entscheidungen E-1…E-15, Arbeitspakete E0–E8 (baut auf PLAN_COMPLIANCE_ENTERPRISE.md und PLAN_ORGANISATIONEN.md auf) |
