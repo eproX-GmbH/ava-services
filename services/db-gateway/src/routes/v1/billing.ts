@@ -18,7 +18,7 @@ import { HTTPException } from "hono/http-exception";
 // v0.1.158 — non-type-only because the stale-customer probe needs
 // Stripe.errors.StripeInvalidRequestError at runtime.
 import Stripe from "stripe";
-import { getStripe, getStripeWebhookSecret, mitStripeModus, type StripeModus } from "../../lib/stripe-client";
+import { getStripe, getStripeWebhookSecret, mitStripeModus, periodenEndeUnix, type StripeModus } from "../../lib/stripe-client";
 import type { Context } from "hono";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
@@ -408,7 +408,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         logger.warn({ eventId: event.id, priceId }, "unknown price id; skipping tier flip");
         return;
       }
-      const periodEndUnix = (sub as unknown as { current_period_end?: number }).current_period_end ?? null;
+      const periodEndUnix = periodenEndeUnix(sub);
       const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000) : null;
       const cancelAtPeriodEnd = (sub as unknown as { cancel_at_period_end?: boolean }).cancel_at_period_end === true;
       // B1 H2 — Reihenfolge: ein aelteres Event darf einen neueren Stand
@@ -541,8 +541,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         logger.info({ tenantId, invoiceId: inv.id }, "stripe invoice paid → active (K8)");
         await resumeForBillingAccount(tenantId);
       }
-      // AVA-Server: bezahlte Buchungen freigeben, pausierte Server wieder anlaufen lassen.
-      { const { cloudNachStripe } = await import("../../lib/cloud/betrieb"); await cloudNachStripe(tenantId, "bezahlt"); }
+      // AVA-Server: bezahlte Buchungen freigeben (nur mit Server-Posten), pausierte Server wieder anlaufen lassen.
+      { const { cloudNachStripe } = await import("../../lib/cloud/betrieb"); await cloudNachStripe(tenantId, "bezahlt", undefined, inv); }
       return;
     }
     default:

@@ -10,7 +10,7 @@
 // BILLING_CRON_DISABLED=1 schaltet alles ab (Tests, souveraener Betrieb
 // ohne Stripe laesst nur den Abgleich aus).
 
-import { stripeModusVon } from "./stripe-client";
+import { periodenEndeUnix, stripeModusVon } from "./stripe-client";
 import type { ZugangStand } from "./billing";
 import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
@@ -280,7 +280,7 @@ async function reconcileWithStripe(): Promise<void> {
     const tier = priceId ? tierFromPriceId(priceId) : null;
     if (!tier) continue;
     const cancel = (live as unknown as { cancel_at_period_end?: boolean }).cancel_at_period_end === true;
-    const periodEndUnix = (live as unknown as { current_period_end?: number }).current_period_end ?? null;
+    const periodEndUnix = periodenEndeUnix(live);
     const status = live.status === "past_due" || live.status === "unpaid" ? (row.status === "suspended" ? "suspended" : "past_due") : "active";
     if (row.tier !== tier || row.cancelAtPeriodEnd !== cancel || row.stripeSubscriptionId !== live.id || row.status !== status) {
       await pool.query(

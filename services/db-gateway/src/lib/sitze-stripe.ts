@@ -13,7 +13,7 @@
 // Erster Kauf ohne Abo laeuft ueber Checkout (Zahlungsmittel + erste Sitze);
 // der Webhook legt dann die Sitze an.
 
-import { mitModusVon } from "./stripe-client";
+import { mitModusVon, periodenEndeUnix } from "./stripe-client";
 import { stripeSchluesselDa } from "./stripe-client";
 import type Stripe from "stripe";
 import type pg from "pg";
@@ -145,7 +145,7 @@ async function sitzeVorschauImpl(
   });
   // Nur die Proration-Zeilen zaehlen (die Vorschau enthaelt auch die naechste regulaere Rechnung).
   const heute = preview.lines.data.filter((l) => (l as { proration?: boolean }).proration).reduce((s, l) => s + l.amount, 0);
-  const periodEndUnix = (sub as unknown as { current_period_end?: number }).current_period_end ?? null;
+  const periodEndUnix = periodenEndeUnix(sub);
   return { heuteCents: Math.max(0, heute), jeMonatCents: jeMonat, periodEnd: periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null, anteilig: true };
 }
 
@@ -157,7 +157,7 @@ export async function sitzeAusStripeAbgleichen(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const periodEndUnix = (args.sub as unknown as { current_period_end?: number }).current_period_end ?? null;
+    const periodEndUnix = periodenEndeUnix(args.sub);
     await client.query(
       `INSERT INTO "TenantBilling" ("tenantId", "kind", "mode", tier, "quotaLimit", "stripeCustomerId", "stripeSubscriptionId", "periodEnd", "status", "lastStripeEventAt", "updatedAt", "createdAt")
        VALUES ($1, 'organisation', 'sitze', 'free', -1, $2, $3, $4, $5, to_timestamp($6), NOW(), NOW())

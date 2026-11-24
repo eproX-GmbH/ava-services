@@ -111,8 +111,35 @@ export function cloudAbgleichAnstossen(instanzId?: string): void {
   setImmediate(() => void cloudAbgleich(instanzId).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[cloud-abgleich] Anstoß fehlgeschlagen")));
 }
 
+// ---- Prüflauf Abrechnung (Härtetest 2026-11-24) ------------------------------------
+
+const PRUEF_MS = 60 * 60_000;
+/** Dieselbe Abweichung höchstens einmal am Tag melden. */
+const gemeldet = new Map<string, number>();
+
+/** Gebuchte Server gegen den Stripe-Posten; Abweichungen als Betreiber-Alarm. */
+export async function cloudPostenPruefenUndMelden(): Promise<number> {
+  const { cloudPostenPruefen } = await import("./abrechnung");
+  const abw = await cloudPostenPruefen(getGatewayPool());
+  const jetzt = Date.now();
+  for (const x of abw) {
+    const k = `${x.tenantId}:${x.gebucht}:${x.abgerechnet}`;
+    if ((gemeldet.get(k) ?? 0) > jetzt - 24 * 60 * 60_000) continue;
+    gemeldet.set(k, jetzt);
+    const art = x.gebucht > x.abgerechnet ? "läuft ohne Abrechnung" : "wird zu hoch abgerechnet";
+    await betreiberMelden(`Abrechnung AVA-Server ${art}: Organisation ${x.tenantId} hat ${x.gebucht} gebuchte Server, Stripe rechnet ${x.abgerechnet} ab. Bitte prüfen.`);
+  }
+  return abw.length;
+}
+
 export function startCloudAbgleich(): void {
   verbindungEinhaken();
+  // Prüflauf nur im Prod-Gateway (Staging teilt die Datenbank und würde doppelt melden).
+  if (gatewayRolle() === "prod" && process.env.CLOUD_POSTEN_PRUEFEN !== "0") {
+    const pruefen = () => void cloudPostenPruefenUndMelden().catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[cloud] Prüflauf Abrechnung fehlgeschlagen"));
+    setTimeout(pruefen, 10 * 60_000).unref?.();
+    setInterval(pruefen, PRUEF_MS).unref?.();
+  }
   if (process.env.CLOUD_ABGLEICH === "0") { logger.info("[cloud-abgleich] aus (CLOUD_ABGLEICH=0)"); return; }
   if (!flyKundenEingerichtet()) { logger.info("[cloud-abgleich] nicht eingerichtet (FLY_KUNDEN_TOKEN fehlt)"); return; }
   const tick = () => void cloudAbgleich().catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[cloud-abgleich] Lauf fehlgeschlagen"));
@@ -192,13 +219,20 @@ export async function cloudMailen(art: MailArt, i: CloudInstanz, extra: Record<s
  * Organisation abgleichen (Pause bzw. Wiederanlauf, Erinnerungen). Wirft nie: der Webhook
  * der Abrechnung darf daran nicht scheitern.
  */
-export async function cloudNachStripe(tenantId: string, art: "bezahlt" | "fehlgeschlagen" | "abo" | "checkout", session?: { metadata?: Record<string, string> | null; payment_status?: string | null }): Promise<void> {
+export async function cloudNachStripe(
+  tenantId: string,
+  art: "bezahlt" | "fehlgeschlagen" | "abo" | "checkout",
+  session?: { metadata?: Record<string, string> | null; payment_status?: string | null },
+  /** Bei „bezahlt“: die Rechnung; nur eine mit Server-Posten gibt offene Buchungen frei. */
+  rechnung?: unknown,
+): Promise<void> {
   try {
     const pool = getGatewayPool();
-    const { cloudCheckoutAbgeschlossen, cloudZahlungEingegangen } = await import("./abrechnung");
+    const { cloudAboBeendet, cloudCheckoutAbgeschlossen, cloudZahlungEingegangen } = await import("./abrechnung");
+    if (art === "abo") await cloudAboBeendet(pool, tenantId);
     const frei = art === "checkout" && session
       ? await cloudCheckoutAbgeschlossen(pool, cloudBetrieb(), session, tenantId)
-      : art === "bezahlt" ? await cloudZahlungEingegangen(pool, cloudBetrieb(), tenantId) : [];
+      : art === "bezahlt" ? await cloudZahlungEingegangen(pool, cloudBetrieb(), tenantId, rechnung) : [];
     for (const z of frei) await cloudMailen("bezahlt", z).catch((err) => logger.warn({ id: z.id, err: err instanceof Error ? err.message : String(err) }, "[cloud] Mail M1 fehlgeschlagen"));
     const r = await pool.query<{ id: string }>(`SELECT id FROM "CloudInstanz" WHERE "tenantId" = $1 AND "geloeschtAt" IS NULL`, [tenantId]);
     for (const x of r.rows) cloudAbgleichAnstossen(x.id);

@@ -25,6 +25,7 @@
     "test:mcp-plugin": "node scripts/test-mcp-plugin.mjs",
     "plugin:zip": "node scripts/plugin-zip.mjs",
     "test:cloud": "node scripts/test-cloud.mjs",
+    "test:cloud-abrechnung": "node scripts/test-cloud-abrechnung.mjs",
     "test:staging": "node scripts/test-staging.mjs"
   },
   "dependencies": {

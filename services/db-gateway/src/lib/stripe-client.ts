@@ -40,6 +40,27 @@ export async function mitModusVon<T>(pool: Pick<pg.Pool, "query">, tenantId: str
   return mitStripeModus(await stripeModusVon(pool, tenantId), f);
 }
 
+/**
+ * Ende der laufenden Abrechnungsperiode eines Abos (Unix-Sekunden) oder null.
+ *
+ * Seit Stripe-API 2025-03-31 steht `current_period_end` nicht mehr am Abo, sondern an jedem
+ * Abo-Posten. Webhooks kommen in der API-Version des Kontos, Abfragen in der des SDK: Beides
+ * muss gehen. Fehlte das Ende, galt jede Abbestellung sofort und jedes Wiederbuchen als neue
+ * Buchung mit Sofortrechnung (Befund Härtetest 2026-11-24).
+ */
+export function periodenEndeUnix(sub: unknown): number | null {
+  const s = sub as { current_period_end?: unknown; items?: { data?: Array<{ current_period_end?: unknown }> } } | null;
+  if (typeof s?.current_period_end === "number" && s.current_period_end > 0) return s.current_period_end;
+  const enden = (s?.items?.data ?? []).map((i) => i?.current_period_end).filter((x): x is number => typeof x === "number" && x > 0);
+  return enden.length ? Math.min(...enden) : null;
+}
+
+/** Wie periodenEndeUnix, als Datum. */
+export function periodenEnde(sub: unknown): Date | null {
+  const u = periodenEndeUnix(sub);
+  return u ? new Date(u * 1000) : null;
+}
+
 /** Preis-ID je Modus: STRIPE_PRICE_<NAME> bzw. STRIPE_TEST_PRICE_<NAME>. */
 export function stripePreis(name: "STARTER" | "PRO" | "MAX" | "ULTRA" | "CLOUD", modus: StripeModus = stripeModus()): string | undefined {
   const v = process.env[modus === "test" ? `STRIPE_TEST_PRICE_${name}` : `STRIPE_PRICE_${name}`]?.trim();

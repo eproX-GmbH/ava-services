@@ -6,10 +6,17 @@
 //                    die Rechnung bezahlt ist (Webhook invoice.paid → zahlungEingegangen).
 //   - abbestellen  → läuft bis Zyklusende (abbestelltZum), Menge sofort runter ohne Erstattung.
 //   - widerrufen   → Abbestellung aufheben, Menge wieder hoch ohne neue Rechnung.
+//   - wieder buchen nach Zyklusende → Sofortrechnung, die bezahlt sein muss (error_if_incomplete);
+//                    scheitert sie, bleibt der Server pausiert und nichts ändert sich.
+// Härtetest 2026-11-24: Jeder Schritt läuft unter einer Sperre je Organisation in EINER
+// Transaktion mit dem Stripe-Aufruf (scheitert Stripe, wird die Datenbank zurückgerollt), eine
+// zweite Abbestellung verschiebt das Ende nie nach hinten, und stündlich vergleicht
+// `cloudPostenPruefen` die gebuchten Server mit dem Posten bei Stripe.
 // Voraussetzung (E2): das Mitglied hat einen bezahlten Sitz. Einzelkämpfer ohne Abo gehen über
 // den Checkout (Pro-Sitz + Server in einem Kauf).
 
-import { mitModusVon, stripePreis, stripeSchluesselDa } from "../stripe-client";
+import { mitModusVon, periodenEnde, stripePreis, stripeSchluesselDa } from "../stripe-client";
+import { logger } from "../logger";
 import type pg from "pg";
 import type Stripe from "stripe";
 import { getStripe } from "../stripe-client";
@@ -27,7 +34,7 @@ type Q = { query: pg.Pool["query"] };
 export const cloudPreisId = () => stripePreis("CLOUD") ?? "";
 
 export class CloudAbrechnungFehler extends Error {
-  constructor(readonly code: "nicht_eingerichtet" | "kein_mitglied" | "braucht_sitz" | "braucht_checkout" | "hat_abo" | "nicht_gebucht" | "vertrag", text: string) {
+  constructor(readonly code: "nicht_eingerichtet" | "kein_mitglied" | "braucht_sitz" | "braucht_checkout" | "hat_abo" | "nicht_gebucht" | "vertrag" | "zahlung" | "stripe", text: string) {
     super(text);
   }
 }
@@ -42,21 +49,90 @@ export async function cloudMenge(q: Q, tenantId: string): Promise<number> {
 }
 
 
-/** Server-Posten mit der Zahl gebuchter Server abgleichen. `sofortRechnung` nur beim Einschalten. */
-async function cloudStripeSyncImpl(q: Q, tenantId: string, opt: { sofortRechnung: boolean }): Promise<"kein_abo" | PostenAktion["art"]> {
-  const priceId = cloudPreisId();
-  if (!priceId || !stripeSchluesselDa()) throw new CloudAbrechnungFehler("nicht_eingerichtet", "Server-Buchung ist noch nicht eingerichtet.");
+/**
+ * Server-Posten mit der Zahl gebuchter Server abgleichen. `sofortRechnung` nur beim Einschalten;
+ * `zahlungPflicht`: Stripe übernimmt die Erhöhung nur, wenn die Sofortrechnung gleich bezahlt
+ * ist, sonst Fehler 402 und keine Änderung (Wiederbuchen nach Zyklusende: der Server läuft
+ * sofort wieder an, also muss das Geld vorher da sein).
+ */
+async function cloudStripeSyncImpl(q: Q, tenantId: string, opt: { sofortRechnung: boolean; zahlungPflicht?: boolean }): Promise<"kein_abo" | PostenAktion["art"]> {
   const acc = await readBillingAccount(q, tenantId);
   if (!acc?.stripeSubscriptionId) return "kein_abo";
+  const priceId = cloudPreisId();
+  if (!priceId || !stripeSchluesselDa()) throw new CloudAbrechnungFehler("nicht_eingerichtet", "Server-Buchung ist noch nicht eingerichtet.");
   const stripe = getStripe();
   const sub = await stripe.subscriptions.retrieve(acc.stripeSubscriptionId, { expand: ["items.data.price"] });
   const menge = await cloudMenge(q, tenantId);
   const a = postenAktion(sub.items.data.map((i) => ({ id: i.id, priceId: i.price?.id ?? null, quantity: i.quantity ?? null })), priceId, menge);
   const proration: Stripe.SubscriptionItemUpdateParams.ProrationBehavior = opt.sofortRechnung ? "always_invoice" : "none";
-  if (a.art === "anlegen") await stripe.subscriptionItems.create({ subscription: sub.id, price: priceId, quantity: a.menge, proration_behavior: proration });
-  else if (a.art === "menge") await stripe.subscriptionItems.update(a.itemId, { quantity: a.menge, proration_behavior: a.hoch ? proration : "none" });
+  const zahlung = opt.sofortRechnung && opt.zahlungPflicht ? { payment_behavior: "error_if_incomplete" as const } : {};
+  if (a.art === "anlegen") await stripe.subscriptionItems.create({ subscription: sub.id, price: priceId, quantity: a.menge, proration_behavior: proration, ...zahlung });
+  else if (a.art === "menge") await stripe.subscriptionItems.update(a.itemId, { quantity: a.menge, proration_behavior: a.hoch ? proration : "none", ...(a.hoch ? zahlung : {}) });
   else if (a.art === "entfernen") await stripe.subscriptionItems.del(a.itemId, { proration_behavior: "none" });
   return a.art;
+}
+
+/**
+ * Abrechnungsschritte einer Organisation nacheinander (Doppelklick, zwei Tabs, Prüflauf) und
+ * Datenbank + Stripe in einem Zug: Wirft der Stripe-Aufruf, wird alles zurückgerollt. Der
+ * Stripe-Abgleich liest über dieselbe Verbindung und sieht so den neuen Stand.
+ */
+export async function mitSperre<T>(pool: pg.Pool, tenantId: string, f: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`cloud-abrechnung:${tenantId}`]);
+    const r = await f(c);
+    await c.query("COMMIT");
+    return r;
+  } catch (e) {
+    await c.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  } finally {
+    c.release();
+  }
+}
+
+/** Stripe-Fehler in Sätze für die App; die Datenbank ist dann schon zurückgerollt. */
+async function stripeSchritt<T>(tenantId: string, f: () => Promise<T>): Promise<T> {
+  try {
+    return await f();
+  } catch (e) {
+    if (e instanceof CloudAbrechnungFehler) throw e;
+    const x = e as { type?: string; statusCode?: number; code?: string; message?: string };
+    logger.warn({ tenantId, type: x?.type, code: x?.code, status: x?.statusCode, err: x?.message }, "[cloud] Stripe-Schritt fehlgeschlagen, nichts geändert");
+    if (x?.type === "StripeCardError" || x?.statusCode === 402) {
+      throw new CloudAbrechnungFehler("zahlung", "Die Zahlung hat nicht geklappt, der Server bleibt pausiert. Prüf die Zahlungsmethode in der Konsole unter Abrechnung und buch dann noch einmal.");
+    }
+    throw new CloudAbrechnungFehler("stripe", "Die Abrechnung ist gerade nicht erreichbar. Es hat sich nichts geändert, versuch es gleich noch einmal.");
+  }
+}
+
+/**
+ * Ende der bezahlten Periode für eine Abbestellung. Gespeichertes Ende nur, wenn es in der
+ * Zukunft liegt; sonst bei Stripe nachsehen. Erst wenn es kein Abo gibt, gilt „sofort“.
+ */
+async function zyklusEnde(q: Q, tenantId: string): Promise<Date> {
+  const jetzt = Date.now();
+  const acc = await readBillingAccount(q, tenantId);
+  if (acc?.periodEnd && acc.periodEnd.getTime() > jetzt) return acc.periodEnd;
+  if (acc?.stripeSubscriptionId) {
+    const ende = await mitModusVon(q, tenantId, async () => (stripeSchluesselDa() ? periodenEnde(await getStripe().subscriptions.retrieve(acc.stripeSubscriptionId!)) : null));
+    if (ende && ende.getTime() > jetzt) return ende;
+  }
+  return new Date(jetzt);
+}
+
+/** Enthält eine Rechnung den Preis? Alte (line.price) und neue API-Form (line.pricing); null = nicht feststellbar. */
+export function rechnungHatPreis(inv: unknown, priceId: string): boolean | null {
+  const lines = (inv as { lines?: { data?: unknown[]; has_more?: boolean } } | null)?.lines;
+  if (!priceId || !Array.isArray(lines?.data)) return null;
+  const id = (p: unknown) => (typeof p === "string" ? p : (p as { id?: string } | null)?.id);
+  const treffer = lines.data.some((l) => {
+    const x = l as { price?: unknown; pricing?: { price_details?: { price?: unknown } } | null };
+    return id(x.price) === priceId || id(x.pricing?.price_details?.price) === priceId;
+  });
+  return treffer ? true : lines.has_more ? null : false;
 }
 
 /**
@@ -80,28 +156,53 @@ async function hatSitz(q: Q, tenantId: string, actorId: string) {
 /** Admin (oder Einzelkämpfer für sich) schaltet den Server für ein Mitglied ein. */
 export async function cloudEinschalten(pool: pg.Pool, betrieb: CloudBetrieb, a: { tenantId: string; actorId: string; von: string }): Promise<CloudInstanz> {
   if (!cloudPreisId()) throw new CloudAbrechnungFehler("nicht_eingerichtet", "Server-Buchung ist noch nicht eingerichtet.");
+  // Enterprise mit Vertrag: nie über Stripe, auch nicht das Wiederbuchen (sonst liefe er ohne Posten).
+  if (await cloudUeberVertrag(pool, a.tenantId)) throw vertragFehler();
   const m = await pool.query(`SELECT 1 FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2 AND status = 'aktiv'`, [a.tenantId, a.actorId]);
   if (!m.rowCount) throw new CloudAbrechnungFehler("kein_mitglied", "Diese Person ist kein aktives Mitglied der Organisation.");
-  const da = await pool.query<{ id: string; abbestelltZum: Date | null }>(`SELECT id, "abbestelltZum" FROM "CloudInstanz" WHERE "tenantId" = $1 AND "actorId" = $2 AND "geloeschtAt" IS NULL`, [a.tenantId, a.actorId]);
-  if (da.rows[0]) {
-    if (da.rows[0].abbestelltZum) {
+  const vorhanden = await mitSperre(pool, a.tenantId, async (c) => {
+    const da = await c.query<{ id: string; abbestelltZum: Date | null }>(
+      `SELECT id, "abbestelltZum" FROM "CloudInstanz" WHERE "tenantId" = $1 AND "actorId" = $2 AND "geloeschtAt" IS NULL FOR UPDATE`,
+      [a.tenantId, a.actorId],
+    );
+    const z = da.rows[0];
+    if (!z) return null;
+    if (z.abbestelltZum) {
       // Vor Zyklusende: Abbestellung widerrufen, der Zeitraum ist bezahlt, keine neue Rechnung.
-      // Danach (Server schon pausiert): wie eine neue Buchung sofort abrechnen.
-      const abgelaufen = da.rows[0].abbestelltZum.getTime() <= Date.now();
-      await pool.query(`UPDATE "CloudInstanz" SET "abbestelltZum" = NULL, "gewuenscht" = 'laufen', "updatedAt" = now() WHERE id = $1`, [da.rows[0].id]);
-      await pool.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, $2, 'admin', $3)`, [da.rows[0].id, abgelaufen ? "wieder_gebucht" : "abbestellung_widerrufen", JSON.stringify({ von: a.von })]);
-      await cloudStripeSync(pool, a.tenantId, { sofortRechnung: abgelaufen });
+      // Danach (Server schon pausiert): wie eine neue Buchung sofort abrechnen, und zwar nur, wenn
+      // die Rechnung gleich bezahlt ist; sonst wirft Stripe und alles bleibt, wie es war.
+      const abgelaufen = z.abbestelltZum.getTime() <= Date.now();
+      // Ohne Abo gäbe es keine Rechnung (Abgleich meldete „kein_abo“) und der Server liefe umsonst.
+      if (abgelaufen) {
+        const acc = await readBillingAccount(c, a.tenantId);
+        if (!acc?.stripeSubscriptionId || acc.status === "canceled") {
+          throw new CloudAbrechnungFehler("braucht_checkout", "Das Abo deiner Organisation ist beendet. Schließ in der Konsole unter Abrechnung ein neues ab und buch den Server dann wieder.");
+        }
+      }
+      await c.query(`UPDATE "CloudInstanz" SET "abbestelltZum" = NULL, "gewuenscht" = 'laufen', "updatedAt" = now() WHERE id = $1`, [z.id]);
+      await c.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, $2, 'admin', $3)`, [z.id, abgelaufen ? "wieder_gebucht" : "abbestellung_widerrufen", JSON.stringify({ von: a.von })]);
+      await stripeSchritt(a.tenantId, () => cloudStripeSync(c, a.tenantId, { sofortRechnung: abgelaufen, zahlungPflicht: abgelaufen }));
     }
-    return (await betrieb.stand(da.rows[0].id)) as CloudInstanz;
-  }
-  if (await cloudUeberVertrag(pool, a.tenantId)) throw vertragFehler();
+    return z.id;
+  });
+  if (vorhanden) return (await betrieb.stand(vorhanden)) as CloudInstanz;
   if (!(await hatSitz(pool, a.tenantId, a.actorId))) throw new CloudAbrechnungFehler("braucht_sitz", "Für den Server braucht die Person einen bezahlten Sitz.");
   const acc = await readBillingAccount(pool, a.tenantId);
   if (!acc?.stripeSubscriptionId) throw new CloudAbrechnungFehler("braucht_checkout", "Die Organisation hat noch kein Abo; bitte über den Kauf buchen.");
-  const z = await betrieb.anlegen({ tenantId: a.tenantId, actorId: a.actorId, quelle: "admin", zahlungOffen: true });
-  await cloudStripeSync(pool, a.tenantId, { sofortRechnung: true });
-  await recordBillingEvent(pool, { billingAccountId: a.tenantId, kind: "cloud_eingeschaltet", source: "admin", actorId: a.von, payload: { instanzId: z.id, fuer: a.actorId } });
-  return z;
+  return mitSperre(pool, a.tenantId, async (c) => {
+    // Angelegt wird erst „zahlung_offen“; freigegeben nur durch die bezahlte Rechnung (Webhook).
+    const z = await betrieb.anlegen({ tenantId: a.tenantId, actorId: a.actorId, quelle: "admin", zahlungOffen: true });
+    if (z.zustand !== "zahlung_offen") return z; // gleichzeitige Buchung war schneller
+    try {
+      await stripeSchritt(a.tenantId, () => cloudStripeSync(c, a.tenantId, { sofortRechnung: true }));
+    } catch (e) {
+      // Ohne Rechnung keine Buchung: sonst gäbe eine spätere, fremde Zahlung der Organisation den Server frei.
+      await pool.query(`UPDATE "CloudInstanz" SET zustand = 'geloescht', soll = 'gestoppt', gewuenscht = 'gestoppt', "geloeschtAt" = now(), "updatedAt" = now() WHERE id = $1 AND zustand = 'zahlung_offen'`, [z.id]);
+      throw e;
+    }
+    await recordBillingEvent(c, { billingAccountId: a.tenantId, kind: "cloud_eingeschaltet", source: "admin", actorId: a.von, payload: { instanzId: z.id, fuer: a.actorId } });
+    return z;
+  });
 }
 
 /**
@@ -123,25 +224,55 @@ export function cloudPreise(proCents: number): { serverCents: number; paketCents
   return { serverCents, paketCents: serverCents + proCents };
 }
 
-/** Server abbestellen: läuft bis Zyklusende; nie bezahlte Buchungen verschwinden sofort. */
+/**
+ * Server abbestellen: läuft bis Zyklusende; nie bezahlte Buchungen verschwinden sofort.
+ * Schon abbestellt: nichts verschieben. Ein späteres Ende gäbe einen abgelaufenen, pausierten
+ * Server für die neue, unbezahlte Periode wieder frei (Härtetest 2026-11-24: zweiter Tab).
+ */
 export async function cloudAbbestellen(pool: pg.Pool, a: { tenantId: string; actorId: string; von: string }): Promise<{ bis: string | null }> {
-  const r = await pool.query<{ id: string; zustand: string }>(`SELECT id, zustand FROM "CloudInstanz" WHERE "tenantId" = $1 AND "actorId" = $2 AND "geloeschtAt" IS NULL`, [a.tenantId, a.actorId]);
-  const z = r.rows[0];
-  if (!z) throw new CloudAbrechnungFehler("nicht_gebucht", "Für diese Person ist kein Server gebucht.");
-  let bis: Date | null;
-  if (z.zustand === "zahlung_offen") {
-    // Nie bezahlt, nichts bei Fly: Buchung einfach zurücknehmen.
-    await pool.query(`UPDATE "CloudInstanz" SET zustand = 'geloescht', soll = 'gestoppt', gewuenscht = 'gestoppt', "geloeschtAt" = now(), "updatedAt" = now() WHERE id = $1`, [z.id]);
-    bis = null;
-  } else {
-    const acc = await readBillingAccount(pool, a.tenantId);
-    bis = acc?.periodEnd ?? new Date();
-    await pool.query(`UPDATE "CloudInstanz" SET "abbestelltZum" = $2, "updatedAt" = now() WHERE id = $1`, [z.id, bis]);
-  }
-  await pool.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, 'abbestellt', 'admin', $2)`, [z.id, JSON.stringify({ von: a.von, bis: bis?.toISOString() ?? null })]);
-  await cloudStripeSync(pool, a.tenantId, { sofortRechnung: false }).catch(() => "kein_abo");
-  await recordBillingEvent(pool, { billingAccountId: a.tenantId, kind: "cloud_abbestellt", source: "admin", actorId: a.von, payload: { instanzId: z.id, bis: bis?.toISOString() ?? null } });
-  return { bis: bis?.toISOString() ?? null };
+  return mitSperre(pool, a.tenantId, async (c) => {
+    const r = await c.query<{ id: string; zustand: string; abbestelltZum: Date | null }>(
+      `SELECT id, zustand, "abbestelltZum" FROM "CloudInstanz" WHERE "tenantId" = $1 AND "actorId" = $2 AND "geloeschtAt" IS NULL FOR UPDATE`,
+      [a.tenantId, a.actorId],
+    );
+    const z = r.rows[0];
+    if (!z) throw new CloudAbrechnungFehler("nicht_gebucht", "Für diese Person ist kein Server gebucht.");
+    if (z.abbestelltZum) return { bis: z.abbestelltZum.toISOString() };
+    let bis: Date | null;
+    if (z.zustand === "zahlung_offen") {
+      // Nie bezahlt, nichts bei Fly: Buchung einfach zurücknehmen.
+      await c.query(`UPDATE "CloudInstanz" SET zustand = 'geloescht', soll = 'gestoppt', gewuenscht = 'gestoppt', "geloeschtAt" = now(), "updatedAt" = now() WHERE id = $1`, [z.id]);
+      bis = null;
+    } else {
+      bis = await stripeSchritt(a.tenantId, () => zyklusEnde(c, a.tenantId));
+      await c.query(`UPDATE "CloudInstanz" SET "abbestelltZum" = $2, "updatedAt" = now() WHERE id = $1`, [z.id, bis]);
+    }
+    await c.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, 'abbestellt', 'admin', $2)`, [z.id, JSON.stringify({ von: a.von, bis: bis?.toISOString() ?? null })]);
+    await stripeSchritt(a.tenantId, () => cloudStripeSync(c, a.tenantId, { sofortRechnung: false }));
+    await recordBillingEvent(c, { billingAccountId: a.tenantId, kind: "cloud_abbestellt", source: "admin", actorId: a.von, payload: { instanzId: z.id, bis: bis?.toISOString() ?? null } });
+    return { bis: bis?.toISOString() ?? null };
+  });
+}
+
+/**
+ * Abo der Organisation beendet (Status canceled): gebuchte Server gelten ab jetzt als abbestellt.
+ * Sonst liefen sie mit einem späteren neuen Abo (etwa nur Sitze) stillschweigend wieder an,
+ * ohne Server-Posten darauf. Zurück kommt der Server nur über „Wieder buchen“ (Sofortrechnung).
+ */
+export async function cloudAboBeendet(pool: pg.Pool, tenantId: string): Promise<number> {
+  const acc = await readBillingAccount(pool, tenantId);
+  if (acc?.status !== "canceled") return 0;
+  return mitSperre(pool, tenantId, async (c) => {
+    const r = await c.query<{ id: string }>(
+      `UPDATE "CloudInstanz" SET "abbestelltZum" = now(), "updatedAt" = now()
+        WHERE "tenantId" = $1 AND "geloeschtAt" IS NULL AND "abbestelltZum" IS NULL AND zustand <> 'zahlung_offen' RETURNING id`,
+      [tenantId],
+    );
+    for (const z of r.rows) {
+      await c.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, 'abbestellt', 'webhook', $2)`, [z.id, JSON.stringify({ grund: "abo_beendet" })]);
+    }
+    return r.rowCount ?? 0;
+  });
 }
 
 /**
@@ -149,7 +280,10 @@ export async function cloudAbbestellen(pool: pg.Pool, a: { tenantId: string; act
  * Hat das Mitglied (Checkout-Weg) noch keinen Sitz, bekommt es einen freien.
  * Gibt die freigegebenen Instanzen zurück (für Mail M1).
  */
-export async function cloudZahlungEingegangen(pool: pg.Pool, betrieb: CloudBetrieb, tenantId: string): Promise<CloudInstanz[]> {
+export async function cloudZahlungEingegangen(pool: pg.Pool, betrieb: CloudBetrieb, tenantId: string, rechnung?: unknown): Promise<CloudInstanz[]> {
+  // Nur die Rechnung mit dem Server-Posten gibt frei, nicht irgendeine andere der Organisation
+  // (etwa ein neuer Sitz), während die Server-Rechnung noch offen ist.
+  if (rechnung !== undefined && rechnungHatPreis(rechnung, cloudPreisId()) === false) return [];
   const offen = await pool.query<{ id: string; actorId: string }>(`SELECT id, "actorId" FROM "CloudInstanz" WHERE "tenantId" = $1 AND zustand = 'zahlung_offen' AND "geloeschtAt" IS NULL`, [tenantId]);
   const frei: CloudInstanz[] = [];
   for (const o of offen.rows) {
@@ -208,8 +342,47 @@ async function cloudCheckoutImpl(
 export async function cloudCheckoutAbgeschlossen(pool: pg.Pool, betrieb: CloudBetrieb, session: { metadata?: Record<string, string> | null; payment_status?: string | null }, tenantId: string): Promise<CloudInstanz[]> {
   const fuer = session.metadata?.cloudFuer;
   if (!fuer) return [];
-  await betrieb.anlegen({ tenantId, actorId: fuer, quelle: "webhook", zahlungOffen: true });
+  const z = await betrieb.anlegen({ tenantId, actorId: fuer, quelle: "webhook", zahlungOffen: true });
+  if (z.abbestelltZum && session.payment_status === "paid") {
+    // Pausierter Server von früher (Abo beendet, Daten noch da): Der Kauf enthält den Server-Posten.
+    await pool.query(`UPDATE "CloudInstanz" SET "abbestelltZum" = NULL, "gewuenscht" = 'laufen', "updatedAt" = now() WHERE id = $1`, [z.id]);
+    await pool.query(`INSERT INTO "CloudEreignis" (id, "instanzId", art, quelle, details) VALUES (gen_random_uuid()::text, $1, 'wieder_gebucht', 'webhook', $2)`, [z.id, JSON.stringify({ ueber: "kauf" })]);
+  }
   return session.payment_status === "paid" ? cloudZahlungEingegangen(pool, betrieb, tenantId) : [];
+}
+
+/**
+ * Prüflauf (stündlich, nur Prod-Gateway): Stimmt der Server-Posten bei Stripe mit den gebuchten
+ * Servern überein? Mehr gebucht als abgerechnet hieße „läuft, aber niemand zahlt“, weniger hieße
+ * „Kunde zahlt zu viel“. Ändert nichts, liefert nur die Abweichungen für den Betreiber-Alarm.
+ */
+export async function cloudPostenPruefen(pool: pg.Pool): Promise<Array<{ tenantId: string; gebucht: number; abgerechnet: number }>> {
+  const r = await pool.query<{ tenantId: string }>(
+    `SELECT DISTINCT i."tenantId" FROM "CloudInstanz" i JOIN "TenantBilling" b ON b."tenantId" = i."tenantId"
+      WHERE i."geloeschtAt" IS NULL AND b."stripeSubscriptionId" IS NOT NULL`,
+  );
+  const abweichungen: Array<{ tenantId: string; gebucht: number; abgerechnet: number }> = [];
+  for (const { tenantId } of r.rows) {
+    try {
+      const x = await mitSperre(pool, tenantId, (c) =>
+        mitModusVon(c, tenantId, async () => {
+          const acc = await readBillingAccount(c, tenantId);
+          const preis = cloudPreisId();
+          if (!acc?.stripeSubscriptionId || !preis || !stripeSchluesselDa()) return null;
+          const sub = await getStripe().subscriptions.retrieve(acc.stripeSubscriptionId, { expand: ["items.data.price"] });
+          // Beendete Abos: Die Server stoppt der Abgleicher über den Abrechnungsstatus.
+          if (sub.status === "canceled" || sub.status === "incomplete_expired") return null;
+          const abgerechnet = sub.items.data.filter((i) => i.price?.id === preis).reduce((n, i) => n + (i.quantity ?? 0), 0);
+          const gebucht = await cloudMenge(c, tenantId);
+          return gebucht === abgerechnet ? null : { tenantId, gebucht, abgerechnet };
+        }),
+      );
+      if (x) abweichungen.push(x);
+    } catch (e) {
+      logger.warn({ tenantId, err: e instanceof Error ? e.message : String(e) }, "[cloud] Prüflauf Server-Posten übersprungen");
+    }
+  }
+  return abweichungen;
 }
 
 // Staging (docs/PLAN_STAGING.md ST4): Stripe-Aufrufe im Zahlungsmodus der Organisation.
