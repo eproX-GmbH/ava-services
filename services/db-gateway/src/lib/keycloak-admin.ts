@@ -387,6 +387,18 @@ async function clientUuidVon(clientId: string): Promise<{ id: string; name: stri
 }
 
 /** Einwilligungen (consents) eines Nutzers; MCP-Clients zuerst. */
+/**
+ * Konto zu einer Adresse direkt in Keycloak (exakter Treffer, auch ohne Mitgliedschaft in AVA).
+ * Staging: Ein Testkonto ist registriert, hat sich aber noch nie in AVA angemeldet und steht
+ * deshalb noch nicht in TenantMember (Befund 2026-11-24). null = kein oder kein eindeutiger Treffer.
+ */
+export async function kontoNachEmail(email: string): Promise<{ id: string; email: string } | null> {
+  const res = await adminFetch(`/users?email=${encodeURIComponent(email.trim())}&exact=true&briefRepresentation=true&max=2`);
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const rows = ((await res.json()) as Array<{ id?: string; email?: string }>).filter((u) => u.id && u.email && u.email.toLowerCase() === email.trim().toLowerCase());
+  return rows.length === 1 ? { id: rows[0]!.id!, email: rows[0]!.email! } : null;
+}
+
 export async function listeEinwilligungen(userId: string): Promise<Einwilligung[]> {
   const res = await adminFetch(`/users/${encodeURIComponent(userId)}/consents`);
   if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");

@@ -77,9 +77,19 @@ betreiberStagingRouter.put("/betreiber/staging/konten", async (c) => {
   let email = b.email ?? null;
   if (!actorId) {
     const r = await pool.query<{ actorId: string; email: string | null }>(`SELECT "actorId", email FROM "TenantMember" WHERE lower(email) = lower($1)`, [email]);
-    if (r.rows.length !== 1) throw new HTTPException(404, { message: r.rows.length ? "Adresse mehrdeutig" : "Kein Konto mit dieser Adresse (erst registrieren)" });
-    actorId = r.rows[0]!.actorId;
-    email = r.rows[0]!.email;
+    if (r.rows.length > 1) throw new HTTPException(409, { message: "Adresse mehrdeutig" });
+    if (r.rows[0]) {
+      actorId = r.rows[0].actorId;
+      email = r.rows[0].email;
+    } else {
+      // Registriert, aber noch nie in AVA angemeldet: Konto direkt in Keycloak nachsehen. Das
+      // Testkonto ist dann ab seiner ersten Anmeldung im Staging.
+      const { kontoNachEmail } = await import("../../lib/keycloak-admin");
+      const k = await kontoNachEmail(email ?? "").catch(() => null);
+      if (!k) throw new HTTPException(404, { message: "Kein Konto mit dieser Adresse (erst registrieren)" });
+      actorId = k.id;
+      email = k.email;
+    }
   }
   await pool.query(
     `INSERT INTO "KanalZugang" ("actorId", kanal, "testZahlung", email, notiz, von) VALUES ($1, 'staging', $2, $3, $4, $5)
