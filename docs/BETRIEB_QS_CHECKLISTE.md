@@ -57,9 +57,10 @@ letzten rund 100 Zeilen).
 
 - **Register-Worker: „session not created: DevToolsActivePort file doesn't exist“** heißt fast
   immer: Speicher voll durch liegen gebliebene Browser-Sitzungen (Befund 12.10. und 25.11.2026).
-  Sofort: Maschine neu starten (nach Okay). Dauerhaft: Sitzungen nach jedem Job hart beenden;
-  der Aufräumer `packages/register-delta/src/waisen.ts` greift nur, wenn der Besitzerprozess tot
-  ist, nicht bei Lecks im laufenden Worker.
+  Sofort: Maschine neu starten (nach Okay). Seit 25.11.2026 räumt die Leck-Wache
+  (`raeumeLecks` in `packages/register-delta/src/waisen.ts`) nach jedem Job alle eigenen Browser
+  ab, die zu keinem offenen Portal gehören; im Log als `[lecks] … beendet`. Taucht das häufig
+  auf, scheitert das Öffnen des Portals oft (Portal gestört?), dann dort weitersuchen.
 - **Persist-Bus `ok: false`**: Konsument nach AMQP-Neuverbindung weg (Vorfall Sept./Okt. 2026),
   Gateway neu starten nach Okay. Das Staging-Gateway hat absichtlich keine Bindungen.
 - **Neuigkeiten-Mail sendet nichts**: erst `ohneFirmen` und Zustimmung (`MailEinstellung`)
