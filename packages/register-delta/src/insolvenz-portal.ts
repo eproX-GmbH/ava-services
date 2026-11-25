@@ -5,6 +5,7 @@
 
 import { Builder, By, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome";
+import { rmSync } from "node:fs";
 import { browserProtokoll, neuesProfilVerzeichnis, profilArgumente, ueberwache } from "./browser-lebenszyklus";
 import { findeChrome, type PortalOptionen } from "./portal";
 import { insolvenzPortalGericht, parseTrefferliste, type InsolvenzRohZeile, type InsolvenzZeile } from "./insolvenz-parser";
@@ -48,8 +49,20 @@ export class InsolvenzPortal {
     if (this.opt.headless !== false) options.addArguments("--headless=new");
     options.addArguments(...profilArgumente(this.profil), "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     options.setUserPreferences({ download_restrictions: 3, "download.prompt_for_download": true, "safebrowsing.enabled": true, "intl.accept_languages": "de-DE,de" });
-    this.driver = ueberwache(await new Builder().forBrowser("chrome").setChromeOptions(options).build(), this.profil);
-    await this.driver.manage().setTimeouts({ pageLoad: 60_000 });
+    try {
+      this.driver = ueberwache(await new Builder().forBrowser("chrome").setChromeOptions(options).build(), this.profil);
+      await this.driver.manage().setTimeouts({ pageLoad: 60_000 });
+    } catch (err) {
+      // Wie im Registerportal: nichts liegen lassen (Leck, 2026-11-25).
+      await this.schliessen();
+      rmSync(this.profil, { recursive: true, force: true });
+      throw err;
+    }
+  }
+
+  /** Profilverzeichnis des offenen Browsers (Leck-Wache). */
+  belegtePfade(): string[] {
+    return this.driver ? [this.profil] : [];
   }
 
   private d(): WebDriver {

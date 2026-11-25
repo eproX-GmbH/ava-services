@@ -9,9 +9,9 @@ export type WorkerOptionen = {
   workerId: string;
   workerArt: "desktop" | "betreiber";
   gateway: GatewayClient;
-  portal: () => Promise<PortalSchnittstelle & { schliessen(): Promise<void> }>;
+  portal: () => Promise<PortalSchnittstelle & { schliessen(): Promise<void>; belegtePfade?(): string[] }>;
   /** Insolvenzportal (I3); ohne Angabe werden insolvenz-Jobs nicht geleast. */
-  insolvenz?: () => Promise<InsolvenzSchnittstelle & { schliessen(): Promise<void> }>;
+  insolvenz?: () => Promise<InsolvenzSchnittstelle & { schliessen(): Promise<void>; belegtePfade?(): string[] }>;
   /** Oesterreich (JSON, kein Browser); ohne Angabe werden at_*-Jobs nicht geleast. */
   at?: AtSchnittstelle;
   /** UK (Companies House, kein Browser); `teilergebnis` wird vom Worker an das Gateway gebunden. */
@@ -29,6 +29,11 @@ export type WorkerOptionen = {
   /** Soll gerade pausiert werden (Chat aktiv, Akku, Nutzer will nicht)? */
   pausiert?: () => boolean;
   onJob?: (job: Job, ergebnis: Record<string, unknown>) => void;
+  /**
+   * Nach jedem Job: liegengebliebene Browser beenden (waisen.ts, raeumeLecks). Bekommt die
+   * Profil-/Download-Pfade der noch offenen Portale, die bleiben muessen.
+   */
+  lecksRaeumen?: (offenePfade: string[]) => Promise<unknown>;
   /** Wird bei jeder Zustandsaenderung gerufen (Desktop: Statuskarte). */
   onZustand?: (zustand: WorkerStatus) => void;
   /** refresh: strukturierten Registerinhalt mitladen (Portal muss mit siDownloads geoeffnet sein). */
@@ -97,8 +102,8 @@ export class RegisterWorker {
   }
 
   private async schleife(): Promise<void> {
-    let portal: (PortalSchnittstelle & { schliessen(): Promise<void> }) | null = null;
-    let insolvenz: (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null = null;
+    let portal: (PortalSchnittstelle & { schliessen(): Promise<void>; belegtePfade?(): string[] }) | null = null;
+    let insolvenz: (InsolvenzSchnittstelle & { schliessen(): Promise<void>; belegtePfade?(): string[] }) | null = null;
     // Ohne ausdrueckliche Arten: alles, was dieser Worker bedienen kann.
     const arten =
       this.o.arten ??
@@ -220,6 +225,11 @@ export class RegisterWorker {
         } finally {
           this.status.aktuellerJob = null;
           this.melde();
+          // Zwischen zwei Jobs gehoert jeder eigene Browser zu einem offenen Portal, sonst ist er
+          // ein Leck (Befund 2026-11-25: 10 chromedriver am lebenden Worker, Speicher voll).
+          const ip = insolvenz as (InsolvenzSchnittstelle & { belegtePfade?(): string[] }) | null;
+          const offen = [...(portal?.belegtePfade?.() ?? []), ...(ip?.belegtePfade?.() ?? [])];
+          await this.o.lecksRaeumen?.(offen).catch((err) => this.log(`Leck-Wache fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`));
         }
       }
     } finally {

@@ -27,7 +27,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { GatewayClient, type JobArt } from "./gateway-client";
 import { browserProtokoll } from "./browser-lebenszyklus";
-import { starteWaisenWache } from "./waisen";
+import { raeumeLecks, starteWaisenWache } from "./waisen";
 import { RegisterPortal } from "./portal";
 import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
@@ -120,6 +120,7 @@ async function main() {
       return p;
     },
     si,
+    lecksRaeumen: (offenePfade) => raeumeLecks(log, offenePfade),
     cd: process.env.REGISTER_DELTA_CD !== "0",
     insolvenz: async () => {
       const p = new InsolvenzPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });

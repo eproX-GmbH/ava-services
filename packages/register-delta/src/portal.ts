@@ -140,7 +140,31 @@ export class RegisterPortal {
         "intl.accept_languages": "de-DE,de",
       });
     }
-    this.driver = ueberwache(await new Builder().forBrowser("chrome").setChromeOptions(options).build(), this.profil);
+    try {
+      this.driver = ueberwache(await new Builder().forBrowser("chrome").setChromeOptions(options).build(), this.profil);
+    } catch (err) {
+      // build() gescheitert: Profil und Download-Ordner weg; einen stehengebliebenen
+      // chromedriver beendet die Leck-Wache des Workers (waisen.ts, raeumeLecks).
+      await this.schliessen();
+      fs.rmSync(this.profil, { recursive: true, force: true });
+      throw err;
+    }
+    try {
+      await this.oeffnenFertig();
+    } catch (err) {
+      // Scheitert die Startseite, wuerde der Aufrufer den Browser nie kennen (Leck, 2026-11-25).
+      await this.schliessen();
+      throw err;
+    }
+  }
+
+  /** Profil- und Download-Verzeichnis des offenen Browsers (Leck-Wache). */
+  belegtePfade(): string[] {
+    return this.driver ? [this.profil, this.downloadDir ?? ""].filter(Boolean) : [];
+  }
+
+  private async oeffnenFertig(): Promise<void> {
+    if (!this.driver) return;
     await this.driver.manage().setTimeouts({ pageLoad: 45_000 });
     if (this.downloadDir) {
       // Headless-Chromium ignoriert die Download-Einstellungen des Profils und

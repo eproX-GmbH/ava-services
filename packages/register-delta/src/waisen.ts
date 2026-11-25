@@ -147,6 +147,115 @@ export async function raeumeWaisen(log: (zeile: string) => void, opts: { profilM
   return { prozesse: pids.length, profile: profile.length };
 }
 
+// ---- Lecks im laufenden Worker (Befund 2026-11-25) -----------------------------------
+//
+// `waehleVerwaiste` greift nur, wenn der Besitzer tot ist. Auf ava-register-worker hingen am
+// 25.11. aber 10 chromedriver mit 76 Chromium-Prozessen am LEBENDEN Worker (aeltester 12 Tage),
+// der Speicher war voll und jeder Job scheiterte mit "DevToolsActivePort file doesn't exist".
+// Wege dorthin: ein Browser, dessen Portal beim Oeffnen scheiterte (Startseite), war nirgends
+// mehr referenziert; ein gescheitertes `build()` laesst chromedriver stehen; ein `quit()` ueber
+// der Frist wird aufgegeben, die Prozesse laufen weiter.
+//
+// Der Worker bearbeitet Jobs nacheinander. Zwischen zwei Jobs gehoert deshalb jeder eigene
+// chromedriver und jeder eigene Browser zu einem offenen Portal, oder er ist ein Leck.
+
+/** Eigene chromedriver und Browser, die zu keinem offenen Profil gehoeren, samt Kindern. */
+export function waehleLecks(prozesse: Prozess[], eigenePid: number, offenePfade: string[]): number[] {
+  const offen = offenePfade.filter(Boolean);
+  const nennt = (args: string) => offen.some((p) => args.includes(p));
+  const nachPid = new Map(prozesse.map((p) => [p.pid, p]));
+  // Behalten: Prozesse eines offenen Profils und ihre Vorfahren bis zum Worker.
+  const behalten = new Set<number>();
+  for (const p of prozesse) {
+    if (!nennt(p.args)) continue;
+    let x: Prozess | undefined = p;
+    while (x && x.pid !== eigenePid && x.pid > 1 && !behalten.has(x.pid)) {
+      behalten.add(x.pid);
+      x = nachPid.get(x.ppid);
+    }
+  }
+  const unterBehaltenem = (p: Prozess): boolean => {
+    let x = nachPid.get(p.ppid);
+    for (let i = 0; x && i < 64; i++) {
+      if (behalten.has(x.pid)) return true;
+      if (x.pid === eigenePid) return false;
+      x = nachPid.get(x.ppid);
+    }
+    return false;
+  };
+  const wurzeln = new Set<number>();
+  for (const p of prozesse) {
+    if (p.pid === eigenePid || behalten.has(p.pid) || unterBehaltenem(p)) continue;
+    if (p.ppid === eigenePid && CHROMEDRIVER.test(p.args)) {
+      wurzeln.add(p.pid);
+      continue;
+    }
+    const m = OWNER.exec(p.args);
+    if (m && Number(m[1]) === eigenePid && CHROME.test(p.args)) wurzeln.add(p.pid);
+  }
+  const gewaehlt = new Set(wurzeln);
+  let neu = true;
+  while (neu) {
+    neu = false;
+    for (const p of prozesse) {
+      if (!gewaehlt.has(p.pid) && !behalten.has(p.pid) && gewaehlt.has(p.ppid)) {
+        gewaehlt.add(p.pid);
+        neu = true;
+      }
+    }
+  }
+  return [...gewaehlt];
+}
+
+/** Praefixe der Verzeichnisse, die ein Browser des Workers in tmp anlegt. */
+const TMP_PRAEFIXE = [AVA_PROFIL_PRAEFIX, "ava-register-delta-si-"];
+
+/**
+ * Zwischen zwei Jobs: Lecks beenden und Profile/Download-Ordner entfernen, die kein offenes
+ * Portal belegt. `offenePfade` = Profil- und Download-Verzeichnisse der offenen Portale.
+ */
+export async function raeumeLecks(log: (zeile: string) => void, offenePfade: string[]): Promise<{ prozesse: number; ordner: number }> {
+  if (process.platform === "win32") return { prozesse: 0, ordner: 0 };
+  let prozesse: Prozess[];
+  try {
+    prozesse = await listeProzesse();
+  } catch (err) {
+    log(`[lecks] Prozessliste fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    return { prozesse: 0, ordner: 0 };
+  }
+  const pids = waehleLecks(prozesse, process.pid, offenePfade);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* schon weg */
+    }
+  }
+  const lebend = pids.length ? await listeProzesse().catch(() => prozesse) : prozesse;
+  const genannt = lebend.map((p) => p.args).join("\n");
+  let ordner = 0;
+  const basis = tmpdir();
+  let namen: string[] = [];
+  try {
+    namen = readdirSync(basis);
+  } catch {
+    /* kein tmp lesbar */
+  }
+  for (const n of namen) {
+    if (!TMP_PRAEFIXE.some((x) => n.startsWith(x))) continue;
+    const pfad = join(basis, n);
+    if (offenePfade.includes(pfad) || genannt.includes(pfad)) continue;
+    try {
+      rmSync(pfad, { recursive: true, force: true });
+      ordner++;
+    } catch {
+      /* Komfort, kein Muss */
+    }
+  }
+  if (pids.length || ordner) log(`[lecks] ${pids.length} liegengebliebene Browserprozesse beendet, ${ordner} Ordner entfernt`);
+  return { prozesse: pids.length, ordner };
+}
+
 /** Beim Start einmal, danach alle `intervallMs`. Der Zeiger haelt den Prozess nicht am Leben. */
 export function starteWaisenWache(log: (zeile: string) => void, intervallMs = 30 * 60_000): () => void {
   void raeumeWaisen(log);
