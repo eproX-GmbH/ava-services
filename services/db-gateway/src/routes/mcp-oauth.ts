@@ -22,6 +22,7 @@ import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { createMcpClient, RegistrationDisabledError } from "../lib/keycloak-admin";
 import { PLUGIN_PFAD } from "../lib/mcp-plugin";
+import { anfrageHost } from "../lib/anfrage-host";
 
 export const mcpOauthRouter = new Hono();
 
@@ -116,13 +117,13 @@ function authorizationServerMetadata(b: McpBasis) {
 }
 
 // RFC 9728: Metadata der geschuetzten Ressource (mit und ohne Pfad-Suffix).
-mcpOauthRouter.get("/.well-known/oauth-protected-resource", (c) => c.json(resourceMetadata(mcpBasis(c.req.header("host")))));
-mcpOauthRouter.get("/.well-known/oauth-protected-resource/mcp", (c) => c.json(resourceMetadata(mcpBasis(c.req.header("host")))));
+mcpOauthRouter.get("/.well-known/oauth-protected-resource", (c) => c.json(resourceMetadata(mcpBasis(anfrageHost(c)))));
+mcpOauthRouter.get("/.well-known/oauth-protected-resource/mcp", (c) => c.json(resourceMetadata(mcpBasis(anfrageHost(c)))));
 
 // RFC 8414: Metadata des Autorisierungsservers fuer den Issuer <base><oauthPfad>,
 // sowohl am Pfad-Suffix-Ort als auch unter dem Issuer selbst.
 const asMetadata = (c: { req: { header: (n: string) => string | undefined }; json: (b: unknown, s?: 200 | 503) => Response }) => {
-  const m = authorizationServerMetadata(mcpBasis(c.req.header("host")));
+  const m = authorizationServerMetadata(mcpBasis(anfrageHost(c)));
   if (!m) return c.json({ error: "keycloak_not_configured" }, 503);
   return c.json(m);
 };
@@ -135,9 +136,9 @@ mcpOauthRouter.get("/oauth/.well-known/oauth-authorization-server", asMetadata);
 mcpOauthRouter.get("/oauth/.well-known/openid-configuration", asMetadata);
 
 // ChatGPT-Plugin: Resource- und AS-Metadata unter /chatgpt (eigener Host) bzw. /mcp/chatgpt (Fly-Host).
-const pluginResource = (c: Context) => c.json(resourceMetadata(pluginBasis(mcpBasis(c.req.header("host")))));
+const pluginResource = (c: Context) => c.json(resourceMetadata(pluginBasis(mcpBasis(anfrageHost(c)))));
 const pluginAs = (c: Context) => {
-  const m = authorizationServerMetadata(pluginBasis(mcpBasis(c.req.header("host"))));
+  const m = authorizationServerMetadata(pluginBasis(mcpBasis(anfrageHost(c))));
   if (!m) return c.json({ error: "keycloak_not_configured" }, 503);
   return c.json(m);
 };
@@ -226,7 +227,7 @@ async function registriere(c: Context, audience?: string) {
 mcpOauthRouter.post("/mcp/oauth/register", (c) => registriere(c));
 mcpOauthRouter.post("/oauth/register", (c) => registriere(c));
 const pluginRegistrierung = (c: Context) => {
-  const b = pluginBasis(mcpBasis(c.req.header("host")));
+  const b = pluginBasis(mcpBasis(anfrageHost(c)));
   return registriere(c, `${b.base}${b.mcpPfad}`);
 };
 mcpOauthRouter.post(`${PLUGIN_PFAD}/oauth/register`, pluginRegistrierung);

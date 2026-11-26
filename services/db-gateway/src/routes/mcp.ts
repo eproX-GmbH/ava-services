@@ -31,6 +31,7 @@ import { loadFeatures } from "../lib/policy-guard";
 import { istMcpHost, mcpBasis, pluginBasis } from "./mcp-oauth";
 import { avaKontext, KONTEXT_BESCHREIBUNG, KONTEXT_WERKZEUG } from "../lib/mcp-kontext";
 import { ANNOTATIONEN, PLUGIN_PFAD, PLUGIN_TOOLS, pluginAntwort, pluginFehlertext, pluginSperre, pluginToolListe } from "../lib/mcp-plugin";
+import { anfrageHost } from "../lib/anfrage-host";
 
 const PROTOKOLL_VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "ava", version: "1.0.0" };
@@ -531,7 +532,7 @@ export const mcpAuth = createMiddleware(async (c, next) => {
   const direkt = await authMiddleware(c, next);
   const res = direkt ?? c.res;
   if (res && res.status === 401) {
-    const b = mcpBasis(c.req.header("host"));
+    const b = mcpBasis(anfrageHost(c));
     const meta = `${b.base}/.well-known/oauth-protected-resource${b.mcpPfad}`;
     const neu = new Response(res.body, res);
     neu.headers.set("WWW-Authenticate", `Bearer resource_metadata="${meta}"`);
@@ -554,7 +555,7 @@ function nichtBerechtigt(meta: string, beschreibung: string): Response {
  * Notfaelle mit MCP_PLUGIN_AUD_STRIKT=0.
  */
 export const pluginAuth = createMiddleware(async (c, next) => {
-  const b = pluginBasis(mcpBasis(c.req.header("host")));
+  const b = pluginBasis(mcpBasis(anfrageHost(c)));
   const meta = `${b.base}/.well-known/oauth-protected-resource${b.mcpPfad}`;
   let ausgelassen = false;
   const direkt = await authMiddleware(c, async () => {
@@ -581,7 +582,7 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
   // Zwei Adressen, ein Handler: /mcp auf dem Fly-Host, / auf mcp.ava.bi.
   // Auf dem Fly-Host bleibt / unangetastet (naechste Middleware).
   const nurEigenerHost = createMiddleware(async (c, next) => {
-    if (!istMcpHost(c.req.header("host"))) return next();
+    if (!istMcpHost(anfrageHost(c))) return next();
     return mcpAuth(c, next);
   });
   r.use("/mcp", mcpAuth);
@@ -591,16 +592,16 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
     c.json({ error: "method_not_allowed", message: "Dieser MCP-Endpunkt arbeitet ohne Server-Stream; bitte POST." }, 405);
   r.get("/mcp", methodeNichtErlaubt);
   r.delete("/mcp", (c) => c.body(null, 200));
-  r.get("/", (c, next) => (istMcpHost(c.req.header("host")) ? methodeNichtErlaubt(c) : next()));
-  r.delete("/", (c, next) => (istMcpHost(c.req.header("host")) ? c.body(null, 200) : next()));
-  r.post("/", (c, next) => (istMcpHost(c.req.header("host")) ? bearbeite(c) : next()));
+  r.get("/", (c, next) => (istMcpHost(anfrageHost(c)) ? methodeNichtErlaubt(c) : next()));
+  r.delete("/", (c, next) => (istMcpHost(anfrageHost(c)) ? c.body(null, 200) : next()));
+  r.post("/", (c, next) => (istMcpHost(anfrageHost(c)) ? bearbeite(c) : next()));
 
   r.post("/mcp", (c) => bearbeite(c));
 
   // ChatGPT-Plugin (docs/PLAN_CHATGPT_PLUGIN.md): <mcp-host>/chatgpt bzw. <fly>/mcp/chatgpt,
   // feste Werkzeugmenge, eigene Resource. Der Host bleibt fuer immer (OpenAI-Vorgabe).
   const pluginNurEigenerHost = createMiddleware(async (c, next) => {
-    if (!istMcpHost(c.req.header("host"))) return next();
+    if (!istMcpHost(anfrageHost(c))) return next();
     return pluginAuth(c, next);
   });
   r.use(`/mcp${PLUGIN_PFAD}`, pluginAuth);
@@ -608,9 +609,9 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
   r.get(`/mcp${PLUGIN_PFAD}`, methodeNichtErlaubt);
   r.delete(`/mcp${PLUGIN_PFAD}`, (c) => c.body(null, 200));
   r.post(`/mcp${PLUGIN_PFAD}`, (c) => bearbeite(c, true));
-  r.get(PLUGIN_PFAD, (c, next) => (istMcpHost(c.req.header("host")) ? methodeNichtErlaubt(c) : next()));
-  r.delete(PLUGIN_PFAD, (c, next) => (istMcpHost(c.req.header("host")) ? c.body(null, 200) : next()));
-  r.post(PLUGIN_PFAD, (c, next) => (istMcpHost(c.req.header("host")) ? bearbeite(c, true) : next()));
+  r.get(PLUGIN_PFAD, (c, next) => (istMcpHost(anfrageHost(c)) ? methodeNichtErlaubt(c) : next()));
+  r.delete(PLUGIN_PFAD, (c, next) => (istMcpHost(anfrageHost(c)) ? c.body(null, 200) : next()));
+  r.post(PLUGIN_PFAD, (c, next) => (istMcpHost(anfrageHost(c)) ? bearbeite(c, true) : next()));
 
   async function bearbeite(c: Context, plugin = false) {
     const auth = c.get("auth");

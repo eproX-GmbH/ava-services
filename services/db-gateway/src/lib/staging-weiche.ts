@@ -16,9 +16,10 @@ import { gatewayRolle, kanalVon, routingAktiv, testkontoSicherstellen, zugangNac
 import { tokenKonto } from "../middleware/auth";
 import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
+import { URSPRUNGS_HOST, WEITERGELEITET } from "./anfrage-host";
 
 const ziel = () => process.env.STAGING_GATEWAY_URL?.trim().replace(/\/+$/, "") || null;
-export const WEITERGELEITET = "x-ava-weitergeleitet";
+export { WEITERGELEITET };
 
 /**
  * Wege, die nie weitergeleitet werden (Webhooks, interne Kanäle, Gesundheit, Relais-Prüfung).
@@ -39,8 +40,11 @@ const HOP = ["connection", "keep-alive", "transfer-encoding", "upgrade", "proxy-
 export async function weiterleiten(req: Request, basis: string): Promise<Response> {
   const u = new URL(req.url);
   const headers = new Headers(req.headers);
+  // Der Host geht beim Weiterreichen verloren; Staging braucht ihn (mcp.ava.bi, anfrage-host.ts).
+  const host = req.headers.get("host");
   for (const h of HOP) headers.delete(h);
   headers.set(WEITERGELEITET, "1");
+  if (host) headers.set(URSPRUNGS_HOST, host);
   const mitKoerper = !["GET", "HEAD"].includes(req.method);
   let res: Response;
   try {
@@ -115,7 +119,7 @@ export function relaisWeiche(req: IncomingMessage, socket: Duplex, head: Buffer,
   if (gatewayRolle() !== "prod" || !basis || !routingAktiv() || req.headers[WEITERGELEITET]) return false;
   if (kanalVon(wer.actorId) !== "staging") return false;
   const z = new URL(req.url ?? "/", basis);
-  const headers = { ...req.headers, host: z.host, [WEITERGELEITET]: "1" };
+  const headers = { ...req.headers, host: z.host, [WEITERGELEITET]: "1", ...(req.headers.host ? { [URSPRUNGS_HOST]: req.headers.host } : {}) };
   const anfrage = http.request({ hostname: z.hostname.replace(/^\[|\]$/g, ""), port: z.port || 80, path: z.pathname + z.search, method: req.method, headers });
   anfrage.on("upgrade", (res, gegenSocket, gegenKopf) => {
     let kopf = `HTTP/1.1 ${res.statusCode} ${res.statusMessage}\r\n`;

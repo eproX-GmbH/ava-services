@@ -44,6 +44,7 @@ import {
   type A2aPart,
   type TaskZeile,
 } from "../lib/a2a-tasks";
+import { anfrageHost } from "../lib/anfrage-host";
 
 const PROTOKOLL_VERSION = "0.3.0";
 const AGENT_VERSION = "1.0.0";
@@ -356,7 +357,7 @@ export function makeA2aRouter(app: OpenAPIHono): Hono {
   const r = new Hono();
 
   // Agentenkarte: oeffentlich, auf beiden Hosts (Fly-Host und mcp.ava.bi).
-  const karte = (c: Context) => c.json(agentenkarte(c.req.header("host")));
+  const karte = (c: Context) => c.json(agentenkarte(anfrageHost(c)));
   r.get("/.well-known/agent-card.json", karte);
   r.get("/.well-known/agent.json", karte);
 
@@ -446,7 +447,7 @@ export function makeA2aRouter(app: OpenAPIHono): Hono {
           });
         }
         case "agent/getAuthenticatedExtendedCard":
-          return antwort(agentenkarte(c.req.header("host")));
+          return antwort(agentenkarte(anfrageHost(c)));
         default:
           throw new RpcFehler(FEHLER.methode, `Methode nicht unterstuetzt: ${n.method}`);
       }

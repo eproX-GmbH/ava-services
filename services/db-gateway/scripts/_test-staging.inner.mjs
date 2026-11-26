@@ -134,7 +134,7 @@ const staging = http.createServer((q, s) => {
   let laenge = 0;
   q.on("data", (c) => { laenge += c.length; });
   q.on("end", () => {
-    gesehen.push({ url: q.url, weiter: q.headers["x-ava-weitergeleitet"], laenge, auth: !!q.headers.authorization });
+    gesehen.push({ url: q.url, weiter: q.headers["x-ava-weitergeleitet"], host: q.headers["x-ava-host"], laenge, auth: !!q.headers.authorization });
     s.writeHead(201, { "content-type": "application/json", "x-eigen": "ja" });
     s.end(JSON.stringify({ von: "staging", laenge }));
   });
@@ -165,6 +165,22 @@ await pruefe("Weiche: Prod-Konto bleibt, Staging-Konto geht weiter (Status, Kopf
   assert.equal(gesehen.at(-1).url, "/v1/x?a=1");
   assert.equal(gesehen.at(-1).weiter, "1");
   assert.ok(gesehen.at(-1).auth);
+});
+
+// Roh über http.request, weil fetch die Host-Kopfzeile nicht setzen lässt.
+const roh = (url, { method = "GET", headers = {}, body } = {}) => new Promise((res, rej) => {
+  const u = new URL(url);
+  const q = http.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, method, headers }, (s) => {
+    let text = ""; s.on("data", (d) => { text += d; }); s.on("end", () => res({ status: s.statusCode, headers: s.headers, text }));
+  });
+  q.on("error", rej); q.end(body);
+});
+
+await pruefe("Weiche: ursprünglicher Host geht als x-ava-host mit (mcp.ava.bi, Befund ChatGPT 404)", async () => {
+  const r = await roh(`${P}/chatgpt`, { method: "POST", headers: { host: "mcp.ava.bi", authorization: `Bearer ${tS}`, "content-type": "application/json" }, body: "{}" });
+  assert.equal(r.status, 201);
+  assert.equal(gesehen.at(-1).url, "/chatgpt");
+  assert.equal(gesehen.at(-1).host, "mcp.ava.bi");
 });
 
 await pruefe("Weiche: 3 MB Körper gestreamt (Fly-Replay könnte nur 1 MB)", async () => {
@@ -271,6 +287,33 @@ await pruefe("Relais: WebSocket eines Staging-Kontos wird durchgereicht, Prod-Ko
   assert.equal(lokal, 1, "Prod-Konto bleibt im lokalen Relais");
   relais.stop?.();
   relaisServer.close();
+});
+
+await pruefe("MCP im Staging-Gateway: weitergeleitetes /chatgpt und / gelten als mcp.ava.bi, in Prod zählt x-ava-host nicht", async () => {
+  process.env.MCP_PUBLIC_HOST = "mcp.ava.bi";
+  const { makeMcpRouter } = await import("../src/routes/mcp.ts");
+  const mapp = new Hono();
+  mapp.route("/", makeMcpRouter(mapp));
+  mapp.all("*", (c) => c.json({ error: "not_found" }, 404));
+  const m = serve({ fetch: mapp.fetch, port: 0, hostname: "127.0.0.1" });
+  await new Promise((r) => m.once("listening", r));
+  const M = `http://127.0.0.1:${m.address().port}`;
+  const weiter = { "x-ava-weitergeleitet": "1", "x-ava-host": "mcp.ava.bi", authorization: `Bearer ${tS}` };
+  try {
+    process.env.GATEWAY_ROLLE = "staging";
+    for (const pfad of ["/chatgpt", "/"]) {
+      const r = await roh(`${M}${pfad}`, { headers: weiter });
+      assert.notEqual(r.status, 404, `${pfad}: ${r.status} ${r.text}`);
+      assert.match(r.headers["www-authenticate"] ?? r.text, /mcp\.ava\.bi|POST/, pfad);
+    }
+    const ohne = await roh(`${M}/chatgpt`, { headers: { authorization: `Bearer ${tS}` } });
+    assert.equal(ohne.status, 404, "ohne Weiterleitung bleibt der Fly-Host kein MCP-Host");
+    process.env.GATEWAY_ROLLE = "prod";
+    assert.equal((await roh(`${M}/chatgpt`, { headers: weiter })).status, 404, "Prod glaubt x-ava-host nicht");
+  } finally {
+    delete process.env.GATEWAY_ROLLE;
+    m.close();
+  }
 });
 
 prod.close(); staging.close(); jwks.close(); wss.close();
