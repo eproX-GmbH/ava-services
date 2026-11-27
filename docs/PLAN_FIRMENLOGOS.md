@@ -220,6 +220,15 @@ vorzeigbare Stand (rund 5 Tage).
   und im Kopf der Firmenansicht (dort nur, wenn es ein Logo gibt). Eine Wortmarke bekommt
   im Kopf eine breitere Fläche. Lösungskarte `firma-logo`; 10 Tests; Vorschau mit echten
   Logos in hell und dunkel.
+- Nachtrag aus dem Echttest (27.11.2026): Die Website-Stufe überspringt Firmen, die in den
+  letzten 7 Tagen verarbeitet wurden. Für sie läuft jetzt ein leichter Nachlauf im
+  übersprungenen Zweig (Startseite und wenige Bilder, keine Suche, keine KI), wenn die Firma
+  noch kein Logo hat; die Bilder kommen als eigenes Ereignis
+  `tenant.persist.website-logos.v1` (eigene Warteschlange, kein Tier-Gate, kein Fortschritt
+  im Vorgang). Das deckt den Kern von LG5 ab: „Website neu verarbeiten“ bringt das Logo.
+- **Wichtig für die Prüfung:** Producer-Ergebnisse speichert nur das Prod-Gateway (das
+  Staging-Gateway nimmt sie absichtlich nicht an). Auf Staging lassen sich deshalb nur die
+  Routen und die Anzeige prüfen; das Speichern aus dem Ereignis wirkt erst nach der Freigabe.
 - Bewusst noch nicht: Vermerk „geprüft, nichts gefunden“ (`logoGeprueft` reist schon mit,
   wird aber nicht gespeichert), Listen (LG4), Nachlauf für den Bestand (LG5), Korrektur durch
   den Nutzer (LG6), App im Browser und Konsole (LG7).

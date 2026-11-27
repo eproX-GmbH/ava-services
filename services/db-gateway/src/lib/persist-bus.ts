@@ -1189,6 +1189,8 @@ interface WebsiteResult {
  * Logo soll trotzdem ankommen. Ein Fehler hier (Speicher nicht erreichbar) laesst das Ereignis
  * gelten; das Logo kommt mit dem naechsten Lauf.
  */
+const LOGOS_ROUTING_KEY = "tenant.persist.website-logos.v1";
+
 function mitLogos(inner: ApplyFn): ApplyFn {
   return async (pool, event, log) => {
     await inner(pool, event, log);
@@ -1206,6 +1208,27 @@ function mitLogos(inner: ApplyFn): ApplyFn {
     }
   };
 }
+
+/**
+ * `tenant.persist.website-logos.v1`: nur Logos, ohne Website-Zeile (Nachlauf der Website-Stufe
+ * fuer schon aufbereitete Firmen ohne Logo). Eigener Typ, weil ein website.v1-Ereignis ohne
+ * Adresse als „keine Website gefunden“ zaehlt und die Frische der Stufe neu setzt. Wirft nie:
+ * Logos haengen an keiner Stufe.
+ */
+const applyWebsiteLogos: ApplyFn = async (pool, event, log) => {
+  const data = event.data as PersistEvent<{ companyId?: string; logos?: unknown[] }> | undefined;
+  const companyId = data?.result?.companyId;
+  const logos = data?.result?.logos;
+  if (!companyId || !Array.isArray(logos) || logos.length === 0) return;
+  try {
+    const { logosUebernehmen } = await import("./firmen-logos");
+    const r = await logosUebernehmen(companyId, logos, { pool });
+    if (r.ruht) return;
+    log.info({ companyId, gespeichert: r.gespeichert, verworfen: r.verworfen }, "logos persist ✓ (Nachlauf)");
+  } catch (err) {
+    log.warn({ companyId, err: err instanceof Error ? err.message : String(err) }, "logos persist fehlgeschlagen (Nachlauf)");
+  }
+};
 
 const applyWebsite: ApplyFn = async (pool, event, log) => {
   const data = event.data as PersistEvent<WebsiteResult> | undefined;
@@ -2123,6 +2146,13 @@ const BINDINGS: ProducerBinding[] = [
     queue: "db-gateway-persist-website",
     apply: mitLogos(withTierGate("website", applyWebsite)),
   },
+  {
+    // Firmenlogos ohne Website-Zeile (docs/PLAN_FIRMENLOGOS.md); kein Tier-Gate, kein Fortschritt.
+    producer: "website",
+    routingKey: LOGOS_ROUTING_KEY,
+    queue: "db-gateway-persist-website-logos",
+    apply: applyWebsiteLogos,
+  },
 ];
 
 // Sanity: every binding's producer is a known name. (The reverse —
@@ -2323,6 +2353,8 @@ class PersistBus {
           try {
             const pool = this.getPool(binding.producer);
             await binding.apply(pool, event, log);
+            // Logos haengen an keiner Stufe: weder Fortschritt noch Fehlerzustand im Vorgang.
+            if (binding.routingKey === LOGOS_ROUTING_KEY) return;
             // v0.1.363 — `website`-Sonderfall: der LLM-Judge kann zu dem
             // Schluss kommen, dass es GAR KEINE Unternehmenswebseite gibt
             // (matchIndex=null → weder serp- noch website-Zeile im
