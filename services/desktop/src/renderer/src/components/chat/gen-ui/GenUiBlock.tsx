@@ -28,6 +28,34 @@ function specAus(raw: string, offen: boolean): Spec | null {
   return spec;
 }
 
+/**
+ * Baustein, den diese App-Version nicht kennt: Der Chat stammt aus einer neueren AVA
+ * (Befund Joyce 2026-11-27: Firmenprofil aus 0.1.984, geoeffnet in 0.1.982, ergab eine
+ * leere Stelle, als waere die Antwort nicht gespeichert). Hinweis statt Leere; Kinder
+ * und Slots bleiben sichtbar, eine genannte Firma laesst sich oeffnen.
+ */
+function UnbekannterBaustein({ element, children, slots }: { element: { props?: Record<string, unknown> }; children?: ReactNode; slots?: Record<string, ReactNode> }) {
+  const navigate = useNavigate();
+  const companyId = typeof element.props?.companyId === "string" ? element.props.companyId.trim() : "";
+  return (
+    <section className="gu-karte gu-unbekannt">
+      <div className="gu-hinweis gu-hinweis--info">
+        Diesen Teil der Antwort kann deine AVA-Version noch nicht anzeigen. Aktualisiere AVA, dann erscheint er hier.
+        {companyId && (
+          <>
+            {" "}
+            <button type="button" className="gu-link" onClick={() => navigate(`/companies/${encodeURIComponent(companyId)}`)}>
+              Firma öffnen
+            </button>
+          </>
+        )}
+      </div>
+      {slots && Object.entries(slots).map(([name, inhalt]) => <div key={name}>{inhalt}</div>)}
+      {children}
+    </section>
+  );
+}
+
 /** Eine fehlerhafte Oberflaeche darf nie den ganzen Chat mitreissen. */
 class GenUiGrenze extends Component<{ children: ReactNode; offen: boolean }, { fehler: boolean }> {
   state = { fehler: false };
@@ -83,7 +111,7 @@ export function GenUiBlock({ raw, offen = false }: { raw: string; offen?: boolea
     <div className="gu-block">
       <GenUiGrenze offen={offen}>
         <JSONUIProvider registry={genUiRegistry} handlers={handlers}>
-          <Renderer spec={spec} registry={genUiRegistry} loading={offen} fallback={() => null} />
+          <Renderer spec={spec} registry={genUiRegistry} loading={offen} fallback={UnbekannterBaustein as never} />
         </JSONUIProvider>
       </GenUiGrenze>
     </div>
