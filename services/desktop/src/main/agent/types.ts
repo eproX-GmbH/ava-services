@@ -68,6 +68,12 @@ export interface ToolContext {
   autonomousMode?: boolean;
   /** W2 — Konversation des Aufrufs (fuer workflow_from_conversation). */
   conversationId?: string;
+  /**
+   * Letzte Nachricht des Nutzers in dieser Konversation (ohne Notizen des
+   * Aufgaben-Waechters). company_search liest daraus eine genannte Website
+   * (PM-2026-0059), falls das Modell sie nicht mitgibt.
+   */
+  nutzerText?: string;
 }
 
 /**

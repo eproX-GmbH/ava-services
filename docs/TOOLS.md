@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-11-24
+Stand: 2026-11-27
 Anzahl Tools: 322
 
 ## Firmen (32)
@@ -160,7 +160,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Norwegen, Finnland seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
+Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Norwegen, Finnland seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name. Nennt der Nutzer eine Website oder Domain (auch frueher im Gespraech, z. B. "nexburg (nexburg.com)"), gib sie IMMER als `website` mit: Firmen mit genau dieser Website kommen zuerst (`websiteTreffer: true`) und sind die gemeinte Firma, egal was die Namenssuche sonst liefert. Genau EIN passender Treffer heisst nur dann "nicht nachfragen, direkt company_get", wenn er ein websiteTreffer ist, in Deutschland liegt oder der Nutzer sein Land genannt hat; beachte immer das Feld `hinweis`. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
 
 _Parameter:_ keine.
 

@@ -45,6 +45,8 @@ export const SearchQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   /** Laenderfilter; fehlt = alle. */
   country: CountryQuery,
+  /** Vom Nutzer genannte Website/Domain: Firmen mit genau dieser Website kommen zuerst (PM-2026-0059). */
+  website: z.string().max(300).optional(),
 });
 
 // ---- Companies (master-data) -----------------------------------------------
@@ -72,6 +74,10 @@ export const CompanyShape = z
     country: z.string().nullable().optional(),
     legalForm: z.string().nullable().optional(),
     uid: z.string().nullable().optional(),
+    /** Nur in der Suche mit `website`: die Firma traegt genau diese Website. */
+    websiteTreffer: z.boolean().optional(),
+    /** Nur in der Suche mit `website`: bekannte Website der Firma. */
+    website: z.string().nullable().optional(),
   })
   .openapi("Company");
 

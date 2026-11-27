@@ -6,6 +6,7 @@ import type { Tool } from "../types";
 import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
 import { landText, statusWarnungText } from "../../firmen-status";
+import { suchHinweis, websiteFuerSuche } from "../firmen-suche-hinweis";
 import { kompakteKontakte, emailStatus, emailHerkunft, EMAIL_STATUS_HINWEIS } from "./kontakte-kompakt";
 import { ladeFirmenliste } from "../real-candidate-source";
 import { verarbeitungsstand, type MatrixZeile } from "../verarbeitungsstand";
@@ -81,11 +82,12 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const search = defineTool({
     name: "company_search",
     description:
-      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Norwegen, Finnland seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name; genau EIN passender Treffer heisst: nicht nachfragen, direkt company_get. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
+      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz, Norwegen, Finnland seit Oktober 2026, Vereinigtes Koenigreich). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH | UK, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist, und gib beim Import (import_companies) dieses `country` je Zeile mit. Use this first when the user mentions a company by name. Nennt der Nutzer eine Website oder Domain (auch frueher im Gespraech, z. B. \"nexburg (nexburg.com)\"), gib sie IMMER als `website` mit: Firmen mit genau dieser Website kommen zuerst (`websiteTreffer: true`) und sind die gemeinte Firma, egal was die Namenssuche sonst liefert. Genau EIN passender Treffer heisst nur dann \"nicht nachfragen, direkt company_get\", wenn er ein websiteTreffer ist, in Deutschland liegt oder der Nutzer sein Land genannt hat; beachte immer das Feld `hinweis`. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
     parameters: {
       type: "object",
       properties: {
         q: { type: "string", description: "Company name (partial OK)." },
+        website: { type: "string", description: "Website oder Domain, die der Nutzer zur Firma genannt hat (z. B. nexburg.com)." },
         limit: {
           type: "integer",
           description: "Max matches to return.",
@@ -101,6 +103,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
     schema: yup.object({
       q: yup.string().trim().min(1).required(),
+      website: yup.string().trim().max(300).optional(),
       limit: yup.number().integer().min(1).max(25).default(10),
       gruendungVon: yup.number().integer().min(1000).max(2100).optional(),
       gruendungBis: yup.number().integer().min(1000).max(2100).optional(),
@@ -115,11 +118,15 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         ...(args.gruendungBis !== undefined ? { gruendungBis: args.gruendungBis } : {}),
         ...(args.sortierung ? { sortierung: args.sortierung } : {}),
       };
+      // PM-2026-0059: genannte Website zuerst (Argument, Domain als Suchbegriff oder
+      // genau eine Domain in der letzten Nutzernachricht).
+      const such = websiteFuerSuche({ q: args.q, website: args.website }, c.nutzerText);
+      if (such.website && such.quelle !== "argument") c.log(`website ${such.website} aus ${such.quelle}`);
       const data = await gateway.request<{
         items?: Array<Record<string, unknown>>;
         total?: number;
       }>("/v1/companies/search", {
-        query: { q: args.q, limit: args.limit, ...gruendung },
+        query: { q: such.q, limit: args.limit, ...(such.website ? { website: such.website } : {}), ...gruendung },
         signal: c.signal,
       });
       // Statuswarnung je Treffer (Insolvenz, Loeschung, Liquidation) an erster Stelle.
@@ -138,7 +145,16 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         };
       });
       const mitWarnung = items.filter((it) => (it as { statusWarnung?: string }).statusWarnung).length;
-      return { items, total: data.total ?? 0, ...(mitWarnung > 0 ? { hinweis: `${mitWarnung} Treffer mit Statuswarnung (statusWarnung): dem Nutzer ausdruecklich nennen.` } : {}) };
+      const hinweise = [
+        suchHinweis({ q: such.q, website: such.website, items }),
+        mitWarnung > 0 ? `${mitWarnung} Treffer mit Statuswarnung (statusWarnung): dem Nutzer ausdruecklich nennen.` : null,
+      ].filter(Boolean);
+      return {
+        items,
+        total: data.total ?? 0,
+        ...(such.website ? { website: such.website } : {}),
+        ...(hinweise.length > 0 ? { hinweis: hinweise.join(" ") } : {}),
+      };
     },
     preview: (r) =>
       r.total === 0

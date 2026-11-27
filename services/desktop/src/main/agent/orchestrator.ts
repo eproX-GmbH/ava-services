@@ -2040,6 +2040,7 @@ export class AgentOrchestrator extends EventEmitter {
       // ihren Default-Pfad zu wählen.
       autonomousMode,
       conversationId,
+      nutzerText: letzteNutzerNachricht(convoForTool?.messages),
     };
     try {
       const parsed = tool.parseArgs(call.args);
@@ -2105,6 +2106,16 @@ export class AgentOrchestrator extends EventEmitter {
     }
     return null;
   }
+}
+
+/** Letzte echte Nutzernachricht (ohne Notizen des Aufgaben-Waechters), fuer ToolContext.nutzerText. */
+function letzteNutzerNachricht(messages: AgentMessage[] | undefined): string | undefined {
+  if (!messages) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === "user" && m.quelle !== "aufgabe" && !m.content.startsWith("[Hintergrundaufgabe")) return m.content;
+  }
+  return undefined;
 }
 
 /**

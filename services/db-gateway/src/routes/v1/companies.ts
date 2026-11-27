@@ -75,7 +75,7 @@ const searchRoute = createRoute({
 });
 
 companiesRouter.openapi(searchRoute, async (c) => {
-  const { q, limit, country, gruendungVon, gruendungBis, sortierung } = c.req.valid("query");
+  const { q, limit, country, gruendungVon, gruendungBis, sortierung, website } = c.req.valid("query");
   // Filter oder Sortierung nach Gruendungsjahr: Das Jahr steht in einer anderen
   // Datenbank als der Suchindex, deshalb laeuft die Abfrage ueber
   // structured-content (siehe lib/companies-gruendungsjahr.ts). Der Namensteil
@@ -108,8 +108,40 @@ companiesRouter.openapi(searchRoute, async (c) => {
     Array.isArray(u) ? u : (u?.germanCompanies ?? u?.items ?? [])
   ) as Array<z.infer<typeof CompanyShape>>;
   const total = (Array.isArray(u) ? u.length : (u?.count ?? u?.total ?? items.length));
-  return c.json({ items, total }, 200);
+  const vorne = await websiteTrefferLaden(c, website, country);
+  if (vorne.length === 0) return c.json({ items, total }, 200);
+  const ids = new Set(vorne.map((f) => f.companyId));
+  return c.json({ items: [...vorne, ...items.filter((f) => !ids.has(f.companyId))].slice(0, Math.max(limit, vorne.length)), total: total + vorne.filter((f) => !items.some((i) => i.companyId === f.companyId)).length }, 200);
 });
+
+/**
+ * PM-2026-0059: Nennt der Nutzer eine Website, gehen Firmen mit genau dieser Website
+ * der Namenssuche voraus. Name und Ort kommen aus den Stammdaten (aktueller als der
+ * Suchindex, der Umbenennungen erst beim monatlichen Abgleich sieht).
+ */
+async function websiteTrefferLaden(
+  c: Parameters<typeof callUpstream>[0],
+  website: string | undefined,
+  country: string | undefined,
+): Promise<Array<z.infer<typeof CompanyShape>>> {
+  if (!website) return [];
+  const { websiteDomain, firmenMitWebsite } = await import("../../lib/firma-nach-website");
+  const domain = websiteDomain(website);
+  if (!domain) return [];
+  const treffer = await firmenMitWebsite(domain).catch(() => []);
+  const out: Array<z.infer<typeof CompanyShape>> = [];
+  for (const t of treffer) {
+    try {
+      const m = await callUpstream<z.infer<typeof CompanyShape>>(c, "masterData", `/api/germany/v1/companies/${encodeURIComponent(t.companyId)}`);
+      if (!m?.companyId) continue;
+      if (country && (m.country ?? "DE") !== country) continue;
+      out.push({ ...m, websiteTreffer: true, website: t.url });
+    } catch {
+      /* Firma nicht mehr in den Stammdaten: weglassen */
+    }
+  }
+  return out;
+}
 
 // ---- GET /v1/companies -----------------------------------------------------
 

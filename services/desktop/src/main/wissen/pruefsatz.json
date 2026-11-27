@@ -208,6 +208,13 @@
     "erwartet": "falsche-website"
   },
   {
+    "frage": "AVA nimmt immer die britische Firma statt der deutschen mit gleichem Namen",
+    "erwartet": [
+      "firma-suchen",
+      "firma-nicht-gefunden"
+    ]
+  },
+  {
     "frage": "Ich finde die Bäckerei Schulz nirgends",
     "erwartet": [
       "firma-nicht-gefunden",
