@@ -629,6 +629,10 @@
     "erwartet": "meldungen-falschmeldung"
   },
   {
+    "frage": "In der Zeitachse steht ein Stellenwechsel von heute, dabei ist die Person schon seit September in der neuen Rolle",
+    "erwartet": "meldungen-falschmeldung"
+  },
+  {
     "frage": "Im Verlauf steht nur nichts zu bewerten, läuft da überhaupt was?",
     "erwartet": "meldungen-keine-fundstellen"
   },

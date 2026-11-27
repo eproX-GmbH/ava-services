@@ -7,11 +7,13 @@ fragen:
   - falschmeldung rollenwechsel
   - das stimmt so nicht was du gemeldet hast
   - wrong alert
-schlagworte: [falschmeldung, falsch, fehler, rollenwechsel, geschäftsführer, quelle, verwerfen, problem melden, kontakt-wechsel, korrektur]
+  - der stellenwechsel stimmt nicht
+  - warum steht der stellenwechsel bei heute
+schlagworte: [falschmeldung, falsch, fehler, rollenwechsel, stellenwechsel, position, geschäftsführer, quelle, verwerfen, problem melden, kontakt-wechsel, korrektur, datum, linkedin, xing]
 aktionen:
   - { art: chat_vorschlag, ziel: "Ich möchte eine Falschmeldung als Problem melden", label: "Problem melden" }
   - { art: app_oeffnen, ziel: meldungen, label: "Meldungen öffnen" }
-stand: 2026-11-07
+stand: 2026-11-27
 ---
 Das tut mir leid. So gehst du vor:
 
@@ -19,4 +21,4 @@ Das tut mir leid. So gehst du vor:
 2. Mit „Verwerfen“ entfernst du die Meldung, oder du sagst mir „Lösch die Meldung über Firma X“.
 3. Melde mir den Fall über „Problem melden“, mit Firma und was falsch war. Dann kann das Team die Ursache beheben, damit die gleiche Falschmeldung nicht wieder kommt.
 
-Ich melde einen Rollenwechsel nur, wenn er frisch belegt ist, und verwerfe reine Umbenennungen. Ganz ausschließen lassen sich Fehler bei Website-Angaben trotzdem nicht. Wenn du willst, sehe ich mir die Firma direkt mit dir an und prüfe, was Register und Website aktuell sagen.
+Ich melde einen Rollenwechsel nur, wenn er frisch belegt ist, und verwerfe reine Umbenennungen. Kenne ich den alten Titel nur aus einem Suchtreffer ohne Datum (etwa einem XING-Schnipsel), oder hat die neue Rolle laut Profil schon begonnen, bevor ich den alten Titel zum ersten Mal gesehen habe, melde ich keinen Wechsel: Dann habe ich ihn nicht beobachtet. In der Zeitachse steht ein Stellenwechsel beim Beginn der neuen Rolle laut Profil, nicht an dem Tag, an dem ich ihn gelesen habe. Ganz ausschließen lassen sich Fehler bei Website-Angaben trotzdem nicht. Wenn du willst, sehe ich mir die Firma direkt mit dir an und prüfe, was Register und Website aktuell sagen.

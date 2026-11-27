@@ -6,7 +6,7 @@ import * as Z0 from "../src/renderer/src/lib/zeitachse.ts";
 
 // Wie test-wissen.mts: unter tsx kommt das Modul je nach Umgebung als Namespace oder als default.
 const Z = ((Z0 as any).echteAenderung ? Z0 : (Z0 as any).default) as typeof import("../src/renderer/src/lib/zeitachse.ts");
-const { echteAenderung, eintraegeProfil, eintraegeRegister, schreibweise } = Z;
+const { echteAenderung, eintraegeProfil, eintraegeRegister, eintraegeMeldungen, schreibweise } = Z;
 
 const fall = (name: string, f: () => void) => {
   f();
@@ -64,6 +64,20 @@ fall("Register-Snapshot: nur echte Felder, sonst kein Eintrag", () => {
   assert.equal(mitEintrag[0]!.titel, "Registerstand geändert: Letzte Eintragung");
   const umzug = eintraegeRegister([sn(["address"])], { ...aktuell, street: "Rodelandring", zipCode: "38446", city: "Wolfsburg" } as never, "DE", "Firma");
   assert.equal(umzug[0]!.titel, "Registerstand geändert: Sitz");
+});
+
+fall("Stellenwechsel steht beim Beginn der neuen Rolle, nicht am Lesetag (Befund 2026-11-27)", () => {
+  const m = { art: "contact-change", id: "s1", companyId: "X_HRB_1", typ: "job-changed", personName: "Nils Beispiel", before: "Konstrukteur", after: "Teamleiter Konstruktion", occurredAt: "2026-11-27T13:07:00Z", seit: "2026-09-01T00:00:00Z", vorherGesehenAm: "2026-10-28T10:11:00Z", quellen: [] };
+  const [e] = eintraegeMeldungen([m], null, "Firma");
+  assert.equal(e!.datum, "2026-09-01T00:00:00Z");
+  assert.equal((e as { von?: string }).von, undefined);
+  // ohne Beginn laut Profil bleibt der Tag der Beobachtung
+  const [o] = eintraegeMeldungen([{ ...m, seit: null }], null, "Firma");
+  assert.equal(o!.datum, "2026-11-27T13:07:00Z");
+  assert.equal((o as { von?: string }).von, "2026-10-28T10:11:00Z");
+  // andere Kontaktaenderungen behalten ihren Tag
+  const [t] = eintraegeMeldungen([{ ...m, typ: "company-phone-changed" }], null, "Firma");
+  assert.equal(t!.datum, "2026-11-27T13:07:00Z");
 });
 
 console.log("Zeitachse: alle Fälle ok");

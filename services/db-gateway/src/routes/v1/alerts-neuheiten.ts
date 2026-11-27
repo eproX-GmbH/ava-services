@@ -36,6 +36,7 @@ import { listeProfilAenderungen } from "../../lib/profile-changes";
 import { gfDiffBereinigen } from "../../lib/stammdaten-vergleich";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
+import { beginnFuerTitel, rollenwechselBeleg, schreibweise } from "../../lib/rollenwechsel-beleg";
 import { ErrorShape } from "./schemas";
 import { gleicherName } from "../../lib/buying-center-vorschlag";
 
@@ -333,16 +334,6 @@ function quellenName(source: string | null | undefined): string {
   return "Quelle";
 }
 
-/** Nur Buchstaben, klein: „Geschäftsleitung“ ≙ „Geschaeftsleitung“ etc. */
-function schreibweise(v: string | null): string {
-  return (v ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    // Aufzaehlungen: "A; B; C" ≙ "A, B und C" ≙ "A, B and C"
-    .replace(/\b(und|and|sowie)\b|&/g, " ")
-    .replace(/[^a-z]/g, "");
-}
 
 async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
   const pool = getProducerPool("company-contact");
@@ -454,6 +445,15 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       // Suchtreffer-Schnipsel sind undatiert (Google zeigt oft den alten
       // Stand): ohne belegten Beginn keine Meldung.
       if ((s.source ?? "").startsWith("search") && !s.startDate) continue;
+      // Alter Titel nur aus Suchtreffern, oder die neue Rolle begann schon, bevor AVA den alten
+      // Titel zum ersten Mal sah: kein beobachteter Wechsel (Befund Joyce 2026-11-27, Diermann).
+      const beleg = rollenwechselBeleg({
+        vorher: s.before,
+        sichtungen: (s.beobachtungen ?? []).map((o) => ({ value: o.value, am: o.am, quelle: o.quelle })),
+        beginnNeu: beginnFuerTitel(s.title, s.startDate, s.after),
+        signalAm: s.observedAt,
+      });
+      if (!beleg.belegt) continue;
       // Register-Kontext: Die Person ist laut Handelsregister Geschaeftsfuehrer.
       if (s.fullName) {
         const gfs = registerGf.get(s.companyId) ?? [];

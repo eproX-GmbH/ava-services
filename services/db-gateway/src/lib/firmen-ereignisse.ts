@@ -17,6 +17,7 @@
 import { getGatewayPool, getProducerPool } from "./producer-pools";
 import { gfDiffBereinigen } from "./stammdaten-vergleich";
 import { echterRollenwechsel, pendelEntfernen, rolleEinordnen, type Ebene, type Rollengruppe } from "./rollengruppe";
+import { beginnFuerTitel, rollenwechselBeleg } from "./rollenwechsel-beleg";
 
 export { pendelEntfernen };
 
@@ -158,21 +159,37 @@ export async function firmenEreignisse(q: EreignisAbfrage): Promise<FirmenEreign
   }
 
   if (arten.has("wechsel")) {
-    const r = await kontakt.query<{ id: string; companyId: string; personId: string | null; fullName: string | null; before: string | null; after: string | null; observedAt: Date; evidenceUrl: string | null; source: string | null }>(
-      `SELECT s.id, s."companyId", s."personId", p."fullName", s.before, s.after, s."observedAt", s."evidenceUrl", s.source
+    const r = await kontakt.query<{
+      id: string; companyId: string; personId: string | null; fullName: string | null; before: string | null; after: string | null; observedAt: Date; evidenceUrl: string | null; source: string | null;
+      titelJetzt: string | null; beginnJetzt: Date | null; sichtungen: Array<{ value: string | null; am: string; quelle: string | null }> | null;
+    }>(
+      `SELECT s.id, s."companyId", s."personId", p."fullName", s.before, s.after, s."observedAt", s."evidenceUrl", s.source,
+              e.title AS "titelJetzt", e."startDate" AS "beginnJetzt",
+              (SELECT json_agg(json_build_object('value', o.value, 'am', o."observedAt", 'quelle', o.source))
+                 FROM "Observation" o WHERE o."personId" = s."personId" AND o.field = s.field) AS sichtungen
          FROM "SignalEvent" s LEFT JOIN "Person" p ON p.id = s."personId"
+         LEFT JOIN LATERAL (
+           SELECT e.title, e."startDate" FROM "Employment" e
+            WHERE e."personId" = s."personId" AND e."companyId" = s."companyId"
+            ORDER BY e."isCurrent" DESC, e."lastSeen" DESC LIMIT 1
+         ) e ON TRUE
         WHERE s.type = 'PERSON_JOB_CHANGED' AND s."companyId" = ANY($1::text[])`,
       [ids],
     );
     const wechsel: FirmenEreignis[] = [];
     for (const s of r.rows) {
       if (!echterRollenwechsel(s.before, s.after)) continue;
+      // Alter Titel nur aus Suchtreffern, oder neue Rolle aelter als die erste Sichtung des alten:
+      // kein beobachteter Wechsel (Befund Joyce 2026-11-27). Sonst zaehlt der Beginn laut Profil.
+      const beginn = beginnFuerTitel(s.titelJetzt, s.beginnJetzt, s.after);
+      if (!rollenwechselBeleg({ vorher: s.before, sichtungen: s.sichtungen ?? [], beginnNeu: beginn, signalAm: s.observedAt }).belegt) continue;
       const v = rolleEinordnen(s.before);
       const n2 = rolleEinordnen(s.after);
+      const laut = beginn && beginn.getTime() <= s.observedAt.getTime() ? beginn : null;
       wechsel.push({
         id: `wechsel:${s.id}`, art: "wechsel", companyId: s.companyId, firma: namen.get(s.companyId) ?? null, personId: s.personId, person: s.fullName,
         rolleVorher: s.before, rolle: s.after, gruppe: n2.gruppe, ebene: n2.ebene, gruppeVorher: v.gruppe, ebeneVorher: v.ebene,
-        zeitpunkt: iso(s.observedAt)!, zeitpunktArt: "erstmals_gesehen", quelle: quelleText(s.source), url: s.evidenceUrl,
+        zeitpunkt: iso(laut ?? s.observedAt)!, zeitpunktArt: laut ? "laut_profil" : "erstmals_gesehen", quelle: quelleText(s.source), url: s.evidenceUrl,
       });
     }
     // Dieselbe Befoerderung steht oft in beiden Quellen: Zeilen-Wechsel (mit Profildatum) zuerst,

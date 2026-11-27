@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import R0 from "../src/lib/rollengruppe.ts";
 import Z0 from "../src/lib/fluktuation-zaehlen.ts";
+import B0 from "../src/lib/rollenwechsel-beleg.ts";
+const B = B0.default ?? B0;
 const R = R0.default ?? R0;
 const F = R;
 let fehler = 0;
@@ -62,5 +64,52 @@ pruefe("Hinweis erst, wenn es auffaellt, mit ehrlichen Zahlen", () => {
   assert.deepEqual(Z.hinweiseAus(Z.leitungZaehlen([ev("neu", "Vertriebsleiter"), ev("neu", "Leiter IT")]), 24), []);
   assert.deepEqual(Z.hinweiseAus(Z.leitungZaehlen([], { zu: 1, ab: 1 }), 24), ["Geschäftsführung: 1 neu, 1 ausgeschieden in 2 Jahren"]);
 });
+
+console.log("Rollenwechsel aus Signalen: belegt?");
+pruefe("Diermann (2026-11-27): alter Titel nur aus XING-Suchtreffer, neue Rolle laut LinkedIn seit 09/2026", () => {
+  const sichtungen = [
+    { value: "Technischer Produktdesigner", am: "2026-10-28T10:11:00Z", quelle: "search" },
+    { value: "Werkstudent", am: "2026-11-27T13:07:00Z", quelle: "apify:company-profile" },
+  ];
+  const r = B.rollenwechselBeleg({ vorher: "Technischer Produktdesigner", sichtungen, beginnNeu: B.beginnFuerTitel("Werkstudent", "2026-09-01", "Werkstudent"), signalAm: "2026-11-27T13:07:00Z" });
+  assert.deepEqual(r, { belegt: false, grund: "alter_stand_nur_suchtreffer" });
+});
+pruefe("neue Rolle begann, bevor AVA den alten Titel zum ersten Mal sah: kein beobachteter Wechsel", () => {
+  const sichtungen = [{ value: "Konstrukteur", am: "2026-10-28T10:11:00Z", quelle: "agent:website" }];
+  const r = B.rollenwechselBeleg({ vorher: "Konstrukteur", sichtungen, beginnNeu: new Date("2026-09-01"), signalAm: "2026-11-27T13:07:00Z" });
+  assert.deepEqual(r, { belegt: false, grund: "neue_rolle_aelter_als_alter_stand" });
+});
+pruefe("echter Wechsel: alter Titel auf der Website gesehen, neue Rolle beginnt danach", () => {
+  const sichtungen = [
+    { value: "Konstrukteur", am: "2026-06-02T10:00:00Z", quelle: "agent:website" },
+    { value: "Konstrukteur", am: "2026-10-01T10:00:00Z", quelle: "search" },
+  ];
+  assert.deepEqual(B.rollenwechselBeleg({ vorher: "Konstrukteur", sichtungen, beginnNeu: new Date("2026-09-01"), signalAm: "2026-11-27T13:07:00Z" }), { belegt: true });
+  // ohne Beginn laut Profil ebenso
+  assert.deepEqual(B.rollenwechselBeleg({ vorher: "Konstrukteur", sichtungen, beginnNeu: null, signalAm: "2026-11-27T13:07:00Z" }), { belegt: true });
+});
+pruefe("Schreibweise des alten Titels egal; Sichtungen nach dem Signal zaehlen nicht", () => {
+  const sichtungen = [
+    { value: "Geschäftsleitung", am: "2026-05-01T00:00:00Z", quelle: "search" },
+    { value: "Geschaeftsleitung", am: "2026-12-01T00:00:00Z", quelle: "agent:website" },
+  ];
+  assert.equal(B.rollenwechselBeleg({ vorher: "Geschaeftsleitung", sichtungen, beginnNeu: null, signalAm: "2026-11-27T00:00:00Z" }).belegt, false);
+});
+pruefe("Schreibweise: Umlaute, Aufzaehlungen, Satzzeichen", () => {
+  assert.equal(B.schreibweise("Geschäftsführer"), B.schreibweise("Geschaeftsfuehrer"));
+  assert.equal(B.schreibweise("Straße"), B.schreibweise("Strasse"));
+  assert.equal(B.schreibweise("Vertrieb; Marketing"), B.schreibweise("Vertrieb und Marketing"));
+  assert.notEqual(B.schreibweise("Werkstudent"), B.schreibweise("Technischer Produktdesigner"));
+});
+pruefe("ohne Sichtungen des alten Titels: nichts zu pruefen, Signal bleibt", () => {
+  assert.equal(B.rollenwechselBeleg({ vorher: "Konstrukteur", sichtungen: [], beginnNeu: new Date("2020-01-01"), signalAm: "2026-11-27T00:00:00Z" }).belegt, true);
+});
+pruefe("Beginn laut Profil nur, wenn die Beschaeftigung den neuen Titel traegt", () => {
+  assert.equal(B.beginnFuerTitel("Werkstudent", "2026-09-01", "Werkstudent")?.toISOString().slice(0, 10), "2026-09-01");
+  assert.equal(B.beginnFuerTitel("Teamleiter", "2026-09-01", "Werkstudent"), null);
+  assert.equal(B.beginnFuerTitel("Werkstudent", null, "Werkstudent"), null);
+  assert.equal(B.beginnFuerTitel("Werkstudent", "kein datum", "Werkstudent"), null);
+});
+
 console.log(fehler ? `\n${fehler} Fehler.` : "\nAlles gruen.");
 process.exit(fehler ? 1 : 0);

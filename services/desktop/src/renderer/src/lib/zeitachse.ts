@@ -745,9 +745,13 @@ export function eintraegeMeldungen(items: Neuheit[], websiteUrl: string | null, 
         const nachher = zeichenkette(m.after);
         const quellen = Array.isArray(m.quellen) ? (m.quellen as Array<{ url?: string; titel?: string }>) : [];
         const q0 = quellen.find((x) => zeichenkette(x.url));
+        // Stellenwechsel stehen beim Beginn der neuen Rolle laut Profil, nicht am Tag, an dem AVA
+        // ihn gelesen hat (Befund Joyce 2026-11-27: "heute" bei einer Rolle seit September).
+        const seit = zeichenkette(m.seit);
+        const amBeginn = m.typ === "job-changed" && seit !== null && Date.parse(seit) < Date.parse(datum);
         aus.push({
           ...basis,
-          von: zeichenkette(m.vorherGesehenAm),
+          ...(amBeginn ? { datum: seit } : { von: zeichenkette(m.vorherGesehenAm) }),
           titel: person ? `${typ}: ${person}` : typ,
           pille: typ,
           aenderungen: vorher || nachher ? [{ name: m.typ === "job-changed" ? "Position" : m.typ === "employer-changed" ? "Arbeitgeber" : "Wert", vorher, nachher }] : undefined,
