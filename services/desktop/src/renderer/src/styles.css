@@ -1465,6 +1465,13 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
    den Namen, statt ihn zusammenzuquetschen. */
 .company-hero__kopf { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .company-hero__titel { min-width: 0; flex: 1 1 22rem; }
+/* Mit Logo: Name und Registerzeile stehen mittig neben der Logo-Flaeche. Befund Joyce 2026-11-27:
+   Das Logo sass 13 px zu hoch, weil es an der Oberkante hing und die Ueberschrift ihren oberen
+   Abstand mitbrachte. Die Aktion rechts bleibt oben. */
+.company-hero__kopf--logo { align-items: center; }
+.company-hero__kopf--logo .company-hero__titel h2 { margin-top: 0; }
+.company-hero__kopf--logo .company-hero__titel > :last-child { margin-bottom: 0; }
+.company-hero__kopf--logo .firma-aktion { align-self: flex-start; }
 .firma-aktion { flex: none; margin-left: auto; text-align: right; }
 .firma-aktion__knoepfe { display: flex; align-items: center; gap: 0.6rem; justify-content: flex-end; }
 .firma-aktion__verweis { font-size: 12px; color: var(--muted); text-decoration: none; white-space: nowrap; }

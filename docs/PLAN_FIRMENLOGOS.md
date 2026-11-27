@@ -229,6 +229,13 @@ vorzeigbare Stand (rund 5 Tage).
 - **Wichtig für die Prüfung:** Producer-Ergebnisse speichert nur das Prod-Gateway (das
   Staging-Gateway nimmt sie absichtlich nicht an). Auf Staging lassen sich deshalb nur die
   Routen und die Anzeige prüfen; das Speichern aus dem Ereignis wirkt erst nach der Freigabe.
+- Echttest der Anzeige (27.11.2026, mit Joyces Okay): Logos der Nexburg GmbH einmalig über die
+  Gateway-Funktion gespeichert; in der App erscheinen sie in der Firmenansicht und im
+  Firmenprofil im Chat über `ava-logo://`, das Bild liegt danach im Ordner `shared/logos`.
+  Im Kopf der Firmenansicht steht das Logo jetzt mittig neben Name und Registerzeile (es
+  saß 13 px zu hoch). Der Nachlauf lief im echten Ablauf an einer zweiten Firma (als frisch
+  übersprungen, Startseite geladen, Zeichen und Wortmarke gesendet). Noch nicht im echten
+  Ablauf gelaufen: die Annahme der Ereignisse im Prod-Gateway (erst nach der Freigabe).
 - Bewusst noch nicht: Vermerk „geprüft, nichts gefunden“ (`logoGeprueft` reist schon mit,
   wird aber nicht gespeichert), Listen (LG4), Nachlauf für den Bestand (LG5), Korrektur durch
   den Nutzer (LG6), App im Browser und Konsole (LG7).

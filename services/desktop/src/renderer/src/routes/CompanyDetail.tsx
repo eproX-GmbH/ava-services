@@ -37,7 +37,7 @@ import {
 } from "../lib/format";
 import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
-import { FirmenLogo, type FirmenLogos } from "../components/FirmenLogo";
+import { FirmenLogo, logoFuerFlaeche, type FirmenLogos } from "../components/FirmenLogo";
 import { RechercheBereich } from "../components/RechercheLauf";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten, quellenMitBelegen } from "./kontakt-quellen";
@@ -753,8 +753,8 @@ export function CompanyDetail() {
         {/* v0.1.699 — Weg in den eigenen Bestand. Oben rechts neben dem
             Namen: praesent genug, um gefunden zu werden, aber ausserhalb
             des Lesepfads von Name, Register und Kennzahlen. */}
-        <div className="company-hero__kopf">
-          <FirmenLogo logos={website.data?.logos} name={structured.data?.name ?? summary.data?.name} groesse={56} ohneRueckfall breit />
+        <div className={logoFuerFlaeche(website.data?.logos) ? "company-hero__kopf company-hero__kopf--logo" : "company-hero__kopf"}>
+          <FirmenLogo logos={website.data?.logos} name={structured.data?.name ?? summary.data?.name} groesse={48} ohneRueckfall breit />
           <div className="company-hero__titel">
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
