@@ -44,6 +44,7 @@
     "test:kontext-kuerzung": "node scripts/test-kontext-kuerzung.mjs",
     "test:firmen-suche": "node scripts/test-firmen-suche-hinweis.mjs",
     "test:firmenprofil": "node scripts/test-firmenprofil.mjs",
+    "test:firmenlogo": "node scripts/test-firmenlogo.mjs",
     "test:dateien": "node scripts/test-dateien.mjs",
     "test:company-get": "node scripts/test-company-get.mjs",
     "test:hintergrundaufgaben": "node scripts/test-hintergrundaufgaben.mjs",

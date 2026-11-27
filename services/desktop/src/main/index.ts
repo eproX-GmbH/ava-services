@@ -48,6 +48,8 @@ import { startWatchdog } from "./watchdog";
 import { beendeVerwaisteBrowser } from "./browser-sweep";
 import { producerLogBuffer } from "./producer-log-buffer";
 import { registerScreenshotProtocol } from "./producer-screenshots";
+import { logoAntwort } from "./logo-cache";
+import { getSharedDir } from "./account-space";
 import { registerLinkedInMediaProtocol } from "./linkedin/media-protocol";
 import { initBilling } from "./billing";
 import * as relevanz from "./relevanz";
@@ -127,6 +129,16 @@ protocol.registerSchemesAsPrivileged([
   // L6 — same shape, serves LinkedIn-Beobachter media thumbnails.
   {
     scheme: "ava-linkedin-media",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: false,
+    },
+  },
+  // Firmenlogos (docs/PLAN_FIRMENLOGOS.md): ava-logo://<sha256>, siehe logo-cache.ts.
+  {
+    scheme: "ava-logo",
     privileges: {
       standard: true,
       secure: true,
@@ -327,6 +339,10 @@ app.whenReady().then(async () => {
   // Protokoll-Handler (Schemata sind oben vor whenReady privilegiert).
   registerScreenshotProtocol();
   registerLinkedInMediaProtocol();
+  // Firmenlogos: Bild einmal mit der Anmeldung vom Gateway holen, dann aus dem geraeteweiten Ordner.
+  protocol.handle("ava-logo", (request) =>
+    logoAntwort(request.url, { ordner: getSharedDir("logos"), gatewayUrl: GATEWAY_URL, getAccessToken: () => auth.getAccessToken() }),
+  );
   app.on("browser-window-created", () => broadcastMissingProducers());
 
   // ---- Renderer permission grants (Phase 8.n2) -----------------------------

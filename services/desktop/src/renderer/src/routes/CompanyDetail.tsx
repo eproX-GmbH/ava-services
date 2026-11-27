@@ -37,6 +37,7 @@ import {
 } from "../lib/format";
 import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
+import { FirmenLogo, type FirmenLogos } from "../components/FirmenLogo";
 import { RechercheBereich } from "../components/RechercheLauf";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten, quellenMitBelegen } from "./kontakt-quellen";
@@ -225,6 +226,8 @@ interface FokusBefund {
 }
 interface Website {
   website?: WebsiteCore | null;
+  /** Firmenlogos (docs/PLAN_FIRMENLOGOS.md): Zeichen und Wortmarke, Bild ueber ava-logo://<sha256>. */
+  logos?: FirmenLogos;
   /** Fokus-Themen (docs/PLAN_THEMEN.md): Befund je Thema. */
   themen?: FokusBefund[];
   companySerp?: CompanySerp | null;
@@ -751,6 +754,7 @@ export function CompanyDetail() {
             Namen: praesent genug, um gefunden zu werden, aber ausserhalb
             des Lesepfads von Name, Register und Kennzahlen. */}
         <div className="company-hero__kopf">
+          <FirmenLogo logos={website.data?.logos} name={structured.data?.name ?? summary.data?.name} groesse={56} ohneRueckfall breit />
           <div className="company-hero__titel">
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}

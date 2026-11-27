@@ -17,11 +17,12 @@ import { useFeature } from "../../../store/policy";
 import { ermittleAdresse } from "../../../routes/CompanyDetail";
 import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerZeile } from "../../RegisterStatusBadge";
 import { ExternalLink } from "../../ExternalLink";
+import { FirmenLogo } from "../../FirmenLogo";
 import { GlobeIcon, HomeIcon, LinkedInIcon, MailIcon, PhoneIcon, XingIcon } from "../../icons";
 import { fmtShareCapital, mailHref, mapsEmbedUrl, mapsHref, telHref } from "../../../lib/format";
 import { kartenSuche } from "../../../../../shared/adresse";
 import { landAusCompanyId } from "../../../../../shared/register-land";
-import { firmenFakt, firmenLinks, firmenMail, kuerzel, personenAusFakten, personenAuswahl, websiteAnzeige } from "./firmenprofil-daten";
+import { firmenFakt, firmenLinks, firmenMail, personenAusFakten, personenAuswahl, websiteAnzeige } from "./firmenprofil-daten";
 
 type Quellen = Parameters<typeof ermittleAdresse>[0];
 type Structured = NonNullable<Quellen["structured"]>;
@@ -133,9 +134,7 @@ export function Firmenprofil({ companyId, personen, children }: { companyId: str
   return (
     <section className="gu-karte gu-profil">
       <header className="gu-profil__kopf">
-        <span className="gu-profil__kuerzel" aria-hidden="true">
-          {kuerzel(name)}
-        </span>
+        <FirmenLogo logos={website.data?.logos} name={name} groesse={44} breit />
         <div className="gu-profil__titel">
           <div className="gu-profil__namenszeile">
             <button type="button" className="gu-link gu-profil__name" onClick={oeffnen}>

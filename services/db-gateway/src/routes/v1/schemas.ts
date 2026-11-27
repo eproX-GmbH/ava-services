@@ -150,9 +150,22 @@ const CompanySerpShape = z
 const DeepResearchShape = z.object({}).passthrough().openapi("DeepResearch");
 const JobPostingShape = z.object({}).passthrough().openapi("JobPosting");
 
+/** Firmenlogo (docs/PLAN_FIRMENLOGOS.md): Angaben zum Bild; die Bytes liefert /v1/logos/{sha256}. */
+export const LogoAngabeShape = z.object({
+  sha256: z.string(),
+  mime: z.string(),
+  breite: z.number().int(),
+  hoehe: z.number().int(),
+  /** Zeichen unter 64 px (Favicon als letzter Ausweg). */
+  klein: z.boolean(),
+  stufe: z.string(),
+});
+
 export const WebsiteShape = z
   .object({
     website: WebsiteCoreShape.optional(),
+    /** Quadratisches Zeichen und breite Wortmarke, je nachdem, was die Website hergibt. */
+    logos: z.object({ zeichen: LogoAngabeShape.optional(), wortmarke: LogoAngabeShape.optional() }).optional(),
     companySerp: CompanySerpShape.optional(),
     /** PM-2026-0045 — von Hand vorgegebene Website; die Website-Stufe nutzt sie ohne Suche. */
     websiteVorgabe: z.object({ url: z.string(), domain: z.string(), updatedAt: z.string() }).nullable().optional(),

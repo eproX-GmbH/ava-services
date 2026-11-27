@@ -1164,6 +1164,9 @@ interface WebsiteResult {
     description?: string | null;
     tags?: string[];
     socialLinks?: Array<{ platform: string; url: string }>;
+    /** Firmenlogos (docs/PLAN_FIRMENLOGOS.md): Zeichen und Wortmarke als Base64; prueft und speichert lib/firmen-logos.ts. */
+    logos?: unknown[];
+    logoGeprueft?: boolean;
   };
   /** v0.1.60 — LLM-judge audit trail. Persisted to the gateway's
    *  WebsiteJudgment table (NOT the producer's website DB) so the
@@ -1176,6 +1179,31 @@ interface WebsiteResult {
     confidence: "high" | "medium" | "low" | null;
     reasoning: string;
     candidatesConsidered: number;
+  };
+}
+
+/**
+ * Firmenlogos (docs/PLAN_FIRMENLOGOS.md, LG2) aus dem Website-Ereignis uebernehmen. Laeuft NACH
+ * dem Schreiben der Website-Zeile und ausserhalb des Tier-Gates: Ein Logo haengt nicht am
+ * KI-Modell, und fuer schon aufbereitete Firmen verwirft das Gate die Zeile als „frisch“, das
+ * Logo soll trotzdem ankommen. Ein Fehler hier (Speicher nicht erreichbar) laesst das Ereignis
+ * gelten; das Logo kommt mit dem naechsten Lauf.
+ */
+function mitLogos(inner: ApplyFn): ApplyFn {
+  return async (pool, event, log) => {
+    await inner(pool, event, log);
+    const data = event.data as PersistEvent<WebsiteResult> | undefined;
+    const companyId = data?.result?.companyId;
+    const logos = data?.result?.website?.logos;
+    if (!companyId || !Array.isArray(logos) || logos.length === 0) return;
+    try {
+      const { logosUebernehmen } = await import("./firmen-logos");
+      const r = await logosUebernehmen(companyId, logos, { pool });
+      if (r.ruht) return;
+      log.info({ companyId, gespeichert: r.gespeichert, verworfen: r.verworfen }, "logos persist ✓");
+    } catch (err) {
+      log.warn({ companyId, err: err instanceof Error ? err.message : String(err) }, "logos persist fehlgeschlagen (Website-Zeile bleibt gueltig)");
+    }
   };
 }
 
@@ -2093,7 +2121,7 @@ const BINDINGS: ProducerBinding[] = [
     producer: "website",
     routingKey: "tenant.persist.website.v1",
     queue: "db-gateway-persist-website",
-    apply: withTierGate("website", applyWebsite),
+    apply: mitLogos(withTierGate("website", applyWebsite)),
   },
 ];
 

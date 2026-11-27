@@ -71,7 +71,8 @@ interface Registry {
 const PENDING = "_pending";
 // 2026-11-06 (Joyce): Chrome for Testing geraeteweit statt je Konto — vorher hielt
 // jedes Konto eine eigene Kopie (je rund 380 MB) in einer anderen Fassung.
-const SHARED_DIRS = ["ollama-managed", "whisper", "chrome-for-testing"] as const;
+// "logos": Zwischenspeicher der Firmenlogos (logo-cache.ts), fuer alle Konten des Geraets gleich.
+const SHARED_DIRS = ["ollama-managed", "whisper", "chrome-for-testing", "logos"] as const;
 const MIGRATION_MARKER = ".accounts-migrated";
 /** Eigene Dateien/Verzeichnisse im Basis-userData, die NICHT verschoben werden. */
 const BASE_OWN = new Set(["accounts", "shared", "accounts.json", MIGRATION_MARKER]);

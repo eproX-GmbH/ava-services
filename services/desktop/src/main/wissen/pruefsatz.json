@@ -212,6 +212,10 @@
     "erwartet": "chat-diagramme"
   },
   {
+    "frage": "Bei manchen Firmen steht nur ein Buchstabe, bei anderen ein Logo. Warum?",
+    "erwartet": "firma-logo"
+  },
+  {
     "frage": "AVA nimmt immer die britische Firma statt der deutschen mit gleichem Namen",
     "erwartet": [
       "firma-suchen",

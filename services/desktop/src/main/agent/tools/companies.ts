@@ -503,11 +503,14 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       required: ["companyId"],
     },
     schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
-    run: async (args, c) =>
-      gateway.request<Record<string, unknown>>(
+    run: async (args, c) => {
+      // Firmenlogos (Pruefsummen und Masse) sind fuer die Oberflaeche, nicht fuer das Modell.
+      const { logos: _logos, ...rest } = await gateway.request<Record<string, unknown>>(
         `/v1/companies/${encodeURIComponent(args.companyId)}/website`,
         { signal: c.signal },
-      ),
+      );
+      return rest;
+    },
     preview: (r) => {
       const url = pickFirst(
         (r as { url?: string }).url,

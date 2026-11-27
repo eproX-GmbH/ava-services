@@ -28,6 +28,7 @@
     "test:cloud-abrechnung": "node scripts/test-cloud-abrechnung.mjs",
     "test:staging": "node scripts/test-staging.mjs",
     "test:firma-nach-website": "node scripts/test-firma-nach-website.mjs",
+    "test:firmen-logos": "node scripts/test-firmen-logos.mjs",
     "test:stammdaten-vergleich": "node scripts/test-stammdaten-vergleich.mjs"
   },
   "dependencies": {

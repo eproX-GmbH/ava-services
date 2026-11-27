@@ -73,6 +73,14 @@ const schema = z.object({
   OPERATOR_OPENAI_API_KEY: z.string().optional(),
   OPERATOR_POOL_MODEL: z.string().default("gpt-6-luna"),
   OPERATOR_APIFY_TOKEN: z.string().optional(),
+  // docs/PLAN_FIRMENLOGOS.md (LG2): Objektspeicher (S3-artig, Wasabi) fuer Firmenlogos. Alle fuenf
+  // gesetzt = aktiv; fehlt etwas, werden Logos nicht gespeichert und nicht ausgeliefert. Prod- und
+  // Staging-Gateway bekommen dieselben Werte (gleiche Daten, gleicher Bucket).
+  OBJEKTSPEICHER_ENDPUNKT: z.string().optional(),
+  OBJEKTSPEICHER_REGION: z.string().optional(),
+  OBJEKTSPEICHER_BUCKET: z.string().optional(),
+  OBJEKTSPEICHER_ZUGANG: z.string().optional(),
+  OBJEKTSPEICHER_GEHEIMNIS: z.string().optional(),
   /** docs/PLAN_PROBLEM_MELDEN.md — Telegram an den Betreiber bei neuen Problemmeldungen (optional). */
   OPERATOR_TELEGRAM_BOT_TOKEN: z.string().optional(),
   OPERATOR_TELEGRAM_CHAT_ID: z.string().optional(),

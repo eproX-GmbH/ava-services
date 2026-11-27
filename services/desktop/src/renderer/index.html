@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <!--
+      Firmenlogos (docs/PLAN_FIRMENLOGOS.md): `ava-logo:` in img-src; das Protokoll liefert
+      Logos aus dem Zwischenspeicher des Hauptprozesses (main/logo-cache.ts).
       v0.1.77 — added `ava-screenshot:` to img-src so the custom
       Electron protocol the producer-screenshot panel uses can render.
       Without it the CSP blocked every <img src="ava-screenshot://...">
@@ -19,7 +21,7 @@
       redirected.
     -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data: ava-screenshot: ava-linkedin-media:; font-src 'self' data:; frame-src https://www.google.com https://maps.google.com;" />
+          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data: ava-screenshot: ava-linkedin-media: ava-logo:; font-src 'self' data:; frame-src https://www.google.com https://maps.google.com;" />
     <title>AVA</title>
   </head>
   <body>

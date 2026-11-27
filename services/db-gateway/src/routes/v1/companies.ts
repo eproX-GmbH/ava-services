@@ -5,6 +5,7 @@ import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { vorgabeLesen } from "../../lib/website-vorgabe";
+import { logoInhalt, logosLesen, type FirmenLogos } from "../../lib/firmen-logos";
 import { ladeWebsiteRecherche } from "../../lib/website-research";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
@@ -460,7 +461,33 @@ companiesRouter.openapi(websiteRoute, async (c) => {
   payload.themen = recherche.themen;
   const vorgabe = await vorgabeLesen(companyId, pool).catch(() => null);
   payload.websiteVorgabe = vorgabe ? { url: vorgabe.url, domain: vorgabe.domain, updatedAt: vorgabe.updatedAt } : null;
+  // Firmenlogos (docs/PLAN_FIRMENLOGOS.md): nur die Angaben; das Bild liefert /v1/logos/{sha256}.
+  const logos = (await logosLesen([companyId], pool).catch(() => new Map<string, FirmenLogos>())).get(companyId);
+  if (logos && (logos.zeichen || logos.wortmarke)) payload.logos = logos;
   return c.json(payload, 200);
+});
+
+// ---- GET /v1/logos/:sha256 ---------------------------------------------------
+// Bild eines Firmenlogos nach Pruefsumme. Die Adresse zeigt fuer immer auf denselben Inhalt,
+// deshalb darf der Client dauerhaft zwischenspeichern. Nur mit Anmeldung (wie alle Firmendaten);
+// ausgeliefert wird nur, was als Logo einer Firma eingetragen ist. SVG kommt mit einer
+// Richtlinie, die beim direkten Oeffnen nichts ausfuehrt und nichts nachlaedt.
+companiesRouter.get("/logos/:sha256", async (c) => {
+  const sha256 = (c.req.param("sha256") ?? "").toLowerCase().replace(/\.[a-z]+$/, "");
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new HTTPException(404, { message: "not_found" });
+  const etag = `"${sha256}"`;
+  if (c.req.header("if-none-match") === etag) return c.body(null, 304, { etag, "cache-control": "private, max-age=31536000, immutable" });
+  const logo = await logoInhalt(sha256);
+  if (!logo) throw new HTTPException(404, { message: "not_found" });
+  return c.body(new Uint8Array(logo.inhalt), 200, {
+    "content-type": logo.mime,
+    "content-length": String(logo.inhalt.length),
+    "cache-control": "private, max-age=31536000, immutable",
+    etag,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "content-disposition": "inline",
+  });
 });
 
 // ---- GET /v1/companies/:companyId/publications -----------------------------
