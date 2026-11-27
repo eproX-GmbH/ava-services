@@ -20,7 +20,7 @@ export function rangFuerTitel(titel: string | null | undefined): number {
   if (!titel) return 0;
   const t = titel.toLowerCase();
   if (
-    /gesch(ä|ae)ftsf|managing director|\bceo\b|\bcfo\b|\bcto\b|\bcoo\b|founder|gr(ü|ue)nder|inhaber|\bowner\b|vorstand|prokurist/.test(t)
+    /gesch(ä|ae)ftsf|managing director|\bceo\b|\bcfo\b|\bcto\b|\bcoo\b|founder|gr(ü|ue)nder|inhaber|(?<!\b(?:product|process|system|service|application|platform|data|risk|domain|feature|component|tool|release|control|budget|content|project)\s)\bowner\b|vorstand|prokurist/.test(t)
   )
     return 3;
   if (/leit|\bhead\b|direktor|director|bereichs/.test(t)) return 2;

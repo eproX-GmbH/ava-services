@@ -9664,6 +9664,78 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .gu-knopfreihe { display: flex; gap: 8px; flex-wrap: wrap; }
 .gu-block .chat-chart { margin: 0; }
 
+/* Firmenprofil (gen-ui/firmenprofil.tsx): Firmenueberblick im Stil der Firmenansicht. */
+.gu-profil { gap: 16px; container-type: inline-size; }
+/* Die Chat-Blase rueckt Listen ein und gibt Ueberschriften und Listenpunkten Abstand
+   (.chat-msg-assistant .chat-content ul/li/h4); hier gilt nur das eigene Raster. */
+.gu-block .gu-profil ul { list-style: none; margin: 0; padding: 0; }
+.gu-block .gu-profil li { margin: 0; }
+.gu-block .gu-profil h4 { margin: 0; }
+.gu-profil__kopf { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.gu-profil__kuerzel {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 44px; height: 44px; border-radius: var(--radius-md, 8px);
+  font-size: 16px; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--color-brand-700); background: color-mix(in srgb, var(--color-brand-500) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brand-500) 30%, transparent);
+}
+:root.dark .gu-profil__kuerzel { color: var(--color-brand-300); }
+.gu-profil__titel { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.gu-profil__namenszeile { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gu-profil__name { font-size: 17px; font-weight: 600; line-height: 1.25; color: var(--color-fg); }
+:root.dark .gu-profil__name { color: var(--color-fg); }
+.gu-profil__oeffnen { flex-shrink: 0; }
+.gu-profil__stichworte { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.gu-profil__stichworte li { height: 22px; font-size: 12px; }
+.gu-profil__zahlen { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.gu-profil__zahlen .gu-kennzahl__wert { font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
+.gu-profil__rumpf { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.gu-profil__rumpf--karte { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); align-items: stretch; }
+/* Nach der Breite der Karte, nicht des Fensters: die Chat-Spalte ist je nach Seitenleiste verschieden breit. */
+@container (max-width: 620px) {
+  .gu-profil__rumpf--karte { grid-template-columns: minmax(0, 1fr); }
+  .gu-profil__karte { height: 200px; }
+}
+@container (max-width: 460px) {
+  .gu-profil__kopf { flex-wrap: wrap; }
+  .gu-profil__titel { flex-basis: calc(100% - 56px); }
+}
+.gu-profil__kontakt { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gu-profil__liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.gu-profil__zeile { display: flex; align-items: flex-start; gap: 10px; min-width: 0; line-height: 1.45; }
+.gu-profil__symbol { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 19px; color: var(--color-fg-muted); }
+.gu-profil__wert { min-width: 0; overflow-wrap: anywhere; color: var(--color-fg); }
+.gu-profil__wert a { color: var(--color-brand-700); font-weight: 500; text-decoration: none; }
+:root.dark .gu-profil__wert a { color: var(--color-brand-300); }
+.gu-profil__wert a:hover { text-decoration: underline; }
+.gu-profil__adresszeile { display: block; }
+.gu-profil__netze { display: flex; flex-wrap: wrap; gap: 6px; }
+.gu-profil__netz {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none;
+  color: var(--color-fg); background: var(--color-bg-0); border: 1px solid var(--color-border);
+}
+.gu-profil__netz:hover { border-color: color-mix(in srgb, var(--color-brand-500) 55%, transparent); color: var(--color-brand-700); text-decoration: none; }
+:root.dark .gu-profil__netz:hover { color: var(--color-brand-300); }
+.gu-profil__netz svg { flex-shrink: 0; }
+.gu-profil__karte {
+  display: block; width: 100%; height: 100%; min-height: 200px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); background: var(--color-bg-0);
+}
+.gu-profil__abschnitt { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gu-profil__abschnittkopf { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.gu-profil__mehr { font-size: 12px; }
+.gu-profil__personen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.gu-profil__person {
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; min-width: 0;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); background: var(--color-bg-0);
+}
+.gu-profil__personname { font-size: 13px; font-weight: 600; }
+.gu-profil__persontitel { line-height: 1.4; overflow-wrap: anywhere; }
+.gu-profil__person .gu-profil__netze { margin-top: 4px; }
+.gu-profil__person .gu-profil__netz { background: var(--color-bg-1); }
+.gu-profil__einordnung { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-top: 16px; border-top: 1px solid var(--color-border); }
+
 /* ---- Zeitachse der Firmenansicht (Firmenhistorie) ------------------------------------
  * Achse links, Symbol je Art, Monats-/Jahrestitel, Filter-Chips, Notiz-Eingabe oben.
  * Farbtöne je Art über --za-ton (Hintergrund) und --za-farbe (Symbol/Text). */

@@ -208,6 +208,10 @@
     "erwartet": "falsche-website"
   },
   {
+    "frage": "Wieso zeigt mir AVA im Chat eine Landkarte und LinkedIn-Knöpfe zur Firma?",
+    "erwartet": "chat-diagramme"
+  },
+  {
     "frage": "AVA nimmt immer die britische Firma statt der deutschen mit gleichem Namen",
     "erwartet": [
       "firma-suchen",

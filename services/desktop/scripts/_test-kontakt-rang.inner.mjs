@@ -9,6 +9,14 @@ assert.equal(rangFuerTitel("Geschäftsführer"), 3);
 assert.equal(rangFuerTitel("Managing Director"), 3);
 assert.equal(rangFuerTitel("CEO"), 3);
 assert.equal(rangFuerTitel("Prokurist"), 3);
+// PM-2026-0059: "Product Owner" ist keine Inhaberschaft (bei Nexburg standen drei
+// Product Owner unter "Geschäftsleitung"); echte Inhaber bleiben Rang 3.
+assert.equal(rangFuerTitel("Product Owner"), 0);
+assert.equal(rangFuerTitel("Senior Product Owner"), 0);
+assert.equal(rangFuerTitel("Process Owner Vertrieb"), 1);
+assert.equal(rangFuerTitel("Owner"), 3);
+assert.equal(rangFuerTitel("Co-Owner & CEO"), 3);
+assert.equal(rangFuerTitel("Business Owner"), 3);
 assert.equal(rangFuerTitel("Leitung ORG / IT"), 2);
 assert.equal(rangFuerTitel("Head of Marketing"), 2);
 assert.equal(rangFuerTitel("Regionalvertriebsleiter Europa"), 2, "leit… schlaegt vertrieb");

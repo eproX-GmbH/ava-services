@@ -76,6 +76,12 @@ export const BAUSTEINE: Record<string, BausteinText> = {
     props: "companyId: string, grund?: string, score?: number",
     wofuer: "Eine Firma aus AVA; Name, Ort und Status lädt die Karte selbst. Nur mit companyId aus Werkzeug-Ergebnissen.",
   },
+  Firmenprofil: {
+    props: "companyId: string, personen?: string[] (personIds der bis zu 4 passendsten Ansprechpartner; fehlt = Geschäftsleitung zuerst)",
+    wofuer:
+      "Überblick zu EINER aufbereiteten Firma, meist das Wurzelelement. Zeigt selbst Kopf mit Register und Status, Stichworte, Standort, Gründungsjahr, Mitarbeiter, Stammkapital, Adresse mit eingebetteter Karte, Telefon, Website, LinkedIn-Seite der Firma und die Ansprechpartner mit LinkedIn-Profil. Diese Angaben NICHT zusätzlich als Tabelle oder Text schreiben. Kinder: nur deine Einordnung (Text, Hinweis, Kennzahlen zu Finanzen, Balken, Knopfreihe). Nur mit companyId aus Werkzeug-Ergebnissen.",
+    kinder: true,
+  },
   Knopfreihe: {
     props: "(keine)",
     wofuer: "Ordnet mehrere Knöpfe nebeneinander.",

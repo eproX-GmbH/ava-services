@@ -11,13 +11,17 @@ fragen:
   - die antwort sieht plötzlich anders aus mit kacheln
   - was sind die kästen mit zahlen in der antwort
   - kann ich auf die firma in der antwort klicken
-schlagworte: [diagramm, chart, grafik, balken, linie, fläche, torte, kreis, ring, rangliste, kennzahl, kacheln, tabelle, oberfläche, knopf, firmenkarte, streuung, visualisierung, buying center, mail-entwurf, karte]
+  - zeig mir die firma mit karte und linkedin im chat
+  - warum ist in der antwort eine google maps karte
+schlagworte: [diagramm, chart, grafik, balken, linie, fläche, torte, kreis, ring, rangliste, kennzahl, kacheln, tabelle, oberfläche, knopf, firmenkarte, streuung, visualisierung, buying center, mail-entwurf, karte, firmenprofil, firmenüberblick, google maps, standort, linkedin, ansprechpartner]
 aktionen:
   - { art: chat_vorschlag, ziel: "Zeig mir die Umsatzentwicklung meiner Firma als Diagramm.", label: "Diagramm anfragen" }
 gilt_fuer: [desktop, app]
-stand: 2026-11-09
+stand: 2026-11-27
 ---
 Wenn eine Antwort Zahlen, Vergleiche oder mehrere Firmen enthält, baue ich sie dir als kleine Oberfläche direkt in den Chat: Kennzahlen mit Veränderung zum Vorjahr, Balken, Verläufe, Ranglisten, Ringe für Anteile, Tabellen und Firmenkarten. Welche Darstellung passt, entscheide ich selbst; du kannst aber auch ausdrücklich darum bitten, etwa „zeig mir die Umsätze der letzten Jahre als Balken“. Die Zahlen stammen immer aus den Daten, die ich vorher abgefragt habe, nie geschätzt.
+
+Fragst du nach einer einzelnen Firma, die schon aufbereitet ist, bekommst du ein Firmenprofil wie in der Firmenansicht: Name mit Register und Status, Standort, Gründungsjahr, Mitarbeiter und Stammkapital, dazu Adresse mit eingebetteter Google-Maps-Karte, Telefon, Website, die LinkedIn-Seite der Firma und die passenden Ansprechpartner mit Knopf zu ihrem LinkedIn-Profil. Darunter steht meine Einordnung, etwa was die Firma macht und wie sie finanziell dasteht, und ein Knopf für den nächsten Schritt. Die Karte lädt direkt von Google.
 
 Firmen und Personen in der Oberfläche sind anklickbar und öffnen die passende Seite. Knöpfe öffnen eine Seite in AVA oder schicken mir einen nächsten Auftrag. Mit einem lokalen Modell und in Telegram bekommst du dieselben Inhalte als einfache Diagramme oder als Text.
 

@@ -132,6 +132,19 @@ Beispiele:
 
 Grobe Schätzung: G0 1–2 Tage, G1–G3 4–6 Tage, G4–G6 3–4 Tage.
 
+**Nachtrag 2026-11-27 (PM-2026-0059), Baustein `Firmenprofil`:** Der Überblick zu einer
+einzelnen Firma war eine nackte Tabelle, obwohl LinkedIn-Profile, Adresse und Website
+vorlagen. Der 17. Baustein zeigt die Firma im Stil der Firmenansicht: Kopf mit Register und
+Status, Stichworte, Kennzahlen (Standort, Gründung, Mitarbeiter, Stammkapital), Kontakt mit
+Website und Netzwerk-Profilen, eingebettete Google-Maps-Karte (derselbe schlüssellose
+Embed wie in der Firmenansicht, `frame-src` war schon freigegeben) und bis zu vier
+Ansprechpartner mit LinkedIn-Knopf. Das Modell liefert nur `companyId`, optional die
+`personen` (personIds) und als Kinder seine Einordnung; alle Angaben lädt der Baustein
+selbst mit den Abfrage-Schlüsseln der Firmenansicht (`firmenprofil.tsx`,
+`firmenprofil-daten.ts`, Prompt-Regel 8). Ruhende Firmen zeigen nur den Kopf, gesperrte
+Kontakte (Organisations-Vorgabe) bleiben weg. Breite über Container-Abfragen, weil die
+Chat-Spalte je nach Seitenleiste verschieden breit ist. Offen: derselbe Baustein in der PWA (G4).
+
 ## 7. Entscheidungen
 
 - **Entschieden 2026-11-09 (Joyce):** Variante A, Desktop auf React 19 („muss ja eh

@@ -51,6 +51,7 @@ const props = {
     zeilen: z.array(z.array(zelle)),
   }),
   Firmenkarte: z.object({ companyId: z.string(), grund: z.string().nullish(), score: z.number().nullish() }),
+  Firmenprofil: z.object({ companyId: z.string(), personen: z.array(z.string().nullable()).nullish() }),
   Knopfreihe: z.object({}),
   Knopf: z.object({ label: z.string(), art: z.enum(["primaer", "sekundaer"]).nullish() }),
 } as const;
@@ -69,7 +70,7 @@ function baustein<N extends Name>(name: N) {
   };
 }
 
-// Typableitung bewusst abgeschaltet (as never / Catalog): defineCatalog mit 16
+// Typableitung bewusst abgeschaltet (as never / Catalog): defineCatalog mit 17
 // zod-Schemas trieb tsc in einen Speicherueberlauf (2026-11-09). Geprueft wird
 // zur Laufzeit gegen die Schemas (genUiKatalog.validate).
 const daten = {
@@ -88,6 +89,7 @@ const daten = {
     Ring: baustein("Ring"),
     Tabelle: baustein("Tabelle"),
     Firmenkarte: baustein("Firmenkarte"),
+    Firmenprofil: baustein("Firmenprofil"),
     Knopfreihe: baustein("Knopfreihe"),
     Knopf: baustein("Knopf"),
   },

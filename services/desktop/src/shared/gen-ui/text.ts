@@ -66,6 +66,8 @@ function zeilenFuer(el: El): string[] {
     }
     case "Firmenkarte":
       return [`Firma ${s(p.companyId)}${p.grund ? `: ${s(p.grund)}` : ""}`];
+    case "Firmenprofil":
+      return [`Firmenprofil ${s(p.companyId)}`];
     case "Marke":
       return [s(p.text)].filter(Boolean);
     default:

@@ -10,6 +10,7 @@ import { gatewayFetch } from "../../../api/gateway";
 import { ChatChart } from "../../ChatChart";
 import type { ChartSpec } from "../../../lib/chart-spec";
 import { genUiKatalog, type GenUiFormat, type GenUiName, type GenUiProps } from "./katalog";
+import { Firmenprofil } from "./firmenprofil";
 
 type K<N extends GenUiName> = BaseComponentProps<GenUiProps<N>>;
 
@@ -330,6 +331,11 @@ export const { registry: genUiRegistry } = defineRegistry(genUiKatalog, {
       );
     },
     Firmenkarte: ({ props }: K<"Firmenkarte">) => <Firmenkarte companyId={props.companyId} grund={props.grund} score={props.score} />,
+    Firmenprofil: ({ props, children }: K<"Firmenprofil">) => (
+      <Firmenprofil companyId={props.companyId} personen={props.personen}>
+        {children}
+      </Firmenprofil>
+    ),
     Knopfreihe: ({ children }: K<"Knopfreihe">) => <div className="gu-knopfreihe">{children}</div>,
     Knopf: ({ props, emit }: K<"Knopf">) => (
       <button type="button" className={props.art === "sekundaer" ? "btn" : "btn btn--primaer"} onClick={() => emit("press")}>
