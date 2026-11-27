@@ -171,6 +171,19 @@ await pruefe("ohne Speicher ruht alles; ohne Tabelle leere Antwort statt Fehler"
   assert.equal((await L.logosLesen(["X_HRB_1"], db({ ohneTabelle: true }))).size, 0);
   assert.equal(await L.logoInhalt("a".repeat(64), { pool: db({ ohneTabelle: true }), speicher: sp }), null);
 });
+await pruefe("Listen-Abfrage: nur Firmen mit Logo, unbrauchbare Eingabe wird abgewiesen", async () => {
+  const d = db();
+  await L.logosUebernehmen("AACHEN_HRB_18923", eingang, { pool: d, speicher: sp });
+  const liste = await L.logosFuerListe(["AACHEN_HRB_18923", "UNBEKANNT_HRB_1", "AACHEN_HRB_18923"], d);
+  assert.deepEqual(Object.keys(liste), ["AACHEN_HRB_18923"]);
+  assert.match(liste.AACHEN_HRB_18923.zeichen?.sha256 ?? liste.AACHEN_HRB_18923.wortmarke?.sha256 ?? "", /^[0-9a-f]{64}$/);
+  assert.deepEqual(await L.logosFuerListe([], d), {});
+  assert.equal(await L.logosFuerListe("AACHEN_HRB_18923", d), null);
+  assert.equal(await L.logosFuerListe([1, 2], d), null);
+  assert.equal(await L.logosFuerListe([""], d), null);
+  assert.equal(await L.logosFuerListe(Array.from({ length: L.LOGOS_LISTE_MAX + 1 }, (_, i) => `X_HRB_${i}`), d), null);
+  assert.deepEqual(await L.logosFuerListe(["X_HRB_1"], db({ ohneTabelle: true })), {});
+});
 
 s3.close();
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

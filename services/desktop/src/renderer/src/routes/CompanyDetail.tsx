@@ -37,7 +37,10 @@ import {
 } from "../lib/format";
 import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
-import { FirmenLogo, logoFuerFlaeche, type FirmenLogos } from "../components/FirmenLogo";
+import { FirmenLogo, LogoZeile, logoFuerFlaeche, type FirmenLogos } from "../components/FirmenLogo";
+
+/** Logo im Kopf der Firmenansicht: so hoch wie Name und Registerzeile zusammen. */
+const KOPF_LOGO = 40;
 import { RechercheBereich } from "../components/RechercheLauf";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten, quellenMitBelegen } from "./kontakt-quellen";
@@ -746,17 +749,13 @@ export function CompanyDetail() {
   const sorted = [...pubs].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
   const latest = sorted.length > 0 ? sorted[sorted.length - 1] : undefined;
 
-  return (
-    <section>
-      {/* ---- Hero ---------------------------------------------------------- */}
-      <header className="company-hero">
-        {/* v0.1.699 — Weg in den eigenen Bestand. Oben rechts neben dem
-            Namen: praesent genug, um gefunden zu werden, aber ausserhalb
-            des Lesepfads von Name, Register und Kennzahlen. */}
-        <div className={logoFuerFlaeche(website.data?.logos) ? "company-hero__kopf company-hero__kopf--logo" : "company-hero__kopf"}>
-          <FirmenLogo logos={website.data?.logos} name={structured.data?.name ?? summary.data?.name} groesse={48} ohneRueckfall breit />
-          <div className="company-hero__titel">
-        <h2 style={{ marginBottom: "0.25rem" }}>
+  // Kopf: Name mit Marken und Registerzeile; mit Logo stehen beide als Block neben der Logo-Flaeche
+  // (Grossbuchstabe oben bis Grundlinie unten so hoch wie das Logo, Befund Joyce 2026-11-27).
+  const firmenName = structured.data?.name ?? summary.data?.name;
+  const mitLogo = Boolean(logoFuerFlaeche(website.data?.logos, { groesse: KOPF_LOGO, breit: true }));
+  const registerText = summary.data ? registerZeile(summary.data) : null;
+  const kopfName = (
+    <>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
           <LandBadge country={summary.data?.country} />
           <RegisterStatusBadge
@@ -771,14 +770,37 @@ export function CompanyDetail() {
               frische Firma mit "1 von 10" saehe aus wie ein Urteil, ist
               aber nur fehlendes Wissen. */}
           <Waermeanzeige zielArt="firma" zielId={id} />
-        </h2>
-        {summary.data && registerZeile(summary.data) && (
+    </>
+  );
+
+  return (
+    <section>
+      {/* ---- Hero ---------------------------------------------------------- */}
+      <header className="company-hero">
+        {/* v0.1.699 — Weg in den eigenen Bestand. Oben rechts neben dem
+            Namen: praesent genug, um gefunden zu werden, aber ausserhalb
+            des Lesepfads von Name, Register und Kennzahlen. */}
+        <div className={mitLogo ? "company-hero__kopf company-hero__kopf--logo" : "company-hero__kopf"}>
+          {mitLogo ? (
+            <LogoZeile
+              hoehe={KOPF_LOGO}
+              className="company-hero__titel"
+              logo={<FirmenLogo logos={website.data?.logos} name={firmenName} groesse={KOPF_LOGO} ohneRueckfall breit />}
+            >
+              <h2 className={registerText ? "logo-zeile__oben" : "logo-zeile__oben logo-zeile__unten"}>{kopfName}</h2>
+              {registerText && <p className="muted small logo-zeile__unten">{registerText}</p>}
+            </LogoZeile>
+          ) : (
+          <div className="company-hero__titel">
+        <h2 style={{ marginBottom: "0.25rem" }}>{kopfName}</h2>
+        {registerText && (
           <p className="muted small" style={{ marginTop: 0 }}>
-            {registerZeile(summary.data)}
+            {registerText}
           </p>
         )}
         <ThemaHinweis companyId={id} />
           </div>
+          )}
           <FirmaUebernehmen
             name={structured.data?.name ?? summary.data?.name}
             ort={summary.data?.location ?? structured.data?.city}
@@ -787,6 +809,7 @@ export function CompanyDetail() {
             onFertig={() => void stageState.refetch?.()}
           />
         </div>
+        {mitLogo && <ThemaHinweis companyId={id} />}
 
         {/* Unter dem Namen primär die Keywords als Chips. Nur wenn KEINE
             Keywords vorhanden sind, fällt der Hero auf den Geschäftszweck

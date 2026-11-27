@@ -216,6 +216,10 @@
     "erwartet": "firma-logo"
   },
   {
+    "frage": "Warum stehen in Meine Firmen bei fast allen Firmen nur Anfangsbuchstaben statt Logos?",
+    "erwartet": "firma-logo"
+  },
+  {
     "frage": "AVA nimmt immer die britische Firma statt der deutschen mit gleichem Namen",
     "erwartet": [
       "firma-suchen",

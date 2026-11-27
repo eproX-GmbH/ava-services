@@ -7,6 +7,7 @@ import { gatewayFetch, gatewaySSE } from "../api/gateway";
 import { fmtDate } from "../lib/format";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { CrmBadgeRow } from "../components/CrmBadge";
+import { FirmenLogoVon, LogoZeile } from "../components/FirmenLogo";
 import { ErneutVerarbeiten, RETRY_STAGES } from "../components/RetryStageForm";
 
 // W3 — pipeline matrix view.
@@ -435,6 +436,8 @@ export function TransactionDetail() {
                     onClick={() => setOpenCompanyId(row.companyId)}
                   >
                     <td className="matrix-company">
+                      <LogoZeile hoehe={22} logo={<FirmenLogoVon companyId={row.companyId} name={nameFor(row.companyId)} groesse={22} />}>
+                      <div className="matrix-company__name logo-zeile__oben logo-zeile__unten">
                       {nameFor(row.companyId)}
                       <LandBadge country={landFor(row.companyId)} />
                       <RegisterStatusBadge status={statusFor(row.companyId)} />
@@ -442,6 +445,8 @@ export function TransactionDetail() {
                       <CrmBadgeRow
                         links={crmLinks.data?.links[row.companyId] ?? []}
                       />
+                      </div>
+                      </LogoZeile>
                     </td>
                     {stages.map((s) => (
                       <td key={s} className="matrix-cell">

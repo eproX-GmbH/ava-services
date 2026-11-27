@@ -8,6 +8,7 @@ import { AktivierenDialog, type AktivierenAnfrage } from "../components/Aktivier
 import { bestaetigen } from "../components/Bestaetigung";
 import { gatewayFetch } from "../api/gateway";
 import { CrmBadgeRow } from "../components/CrmBadge";
+import { FirmenLogoVon, LogoZeile } from "../components/FirmenLogo";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { ProcessingToggle } from "../components/ProcessingToggle";
 import { ProcessingFeedButton } from "../components/ProcessingFeedPanel";
@@ -151,6 +152,8 @@ const STATE_DOT_CLASS: Record<StageState, string> = {
 };
 
 const PAGE_SIZE = 50;
+/** Logo links neben Name und Ort/Register: so hoch wie die beiden Zeilen (Grossbuchstabe oben bis Grundlinie unten). */
+const LOGO_HOEHE = 32;
 
 export function AllCompanies() {
   const qc = useQueryClient();
@@ -499,6 +502,8 @@ export function AllCompanies() {
                   aria-label={`Verarbeitungslog für ${row.name} öffnen`}
                 >
                   <td className="matrix-company">
+                    <LogoZeile hoehe={LOGO_HOEHE} logo={<FirmenLogoVon companyId={row.companyId} name={row.name} groesse={LOGO_HOEHE} />}>
+                    <div className="matrix-company__name logo-zeile__oben">
                     <Link
                       to={`/companies/${row.companyId}`}
                       onClick={(e) => e.stopPropagation()}
@@ -511,7 +516,8 @@ export function AllCompanies() {
                     <CrmBadgeRow
                       links={crmLinks.data?.links[row.companyId] ?? []}
                     />
-                    <div className="muted small matrix-company__meta">
+                    </div>
+                    <div className="muted small matrix-company__meta logo-zeile__unten">
                       <span>
                         {row.location}
                         {registerKennung(row) ? ` · ${registerKennung(row)}` : ""}
@@ -539,6 +545,7 @@ export function AllCompanies() {
                         </span>
                       )}
                     </div>
+                    </LogoZeile>
                   </td>
                   {PRODUCERS.map((p) => {
                     const cell = row.stages[p] ?? {

@@ -1465,12 +1465,11 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
    den Namen, statt ihn zusammenzuquetschen. */
 .company-hero__kopf { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .company-hero__titel { min-width: 0; flex: 1 1 22rem; }
-/* Mit Logo: Name und Registerzeile stehen mittig neben der Logo-Flaeche. Befund Joyce 2026-11-27:
-   Das Logo sass 13 px zu hoch, weil es an der Oberkante hing und die Ueberschrift ihren oberen
-   Abstand mitbrachte. Die Aktion rechts bleibt oben. */
-.company-hero__kopf--logo { align-items: center; }
-.company-hero__kopf--logo .company-hero__titel h2 { margin-top: 0; }
-.company-hero__kopf--logo .company-hero__titel > :last-child { margin-bottom: 0; }
+/* Mit Logo: Name und Registerzeile als Block neben der Logo-Flaeche (.logo-zeile, siehe unten).
+   Die Aktion rechts bleibt oben. */
+.company-hero__kopf--logo { align-items: flex-start; }
+.company-hero__kopf--logo .company-hero__titel h2,
+.company-hero__kopf--logo .company-hero__titel p { margin: 0; }
 .company-hero__kopf--logo .firma-aktion { align-self: flex-start; }
 .firma-aktion { flex: none; margin-left: auto; text-align: right; }
 .firma-aktion__knoepfe { display: flex; align-items: center; gap: 0.6rem; justify-content: flex-end; }
@@ -9221,20 +9220,20 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
   background: var(--color-indigo-50);
   text-decoration: none;
 }
-.firmen-treffer__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.firmen-treffer__text { flex: 1; min-width: 0; }
 .firmen-treffer__name {
   font-weight: 600;
   font-size: 15px;
+  line-height: 1.35;
   color: var(--color-fg);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px 0;
 }
 .firmen-treffer__meta {
   font-size: 13px;
+  line-height: 1.35;
   color: var(--color-fg-muted);
-  overflow: hidden;
+  /* nur seitlich kappen: unten ist die Zeile auf die Grundlinie gekuerzt (Unterlaengen) */
+  overflow-x: clip;
+  overflow-y: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -9533,6 +9532,12 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 
 /* Stufe und Zustand in Meine Firmen: leise, in der Zeile unter dem Namen */
 .matrix-company__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; }
+/* Mit Logo (LogoZeile): Name und Unterzeile als Bloecke, damit die Kuerzung auf Grossbuchstaben
+   und Grundlinie greift; die Flaeche fuer das Logo kommt zur Spalte dazu. */
+.matrix-company .logo-zeile { gap: 10px; }
+.matrix-company .logo-zeile__text > * { white-space: nowrap; overflow-x: clip; overflow-y: visible; text-overflow: ellipsis; }
+.matrix-company .matrix-company__meta > * + * { margin-left: 10px; }
+.all-companies__matrix .matrix-company { max-width: 290px; }
 .zustand-marke { display: inline-flex; align-items: center; gap: 4px; }
 .zustand-marke--ruhend { font-style: italic; }
 .zustand-marke__weg { background: none; border: none; padding: 0 2px; margin: 0; font: inherit; color: inherit; cursor: pointer; opacity: 0.6; line-height: 1; }
@@ -9665,11 +9670,42 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
   display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; min-width: 0;
   border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); background: var(--color-bg-1);
 }
-.gu-firma__kopf { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.gu-firma__name { font-size: 14px; font-weight: 600; }
+.gu-firma__kopf { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.gu-firma__kopf > * + * { margin-left: 8px; }
+.gu-firma__name { font: inherit; }
+.gu-firma__grund { margin-top: 6px; }
+/* Tabelle und Rangliste: kleines Logo vor dem Firmennamen */
+.gu-logo-zelle { gap: 8px; }
+.gu-rangliste__label .gu-logo-zelle { display: inline-flex; max-width: 100%; vertical-align: middle; }
+.gu-rangliste__label .gu-logo-zelle .logo-zeile__text > * { overflow-x: clip; overflow-y: visible; text-overflow: ellipsis; white-space: nowrap; }
 .gu-firma__grund { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--color-fg); }
 .gu-knopfreihe { display: flex; gap: 8px; flex-wrap: wrap; }
 .gu-block .chat-chart { margin: 0; }
+
+/* Logo links, daneben Name und Unterzeile (components/FirmenLogo.tsx, LogoZeile). Befund Joyce
+   2026-11-27: Der Textblock soll so hoch sein wie das Logo. Gemessen wird an der Schrift, nicht
+   an den Zeilenkaesten: Die erste Zeile wird oben auf die Hoehe der Grossbuchstaben gekuerzt,
+   die letzte unten auf die Grundlinie (text-box). Dazwischen verteilt sich der Rest, sodass die
+   Oberkante des Logos auf der Oberkante von "N" und die Unterkante auf der Grundlinie der
+   Unterzeile liegt. Die Zeilen muessen dafuer Block-Elemente sein (kein flex). Ist der Text
+   hoeher (Name bricht um), steht das Logo oben und der Text waechst nach unten. */
+.logo-zeile { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.logo-zeile > .firmenlogo { flex: none; }
+.logo-zeile__text {
+  display: flex; flex-direction: column; justify-content: space-between;
+  min-width: 0; flex: 1 1 auto; min-height: var(--logo-hoehe, 32px);
+}
+.logo-zeile__text > * { display: block; min-width: 0; }
+/* Abstaende kommen allein aus der Verteilung; staerker als z. B. .muted.small (margin) */
+.logo-zeile .logo-zeile__text > .logo-zeile__oben,
+.logo-zeile .logo-zeile__text > .logo-zeile__unten { margin: 0; }
+.logo-zeile__oben { text-box: trim-start cap alphabetic; }
+.logo-zeile__unten { text-box: trim-end cap alphabetic; }
+.logo-zeile__oben.logo-zeile__unten { text-box: trim-both cap alphabetic; }
+/* Nur eine Zeile (Tabelle, Rangliste, Firma ohne Registerzeile): mittig zum Logo */
+.logo-zeile__text:has(> :only-child) { justify-content: center; }
+/* Marken (DE, gelöscht …) duerfen ueber die gekuerzte Zeile hinausragen; nicht abschneiden */
+.logo-zeile__oben .badge, .logo-zeile__oben .gu-marke { vertical-align: 0.1em; }
 
 /* Firmenlogo (components/FirmenLogo.tsx): quadratische Flaeche mit Zeichen, eingepasster
    Wortmarke oder Kuerzel. Bilder immer auf weissem Grund, auch im dunklen Design. */
@@ -9680,7 +9716,8 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .firmenlogo img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
 .firmenlogo--zeichen, .firmenlogo--wortmarke, .firmenlogo--klein { background: #fff; }
 .firmenlogo--zeichen img { width: 100%; height: 100%; }
-.firmenlogo--wortmarke { padding: 5px; }
+.firmenlogo--wortmarke { padding: 4px; }
+.firmenlogo--laedt { background: var(--color-bg-2); border-color: transparent; }
 .firmenlogo--wortmarke img { width: 100%; height: 100%; }
 .firmenlogo--kuerzel {
   font-weight: 600; letter-spacing: 0.02em; line-height: 1;
@@ -9696,10 +9733,13 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .gu-block .gu-profil ul { list-style: none; margin: 0; padding: 0; }
 .gu-block .gu-profil li { margin: 0; }
 .gu-block .gu-profil h4 { margin: 0; }
-.gu-profil__kopf { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.gu-profil__titel { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.gu-profil__namenszeile { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.gu-profil__name { font-size: 17px; font-weight: 600; line-height: 1.25; color: var(--color-fg); }
+.gu-profil__kopf { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.gu-profil__titel { min-width: 0; flex: 1; }
+/* Groesse und Gewicht am Zeilen-Block, nicht am Knopf: Die Kuerzung auf die Grossbuchstaben
+   richtet sich nach der Schrift des Blocks. */
+.gu-profil__namenszeile { font-size: 17px; font-weight: 600; line-height: 1.25; }
+.gu-profil__namenszeile > * + * { margin-left: 8px; }
+.gu-profil__name { font: inherit; color: var(--color-fg); }
 :root.dark .gu-profil__name { color: var(--color-fg); }
 .gu-profil__oeffnen { flex-shrink: 0; }
 .gu-profil__stichworte { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }

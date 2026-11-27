@@ -236,9 +236,24 @@ vorzeigbare Stand (rund 5 Tage).
   saß 13 px zu hoch). Der Nachlauf lief im echten Ablauf an einer zweiten Firma (als frisch
   übersprungen, Startseite geladen, Zeichen und Wortmarke gesendet). Noch nicht im echten
   Ablauf gelaufen: die Annahme der Ereignisse im Prod-Gateway (erst nach der Freigabe).
+- Freigabe 0.1.989 (27.11.2026): Echter Ablauf in Produktion bestätigt. „Website neu
+  verarbeiten“ für die MAGIC Sports GmbH: Nachlauf im Producer, Annahme im Prod-Gateway
+  (`logos persist ✓ (Nachlauf)`), Zeichen 77x77 und Wortmarke 150x112 gespeichert und in der
+  Firmenansicht angezeigt.
+- LG4 (Teil, 27.11.2026, Befund Joyce): Logo links neben dem Namen in Meine Firmen,
+  Firmensuche, Firmen eines Vorgangs und im Chat (Firmenkarte, Tabelle, Rangliste). Die
+  Angaben kommen gesammelt über `POST /v1/companies/logos/batch` (eine Abfrage je Liste,
+  höchstens 300 Firmen; Desktop sammelt die Zeilen eines Augenblicks, `lib/firmen-logos-laden.ts`).
+  Ausrichtung überall gleich (`LogoZeile`): Oberkante des Logos auf der Oberkante der
+  Großbuchstaben im Namen, Unterkante auf der Grundlinie der Unterzeile (CSS `text-box`),
+  gemessen auf ±0,5 px. Kleine Flächen wählen anders: ein 48-px-Symbol reicht für eine
+  32-px-Zeile, eine Wortmarke nur, solange sie lesbar bleibt. Logo-Höhen: Firmenansicht 40,
+  Firmenprofil im Chat 36, Firmensuche 34, Meine Firmen 32, Firmenkarte 30, Vorgang 22,
+  Tabelle 20, Rangliste 18. Ohne die neue Gateway-Route (älteres Gateway) zeigen die Listen
+  die Anfangsbuchstaben und fragen fünf Minuten nicht neu.
 - Bewusst noch nicht: Vermerk „geprüft, nichts gefunden“ (`logoGeprueft` reist schon mit,
-  wird aber nicht gespeichert), Listen (LG4), Nachlauf für den Bestand (LG5), Korrektur durch
-  den Nutzer (LG6), App im Browser und Konsole (LG7).
+  wird aber nicht gespeichert), Radar und Meldungen (Rest von LG4), Nachlauf für den Bestand
+  (LG5), Korrektur durch den Nutzer (LG6), App im Browser und Konsole (LG7).
 
 ## 10. Entscheidungen
 

@@ -6,6 +6,8 @@ import C0 from "../src/main/logo-cache.ts";
 import F0 from "../src/renderer/src/components/FirmenLogo.tsx";
 const C = C0.default ?? C0;
 const F = F0.default ?? F0;
+const L0 = await import("../src/renderer/src/lib/firmen-logos-laden.ts");
+const L = L0.default ?? L0;
 let fehler = 0;
 const pruefe = async (name, fn) => { try { await fn(); console.log(`  ok   ${name}`); } catch (e) { fehler++; console.log(`  FEHL ${name}\n       ${e.message}`); } };
 
@@ -82,7 +84,26 @@ const z = { sha256: SHA, breite: 180, hoehe: 180, klein: false };
 const w = { sha256: SHA2, breite: 221, hoehe: 27, klein: false };
 const k = { sha256: "f".repeat(64), breite: 16, hoehe: 16, klein: true };
 await pruefe("gutes Zeichen geht vor", () => assert.equal(F.logoFuerFlaeche({ zeichen: z, wortmarke: w }).art, "zeichen"));
-await pruefe("kleines Favicon: lieber die Wortmarke einpassen", () => assert.deepEqual([F.logoFuerFlaeche({ zeichen: k, wortmarke: w }).art, F.logoFuerFlaeche({ zeichen: k, wortmarke: w }).logo.sha256], ["wortmarke", SHA2]));
+await pruefe("kleines Favicon: lieber die Wortmarke, wo die Flaeche breit werden darf", () => assert.deepEqual([F.logoFuerFlaeche({ zeichen: k, wortmarke: w }, { breit: true }).art, F.logoFuerFlaeche({ zeichen: k, wortmarke: w }, { breit: true }).logo.sha256], ["wortmarke", SHA2]));
+await pruefe("quadratisch: Wortmarke nur, solange sie lesbar bleibt", () => {
+  const lesbar = { sha256: SHA2, breite: 120, hoehe: 60, klein: false };
+  assert.equal(F.logoFuerFlaeche({ zeichen: k, wortmarke: lesbar }).art, "wortmarke");
+  // 221x27 waere in 44 px nur gut 4 px hoch: dann lieber das Favicon in echter Groesse
+  assert.equal(F.logoFuerFlaeche({ zeichen: k, wortmarke: w }).art, "klein");
+  // ohne jedes Zeichen bleibt nur das Kuerzel
+  assert.equal(F.logoFuerFlaeche({ wortmarke: w }), null);
+  assert.equal(F.logoFuerFlaeche({ wortmarke: w }, { groesse: 34 }), null);
+});
+await pruefe("kleines Zeichen mit genug Bildpunkten fuer die Flaeche zaehlt als Zeichen (Liste)", () => {
+  const ico48 = { sha256: "e".repeat(64), breite: 48, hoehe: 48, klein: true };
+  const breiteMarke = { sha256: SHA2, breite: 577, hoehe: 118, klein: false };
+  assert.equal(F.logoFuerFlaeche({ zeichen: ico48, wortmarke: breiteMarke }, { groesse: 34 }).art, "zeichen");
+  assert.equal(F.logoFuerFlaeche({ zeichen: ico48, wortmarke: breiteMarke }, { groesse: 20 }).art, "zeichen");
+  // im Kopf der Firmenansicht darf die Flaeche breit werden: dort die Wortmarke
+  assert.equal(F.logoFuerFlaeche({ zeichen: ico48, wortmarke: breiteMarke }, { groesse: 40, breit: true }).art, "wortmarke");
+  // 16 px reichen fuer keine Zeile
+  assert.equal(F.logoFuerFlaeche({ zeichen: k }, { groesse: 34 }).art, "klein");
+});
 await pruefe("nur kleines Favicon: das als letzter Ausweg", () => assert.equal(F.logoFuerFlaeche({ zeichen: k }).art, "klein"));
 await pruefe("nichts oder kaputte Angabe: Kuerzel", () => { assert.equal(F.logoFuerFlaeche(null), null); assert.equal(F.logoFuerFlaeche({}), null); assert.equal(F.logoFuerFlaeche({ zeichen: { sha256: "kaputt", breite: 1, hoehe: 1, klein: false } }), null); });
 
@@ -94,6 +115,43 @@ await pruefe("Flaeche: quadratisch, nur die Wortmarke darf im Kopf breiter werde
   assert.deepEqual(F.flaechenMasse(wm(577, 118), 44, false), { width: 44, height: 44 });
   assert.deepEqual(F.flaechenMasse({ logo: z, art: "zeichen" }, 56, true), { width: 56, height: 56 });
   assert.deepEqual(F.flaechenMasse(null, 28, true), { width: 28, height: 28 });
+});
+
+console.log("Logos fuer Listen: gesammelte Abfrage");
+const antwort = (ids) => ({ logos: Object.fromEntries(ids.filter((i) => i.startsWith("MIT_")).map((i) => [i, { zeichen: { sha256: SHA, mime: "image/png", breite: 77, hoehe: 77, klein: false, stufe: "apple" } }])) });
+await pruefe("viele Zeilen, eine Abfrage; doppelte Firmen einmal; Firmen ohne Logo bekommen null", async () => {
+  const abrufe = [];
+  const logosFuer = L.logoSammler(async (ids) => { abrufe.push(ids); return antwort(ids); }, { warteMs: 5 });
+  const [a, b, c, d] = await Promise.all([logosFuer("MIT_1"), logosFuer("OHNE_1"), logosFuer("MIT_1"), logosFuer("MIT_2")]);
+  assert.deepEqual(abrufe, [["MIT_1", "OHNE_1", "MIT_2"]]);
+  assert.equal(a.zeichen.sha256, SHA);
+  assert.equal(b, null);
+  assert.deepEqual(c, a);
+  assert.equal(d.zeichen.breite, 77);
+  assert.equal(await logosFuer(""), null);
+});
+await pruefe("grosse Listen in Teilen", async () => {
+  const abrufe = [];
+  const logosFuer = L.logoSammler(async (ids) => { abrufe.push(ids.length); return antwort(ids); }, { warteMs: 5, max: 2 });
+  await Promise.all(["MIT_1", "MIT_2", "MIT_3", "MIT_4", "MIT_5"].map((i) => logosFuer(i)));
+  assert.deepEqual(abrufe, [2, 2, 1]);
+});
+await pruefe("Gateway ohne die Route: kein Logo, und eine Weile keine neue Abfrage", async () => {
+  let uhr = 1_000; let abrufe = 0;
+  const logosFuer = L.logoSammler(async () => { abrufe++; throw new Error("404"); }, { warteMs: 5, pauseMs: 60_000, jetzt: () => uhr });
+  assert.equal(await logosFuer("MIT_1"), null);
+  assert.equal(await logosFuer("MIT_2"), null);
+  assert.equal(abrufe, 1);
+  uhr += 61_000;
+  assert.equal(await logosFuer("MIT_3"), null);
+  assert.equal(abrufe, 2);
+});
+await pruefe("Antwort wird geprueft: kaputte Angaben fallen weg", () => {
+  const m = L.logosAusAntwort({ logos: { A: { zeichen: { sha256: "kaputt", breite: 1, hoehe: 1 } }, B: { wortmarke: { sha256: SHA2, breite: "577", hoehe: 118, klein: "ja" } }, C: null, D: "x" } });
+  assert.deepEqual([...m.keys()], ["B"]);
+  assert.deepEqual(m.get("B").wortmarke, { sha256: SHA2, breite: 0, hoehe: 118, klein: false });
+  assert.equal(L.logosAusAntwort(null).size, 0);
+  assert.equal(L.logosAusAntwort({ logos: [] }).size, 0);
 });
 
 console.log(fehler ? `\n${fehler} Fehler` : "\nalles gruen");

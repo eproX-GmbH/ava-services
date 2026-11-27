@@ -5,7 +5,7 @@ import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { vorgabeLesen } from "../../lib/website-vorgabe";
-import { logoInhalt, logosLesen, type FirmenLogos } from "../../lib/firmen-logos";
+import { logoInhalt, logosFuerListe, logosLesen, type FirmenLogos } from "../../lib/firmen-logos";
 import { ladeWebsiteRecherche } from "../../lib/website-research";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
@@ -488,6 +488,17 @@ companiesRouter.get("/logos/:sha256", async (c) => {
     "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     "content-disposition": "inline",
   });
+});
+
+// ---- POST /v1/companies/logos/batch ----------------------------------------
+// Logos mehrerer Firmen fuer Listen (Meine Firmen, Bausteine im Chat): eine Abfrage statt einer
+// je Zeile. Nur die Angaben wie in /v1/companies/{id}/website; das Bild liefert /v1/logos/{sha256}.
+// Firmen ohne Logo fehlen in der Antwort.
+companiesRouter.post("/companies/logos/batch", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { companyIds?: unknown } | null;
+  const logos = await logosFuerListe(body?.companyIds);
+  if (!logos) throw new HTTPException(400, { message: "invalid_body" });
+  return c.json({ logos }, 200);
 });
 
 // ---- GET /v1/companies/:companyId/publications -----------------------------

@@ -17,12 +17,15 @@ import { useFeature } from "../../../store/policy";
 import { ermittleAdresse } from "../../../routes/CompanyDetail";
 import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerZeile } from "../../RegisterStatusBadge";
 import { ExternalLink } from "../../ExternalLink";
-import { FirmenLogo } from "../../FirmenLogo";
+import { FirmenLogo, LogoZeile } from "../../FirmenLogo";
 import { GlobeIcon, HomeIcon, LinkedInIcon, MailIcon, PhoneIcon, XingIcon } from "../../icons";
 import { fmtShareCapital, mailHref, mapsEmbedUrl, mapsHref, telHref } from "../../../lib/format";
 import { kartenSuche } from "../../../../../shared/adresse";
 import { landAusCompanyId } from "../../../../../shared/register-land";
 import { firmenFakt, firmenLinks, firmenMail, personenAusFakten, personenAuswahl, websiteAnzeige } from "./firmenprofil-daten";
+
+/** Logo im Kopf: so hoch wie Name und Registerzeile zusammen. */
+const PROFIL_LOGO = 36;
 
 type Quellen = Parameters<typeof ermittleAdresse>[0];
 type Structured = NonNullable<Quellen["structured"]>;
@@ -134,9 +137,12 @@ export function Firmenprofil({ companyId, personen, children }: { companyId: str
   return (
     <section className="gu-karte gu-profil">
       <header className="gu-profil__kopf">
-        <FirmenLogo logos={website.data?.logos} name={name} groesse={44} breit />
-        <div className="gu-profil__titel">
-          <div className="gu-profil__namenszeile">
+        <LogoZeile
+          hoehe={PROFIL_LOGO}
+          className="gu-profil__titel"
+          logo={<FirmenLogo logos={website.data?.logos} laedt={website.isPending} name={name} groesse={PROFIL_LOGO} breit />}
+        >
+          <div className={register ? "gu-profil__namenszeile logo-zeile__oben" : "gu-profil__namenszeile logo-zeile__oben logo-zeile__unten"}>
             <button type="button" className="gu-link gu-profil__name" onClick={oeffnen}>
               {name}
             </button>
@@ -144,8 +150,8 @@ export function Firmenprofil({ companyId, personen, children }: { companyId: str
             <RegisterStatusBadge status={s?.registerStatus} closedAt={s?.closedAt} />
             <InsolvenzBadge status={s?.insolvencyStatus} seit={s?.insolvencyAt} />
           </div>
-          {register && <div className="gu-gedaempft">{register}</div>}
-        </div>
+          {register && <div className="gu-gedaempft logo-zeile__unten">{register}</div>}
+        </LogoZeile>
         <button type="button" className="btn gu-profil__oeffnen" onClick={oeffnen}>
           Firma öffnen
         </button>

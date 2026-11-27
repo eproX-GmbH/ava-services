@@ -11,6 +11,7 @@ import { ChatChart } from "../../ChatChart";
 import type { ChartSpec } from "../../../lib/chart-spec";
 import { genUiKatalog, type GenUiFormat, type GenUiName, type GenUiProps } from "./katalog";
 import { Firmenprofil } from "./firmenprofil";
+import { FirmenLogoVon, LogoZeile } from "../../FirmenLogo";
 
 type K<N extends GenUiName> = BaseComponentProps<GenUiProps<N>>;
 
@@ -103,14 +104,16 @@ function Firmenkarte({ companyId, grund, score }: { companyId: string; grund?: s
           : null;
   return (
     <div className="gu-firma">
-      <div className="gu-firma__kopf">
-        <button type="button" className="gu-link gu-firma__name" onClick={() => navigate(`/companies/${encodeURIComponent(companyId)}`)}>
-          {f?.name ?? (q.isLoading ? "Wird geladen…" : companyId)}
-        </button>
-        {typeof score === "number" && <span className="gu-marke gu-marke--marke">Score {Math.round(score)}</span>}
-        {status && <span className={`gu-marke gu-marke--${status.ton}`}>{status.text}</span>}
-      </div>
-      {(ort || f?.legalForm) && <div className="gu-gedaempft">{[ort, f?.legalForm].filter(Boolean).join(" · ")}</div>}
+      <LogoZeile hoehe={30} logo={<FirmenLogoVon companyId={companyId} name={f?.name} groesse={30} />}>
+        <div className={ort || f?.legalForm ? "gu-firma__kopf logo-zeile__oben" : "gu-firma__kopf logo-zeile__oben logo-zeile__unten"}>
+          <button type="button" className="gu-link gu-firma__name" onClick={() => navigate(`/companies/${encodeURIComponent(companyId)}`)}>
+            {f?.name ?? (q.isLoading ? "Wird geladen…" : companyId)}
+          </button>
+          {typeof score === "number" && <span className="gu-marke gu-marke--marke">Score {Math.round(score)}</span>}
+          {status && <span className={`gu-marke gu-marke--${status.ton}`}>{status.text}</span>}
+        </div>
+        {(ort || f?.legalForm) && <div className="gu-gedaempft logo-zeile__unten">{[ort, f?.legalForm].filter(Boolean).join(" · ")}</div>}
+      </LogoZeile>
       {grund && <p className="gu-firma__grund">{textMitFett(grund)}</p>}
       {q.isError && <div className="gu-gedaempft">Firma nicht gefunden.</div>}
     </div>
@@ -163,6 +166,17 @@ function TabellenZelle({ wert, typ }: { wert: Zelle; typ: SpaltenTyp }) {
   if (wert === null || wert === undefined || wert === "") return <span className="gu-gedaempft">–</span>;
   if (typeof wert === "object") {
     const ziel = wert.companyId ? `/companies/${encodeURIComponent(wert.companyId)}` : wert.personId ? `/personen/${encodeURIComponent(wert.personId)}` : null;
+    if (wert.companyId && ziel) {
+      return (
+        <LogoZeile hoehe={20} className="gu-logo-zelle" logo={<FirmenLogoVon companyId={wert.companyId} name={wert.text} groesse={20} />}>
+          <span className="logo-zeile__oben logo-zeile__unten">
+            <button type="button" className="gu-link" onClick={() => navigate(ziel)}>
+              {wert.text}
+            </button>
+          </span>
+        </LogoZeile>
+      );
+    }
     return ziel ? (
       <button type="button" className="gu-link" onClick={() => navigate(ziel)}>
         {wert.text}
@@ -272,9 +286,13 @@ export const { registry: genUiRegistry } = defineRegistry(genUiKatalog, {
             <div key={`${e.label}-${i}`} className="gu-rangliste__zeile">
               <span className={`gu-rangliste__label${e.hervorheben ? " gu-rangliste__label--hervor" : ""}`}>
                 {e.companyId ? (
-                  <button type="button" className="gu-link" onClick={() => navigate(`/companies/${encodeURIComponent(e.companyId!)}`)}>
-                    {e.label}
-                  </button>
+                  <LogoZeile hoehe={18} className="gu-logo-zelle" logo={<FirmenLogoVon companyId={e.companyId} name={e.label} groesse={18} />}>
+                    <span className="logo-zeile__oben logo-zeile__unten">
+                      <button type="button" className="gu-link" onClick={() => navigate(`/companies/${encodeURIComponent(e.companyId!)}`)}>
+                        {e.label}
+                      </button>
+                    </span>
+                  </LogoZeile>
                 ) : (
                   e.label
                 )}

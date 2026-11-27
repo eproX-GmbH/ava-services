@@ -3,6 +3,7 @@ import { useState, useDeferredValue } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { gatewayFetch } from "../api/gateway";
+import { FirmenLogoVon, LogoZeile } from "../components/FirmenLogo";
 import {
   GRUENDUNG_LEER,
   GruendungsjahrFilter,
@@ -232,17 +233,17 @@ export function Companies() {
               return (
                 <li key={c.companyId} className="firmen-treffer">
                   <Link to={`/companies/${c.companyId}`} className="firmen-treffer__link">
-                    <span className="firmen-treffer__text">
-                      <span className="firmen-treffer__name">
+                    <LogoZeile hoehe={34} className="firmen-treffer__text" logo={<FirmenLogoVon companyId={c.companyId} name={c.name} groesse={34} />}>
+                      <span className="firmen-treffer__name logo-zeile__oben">
                         {c.name ?? "(ohne Namen)"}
                         <LandBadge country={c.country} />
                         <RegisterStatusBadge status={c.registerStatus} />
                         <InsolvenzBadge status={c.insolvencyStatus} />
                       </span>
-                      <span className="firmen-treffer__meta">
+                      <span className="firmen-treffer__meta logo-zeile__unten">
                         {meta.length > 0 ? meta.join(" · ") : <span className="muted">ohne Ortsangabe</span>}
                       </span>
-                    </span>
+                    </LogoZeile>
                     <span className="firmen-treffer__pfeil" aria-hidden="true">
                       <Chevron />
                     </span>

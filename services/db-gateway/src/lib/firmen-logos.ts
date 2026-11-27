@@ -194,6 +194,22 @@ export async function logosLesen(companyIds: string[], pool: Abfrage = getProduc
   return out;
 }
 
+/** Hoechstzahl Firmen je Listen-Abfrage (eine Seite in Meine Firmen hat 25, eine Chat-Antwort selten mehr als 50). */
+export const LOGOS_LISTE_MAX = 300;
+
+/**
+ * Logos fuer Listen (Meine Firmen, Bausteine im Chat): eine Abfrage statt einer je Zeile.
+ * Prueft die Eingabe; `null` heisst unbrauchbare Anfrage. Firmen ohne Logo fehlen in der Antwort.
+ */
+export async function logosFuerListe(companyIds: unknown, pool?: Abfrage): Promise<Record<string, FirmenLogos> | null> {
+  if (!Array.isArray(companyIds) || companyIds.length > LOGOS_LISTE_MAX) return null;
+  if (companyIds.some((id) => typeof id !== "string" || id.length === 0 || id.length > 160)) return null;
+  const gefunden = await (pool ? logosLesen(companyIds as string[], pool) : logosLesen(companyIds as string[]));
+  const out: Record<string, FirmenLogos> = {};
+  for (const [id, logos] of gefunden) if (logos.zeichen || logos.wortmarke) out[id] = logos;
+  return out;
+}
+
 /**
  * Bild zu einer Pruefsumme. Nur was als Logo einer Firma eingetragen ist, wird ausgeliefert:
  * Die Route ist kein allgemeiner Zugang zum Bucket.

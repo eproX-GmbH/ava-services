@@ -6,8 +6,9 @@
 // Die Bilder kommen ueber `ava-logo://<sha256>` (Hauptprozess, main/logo-cache.ts). Immer auf
 // heller Flaeche, auch im dunklen Design: Die meisten Logos sind fuer weissen Grund gemacht.
 
-import { useState } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { kuerzel } from "./chat/gen-ui/firmenprofil-daten";
+import { useFirmenLogos } from "../lib/firmen-logos-laden";
 
 export interface LogoAngabe {
   sha256: string;
@@ -21,13 +22,36 @@ export interface LogoAngabe {
 
 export type FirmenLogos = { zeichen?: LogoAngabe | null; wortmarke?: LogoAngabe | null } | null | undefined;
 
-/** Welches Bild in eine quadratische Flaeche gehoert. */
-export function logoFuerFlaeche(logos: FirmenLogos): { logo: LogoAngabe; art: "zeichen" | "wortmarke" | "klein" } | null {
+/** Innenrand der Flaeche um ein eingepasstes Bild, in px. */
+const RAND = 4;
+/** Unter dieser Hoehe ist eine eingepasste Wortmarke nicht mehr lesbar. */
+const WORTMARKE_MIN_HOEHE = 11;
+
+/**
+ * Welches Bild in die Flaeche gehoert. Ohne Angaben gilt die grosse Flaeche (44 px, quadratisch).
+ *
+ * 1. ein gutes Zeichen (ab 64 px),
+ * 2. die Wortmarke, wenn die Flaeche breit werden darf,
+ * 3. ein kleines Zeichen, das fuer DIESE Flaeche trotzdem genug Bildpunkte hat (48-px-Icon in
+ *    einer 34-px-Zeile einer Liste),
+ * 4. die Wortmarke eingepasst, solange sie lesbar bleibt (577x118 in 34 px waere 5 px hoch),
+ * 5. das kleine Zeichen in echter Groesse,
+ * sonst nichts: Dann zeigt der Baustein das Kuerzel.
+ */
+export function logoFuerFlaeche(
+  logos: FirmenLogos,
+  { groesse = 44, breit = false }: { groesse?: number; breit?: boolean } = {},
+): { logo: LogoAngabe; art: "zeichen" | "wortmarke" | "klein" } | null {
   const z = logos?.zeichen ?? null;
   const w = logos?.wortmarke ?? null;
   const gueltig = (l: LogoAngabe | null): l is LogoAngabe => Boolean(l && /^[0-9a-f]{64}$/.test(l.sha256));
   if (gueltig(z) && !z.klein) return { logo: z, art: "zeichen" };
-  if (gueltig(w)) return { logo: w, art: "wortmarke" };
+  if (gueltig(w) && breit) return { logo: w, art: "wortmarke" };
+  if (gueltig(z) && z.breite >= groesse - 2 * RAND) return { logo: z, art: "zeichen" };
+  if (gueltig(w)) {
+    const verhaeltnis = w.breite > 0 && w.hoehe > 0 ? Math.max(1, w.breite / w.hoehe) : 2.4;
+    if ((groesse - 2 * RAND) / verhaeltnis >= WORTMARKE_MIN_HOEHE) return { logo: w, art: "wortmarke" };
+  }
   if (gueltig(z)) return { logo: z, art: "klein" };
   return null;
 }
@@ -50,6 +74,7 @@ export function FirmenLogo({
   groesse = 44,
   ohneRueckfall = false,
   breit = false,
+  laedt = false,
 }: {
   logos: FirmenLogos;
   name: string | null | undefined;
@@ -59,14 +84,18 @@ export function FirmenLogo({
   ohneRueckfall?: boolean;
   /** true = eine Wortmarke darf eine breitere Flaeche bekommen (Kopf von Profil und Firmenansicht). */
   breit?: boolean;
+  /** true = die Angaben sind noch unterwegs: leere Flaeche statt Kuerzel. */
+  laedt?: boolean;
 }) {
-  const wahl = logoFuerFlaeche(logos);
+  const wahl = logoFuerFlaeche(logos, { groesse, breit });
   const [kaputt, setKaputt] = useState<string | null>(null);
-  const flaeche = flaechenMasse(wahl && kaputt !== wahl.logo.sha256 ? wahl : null, groesse, breit);
+  // Kleine Flaechen (Zeile einer Tabelle) bekommen kleinere Ecken, sonst wirken sie wie Punkte.
+  const flaeche = { ...flaechenMasse(wahl && kaputt !== wahl.logo.sha256 ? wahl : null, groesse, breit), borderRadius: Math.min(8, Math.round(groesse * 0.22)) };
   if (!wahl || kaputt === wahl.logo.sha256) {
     if (ohneRueckfall) return null;
+    if (laedt) return <span className="firmenlogo firmenlogo--laedt" style={flaeche} aria-hidden="true" />;
     return (
-      <span className="firmenlogo firmenlogo--kuerzel" style={{ ...flaeche, fontSize: Math.max(11, Math.round(groesse * 0.36)) }} aria-hidden="true">
+      <span className="firmenlogo firmenlogo--kuerzel" style={{ ...flaeche, fontSize: Math.max(9, Math.round(groesse * 0.36)) }} aria-hidden="true">
         {kuerzel(name)}
       </span>
     );
@@ -82,3 +111,41 @@ export function FirmenLogo({
     </span>
   );
 }
+
+/** Logo einer Firma, von der nur die Kennung bekannt ist (Listen, Bausteine im Chat). */
+export function FirmenLogoVon({
+  companyId,
+  logos,
+  ...rest
+}: { companyId: string | null | undefined; logos?: FirmenLogos } & Omit<Parameters<typeof FirmenLogo>[0], "logos">) {
+  const stand = useFirmenLogos(companyId, logos);
+  return <FirmenLogo logos={stand.logos} laedt={stand.laedt} {...rest} />;
+}
+
+/**
+ * Logo links, daneben Name und Unterzeile. Die Logo-Flaeche ist so hoch wie die beiden Zeilen
+ * zusammen: Ihre Oberkante liegt auf der Oberkante der Grossbuchstaben des Namens, ihre
+ * Unterkante auf der Grundlinie der Unterzeile (Befund Joyce 2026-11-27). Die erste Zeile im
+ * Text bekommt dafuer die Klasse `logo-zeile__oben`, die letzte `logo-zeile__unten`; gibt es
+ * nur eine Zeile, bekommt sie beide und steht mittig.
+ */
+export function LogoZeile({
+  logo,
+  hoehe,
+  className,
+  children,
+}: {
+  logo: ReactNode;
+  /** Hoehe der Logo-Flaeche in px; muss zur `groesse` des Logos passen. */
+  hoehe: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={className ? `logo-zeile ${className}` : "logo-zeile"} style={{ "--logo-hoehe": `${hoehe}px` } as CSSProperties}>
+      {logo}
+      <div className="logo-zeile__text">{children}</div>
+    </div>
+  );
+}
+
